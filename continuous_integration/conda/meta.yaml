@@ -1,0 +1,40 @@
+package:
+  name: mlir-graphblas
+  version: {{ environ.get('GIT_DESCRIBE_TAG', 'unknown') }}
+
+source:
+  path: ../..
+
+build:
+  number: {{ environ.get('GIT_DESCRIBE_NUMBER', 0)|int }}
+  string: py_{{GIT_DESCRIBE_HASH}}_{{ GIT_DESCRIBE_NUMBER }}
+  script: python setup.py install --single-version-externally-managed --record=record.txt
+  noarch: python
+
+requirements:
+  host:
+    - python
+
+  run:
+    - python
+    - grblas
+    - mlir
+
+test:
+  requires:
+    - pytest
+    - pytest-cov
+    - coverage
+
+  commands:
+    - pytest --pyargs mlir_graphblas.tests
+
+about:
+  home: https://github.com/metagraph-dev/mlir-graphblas
+  license: Apache 2.0
+  license_family: Apache
+  license_file: LICENSE
+  summary: 'MLIR dialect for GraphBLAS'
+  description: |
+      MLIR dialect for GraphBLAS + Python tools
+  dev_url: https://github.com/metagraph-dev/mlir-graphblas
