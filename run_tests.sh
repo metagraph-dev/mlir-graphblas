@@ -1,0 +1,2 @@
+# Run local tests
+pytest

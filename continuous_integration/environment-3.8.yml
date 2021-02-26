@@ -1,0 +1,19 @@
+name: mg
+
+channels:
+- conda-forge
+- metagraph
+
+dependencies:
+# dev environment
+  - python=3.8
+  - coverage
+  - pytest
+  - pytest-cov
+  - black=19.10b0
+
+
+# dependencies (so setup.py develop doesn't pip install them)
+  - grblas
+  - mlir
+  - donfig
