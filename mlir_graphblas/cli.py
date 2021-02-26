@@ -155,6 +155,21 @@ class DebugResult:
 
         tabs = pn.Tabs()
 
+        # Sequential
+        sequential = pn.Column(
+            pn.widgets.Select(name='Passes', options=self.passes),
+            pn.Row(
+                pn.widgets.Button(name='\u25c0', width=200, button_type='primary'),
+                pn.widgets.Button(name='\u25b6', width=200, button_type='primary'),
+            ),
+            pn.Row(
+                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[0]).replace('{{id}}', 'foobar_seq1')),
+                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[1]).replace('{{id}}', 'foobar_seq2')),
+                max_width=400
+            ),
+        )
+        tabs.append(('Sequential', sequential))
+
         # Single
         single = pn.Column(
             pn.widgets.Select(name='Passes', options=['Initial'] + self.passes),
@@ -175,20 +190,6 @@ class DebugResult:
         )
         tabs.append(('Double', double))
 
-        # Sequential
-        sequential = pn.Column(
-            pn.widgets.Select(name='Passes', options=self.passes),
-            pn.Row(
-                pn.widgets.Button(name="<--"),
-                pn.widgets.Button(name="-->"),
-            ),
-            pn.Row(
-                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[0]).replace('{{id}}', 'foobar_seq1')),
-                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[1]).replace('{{id}}', 'foobar_seq2')),
-            )
-        )
-        tabs.append(('Sequential', sequential))
-
         # Callbacks
         def code_callback(target, event, offset=0):
             if event.new == "Initial":
@@ -207,9 +208,9 @@ class DebugResult:
 
         def button_callback(target, event):
             ipass = self._find_pass_index(target.value)
-            if event.obj.name == "<--":
+            if event.obj.name == "\u25c0":
                 target.value = self.passes[max(ipass-1, 0)]
-            elif event.obj.name == "-->":
+            elif event.obj.name == "\u25b6":
                 target.value = self.passes[min(ipass+1, len(self.passes)-1)]
 
         single[0].link(single[1], callbacks={'value': code_callback})
