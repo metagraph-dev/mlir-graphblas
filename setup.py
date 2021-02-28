@@ -9,5 +9,5 @@ setup(
     author="Anaconda, Inc.",
     packages=find_packages(include=["mlir_graphblas", "mlir_graphblas.*"]),
     include_package_data=True,
-    install_requires=["grblas", "mlir"],
+    install_requires=["grblas", "pymlir"],
 )
