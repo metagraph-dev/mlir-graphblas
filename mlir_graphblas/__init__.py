@@ -7,3 +7,5 @@ del get_versions
 
 
 config = donfig.Config("mlir-graphblas")
+
+from .cli import MlirOptCli
