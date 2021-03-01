@@ -2,6 +2,8 @@ import os
 import math
 import subprocess
 import tempfile
+import string
+import random
 from functools import partial
 from typing import List, Optional, Union
 
@@ -149,9 +151,24 @@ class DebugResult:
             ret.append(f'{i:{offset}}|{line}')
         return "\n".join(ret)
 
-    def explore(self):
+    def explore(self, embed=False):
         import panel as pn
-        pn.extension()
+        pn.extension(
+            js_files={
+                'myCodeMirror': 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/codemirror.min.js',
+                'javascript_cm': 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/mode/javascript/javascript.min.js',
+            }
+        )
+
+        rndchars = ''.join(random.choice(string.ascii_letters) for _ in range(9))
+        def text_replace(s, new_id):
+            text = code_block.replace('{{textarea}}', s)
+            text = text.replace('{{id}}', f'{rndchars}_{new_id}')
+            if embed:
+                text = text.replace('{{HEAD}}', '')
+            else:
+                text = text.replace('{{HEAD}}', non_embed_header)
+            return text
 
         tabs = pn.Tabs()
 
@@ -163,8 +180,8 @@ class DebugResult:
                 pn.widgets.Button(name='\u25b6', width=200, button_type='primary'),
             ),
             pn.Row(
-                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[0]).replace('{{id}}', 'foobar_seq1')),
-                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[1]).replace('{{id}}', 'foobar_seq2')),
+                pn.pane.HTML(text_replace(self.stages[0], 'seq1')),
+                pn.pane.HTML(text_replace(self.stages[1], 'seq2')),
                 max_width=400
             ),
         )
@@ -173,7 +190,7 @@ class DebugResult:
         # Single
         single = pn.Column(
             pn.widgets.Select(name='Passes', options=['Initial'] + self.passes),
-            pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[0]).replace('{{id}}', 'foobar_single')),
+            pn.pane.HTML(text_replace(self.stages[0], 'single')),
         )
         tabs.append(('Single', single))
 
@@ -181,11 +198,11 @@ class DebugResult:
         double = pn.Row(
             pn.Column(
                 pn.widgets.Select(name='Passes', options=['Initial'] + self.passes),
-                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[0]).replace('{{id}}', 'foobar_double1')),
+                pn.pane.HTML(text_replace(self.stages[0], 'double1')),
             ),
             pn.Column(
                 pn.widgets.Select(name='Passes', options=['Initial'] + self.passes, value=self.passes[0]),
-                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[1]).replace('{{id}}', 'foobar_double2')),
+                pn.pane.HTML(text_replace(self.stages[1], 'double2')),
             )
         )
         tabs.append(('Double', double))
@@ -221,24 +238,21 @@ class DebugResult:
         sequential[1][0].link(sequential[0], callbacks={'value': button_callback})
         sequential[1][1].link(sequential[0], callbacks={'value': button_callback})
 
-        return tabs
+        if embed:
+            return tabs
+        else:
+            return tabs.show("MLIR Code Pass Explorer")
 
 
 code_block = '''
 <html>
 <head>
-<script type="text/javascript"
-  src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/codemirror.min.js">
-</script>
-
-<script type="text/javascript"
-  src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/mode/javascript/javascript.min.js">
-</script>
+{{HEAD}}
 </head>
 <body>
 
 <div>
-<textarea id="{{id}}">
+<textarea id="{{id}}" style="margin: 50px">
 {{textarea}}
 </textarea>
 </div>
@@ -250,9 +264,42 @@ var config = {
   readOnly: true,
   mode: 'javascript',
 };
-var myTextArea = document.querySelector('#{{id}}');
-var cm = CodeMirror.fromTextArea(myTextArea, config);
+
+try {
+  var myTextArea = document.querySelector('#{{id}}');
+  var cm = CodeMirror.fromTextArea(myTextArea, config);
+} catch (e) {
+  if (e instanceof ReferenceError) {
+    // formatting will be broken
+  }
+}
+
 </script>
 </body>
 </html>
+'''
+
+non_embed_header = '''
+<link rel="stylesheet"
+  href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/codemirror.min.css">
+</link>
+
+<script type="text/javascript"
+  src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/codemirror.min.js">
+</script>
+
+<style>
+.CodeMirror {
+  height: auto;
+}
+
+.CodeMirror-linenumber {
+  padding: 0;
+  min-width: 10px;
+}
+
+.CodeMirror.cm-s-default {
+  padding: 0 50px 0 0;
+}
+</style>
 '''
