@@ -6,6 +6,16 @@ import string
 import random
 from functools import partial
 from typing import List, Optional, Union
+import logging
+
+log = logging.getLogger('mlir_graphblas')
+
+
+
+def logged_subprocess_run(*args, **kwargs):
+    log.debug('RUN: %s', args[0])
+    return subprocess.run(*args, **kwargs)
+
 
 
 class MlirOptError(Exception):
@@ -42,7 +52,7 @@ class MlirOptCli:
                  list of str containing transformations and eventual error (if failure)
         """
         input = self._read_input(file)
-        result = subprocess.run([self._executable] + self._options + passes, capture_output=True, input=input)
+        result = logged_subprocess_run([self._executable] + self._options + passes, capture_output=True, input=input)
         if result.returncode == 0:
             return result.stdout.decode()
         err = MlirOptError(result.stderr.split(b'\n')[0])
@@ -55,13 +65,16 @@ class MlirOptCli:
         for p in passes:
             saved_passes.append(p.lstrip('-'))
             stages.append(input.decode())
-            result = subprocess.run([self._executable, p], capture_output=True, input=input)
+            result = logged_subprocess_run([self._executable, p], capture_output=True, input=input)
             if result.returncode == 0:
                 input = result.stdout
             else:
-                result = subprocess.run([self._executable, '--mlir-print-debuginfo', p], capture_output=True, input=input)
+                result = logged_subprocess_run([self._executable, '--mlir-print-debuginfo', p], capture_output=True, input=input)
                 stages.append(result.stderr.decode())
                 break
+        else:
+            # append final output
+            stages.append(result.stdout.decode())
         return DebugResult(stages, saved_passes)
 
 
@@ -121,7 +134,7 @@ class DebugResult:
                 f.write(self.stages[ipass])
             with open(file2, "w") as f:
                 f.write(self.stages[ipass + 1])
-            subprocess.run([diffcmd, file1, file2])
+            logged_subprocess_run([diffcmd, file1, file2])
 
     @classmethod
     def _add_banner(cls, data: str, banner_text: str, char: str = "=") -> str:
