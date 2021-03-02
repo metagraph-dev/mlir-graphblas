@@ -4,6 +4,9 @@ import subprocess
 import tempfile
 import string
 import random
+from pygments import highlight
+from pygments.lexers import PythonLexer
+from pygments.formatters import HtmlFormatter
 from functools import partial
 from typing import List, Optional, Union
 import logging
@@ -11,11 +14,9 @@ import logging
 log = logging.getLogger('mlir_graphblas')
 
 
-
 def logged_subprocess_run(*args, **kwargs):
     log.debug('RUN: %s', args[0])
     return subprocess.run(*args, **kwargs)
-
 
 
 class MlirOptError(Exception):
@@ -165,62 +166,71 @@ class DebugResult:
         return "\n".join(ret)
 
     def explore(self, embed=False):
+        rndchars = ''.join(random.choice(string.ascii_letters) for _ in range(9))
+        if embed:
+            html_formatter = HtmlFormatter(linenos='inline', noclasses=True)
+        else:
+            html_formatter = HtmlFormatter(linenos='inline', cssclass=f'highlight_{rndchars}')
+        lexer = PythonLexer()
+
         import panel as pn
         pn.extension(
-            js_files={
-                'myCodeMirror': 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/codemirror.min.js',
-                'javascript_cm': 'https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/mode/javascript/javascript.min.js',
-            }
+            raw_css=[html_formatter.get_style_defs(f'.highlight_{rndchars}')]
         )
 
-        rndchars = ''.join(random.choice(string.ascii_letters) for _ in range(9))
-        def text_replace(s, new_id):
-            text = code_block.replace('{{textarea}}', s)
-            text = text.replace('{{id}}', f'{rndchars}_{new_id}')
-            if embed:
-                text = text.replace('{{HEAD}}', '')
-            else:
-                text = text.replace('{{HEAD}}', non_embed_header)
-            return text
-
+        ckbox_linenos = pn.widgets.Checkbox(name="Show Line Numbers", value=True)
         tabs = pn.Tabs()
+        gspec_outer = pn.GridSpec(sizing_mode='stretch_width')
+        gspec_outer[0, 0] = tabs
+        # gspec_outer[0, 0] = pn.Column(ckbox_linenos, tabs)
 
         # Sequential
-        sequential = pn.Column(
-            pn.widgets.Select(name='Passes', options=self.passes),
-            pn.Row(
-                pn.widgets.Button(name='\u25c0', width=200, button_type='primary'),
-                pn.widgets.Button(name='\u25b6', width=200, button_type='primary'),
-            ),
-            pn.Row(
-                pn.pane.HTML(text_replace(self.stages[0], 'seq1')),
-                pn.pane.HTML(text_replace(self.stages[1], 'seq2')),
-                max_width=400
-            ),
+        seq_select = pn.widgets.Select(name='Passes', options=self.passes, width=420)
+        seq_btn_left = pn.widgets.Button(name='\u25c0', width=200, button_type='primary')
+        seq_btn_right = pn.widgets.Button(name='\u25b6', width=200, button_type='primary')
+        seq_code_left = pn.pane.HTML(highlight(self.stages[0], lexer, html_formatter))
+        seq_code_right = pn.pane.HTML(highlight(self.stages[1], lexer, html_formatter))
+        sequential = pn.GridSpec(sizing_mode='stretch_width')
+        seq_code_row = pn.GridSpec(sizing_mode='stretch_width')
+        seq_code_row[0, 0] = seq_code_left
+        seq_code_row[0, 1] = seq_code_right
+        sequential[0, 0] = pn.Column(
+            seq_select,
+            pn.Row(seq_btn_left, seq_btn_right),
+            seq_code_row
         )
         tabs.append(('Sequential', sequential))
 
         # Single
-        single = pn.Column(
-            pn.widgets.Select(name='Passes', options=['Initial'] + self.passes),
-            pn.pane.HTML(text_replace(self.stages[0], 'single')),
+        sgl_select = pn.widgets.Select(name='Passes', options=['Initial'] + self.passes, width=420)
+        sgl_code = pn.pane.HTML(highlight(self.stages[0], lexer, html_formatter))
+        single = pn.GridSpec(sizing_mode='stretch_width')
+        single[0, 0] = pn.Column(
+            sgl_select,
+            sgl_code
         )
         tabs.append(('Single', single))
 
         # Double
-        double = pn.Row(
-            pn.Column(
-                pn.widgets.Select(name='Passes', options=['Initial'] + self.passes),
-                pn.pane.HTML(text_replace(self.stages[0], 'double1')),
-            ),
-            pn.Column(
-                pn.widgets.Select(name='Passes', options=['Initial'] + self.passes, value=self.passes[0]),
-                pn.pane.HTML(text_replace(self.stages[1], 'double2')),
-            )
+        dbl_select_left = pn.widgets.Select(name='Passes', options=['Initial'] + self.passes)
+        dbl_select_right = pn.widgets.Select(name='Passes', options=['Initial'] + self.passes, value=self.passes[0])
+        dbl_code_left = pn.pane.HTML(highlight(self.stages[0], lexer, html_formatter))
+        dbl_code_right = pn.pane.HTML(highlight(self.stages[1], lexer, html_formatter))
+        double = pn.GridSpec(sizing_mode='stretch_width')
+        double[0, 0] = pn.Column(
+            dbl_select_left,
+            dbl_code_left,
+        )
+        double[0, 1] = pn.Column(
+            dbl_select_right,
+            dbl_code_right,
         )
         tabs.append(('Double', double))
 
         # Callbacks
+        def line_number_toggle(target, event):
+            print(event.obj.value)
+
         def code_callback(target, event, offset=0):
             if event.new == "Initial":
                 new_text = self.stages[0 + offset]
@@ -231,10 +241,8 @@ class DebugResult:
                 except KeyError:
                     new_text = f"No pass found named {event.new}"
 
-            a = target.object.index("<textarea id=")
-            b = target.object.index(">", a) + 2
-            c = target.object.index("\n</textarea", b)
-            target.object = target.object[:b] + new_text + target.object[c:]
+            new_text = highlight(new_text, lexer, html_formatter)
+            target.object = new_text
 
         def button_callback(target, event):
             ipass = self._find_pass_index(target.value)
@@ -243,76 +251,16 @@ class DebugResult:
             elif event.obj.name == "\u25b6":
                 target.value = self.passes[min(ipass+1, len(self.passes)-1)]
 
-        single[0].link(single[1], callbacks={'value': code_callback})
-        double[0][0].link(double[0][1], callbacks={'value': code_callback})
-        double[1][0].link(double[1][1], callbacks={'value': code_callback})
-        sequential[0].link(sequential[2][0], callbacks={'value': partial(code_callback, offset=-1)})
-        sequential[0].link(sequential[2][1], callbacks={'value': code_callback})
-        sequential[1][0].link(sequential[0], callbacks={'value': button_callback})
-        sequential[1][1].link(sequential[0], callbacks={'value': button_callback})
+        ckbox_linenos.link(tabs, callbacks={'value': line_number_toggle})
+        sgl_select.link(sgl_code, callbacks={'value': code_callback})
+        dbl_select_left.link(dbl_code_left, callbacks={'value': code_callback})
+        dbl_select_right.link(dbl_code_right, callbacks={'value': code_callback})
+        seq_select.link(seq_code_left, callbacks={'value': partial(code_callback, offset=-1)})
+        seq_select.link(seq_code_right, callbacks={'value': code_callback})
+        seq_btn_left.link(seq_select, callbacks={'value': button_callback})
+        seq_btn_right.link(seq_select, callbacks={'value': button_callback})
 
         if embed:
-            return tabs
+            return gspec_outer
         else:
-            return tabs.show("MLIR Code Pass Explorer")
-
-
-code_block = '''
-<html>
-<head>
-{{HEAD}}
-</head>
-<body>
-
-<div>
-<textarea id="{{id}}" style="margin: 50px">
-{{textarea}}
-</textarea>
-</div>
-
-<script>
-var config = {
-  lineNumbers: true,
-  tabSize: 2,
-  readOnly: true,
-  mode: 'javascript',
-};
-
-try {
-  var myTextArea = document.querySelector('#{{id}}');
-  var cm = CodeMirror.fromTextArea(myTextArea, config);
-} catch (e) {
-  if (e instanceof ReferenceError) {
-    // formatting will be broken
-  }
-}
-
-</script>
-</body>
-</html>
-'''
-
-non_embed_header = '''
-<link rel="stylesheet"
-  href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/codemirror.min.css">
-</link>
-
-<script type="text/javascript"
-  src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/codemirror.min.js">
-</script>
-
-<style>
-.CodeMirror {
-  height: auto;
-}
-
-.CodeMirror-linenumber {
-  padding: 0;
-  min-width: 10px;
-}
-
-.CodeMirror.cm-s-default {
-  padding: 0 50px 0 0;
-}
-</style>
-'''
+            return gspec_outer.show("MLIR Code Pass Explorer")

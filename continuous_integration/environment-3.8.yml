@@ -17,3 +17,4 @@ dependencies:
   - grblas
   - mlir
   - donfig
+  - pygments
