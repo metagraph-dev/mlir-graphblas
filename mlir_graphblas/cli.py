@@ -70,14 +70,15 @@ class MlirOptCli:
         else:
             # append final output
             stages.append(result.stdout.decode())
-        return DebugResult(stages, saved_passes)
+        return DebugResult(stages, saved_passes, self)
 
 
 class DebugResult:
-    def __init__(self, stages, passes):
+    def __init__(self, stages, passes, cli):
         self.stages = stages
         self.passes = passes
         assert len(self.stages) == len(self.passes) + 1, "Stages must be one larger than passes"
+        self._cli = cli
 
     def __repr__(self):
         ret = [
@@ -101,7 +102,7 @@ class DebugResult:
             trim_passes = self.passes[item.start:]
         else:
             trim_passes = self.passes[item.start:item.stop-1]
-        return DebugResult(trim_stages, trim_passes)
+        return DebugResult(trim_stages, trim_passes, self._cli)
 
     def _find_pass_index(self, pass_):
         for ip, p in enumerate(self.passes):

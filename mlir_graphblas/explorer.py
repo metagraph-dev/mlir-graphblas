@@ -133,6 +133,23 @@ class Explorer:
         )
         tabs.append(('Double', double))
 
+        # Edit
+        instructions = pn.pane.Markdown(
+            "Apply must be clicked to save changes."
+            "When done editing MLIR, click **outside** the text box to enable the Apply button."
+        )
+        edit_text = pn.widgets.TextAreaInput(name="Edit Initial MLIR", value=self.dr.stages[0], min_height=800)
+        ckbox_passes = pn.widgets.CheckBoxGroup(name="Passes", inline=False, options=self.dr.passes, value=self.dr.passes)
+        apply_button = pn.widgets.Button(name="Apply Changes", width=150, button_type='primary', disabled=True)
+        edit = pn.GridSpec(sizing_mode='stretch_width')
+        edit[0, 0] = pn.Column(
+            instructions,
+            apply_button,
+            ckbox_passes,
+            edit_text,
+        )
+        tabs.append(('Edit', edit))
+
         # Link dynamic items
         ckbox_linenos.link(tabs, callbacks={'value': self.line_number_toggle})
         style_select.link(tabs, callbacks={'value': self.highlight_style_callback})
@@ -143,7 +160,18 @@ class Explorer:
         seq_select.link(seq_code_right, callbacks={'value': self.code_callback})
         seq_btn_left.link(seq_select, callbacks={'value': self.button_callback})
         seq_btn_right.link(seq_select, callbacks={'value': self.button_callback})
+        edit_text.link(apply_button, callbacks={'value': self.enable_button})
+        ckbox_passes.link(apply_button, callbacks={'value': self.enable_button})
+        apply_button.link(tabs, callbacks={'value': self.apply_changes})
 
+        self._ui = {
+            'seq_select': seq_select,
+            'sgl_select': sgl_select,
+            'dbl_select_left': dbl_select_left,
+            'dbl_select_right': dbl_select_right,
+            'edit_text': edit_text,
+            'ckbox_passes': ckbox_passes,
+        }
         self._code_blocks = [seq_code_left, seq_code_right, sgl_code, dbl_code_left, dbl_code_right]
         self.rebuild()
 
@@ -229,3 +257,29 @@ class Explorer:
         elif event.obj.name == "\u25b6":
             target.value = self.dr.passes[min(ipass + 1, len(self.dr.passes) - 1)]
 
+    def enable_button(self, target, event):
+        target.disabled = False
+
+    def apply_changes(self, target, event):
+        event.obj.disabled = True
+
+        # Generate a new debug result
+        input_mlir = self._ui['edit_text'].value.encode()
+        passes = self._ui['ckbox_passes'].value
+        new_results = self.dr._cli.debug_passes(input_mlir, [f'--{p}' for p in passes])
+        self.dr = new_results
+
+        # Reset back to original code views
+        self._shown_stages = [0, 1, 0, 0, 1]
+
+        # Update all Select dropdowns with available passes
+        for sel_str in ('seq_select', 'sgl_select', 'dbl_select_left', 'dbl_select_right'):
+            sel = self._ui[sel_str]
+            if sel.options[0] == 'Initial':
+                sel.options = ['Initial'] + passes
+                sel.value = 'Initial' if sel_str != 'dbl_select_right' else passes[0]
+            else:
+                sel.options = passes
+                sel.value = passes[0]
+
+        self.rebuild()
