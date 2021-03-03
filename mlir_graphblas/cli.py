@@ -160,5 +160,5 @@ class DebugResult:
         return "\n".join(ret)
 
     def explore(self, embed=False):
-        from . import explorer
-        return explorer.explore(self, embed=embed)
+        from .explorer import Explorer
+        return Explorer(self).show(embed=embed)
