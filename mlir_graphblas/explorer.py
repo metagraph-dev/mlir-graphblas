@@ -7,6 +7,8 @@ import panel as pn
 
 
 class MlirLexer(lexer.RegexLexer):
+    # This definition comes from a go clone of pygments
+    # https://github.com/alecthomas/chroma/blob/master/lexers/m/mlir.go
     name = 'MLIR'
     aliases = ['mlir']
     filenames = ['*.mlir']
