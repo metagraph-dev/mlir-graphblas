@@ -2,18 +2,15 @@ import os
 import math
 import subprocess
 import tempfile
-from functools import partial
 from typing import List, Optional, Union
 import logging
 
 log = logging.getLogger('mlir_graphblas')
 
 
-
 def logged_subprocess_run(*args, **kwargs):
     log.debug('RUN: %s', args[0])
     return subprocess.run(*args, **kwargs)
-
 
 
 class MlirOptError(Exception):
@@ -73,14 +70,15 @@ class MlirOptCli:
         else:
             # append final output
             stages.append(result.stdout.decode())
-        return DebugResult(stages, saved_passes)
+        return DebugResult(stages, saved_passes, self)
 
 
 class DebugResult:
-    def __init__(self, stages, passes):
+    def __init__(self, stages, passes, cli):
         self.stages = stages
         self.passes = passes
         assert len(self.stages) == len(self.passes) + 1, "Stages must be one larger than passes"
+        self._cli = cli
 
     def __repr__(self):
         ret = [
@@ -104,7 +102,7 @@ class DebugResult:
             trim_passes = self.passes[item.start:]
         else:
             trim_passes = self.passes[item.start:item.stop-1]
-        return DebugResult(trim_stages, trim_passes)
+        return DebugResult(trim_stages, trim_passes, self._cli)
 
     def _find_pass_index(self, pass_):
         for ip, p in enumerate(self.passes):
@@ -162,110 +160,6 @@ class DebugResult:
             ret.append(f'{i:{offset}}|{line}')
         return "\n".join(ret)
 
-    def explore(self):
-        import panel as pn
-        pn.extension()
-
-        tabs = pn.Tabs()
-
-        # Sequential
-        sequential = pn.Column(
-            pn.widgets.Select(name='Passes', options=self.passes),
-            pn.Row(
-                pn.widgets.Button(name='\u25c0', width=200, button_type='primary'),
-                pn.widgets.Button(name='\u25b6', width=200, button_type='primary'),
-            ),
-            pn.Row(
-                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[0]).replace('{{id}}', 'foobar_seq1')),
-                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[1]).replace('{{id}}', 'foobar_seq2')),
-                max_width=400
-            ),
-        )
-        tabs.append(('Sequential', sequential))
-
-        # Single
-        single = pn.Column(
-            pn.widgets.Select(name='Passes', options=['Initial'] + self.passes),
-            pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[0]).replace('{{id}}', 'foobar_single')),
-        )
-        tabs.append(('Single', single))
-
-        # Double
-        double = pn.Row(
-            pn.Column(
-                pn.widgets.Select(name='Passes', options=['Initial'] + self.passes),
-                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[0]).replace('{{id}}', 'foobar_double1')),
-            ),
-            pn.Column(
-                pn.widgets.Select(name='Passes', options=['Initial'] + self.passes, value=self.passes[0]),
-                pn.pane.HTML(code_block.replace('{{textarea}}', self.stages[1]).replace('{{id}}', 'foobar_double2')),
-            )
-        )
-        tabs.append(('Double', double))
-
-        # Callbacks
-        def code_callback(target, event, offset=0):
-            if event.new == "Initial":
-                new_text = self.stages[0 + offset]
-            else:
-                try:
-                    ipass = self._find_pass_index(event.new)
-                    new_text = self.stages[ipass + 1 + offset]
-                except KeyError:
-                    new_text = f"No pass found named {event.new}"
-
-            a = target.object.index("<textarea id=")
-            b = target.object.index(">", a) + 2
-            c = target.object.index("\n</textarea", b)
-            target.object = target.object[:b] + new_text + target.object[c:]
-
-        def button_callback(target, event):
-            ipass = self._find_pass_index(target.value)
-            if event.obj.name == "\u25c0":
-                target.value = self.passes[max(ipass-1, 0)]
-            elif event.obj.name == "\u25b6":
-                target.value = self.passes[min(ipass+1, len(self.passes)-1)]
-
-        single[0].link(single[1], callbacks={'value': code_callback})
-        double[0][0].link(double[0][1], callbacks={'value': code_callback})
-        double[1][0].link(double[1][1], callbacks={'value': code_callback})
-        sequential[0].link(sequential[2][0], callbacks={'value': partial(code_callback, offset=-1)})
-        sequential[0].link(sequential[2][1], callbacks={'value': code_callback})
-        sequential[1][0].link(sequential[0], callbacks={'value': button_callback})
-        sequential[1][1].link(sequential[0], callbacks={'value': button_callback})
-
-        return tabs
-
-
-code_block = '''
-<html>
-<head>
-<script type="text/javascript"
-  src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/codemirror.min.js">
-</script>
-
-<script type="text/javascript"
-  src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.52.2/mode/javascript/javascript.min.js">
-</script>
-</head>
-<body>
-
-<div>
-<textarea id="{{id}}">
-{{textarea}}
-</textarea>
-</div>
-
-<script>
-var config = {
-  lineNumbers: true,
-  tabSize: 2,
-  readOnly: true,
-  mode: 'javascript',
-};
-var myTextArea = document.querySelector('#{{id}}');
-var cm = CodeMirror.fromTextArea(myTextArea, config);
-</script>
-</body>
-</html>
-'''
+    def explore(self, embed=False):
+        from .explorer import Explorer
+        return Explorer(self).show(embed=embed)

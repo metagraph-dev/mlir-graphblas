@@ -15,5 +15,6 @@ dependencies:
 
 # dependencies (so setup.py develop doesn't pip install them)
   - grblas
-  - mlir
+  - metagraph::mlir
   - donfig
+  - pygments
