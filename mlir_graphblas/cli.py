@@ -5,11 +5,11 @@ import tempfile
 from typing import List, Optional, Union
 import logging
 
-log = logging.getLogger('mlir_graphblas')
+log = logging.getLogger("mlir_graphblas")
 
 
 def logged_subprocess_run(*args, **kwargs):
-    log.debug('RUN: %s', args[0])
+    log.debug("RUN: %s", args[0])
     return subprocess.run(*args, **kwargs)
 
 
@@ -18,9 +18,12 @@ class MlirOptError(Exception):
 
 
 class MlirOptCli:
-    def __init__(self, executable: Optional[str] = None, options: Optional[List[str]] = None):
+    def __init__(
+        self, executable: Optional[str] = None, options: Optional[List[str]] = None
+    ):
         if executable is None:
             from . import config
+
             executable = config.get("cli.executable", "mlir-opt")
         self._executable = executable
         if options is None:
@@ -30,10 +33,10 @@ class MlirOptCli:
     def _read_input(self, file) -> bytes:
         if isinstance(file, bytes):
             return file
-        elif hasattr(file, 'close'):
+        elif hasattr(file, "close"):
             return file.read()
         else:
-            with open(file, 'rb') as f:
+            with open(file, "rb") as f:
                 return f.read()
 
     def apply_passes(self, file, passes: List[str]) -> Union[str, "DebugResult"]:
@@ -47,10 +50,14 @@ class MlirOptCli:
                  list of str containing transformations and eventual error (if failure)
         """
         input = self._read_input(file)
-        result = logged_subprocess_run([self._executable] + self._options + passes, capture_output=True, input=input)
+        result = logged_subprocess_run(
+            [self._executable] + self._options + passes,
+            capture_output=True,
+            input=input,
+        )
         if result.returncode == 0:
             return result.stdout.decode()
-        err = MlirOptError(result.stderr.split(b'\n')[0])
+        err = MlirOptError(result.stderr.split(b"\n")[0])
         err.debug_result = self.debug_passes(input, passes)
         raise err
 
@@ -58,13 +65,19 @@ class MlirOptCli:
         stages = []
         saved_passes = []
         for p in passes:
-            saved_passes.append(p.lstrip('-'))
+            saved_passes.append(p.lstrip("-"))
             stages.append(input.decode())
-            result = logged_subprocess_run([self._executable, p], capture_output=True, input=input)
+            result = logged_subprocess_run(
+                [self._executable, p], capture_output=True, input=input
+            )
             if result.returncode == 0:
                 input = result.stdout
             else:
-                result = logged_subprocess_run([self._executable, '--mlir-print-debuginfo', p], capture_output=True, input=input)
+                result = logged_subprocess_run(
+                    [self._executable, "--mlir-print-debuginfo", p],
+                    capture_output=True,
+                    input=input,
+                )
                 stages.append(result.stderr.decode())
                 break
         else:
@@ -77,12 +90,16 @@ class DebugResult:
     def __init__(self, stages, passes, cli):
         self.stages = stages
         self.passes = passes
-        assert len(self.stages) == len(self.passes) + 1, "Stages must be one larger than passes"
+        assert (
+            len(self.stages) == len(self.passes) + 1
+        ), "Stages must be one larger than passes"
         self._cli = cli
 
     def __repr__(self):
         ret = [
-            self._add_banner(self.stages[-1], f"Error when running {self.passes[-1][2:]}")
+            self._add_banner(
+                self.stages[-1], f"Error when running {self.passes[-1][2:]}"
+            )
         ]
         for p, stage in zip(reversed(self.passes), reversed(self.stages[:-1])):
             if stage == self.stages[-2]:
@@ -99,9 +116,9 @@ class DebugResult:
         if len(trim_stages) < 2:
             raise TypeError("At least two stages are required")
         if item.stop is None:
-            trim_passes = self.passes[item.start:]
+            trim_passes = self.passes[item.start :]
         else:
-            trim_passes = self.passes[item.start:item.stop-1]
+            trim_passes = self.passes[item.start : item.stop - 1]
         return DebugResult(trim_stages, trim_passes, self._cli)
 
     def _find_pass_index(self, pass_):
@@ -119,6 +136,7 @@ class DebugResult:
         """
         if diffcmd is None:
             from . import config
+
             diffcmd = config.get("diff.executable", "vimdiff")
 
         ipass = self._find_pass_index(pass_)
@@ -135,12 +153,7 @@ class DebugResult:
     @classmethod
     def _add_banner(cls, data: str, banner_text: str, char: str = "=") -> str:
         width = len(banner_text) + 4
-        return (
-            f"{char * width}\n" +
-            f"  {banner_text}  \n" +
-            f"{char * width}\n" +
-            data
-        )
+        return f"{char * width}\n  {banner_text}  \n{char * width}\n" + data
 
     @classmethod
     def _add_row_column_numbers(cls, data: str) -> str:
@@ -150,16 +163,19 @@ class DebugResult:
 
         offset = int(math.log10(num_rows)) + 1
         colheader_ones = [str(n % 10) for n in range(1, num_cols + 1)]
-        colheader_tens = [" " * 9] + [f"{n:<10}" for n in range(1, num_cols + 1) if n % 10 == 0]
+        colheader_tens = [" " * 9] + [
+            f"{n:<10}" for n in range(1, num_cols + 1) if n % 10 == 0
+        ]
         ret = [
             f'{" " * offset} {"".join(colheader_tens)}',
             f'{" " * offset} {"".join(colheader_ones)}',
             f'{" " * offset} {"-" * len(colheader_ones)}',
         ]
         for i, line in enumerate(splitz, 1):
-            ret.append(f'{i:{offset}}|{line}')
+            ret.append(f"{i:{offset}}|{line}")
         return "\n".join(ret)
 
     def explore(self, embed=False):
         from .explorer import Explorer
+
         return Explorer(self).show(embed=embed)
