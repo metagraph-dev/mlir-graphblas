@@ -31,6 +31,15 @@ jobs:
         run: |
           conda install -q conda-build
           pip install -e .
+          echo "Debug 1"
+          which conda
+          echo "Debug 2"
+          echo $CONDA
+          conda install -q anaconda-client
+          echo "Debug 3"
+          which anaconda
+          echo "Debug 4"
+          echo $CONDA/bin/anaconda
       - name: Lint with Black
         run: |
           black mlir_graphblas *.py --check --diff
