@@ -93,7 +93,7 @@ jobs:
           cd ..
           # Install dependencies listed in built package
           # (This is a workaround because conda does not install dependencies for local file installs)
-          conda update -c defaults -c metagraph -c conda-forge mlir_graphblas
+          conda update -c defaults -c metagraph -c conda-forge mlir-graphblas
           conda list
       - name: Pytest
         run: |
