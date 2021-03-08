@@ -8,13 +8,9 @@ from functools import reduce
 from .cli import MlirOptCli, MlirOptError
 from typing import Tuple, List, Dict, Callable, Union
 
-# TODO sweep for uses  of  "dtype" and make sure they're acutally for dtypes and not numpy classes.
-
 llvm.initialize()
 llvm.initialize_native_target()
 llvm.initialize_native_asmprinter()
-
-# TODO if any of these global dictionaries are used in multiple places, see if we can abstract stuff out
 
 MLIR_FLOAT_ENUM_TO_NP_TYPE = {
     mlir.astnodes.FloatTypeEnum.f16: np.float16,
@@ -23,7 +19,7 @@ MLIR_FLOAT_ENUM_TO_NP_TYPE = {
     # TODO handle mlir.astnodes.FloatTypeEnum.bf16
 }
 
-INTEGER_WIDTH_TO_NP_TYPE = {  # TODO is there some nice accessor for this?
+INTEGER_WIDTH_TO_NP_TYPE = {  # TODO is there some nice accessor to get np.int* types from integers ?
     8: np.int8,
     16: np.int16,
     32: np.int32,
@@ -31,23 +27,7 @@ INTEGER_WIDTH_TO_NP_TYPE = {  # TODO is there some nice accessor for this?
     # TODO do we need np.longlong here?
 }
 
-
-def mlir_atomic_type_to_np_type(mlir_type: mlir.astnodes.Type) -> type:
-    # TODO Add a custom hash/eq method for mlir.astnodes.Node so that we can put
-    # all the mlir.astnodes.*Type instances into a dict
-    # it'll obviate the need for this function.
-    result = None
-    if isinstance(mlir_type, mlir.astnodes.FloatType):
-        result = MLIR_FLOAT_ENUM_TO_NP_TYPE[mlir_type.type]
-    elif isinstance(mlir_type, mlir.astnodes.IntegerType):
-        result = INTEGER_WIDTH_TO_NP_TYPE[int(mlir_type.width)]
-    # TODO handle other types, e.g. int
-    if result is None:
-        raise ValueError(f"Could not determine numpy type corresonding to {mlir_type}")
-    return result
-
-
-NP_D_TYPE_TO_CTYPES_TYPE = {
+NP_TYPE_TO_CTYPES_TYPE = {
     np.dtype(ctype).type: ctype
     for ctype in [  # from numpy.ctypeslib._get_scalar_type_map
         ctypes.c_byte,
@@ -66,33 +46,63 @@ NP_D_TYPE_TO_CTYPES_TYPE = {
     ]
 }
 
+
+def convert_mlir_atomic_type(
+    mlir_type: mlir.astnodes.Type, return_pointer_type: bool = False
+) -> Tuple[type, type]:
+    """
+    First return value is a subclass of _ctypes._CData .
+    Second return value is a subclass of np.generic .
+    """
+
+    # TODO Add a custom hash/eq method for mlir.astnodes.Node so that we can put
+    # all the mlir.astnodes.*Type instances into a dict
+    # it'll obviate the need for this section of code.
+    np_type = None
+    if isinstance(mlir_type, mlir.astnodes.FloatType):
+        np_type = MLIR_FLOAT_ENUM_TO_NP_TYPE[mlir_type.type]
+    elif isinstance(mlir_type, mlir.astnodes.IntegerType):
+        np_type = INTEGER_WIDTH_TO_NP_TYPE[int(mlir_type.width)]
+    if np_type is None:
+        raise ValueError(f"Could not determine numpy type corresonding to {mlir_type}")
+
+    ctypes_type = NP_TYPE_TO_CTYPES_TYPE[np_type]
+    if return_pointer_type:
+        ctypes_type = np.ctypeslib.ndpointer(np_type)
+
+    return np_type, ctypes_type
+
+
 ############################
 # MLIR Return Type Helpers #
 ############################
 
 
 def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
-    np_type = mlir_atomic_type_to_np_type(mlir_type)
-    ctypes_type = NP_D_TYPE_TO_CTYPES_TYPE[np_type]
-    decoder = lambda x: x  # TODO check the return type in the decoder
+    np_type, ctypes_type = convert_mlir_atomic_type(mlir_type)
+
+    def decoder(result):
+        if not np.can_cast(result, np_type):
+            raise TypeError(
+                f"Return value {result} expected to be castable to {np_type}."
+            )
+        return result
+
     return ctypes_type, decoder
 
 
 def return_tensor_to_ctypes(
     tensor_type: mlir.astnodes.RankedTensorType,
 ) -> Tuple[type, Callable]:
-    # TODO support unranked tensors
-    np_type = mlir_atomic_type_to_np_type(
-        tensor_type.element_type
-    )  # TODO can we use return_scalar_to_ctypes here?
-    ctypes_type = NP_D_TYPE_TO_CTYPES_TYPE[np_type]
+    np_type, ctypes_type = convert_mlir_atomic_type(tensor_type.element_type)
     fields = [
         ("alloc", ctypes.POINTER(ctypes_type)),
         ("base", ctypes.POINTER(ctypes_type)),
         ("offset", ctypes.c_int64),
     ]
+    rank = len(tensor_type.dimensions)
     for prefix in ("size", "stride"):
-        for i in range(len(tensor_type.dimensions)):
+        for i in range(rank):
             field = (f"{prefix}{i}", ctypes.c_int64)
             fields.append(field)
 
@@ -101,10 +111,10 @@ def return_tensor_to_ctypes(
 
     def decoder(result: CtypesType):
         if not isinstance(result, CtypesType):
-            raise TypeError(f"Incorrect return type for {result}")
-        dimensions = [dim.value for dim in tensor_type.dimensions]
-        if None in dimensions:  # TODO handle this case
-            raise NotImplementedError(f"Currently can't handle non-fixed-size outputs.")
+            raise TypeError(
+                f"Return value {result} expected to have type {CtypesType}."
+            )
+        dimensions = [getattr(result, f"size{dim_index}") for dim_index in range(rank)]
         element_count = reduce(operator.mul, dimensions)
         decoded_result = np.frombuffer(
             (ctypes_type * element_count).from_address(
@@ -136,10 +146,11 @@ def return_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable
 def input_tensor_to_ctypes(
     tensor_type: mlir.astnodes.RankedTensorType,
 ) -> Tuple[list, Callable]:
-    # TODO handle other tensor types
+
     input_c_types = []
-    np_type = mlir_atomic_type_to_np_type(tensor_type.element_type)
-    pointer_type = np.ctypeslib.ndpointer(np_type)
+    np_type, pointer_type = convert_mlir_atomic_type(
+        tensor_type.element_type, return_pointer_type=True
+    )
     input_c_types.append(pointer_type)  # allocated pointer (for free())
     input_c_types.append(pointer_type)  # base pointer
     input_c_types.append(ctypes.c_int64)  # offset from base
@@ -181,8 +192,7 @@ def input_tensor_to_ctypes(
 
 
 def input_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callable]:
-    np_type = mlir_atomic_type_to_np_type(mlir_type)
-    ctypes_type = NP_D_TYPE_TO_CTYPES_TYPE[np_type]
+    np_type, ctypes_type = convert_mlir_atomic_type(mlir_type)
     ctypes_input_types = [ctypes_type]
 
     def encoder(arg) -> list:
