@@ -131,4 +131,4 @@ jobs:
           ls -la .
           UPLOAD=`ls .`
           echo "Uploading $UPLOAD with label=${{ env.AC_LABEL }}"
-          $CONDA/bin/anaconda -t ${{ secrets.ANACONDA_ORG_TOKEN }} upload -u metagraph -l ${{ env.AC_LABEL }} --no-progress --force --register $UPLOAD
+          anaconda -t ${{ secrets.ANACONDA_ORG_TOKEN }} upload -u metagraph -l ${{ env.AC_LABEL }} --no-progress --force --register $UPLOAD
