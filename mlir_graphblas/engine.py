@@ -71,13 +71,13 @@ NP_D_TYPE_TO_CTYPES_TYPE = {
 ############################
 
 
-def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type):
+def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> type:
     np_type = mlir_atomic_type_to_np_type(mlir_type)
     ctypes_type = NP_D_TYPE_TO_CTYPES_TYPE[np_type]
     return ctypes_type
 
 
-def return_tensor_to_ctypes(tensor_type: mlir.astnodes.RankedTensorType):
+def return_tensor_to_ctypes(tensor_type: mlir.astnodes.RankedTensorType) -> type:
     # TODO support unranked tensors
     np_type = mlir_atomic_type_to_np_type(
         tensor_type.element_type
@@ -115,7 +115,7 @@ def return_type_to_ctypes(mlir_type: mlir.astnodes.Type):
 ###########################
 
 
-def input_tensor_to_ctypes(mlir_type: mlir.astnodes.RankedTensorType,) -> list:
+def input_tensor_to_ctypes(mlir_type: mlir.astnodes.RankedTensorType) -> list:
     # TODO handle other tensor types
     input_c_types = []
     np_type = mlir_atomic_type_to_np_type(mlir_type.element_type)
