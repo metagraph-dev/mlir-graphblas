@@ -67,6 +67,9 @@ jobs:
   test_pyver:
     runs-on: ubuntu-latest
     needs: build
+    defaults:
+      run:
+        shell: bash -l {0}
     strategy:
       matrix:
         pyver:
@@ -118,6 +121,7 @@ jobs:
       - name: Create env
         uses: conda-incubator/setup-miniconda@v2
       - name: Deploy to Anaconda Cloud
+        shell: bash -l {0}
         run: |
           conda install -q anaconda-client
           cd ./artifact_storage
