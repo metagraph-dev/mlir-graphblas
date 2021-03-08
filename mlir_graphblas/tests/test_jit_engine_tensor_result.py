@@ -1,13 +1,11 @@
-
 from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
 
 import mlir_graphblas
 import pytest
 import numpy as np
 
-TENSOR_RESULT_TEST_CASES = [ # elements are ( mlir_template, args, expected_result x)
-    
-    ( # fixed size tensor , fixed size tensor -> fixed size tensor
+TENSOR_RESULT_TEST_CASES = [  # elements are ( mlir_template, args, expected_result x)
+    (  # fixed size tensor , fixed size tensor -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -29,17 +27,10 @@ func @{func_name}(%arga: tensor<2x4x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
  return %answer : tensor<2x4x{mlir_type}>
 }}
 """,
-        [
-            np.arange(2*4).reshape((2,4)),
-            np.full([2,4], 10),
-        ],
-        np.array([
-            [10, 11, 12, 13],
-            [14, 15, 16, 17]
-        ])
+        [np.arange(2 * 4).reshape((2, 4)), np.full([2, 4], 10),],
+        np.array([[10, 11, 12, 13], [14, 15, 16, 17]]),
     ),
-    
-    ( # fixed size tensor , scalar -> fixed size tensor
+    (  # fixed size tensor , scalar -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -60,17 +51,10 @@ func @{func_name}(%arg_tensor: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}
  return %answer : tensor<2x4x{mlir_type}>
 }}
 """,
-        [
-            np.arange(2*4).reshape((2,4)),
-            2
-        ],
-        np.array([
-            [2, 3, 4, 5],
-            [6, 7, 8, 9]
-        ])
+        [np.arange(2 * 4).reshape((2, 4)), 2],
+        np.array([[2, 3, 4, 5], [6, 7, 8, 9]]),
     ),
-    
-    ( # scalar , fixed size tensor -> fixed size tensor
+    (  # scalar , fixed size tensor -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -91,18 +75,10 @@ func @{func_name}(%arg_scalar: {mlir_type}, %arg_tensor: tensor<2x4x{mlir_type}>
  return %answer : tensor<2x4x{mlir_type}>
 }}
 """,
-        [
-            2,
-            np.arange(2*4).reshape((2,4))
-        ],
-        np.array([
-            [2, 3, 4, 5],
-            [6, 7, 8, 9]
-        ])
+        [2, np.arange(2 * 4).reshape((2, 4))],
+        np.array([[2, 3, 4, 5], [6, 7, 8, 9]]),
     ),
-
-    
-    ( # fixed size tensor , scalar , fixed size tensor -> fixed size tensor
+    (  # fixed size tensor , scalar , fixed size tensor -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -125,46 +101,47 @@ func @{func_name}(%tensor_a: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}, 
  return %answer : tensor<2x4x{mlir_type}>
 }}
 """,
-        [
-            np.arange(2*4).reshape((2,4)),
-            2,
-            np.full([2,4], 10)
-        ],
-        np.array([
-            [12, 13, 14, 15],
-            [16, 17, 18, 19]
-        ])
+        [np.arange(2 * 4).reshape((2, 4)), 2, np.full([2, 4], 10)],
+        np.array([[12, 13, 14, 15], [16, 17, 18, 19]]),
     ),
 ]
 
+
 def test_jit_engine_tensor_result():
-    
+
     engine = mlir_graphblas.MlirJitEngine()
     for test_case_index, test_case in enumerate(TENSOR_RESULT_TEST_CASES):
         for mlir_type, np_type in MLIR_TYPE_TO_NP_TYPE.items():
             func_name = f"func_{test_case_index}_{mlir_type}"
-            
+
             if issubclass(np_type, np.integer):
-                linalg_add = 'addi'
+                linalg_add = "addi"
             elif issubclass(np_type, np.floating):
-                linalg_add = 'addf'
+                linalg_add = "addf"
             else:
                 raise ValueError(f"No MLIR type for {np_type}.")
-            
+
             mlir_template, args, expected_result = test_case
             mlir_text = mlir_template.format(
-                func_name=func_name,
-                mlir_type=mlir_type,
-                linalg_add=linalg_add
+                func_name=func_name, mlir_type=mlir_type, linalg_add=linalg_add
             )
-            args =  [arg.astype(np_type) if isinstance(arg, np.ndarray) else arg for arg in args]
-            expected_result = expected_result.astype(np_type) if isinstance(expected_result, np.ndarray) else expected_result
+            args = [
+                arg.astype(np_type) if isinstance(arg, np.ndarray) else arg
+                for arg in args
+            ]
+            expected_result = (
+                expected_result.astype(np_type)
+                if isinstance(expected_result, np.ndarray)
+                else expected_result
+            )
 
             engine.add(mlir_text, STANDARD_PASSES)
-        
+
             compiled_func = engine[func_name]
             result = compiled_func(*args)
-            assert np.all(result == expected_result), f"""
+            assert np.all(
+                result == expected_result
+            ), f"""
 Input MLIR: 
 {mlir_text}
 
