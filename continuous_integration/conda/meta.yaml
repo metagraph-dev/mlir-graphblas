@@ -17,8 +17,11 @@ requirements:
 
   run:
     - python
-    - grblas
     - mlir
+    - pymlir
+    - llvmlite
+    - pygments
+    - donfig
 
 test:
   requires:
