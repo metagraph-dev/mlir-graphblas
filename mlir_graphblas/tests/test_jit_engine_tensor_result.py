@@ -1,34 +1,13 @@
 
+from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
+
 import mlir_graphblas
 import pytest
 import numpy as np
 
-###########
-# Globals #
-###########
-
-STANDARD_PASSES = [
-    '--linalg-bufferize',
-    '--func-bufferize',
-    '--finalizing-bufferize',
-    '--convert-linalg-to-loops',
-    '--convert-scf-to-std',
-    '--convert-std-to-llvm',
-]
-
-MLIR_TYPE_TO_NP_TYPE = {
-    'i8': np.int8,
-    'i16': np.int16,
-    'i32': np.int32,
-    'i64': np.int64,
-    # 'f16': np.float16, # 16-bit floats don't seem to be supported in ctypes
-    'f32': np.float32,
-    'f64': np.float64,
-}
-
-TEST_CASES = [ # elements are ( mlir_template, args, expected_result x)
+TENSOR_RESULT_TEST_CASES = [ # elements are ( mlir_template, args, expected_result x)
     
-    ( # fixed size tensor + fixed size tensor -> fixed size tensor
+    ( # fixed size tensor , fixed size tensor -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -60,7 +39,7 @@ func @{func_name}(%arga: tensor<2x4x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
         ])
     ),
     
-    ( # fixed size tensor + scalar -> fixed size tensor
+    ( # fixed size tensor , scalar -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -91,7 +70,7 @@ func @{func_name}(%arg_tensor: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}
         ])
     ),
     
-    ( # scalar + fixed size tensor -> fixed size tensor
+    ( # scalar , fixed size tensor -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -123,10 +102,11 @@ func @{func_name}(%arg_scalar: {mlir_type}, %arg_tensor: tensor<2x4x{mlir_type}>
     ),
 
     
-    ( # fixed size tensor + scalar + fixed size tensor -> fixed size tensor
+    ( # fixed size tensor , scalar , fixed size tensor -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
+   affine_map<(i, j) -> (i, j)>,
    affine_map<(i, j) -> (i, j)>,
    affine_map<(i, j) -> (i, j)>
  ],
@@ -157,14 +137,10 @@ func @{func_name}(%tensor_a: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}, 
     ),
 ]
 
-#########
-# Tests #
-#########
-
-def test_jit_engine():
+def test_jit_engine_tensor_result():
     
     engine = mlir_graphblas.MlirJitEngine()
-    for test_case_index, test_case in enumerate(TEST_CASES):
+    for test_case_index, test_case in enumerate(TENSOR_RESULT_TEST_CASES):
         for mlir_type, np_type in MLIR_TYPE_TO_NP_TYPE.items():
             func_name = f"func_{test_case_index}_{mlir_type}"
             
@@ -182,8 +158,8 @@ def test_jit_engine():
                 linalg_add=linalg_add
             )
             args =  [arg.astype(np_type) if isinstance(arg, np.ndarray) else arg for arg in args]
-            expected_result =  expected_result.astype(np_type) if isinstance(expected_result, np.ndarray) else expected_result
-            
+            expected_result = expected_result.astype(np_type) if isinstance(expected_result, np.ndarray) else expected_result
+
             engine.add(mlir_text, STANDARD_PASSES)
         
             compiled_func = engine[func_name]

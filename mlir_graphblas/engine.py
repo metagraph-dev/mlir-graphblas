@@ -5,7 +5,6 @@ import operator
 import llvmlite.binding as llvm
 import numpy as np
 from functools import reduce
-from ctypes import CFUNCTYPE, Structure, POINTER, c_float, c_int64
 from .cli import MlirOptCli, MlirOptError
 from typing import List, Dict, Callable, Union
 
@@ -63,23 +62,24 @@ NP_D_TYPE_TO_CTYPES_TYPE = {
 
 def mlir_atomic_type_to_ctypes_return_type(mlir_type: mlir.astnodes.Type):
     """The term "atomic type"  means "non-tensor type"."""
-    raise NotImplementedError
-    return
+    np_type = mlir_atomic_type_to_np_type(mlir_type)
+    ctypes_type = NP_D_TYPE_TO_CTYPES_TYPE[np_type]
+    return ctypes_type
 
 def mlir_tensor_type_to_ctypes_return_type(tensor_type: mlir.astnodes.RankedTensorType):
      # TODO support unranked tensors
-    element_np_type = mlir_atomic_type_to_np_type(tensor_type.element_type)
+    element_np_type = mlir_atomic_type_to_np_type(tensor_type.element_type) # TODO can we use mlir_atomic_type_to_ctypes_return_type here?
     element_ctypes_type = NP_D_TYPE_TO_CTYPES_TYPE[element_np_type]
     fields = [
-        ("alloc", POINTER(element_ctypes_type)),
-        ("base", POINTER(element_ctypes_type)),
-        ("offset", c_int64),
+        ("alloc", ctypes.POINTER(element_ctypes_type)),
+        ("base", ctypes.POINTER(element_ctypes_type)),
+        ("offset", ctypes.c_int64),
     ]
     for prefix in ("size", "stride"):
         for i in range(len(tensor_type.dimensions)):
-            field = (f"{prefix}{i}", c_int64)
+            field = (f"{prefix}{i}", ctypes.c_int64)
             fields.append(field)
-    class CtypesType(Structure):
+    class CtypesType(ctypes.Structure):
         _fields_ = fields
     return CtypesType
 
@@ -109,9 +109,9 @@ def mlir_tensor_type_to_ctypes_input_types(mlir_type: mlir.astnodes.RankedTensor
     pointer_type = mlir_tensor_type_to_tensor_element_ctypes_pointer_type(mlir_type.element_type)
     input_c_types.append(pointer_type) # allocated pointer (for free())
     input_c_types.append(pointer_type) # base pointer
-    input_c_types.append(c_int64) # offset from base
+    input_c_types.append(ctypes.c_int64) # offset from base
     for _ in range(2*len(mlir_type.dimensions)): # dim sizes and strides
-        input_c_types.append(c_int64)
+        input_c_types.append(ctypes.c_int64)
     return input_c_types
 
 def mlir_atomic_type_to_ctypes_input_types(mlir_type: mlir.astnodes.Type) -> list:
@@ -161,7 +161,7 @@ class MlirJitEngine:
         for arg in mlir_function.args:
             ctypes_input_types += mlir_type_to_ctypes_input_types(arg.type)
         
-        c_callable = CFUNCTYPE(ctypes_return_type, *ctypes_input_types)(function_pointer)
+        c_callable = ctypes.CFUNCTYPE(ctypes_return_type, *ctypes_input_types)(function_pointer)
         
         def python_callable(*args):
             if len(args) != len(mlir_function.args):
