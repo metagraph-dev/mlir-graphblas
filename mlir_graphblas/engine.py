@@ -6,7 +6,7 @@ import llvmlite.binding as llvm
 import numpy as np
 from functools import reduce
 from .cli import MlirOptCli, MlirOptError
-from typing import List, Dict, Callable, Union
+from typing import Tuple, List, Dict, Callable, Union
 
 # TODO sweep for uses  of  "dtype" and make sure they're acutally for dtypes and not numpy classes.
 
@@ -71,13 +71,16 @@ NP_D_TYPE_TO_CTYPES_TYPE = {
 ############################
 
 
-def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> type:
+def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
     np_type = mlir_atomic_type_to_np_type(mlir_type)
     ctypes_type = NP_D_TYPE_TO_CTYPES_TYPE[np_type]
-    return ctypes_type
+    decoder = lambda x: x  # TODO check the return type in the decoder
+    return ctypes_type, decoder
 
 
-def return_tensor_to_ctypes(tensor_type: mlir.astnodes.RankedTensorType) -> type:
+def return_tensor_to_ctypes(
+    tensor_type: mlir.astnodes.RankedTensorType,
+) -> Tuple[type, Callable]:
     # TODO support unranked tensors
     np_type = mlir_atomic_type_to_np_type(
         tensor_type.element_type
@@ -96,10 +99,25 @@ def return_tensor_to_ctypes(tensor_type: mlir.astnodes.RankedTensorType) -> type
     class CtypesType(ctypes.Structure):
         _fields_ = fields
 
-    return CtypesType
+    def decoder(result: CtypesType):
+        if not isinstance(result, CtypesType):
+            raise TypeError(f"Incorrect return type for {result}")
+        dimensions = [dim.value for dim in tensor_type.dimensions]
+        if None in dimensions:  # TODO handle this case
+            raise NotImplementedError(f"Currently can't handle non-fixed-size outputs.")
+        element_count = reduce(operator.mul, dimensions)
+        decoded_result = np.frombuffer(
+            (ctypes_type * element_count).from_address(
+                ctypes.addressof(result.base.contents)
+            ),
+            dtype=np_type,
+        ).reshape(dimensions)
+        return decoded_result
+
+    return CtypesType, decoder
 
 
-def return_type_to_ctypes(mlir_type: mlir.astnodes.Type):
+def return_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
     """Returns a ctypes type for the given MLIR type."""
     # TODO handle all other child classes of mlir.astnodes.Type
     # TODO consider inlining this if it only has 2 cases
@@ -115,27 +133,67 @@ def return_type_to_ctypes(mlir_type: mlir.astnodes.Type):
 ###########################
 
 
-def input_tensor_to_ctypes(mlir_type: mlir.astnodes.RankedTensorType) -> list:
+def input_tensor_to_ctypes(
+    tensor_type: mlir.astnodes.RankedTensorType,
+) -> Tuple[list, Callable]:
     # TODO handle other tensor types
     input_c_types = []
-    np_type = mlir_atomic_type_to_np_type(mlir_type.element_type)
+    np_type = mlir_atomic_type_to_np_type(tensor_type.element_type)
     pointer_type = np.ctypeslib.ndpointer(np_type)
     input_c_types.append(pointer_type)  # allocated pointer (for free())
     input_c_types.append(pointer_type)  # base pointer
     input_c_types.append(ctypes.c_int64)  # offset from base
-    for _ in range(2 * len(mlir_type.dimensions)):  # dim sizes and strides
+    for _ in range(2 * len(tensor_type.dimensions)):  # dim sizes and strides
         input_c_types.append(ctypes.c_int64)
-    return input_c_types
+
+    dimensions = [dim.value for dim in tensor_type.dimensions]
+
+    def encoder(arg: np.ndarray) -> list:
+        if not isinstance(arg, np.ndarray):
+            raise TypeError(f"{arg} is expected to be an instance of {np.ndarray}")
+        if not arg.dtype == np_type:
+            raise TypeError(f"{arg} is expected to have dtype {np_type}")
+        if not len(dimensions) == len(arg.shape):
+            raise ValueError(
+                f"{arg} is expected to have rank {len(dimensions)} but has rank {len(arg.shape)}."
+            )
+
+        encoded_args = [arg, arg, 0]
+
+        for dim_index, dim_size in enumerate(arg.shape):
+            expected_dim_size = dimensions[dim_index]
+            if (
+                expected_dim_size is not None
+                and arg.shape[dim_index] != expected_dim_size
+            ):
+                raise ValueError(
+                    f"{arg} is expected to have size {expected_dim_size} in the {dim_index}th dimension but has size {arg.shape[dim_index]}."
+                )
+            encoded_args.append(arg.shape[dim_index])
+
+        for dimension_index in range(len(arg.shape)):
+            stride = arg.strides[dimension_index] // arg.itemsize
+            encoded_args.append(stride)
+
+        return encoded_args
+
+    return input_c_types, encoder
 
 
-def input_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> list:
+def input_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callable]:
     np_type = mlir_atomic_type_to_np_type(mlir_type)
     ctypes_type = NP_D_TYPE_TO_CTYPES_TYPE[np_type]
     ctypes_input_types = [ctypes_type]
-    return ctypes_input_types
+
+    def encoder(arg) -> list:
+        if not np.can_cast(arg, np_type):
+            raise TypeError(f"{arg} cannot be cast to {np_type}")
+        return [arg]
+
+    return ctypes_input_types, encoder
 
 
-def input_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> list:
+def input_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callable]:
     # TODO handle all other child classes of mlir.astnodes.Type
     # TODO consider inlining this if it only has 2 cases
     if isinstance(mlir_type, mlir.astnodes.RankedTensorType):
@@ -175,11 +233,14 @@ class MlirJitEngine:
             )
 
         mlir_result_type = mlir_function.result_types
-        ctypes_return_type = return_type_to_ctypes(mlir_result_type)
+        ctypes_return_type, decoder = return_type_to_ctypes(mlir_result_type)
 
         ctypes_input_types = []
+        encoders: List[Callable] = []
         for arg in mlir_function.args:
-            ctypes_input_types += input_type_to_ctypes(arg.type)
+            arg_ctypes_input_types, encoder = input_type_to_ctypes(arg.type)
+            ctypes_input_types += arg_ctypes_input_types
+            encoders.append(encoder)
 
         c_callable = ctypes.CFUNCTYPE(ctypes_return_type, *ctypes_input_types)(
             function_pointer
@@ -190,48 +251,11 @@ class MlirJitEngine:
                 raise ValueError(
                     f"{name} expected {len(mlir_function.args)} args but got {len(args)}."
                 )
-            updated_args = []
-            for arg_index, (arg, mlir_arg) in enumerate(zip(args, mlir_function.args)):
-                if isinstance(mlir_arg.type, mlir.astnodes.RankedTensorType):
-                    if not isinstance(arg, np.ndarray):
-                        raise TypeError(
-                            f"Argument {arg_index} expected to be a numpy array."
-                        )
-                    # TODO check the dtype as well
-                    # TODO check the dimensions
-                    # TODO check if the expected mlir type is tensor<?xf32> that we get a numpy array
-                    updated_args.append(arg)  # allocated pointer (for free())
-                    updated_args.append(arg)  # base pointer
-                    updated_args.append(0)  # offset from base
-                    for dimension_size in arg.shape:
-                        updated_args.append(arg.shape[0])
-                    for dimension_index in range(len(arg.shape)):
-                        updated_args.append(
-                            arg.strides[dimension_index] // arg.itemsize
-                        )
-                else:
-                    # TODO check this type
-                    updated_args.append(arg)
-            result = c_callable(*updated_args)
-            if isinstance(mlir_result_type, mlir.astnodes.RankedTensorType):
-                dtype = mlir_atomic_type_to_np_type(
-                    mlir_result_type.element_type
-                )  # TODO can we use input_type_to_ctypes here?
-                ctypes_type = NP_D_TYPE_TO_CTYPES_TYPE[dtype]
-                dimensions = [
-                    dimension.value for dimension in mlir_result_type.dimensions
-                ]
-                if None in dimensions:  # TODO handle this case
-                    raise NotImplementedError(
-                        f"Currently can't handle non-fixed-size outputs."
-                    )
-                element_count = reduce(operator.mul, dimensions)
-                result = np.frombuffer(
-                    (ctypes_type * element_count).from_address(
-                        ctypes.addressof(result.base.contents)
-                    ),
-                    dtype=dtype,
-                ).reshape(dimensions)
+            encoded_args = (encoder(arg) for arg, encoder in zip(args, encoders))
+            encoded_args = reduce(operator.add, encoded_args)
+            result = c_callable(*encoded_args)
+            result = decoder(result)
+
             return result
 
         return python_callable
