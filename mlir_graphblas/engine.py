@@ -84,8 +84,8 @@ def return_tensor_to_ctypes(tensor_type: mlir.astnodes.RankedTensorType):
     )  # TODO can we use return_scalar_to_ctypes here?
     ctypes_type = NP_D_TYPE_TO_CTYPES_TYPE[np_type]
     fields = [
-        ("alloc", ctypes.POINTER(element_ctypes_type)),
-        ("base", ctypes.POINTER(element_ctypes_type)),
+        ("alloc", ctypes.POINTER(ctypes_type)),
+        ("base", ctypes.POINTER(ctypes_type)),
         ("offset", ctypes.c_int64),
     ]
     for prefix in ("size", "stride"):
