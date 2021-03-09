@@ -23,6 +23,7 @@ requirements:
     - pygments
     - donfig
     - panel
+    - numpy
     - bokeh<2.3  # temp restriction until panel/bokeh bugs are worked out
 
 test:
