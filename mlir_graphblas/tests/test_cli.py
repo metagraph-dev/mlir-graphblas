@@ -30,15 +30,17 @@ func @scale_func(%input: tensor<?xf32>, %scale: f32) -> tensor<?xf32> {
 def test_apply_passes(cli_input):
     cli = MlirOptCli()
     passes = [
-        '--linalg-bufferize',
-        '--func-bufferize',
-        '--finalizing-bufferize',
-        '--convert-linalg-to-affine-loops',
-        '--lower-affine',
-        '--convert-scf-to-std',
+        "--linalg-bufferize",
+        "--func-bufferize",
+        "--finalizing-bufferize",
+        "--convert-linalg-to-affine-loops",
+        "--lower-affine",
+        "--convert-scf-to-std",
     ]
     result = cli.apply_passes(cli_input, passes)
-    assert result == """\
+    assert (
+        result
+        == """\
 module  {
   func @scale_func(%arg0: memref<?xf32>, %arg1: f32) -> memref<?xf32> {
     %c0 = constant 0 : index
@@ -63,28 +65,31 @@ module  {
 }
 
 """
+    )
 
 
 def test_apply_passes_fails(cli_input):
     cli = MlirOptCli()
-    passes = ['--linalg-bufferize']
-    cli_input = cli_input.replace(b'return %0 : tensor<?xf32>', b'return %0 : memref<?xf32>')
+    passes = ["--linalg-bufferize"]
+    cli_input = cli_input.replace(
+        b"return %0 : tensor<?xf32>", b"return %0 : memref<?xf32>"
+    )
     with pytest.raises(MlirOptError) as excinfo:
         cli.apply_passes(cli_input, passes)
     err = excinfo.value
-    assert hasattr(err, 'debug_result')
+    assert hasattr(err, "debug_result")
     assert isinstance(err.debug_result, DebugResult)
 
 
 def test_debug_passes(cli_input):
     cli = MlirOptCli()
     passes = [
-        '--linalg-bufferize',
-        '--func-bufferize',
-        '--finalizing-bufferize',
-        '--convert-linalg-to-affine-loops',
-        '--lower-affine',
-        '--convert-scf-to-std',
+        "--linalg-bufferize",
+        "--func-bufferize",
+        "--finalizing-bufferize",
+        "--convert-linalg-to-affine-loops",
+        "--lower-affine",
+        "--convert-scf-to-std",
     ]
     result = cli.debug_passes(cli_input, passes)
     assert isinstance(result, DebugResult)

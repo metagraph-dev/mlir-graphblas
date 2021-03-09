@@ -283,12 +283,12 @@ class MlirJitEngine:
                 return e.debug_result
         else:
             llvmir_text = self._cli.apply_passes(mlir_text, passes)
-        mlir_translate_process = subprocess.run(
+        mlir_translate_run = subprocess.run(
             ["mlir-translate", "--mlir-to-llvmir"],
             input=llvmir_text.encode(),
             capture_output=True,
         )
-        llvm_text = mlir_translate_process.stdout.decode()
+        llvm_text = mlir_translate_run.stdout.decode()
         # Create a LLVM module object from the IR
         mod = llvm.parse_assembly(llvm_text)
         mod.verify()

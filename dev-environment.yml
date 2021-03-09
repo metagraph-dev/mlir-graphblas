@@ -10,12 +10,20 @@ dependencies:
   - coverage
   - pytest
   - pytest-cov
-  - black=19.10b0
+  - black
 
+# documentation
+  - sphinx=3.0.4
+  - nbsphinx
+  - notebook
+  - conda-forge::pydata-sphinx-theme
+  - pip
+  - pip:
+      - rst2pdf
 
 # dependencies (so setup.py develop doesn't pip install them)
   - metagraph::mlir
-  - pymlir
+  - metagraph::pymlir
   - llvmlite
   - donfig
   - pygments

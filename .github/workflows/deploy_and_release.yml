@@ -1,0 +1,28 @@
+name: Deploy Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  deploy_pypi:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          activate-environment: mg
+          environment-file: continuous_integration/environment.yml
+      - name: Build
+        shell: bash -l {0}
+        run: |
+          pip install -e .
+          python setup.py sdist bdist_wheel
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@master
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_SECRET }}

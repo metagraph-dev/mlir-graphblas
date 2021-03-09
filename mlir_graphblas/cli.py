@@ -97,9 +97,7 @@ class DebugResult:
 
     def __repr__(self):
         ret = [
-            self._add_banner(
-                self.stages[-1], f"Error when running {self.passes[-1][2:]}"
-            )
+            self._add_banner(self.stages[-1], f"Error when running {self.passes[-1]}")
         ]
         for p, stage in zip(reversed(self.passes), reversed(self.stages[:-1])):
             if stage == self.stages[-2]:
@@ -153,7 +151,7 @@ class DebugResult:
     @classmethod
     def _add_banner(cls, data: str, banner_text: str, char: str = "=") -> str:
         width = len(banner_text) + 4
-        return f"{char * width}\n" + f"  {banner_text}  \n" + f"{char * width}\n" + data
+        return f"{char * width}\n  {banner_text}  \n{char * width}\n" + data
 
     @classmethod
     def _add_row_column_numbers(cls, data: str) -> str:
