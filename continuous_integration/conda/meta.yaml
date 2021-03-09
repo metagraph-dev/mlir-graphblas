@@ -22,6 +22,8 @@ requirements:
     - llvmlite
     - pygments
     - donfig
+    - panel
+    - bokeh<2.3  # temp restriction until panel/bokeh bugs are worked out
 
 test:
   requires:
