@@ -300,7 +300,7 @@ class MlirJitEngine:
         # Generate Python callables
         mlir_ast = mlir.parse_string(mlir_text.decode())
         mlir_functions = filter(
-            lambda e: isinstance(e, mlir.astnodes.Function), mlir_ast.body
+            lambda e: isinstance(e, mlir.astnodes.Function) and e.visibility == "public", mlir_ast.body
         )
         function_names: List[str] = []
         for mlir_function in mlir_functions:
