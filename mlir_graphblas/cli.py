@@ -73,8 +73,13 @@ class MlirOptCli:
             if result.returncode == 0:
                 input = result.stdout
             else:
+                options = self._options
+                debug_str = "--mlir-print-debuginfo"
+                if debug_str not in self._options:
+                    options = options.copy()
+                    options.append(debug_str)
                 result = logged_subprocess_run(
-                    [self._executable, "--mlir-print-debuginfo", p],
+                    [self._executable] + options + [p],
                     capture_output=True,
                     input=input,
                 )

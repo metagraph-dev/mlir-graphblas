@@ -27,3 +27,5 @@ dependencies:
   - llvmlite
   - donfig
   - pygments
+  - panel
+  - bokeh<2.3  # temp restriction until panel/bokeh bugs are worked out
