@@ -1,10 +1,12 @@
 cimport cython
 import numpy as np
 cimport numpy as np
-from libc.stdint cimport uint64_t, uintptr_t
+from libc.stdint cimport uint32_t, uint64_t, uintptr_t
 from libc.stdlib cimport malloc, free
 from libcpp.vector cimport vector
 from libcpp cimport bool
+from numpy cimport float32_t, float64_t
+
 
 cdef extern from "SparseUtils.cpp":
     cdef cppclass SparseTensor:
@@ -21,7 +23,23 @@ cdef extern from "SparseUtils.cpp":
         void getIndices(vector[I] **, uint64_t)
         void getValues(vector[V] **)
 
+    cdef struct MemRef1DF32:
+        const float *base
+        const float *data
+        uint64_t off
+        uint64_t sizes[1]
+        uint64_t strides[1]
+
+    cdef struct MemRef1DF64:
+        const double *base
+        const double *data
+        uint64_t off
+        uint64_t sizes[1]
+        uint64_t strides[1]
+
     void delSparseTensor(void *)
+    MemRef1DF32 sparseValuesF32(void *)
+    MemRef1DF64 sparseValuesF64(void *)
 
 
 def myfunc():
@@ -36,13 +54,24 @@ def myfunc():
     del st
 
 
+# st for "sparse tensor"
+ctypedef fused st_index_t:
+    uint32_t
+    uint64_t
+
+ctypedef fused st_value_t:
+    float32_t
+    float64_t
+
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
 cpdef uintptr_t build_sparse_tensor(
-    uint64_t[:, :] indices, # N x D
-    np.float64_t[:] values, # N
-    uint64_t[:] sizes,      # D
-    bool[:] sparsity,       # D
+    st_index_t[:, :] indices,  # N x D
+    st_value_t[:] values,      # N
+    uint64_t[:] sizes,         # D
+    bool[:] sparsity,          # D
+    ptr_type=np.uint64,
 ) except 0:
     cdef np.intp_t N = values.shape[0]  # number of values
     cdef np.intp_t D = sizes.shape[0]  # rank, number of dimensions
@@ -60,6 +89,9 @@ cpdef uintptr_t build_sparse_tensor(
             'Second dimension of indices array must match length of sparsity and sizes arrays: '
             f'{indices.shape[1]} != {D}'
         )
+    cdef int ptr_type_num = np.dtype(ptr_type).num
+    if ptr_type_num != np.NPY_UINT32 and ptr_type_num != np.NPY_UINT64:
+        raise TypeError(f"ptr_type must be np.uint32 or np.uint64, not: {ptr_type}")
 
     cdef vector[uint64_t] sizes_vector = vector[uint64_t](D)
     for i in range(D):
@@ -78,22 +110,24 @@ cpdef uintptr_t build_sparse_tensor(
     cdef bool *sparsity_array = <bool*>malloc(sizeof(bool) * D)
     for i in range(D):
         sparsity_array[i] = sparsity[i]
-    cdef SparseTensorStorage[uint64_t, uint64_t, double] *rv = (
-        new SparseTensorStorage[uint64_t, uint64_t, double](tensor, sparsity_array)
-    )
+    cdef uintptr_t rv
+    if ptr_type_num == np.NPY_UINT32:
+        rv = <uintptr_t>(new SparseTensorStorage[uint32_t, st_index_t, st_value_t](tensor, sparsity_array))
+    else:
+        rv = <uintptr_t>(new SparseTensorStorage[uint64_t, st_index_t, st_value_t](tensor, sparsity_array))
     free(sparsity_array)
     del tensor
-    return <uintptr_t>rv
+    return rv
 
 
 def run_example():
     cdef np.ndarray[uint64_t, ndim=2] indices = np.array([[0, 0], [1, 1]], dtype=np.uint64)
-    cdef np.ndarray[np.float64_t, ndim=1] values = np.array([1.2, 3.4], dtype=np.float64)
+    cdef np.ndarray[float64_t, ndim=1] values = np.array([1.2, 3.4], dtype=np.float64)
     cdef np.ndarray[uint64_t, ndim=1] sizes = np.array([2, 2], dtype=np.uint64)
     cdef np.ndarray[bool, ndim=1] sparsity = np.array([True, True], dtype=np.bool8)
-    cdef uintptr_t ptr = build_sparse_tensor(indices, values, sizes, sparsity)
-    cdef SparseTensorStorage[uint64_t, uint64_t, double] *tensor = (
-        <SparseTensorStorage[uint64_t, uint64_t, double]*>ptr
+    cdef uintptr_t ptr = build_sparse_tensor[uint64_t, float64_t](indices, values, sizes, sparsity)
+    cdef SparseTensorStorage[uint64_t, uint64_t, float64_t] *tensor = (
+        <SparseTensorStorage[uint64_t, uint64_t, float64_t]*>ptr
     )
     print('rank:', tensor.getRank())
     print('dim sizes:', tensor.getDimSize(0), tensor.getDimSize(1))
@@ -117,5 +151,17 @@ def run_example():
     tensor.getValues(&val_ptr)
     print(' ', val_ptr[0])
 
+    cdef MemRef1DF64 x64 = sparseValuesF64(tensor)
+    print('sparseValuesF64:', x64.off, x64.sizes, x64.strides)
+
+    ptr = build_sparse_tensor[uint64_t, float32_t](indices, values.astype(np.float32), sizes, sparsity)
+    cdef SparseTensorStorage[uint64_t, uint64_t, float32_t] *tensor32 = (
+        <SparseTensorStorage[uint64_t, uint64_t, float32_t]*>ptr
+    )
+    cdef MemRef1DF32 x32 = sparseValuesF32(tensor32)
+    print('AA')
+    print('sparseValuesF32:', x32.off, x32.sizes, x32.strides)
+
+    # x64 = sparseValuesF64(tensor32)
     return ptr
 
