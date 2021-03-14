@@ -5,10 +5,42 @@ from libc.stdint cimport uint32_t, uint64_t, uintptr_t
 from libc.stdlib cimport malloc, free
 from libcpp.vector cimport vector
 from libcpp cimport bool
-from numpy cimport float32_t, float64_t
+from numpy cimport float32_t, float64_t, intp_t, ndarray
+
+np.import_array()
+
+cdef extern from "numpy/arrayobject.h" nogil:
+    void PyArray_ENABLEFLAGS(ndarray, int flags)
+    void PyArray_CLEARFLAGS(ndarray, int flags)
 
 
-cdef extern from "SparseUtils.cpp":
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cpdef ndarray claim_buffer(uintptr_t ptr, shape, strides, dtype):
+    cdef intp_t[:] shape_array = np.ascontiguousarray(shape, dtype=np.intp)
+    cdef intp_t[:] strides_array = np.ascontiguousarray(strides, dtype=np.intp)
+    cdef intp_t D = shape_array.shape[0]  # number of dimensions
+    if strides_array.shape[0] != D:
+        raise ValueError(
+            f'Length of shape and strides arrays must match: {shape_array.shape[0]} != {strides_array.shape[0]}'
+        )
+    cdef int typenum = np.dtype(dtype).num  # is there a better way to do this?
+    cdef ndarray array = np.PyArray_New(
+        ndarray,
+        D,
+        &shape_array[0],
+        typenum,
+        &strides_array[0],
+        <void*>ptr,
+        -1,  # itemsize; ignored if the type always has the same number of bytes
+        np.NPY_ARRAY_WRITEABLE,  # yay or nay?
+        <object>NULL
+    )
+    PyArray_ENABLEFLAGS(array, np.NPY_ARRAY_OWNDATA)
+    return array
+
+
+cdef extern from "SparseUtils.cpp" nogil:
     cdef cppclass SparseTensor:
         SparseTensor(vector[uint64_t], uint64_t) except +
         void add(const vector[uint64_t], double)
@@ -73,8 +105,8 @@ cpdef uintptr_t build_sparse_tensor(
     bool[:] sparsity,          # D
     ptr_type=np.uint64,
 ) except 0:
-    cdef np.intp_t N = values.shape[0]  # number of values
-    cdef np.intp_t D = sizes.shape[0]  # rank, number of dimensions
+    cdef intp_t N = values.shape[0]  # number of values
+    cdef intp_t D = sizes.shape[0]  # rank, number of dimensions
     if sparsity.shape[0] != D:
         raise ValueError(
             f'Length of sizes and sparsity arrays must match: {sizes.shape[0]} != {sparsity.shape[0]}'
@@ -121,10 +153,10 @@ cpdef uintptr_t build_sparse_tensor(
 
 
 def run_example():
-    cdef np.ndarray[uint64_t, ndim=2] indices = np.array([[0, 0], [1, 1]], dtype=np.uint64)
-    cdef np.ndarray[float64_t, ndim=1] values = np.array([1.2, 3.4], dtype=np.float64)
-    cdef np.ndarray[uint64_t, ndim=1] sizes = np.array([2, 2], dtype=np.uint64)
-    cdef np.ndarray[bool, ndim=1] sparsity = np.array([True, True], dtype=np.bool8)
+    cdef ndarray[uint64_t, ndim=2] indices = np.array([[0, 0], [1, 1]], dtype=np.uint64)
+    cdef ndarray[float64_t, ndim=1] values = np.array([1.2, 3.4], dtype=np.float64)
+    cdef ndarray[uint64_t, ndim=1] sizes = np.array([2, 2], dtype=np.uint64)
+    cdef ndarray[bool, ndim=1] sparsity = np.array([True, True], dtype=np.bool8)
     cdef uintptr_t ptr = build_sparse_tensor[uint64_t, float64_t](indices, values, sizes, sparsity)
     cdef SparseTensorStorage[uint64_t, uint64_t, float64_t] *tensor = (
         <SparseTensorStorage[uint64_t, uint64_t, float64_t]*>ptr
