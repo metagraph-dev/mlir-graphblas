@@ -1,3 +1,4 @@
+import os
 import subprocess
 import mlir
 import ctypes
@@ -8,6 +9,9 @@ from functools import reduce
 from .cli import MlirOptCli, MlirOptError
 from typing import Tuple, List, Dict, Callable, Union
 
+_CURRENT_MODULE_DIR = os.path.dirname(__file__)
+_SPARSE_UTILS_SO = os.path.join(_CURRENT_MODULE_DIR, 'SparseUtils.so')
+llvm.load_library_permanently(_SPARSE_UTILS_SO)
 llvm.initialize()
 llvm.initialize_native_target()
 llvm.initialize_native_asmprinter()
@@ -51,8 +55,8 @@ def convert_mlir_atomic_type(
     mlir_type: mlir.astnodes.Type, return_pointer_type: bool = False
 ) -> Tuple[type, type]:
     """
-    First return value is a subclass of _ctypes._CData .
-    Second return value is a subclass of np.generic .
+    First return value is a subclass of np.generic .
+    Second return value is a subclass of _ctypes._CData .
     """
 
     # TODO Add a custom hash/eq method for mlir.astnodes.Node so that we can put
@@ -66,9 +70,7 @@ def convert_mlir_atomic_type(
     if np_type is None:
         raise ValueError(f"Could not determine numpy type corresonding to {mlir_type}")
 
-    ctypes_type = NP_TYPE_TO_CTYPES_TYPE[np_type]
-    if return_pointer_type:
-        ctypes_type = np.ctypeslib.ndpointer(np_type)
+    ctypes_type = np.ctypeslib.ndpointer(np_type) if return_pointer_type else NP_TYPE_TO_CTYPES_TYPE[np_type]
 
     return np_type, ctypes_type
 
@@ -206,7 +208,18 @@ def input_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callabl
 def input_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callable]:
     # TODO handle all other child classes of mlir.astnodes.Type
     # TODO consider inlining this if it only has 2 cases
-    if isinstance(mlir_type, mlir.astnodes.RankedTensorType):
+    
+    if isinstance(mlir_type, mlir.astnodes.TypeAlias):
+        # TODO hacky given MLIR's unstable sparse tensor functionality
+        if mlir_type.value == 'SparseTensor':
+            c_int8_p = ctypes.POINTER(ctypes.c_int8)
+            ctypes_input_types = [c_int8_p]
+            def encoder(arg) -> list:
+                if not isinstance(arg, c_int8_p):
+                    raise TypeError(f"{arg} must be an instance of {c_int8_p}")
+                return [arg]
+            result = (ctypes_input_types, encoder)
+    elif isinstance(mlir_type, mlir.astnodes.RankedTensorType):
         result = input_tensor_to_ctypes(mlir_type)
     else:
         result = input_scalar_to_ctypes(mlir_type)

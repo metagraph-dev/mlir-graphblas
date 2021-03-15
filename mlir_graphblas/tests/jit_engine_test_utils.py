@@ -1,6 +1,7 @@
 import numpy as np
 
 STANDARD_PASSES = [
+    "--test-sparsification=lower",
     "--linalg-bufferize",
     "--func-bufferize",
     "--tensor-bufferize",

@@ -1,10 +1,12 @@
 from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
 
 import mlir_graphblas
+import mlir_graphblas.wrap
 import pytest
 import numpy as np
 
-TEST_CASES = [  # elements are ( mlir_template, args, expected_result x)
+SIMPLE_TEST_CASES = [  # elements are ( mlir_template, args, expected_result x)
+    
     (  # arbitrary size tensor , arbitrary size tensor -> arbitrary size tensor
         """
 #trait_add = {{
@@ -188,7 +190,7 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x{mlir_type}>, %arg1: ten
 def test_jit_engine_tensor_result():
 
     engine = mlir_graphblas.MlirJitEngine()
-    for test_case_index, test_case in enumerate(TEST_CASES):
+    for test_case_index, test_case in enumerate(SIMPLE_TEST_CASES):
         for mlir_type, np_type in MLIR_TYPE_TO_NP_TYPE.items():
             func_name = f"func_{test_case_index}_{mlir_type}"
 
@@ -220,6 +222,68 @@ def test_jit_engine_tensor_result():
             assert np.all(
                 result == expected_result
             ), f"""
+Input MLIR: 
+{mlir_text}
+
+Inputs: {args}
+Result: {result}
+Expected Result: {expected_result}
+"""
+
+def test_jit_engine_sparse_tensor():
+
+    engine = mlir_graphblas.MlirJitEngine()
+    
+    mlir_text = r"""
+
+#trait_sum_reduction = {
+  indexing_maps = [
+    affine_map<(i,j,k) -> (i,j,k)>,  // A
+    affine_map<(i,j,k) -> ()>        // x (scalar out)
+  ],
+  sparse = [
+    [ "S", "S", "S" ],  // A
+    [ ]                 // x
+  ],
+  iterator_types = ["reduction", "reduction", "reduction"],
+  doc = "x += SUM_ijk A(i,j,k)"
+}
+
+!SparseTensor = type !llvm.ptr<i8>
+
+func @sum_reduction(%argA: !SparseTensor, %argx: tensor<f32>) -> f32 {
+  %arga = linalg.sparse_tensor %argA : !SparseTensor to tensor<10x20x30xf32>
+  %reduction = linalg.generic #trait_sum_reduction
+     ins(%arga: tensor<10x20x30xf32>)
+    outs(%argx: tensor<f32>) {
+      ^bb(%a: f32, %x: f32):
+        %0 = addf %x, %a : f32
+        linalg.yield %0 : f32
+  } -> tensor<f32>
+  %answer = tensor.extract %reduction[] : tensor<f32>
+  return %answer : f32
+}
+
+"""
+
+    indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
+    values = np.array([1.2, 3.4], dtype=np.float32)
+    sizes = np.array([10, 20, 30], dtype=np.uint64)
+    sparsity = np.array([True, True, True], dtype=np.bool8)
+    sparse_tensor_ptr = mlir_graphblas.wrap.build_sparse_tensor(indices, values, sizes, sparsity)
+
+    import ctypes # TODO using ctypes here is not desired
+    c_int8_p = ctypes.POINTER(ctypes.c_int8)
+    a = ctypes.cast(sparse_tensor_ptr, c_int8_p)
+    x = np.array(0.0, dtype=np.float32)
+    args = [a, x]
+    
+    expected_result = 4.6
+    
+    engine.add(mlir_text, STANDARD_PASSES)
+    
+    result = engine.sum_reduction(*args)
+    assert abs(result - expected_result) < 1e-6, f"""
 Input MLIR: 
 {mlir_text}
 

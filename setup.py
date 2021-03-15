@@ -48,7 +48,7 @@ class CompileSparseUtilsSharedObjectCommand(distutils.cmd.Command):
         
         self.announce(f'Compiling {self.sparse_utils_cpp_location}.', level=distutils.log.INFO)
         include_options = f"-I{os.environ['CONDA_PREFIX']}/include" if 'CONDA_PREFIX' in os.environ else ''
-        compile_command = f'g++ -c -Wall -Werror -fpic {include_options} {self.sparse_utils_cpp_location} && g++ -shared -o SparseUtils.so SparseUtils.o'
+        compile_command = f'g++ -c -Wall -Werror -fpic {include_options} {self.sparse_utils_cpp_location} && g++ -shared -o ./mlir_graphblas/SparseUtils.so SparseUtils.o'
         process = subprocess.Popen(
             '/bin/bash',
             stdin=subprocess.PIPE,
