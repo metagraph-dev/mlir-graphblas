@@ -294,7 +294,9 @@ func @{func_name}(%argA: !SparseTensor, %argx: tensor<{mlir_type}>) -> {mlir_typ
         sizes = np.array([10, 20, 30], dtype=np.uint64)
         sparsity = np.array([True, True, True], dtype=np.bool8)
 
-        a = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
+        a = mlir_graphblas.sparse_utils.MLIRSparseTensor(
+            indices, values, sizes, sparsity
+        )
         x = np.array(0.0, dtype=np_type)
         args = [a, x]
 
