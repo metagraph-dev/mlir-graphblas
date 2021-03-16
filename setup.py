@@ -1,4 +1,6 @@
+
 import os
+import sys
 import subprocess
 import distutils
 import numpy as np
@@ -15,11 +17,8 @@ directive_defaults = get_directive_defaults()
 directive_defaults["binding"] = True
 directive_defaults["language_level"] = 3
 
-include_dirs = [np.get_include()]
-if "CONDA_PREFIX" in os.environ:
-    conda_include_dir = os.environ["CONDA_PREFIX"]
-    conda_include_dir = os.path.join(conda_include_dir, "include")
-    include_dirs.append(conda_include_dir)
+environment_include_dir = os.path.join(sys.exec_prefix, "include")
+include_dirs = [np.get_include(), environment_include_dir]
 define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
 annotate = True  # Creates html file
 
@@ -49,12 +48,7 @@ class CompileSparseUtilsSharedObjectCommand(distutils.cmd.Command):
         self.announce(
             f"Compiling {self.sparse_utils_cpp_location}.", level=distutils.log.INFO
         )
-        include_options = (
-            f"-I{os.environ['CONDA_PREFIX']}/include"
-            if "CONDA_PREFIX" in os.environ
-            else ""
-        )
-        compile_command = f"g++ -c -Wall -Werror -fpic {include_options} {self.sparse_utils_cpp_location} && g++ -shared -o ./mlir_graphblas/SparseUtils.so SparseUtils.o"
+        compile_command = f"g++ -c -Wall -Werror -fpic -I{environment_include_dir} {self.sparse_utils_cpp_location} && g++ -shared -o ./mlir_graphblas/SparseUtils.so SparseUtils.o"
         process = subprocess.Popen(
             "/bin/bash",
             stdin=subprocess.PIPE,
