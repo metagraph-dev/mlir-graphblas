@@ -252,9 +252,9 @@ def test_jit_engine_sparse_tensor():
 
     engine = mlir_graphblas.MlirJitEngine()
 
-    mlir_text = r"""
+    mlir_template = r"""
 
-#trait_sum_reduction = {
+#trait_sum_reduction = {{
   indexing_maps = [
     affine_map<(i,j,k) -> (i,j,k)>,  // A
     affine_map<(i,j,k) -> ()>        // x (scalar out)
@@ -265,42 +265,46 @@ def test_jit_engine_sparse_tensor():
   ],
   iterator_types = ["reduction", "reduction", "reduction"],
   doc = "x += SUM_ijk A(i,j,k)"
-}
+}}
 
 !SparseTensor = type !llvm.ptr<i8>
 
-func @sum_reduction(%argA: !SparseTensor, %argx: tensor<f32>) -> f32 {
-  %arga = linalg.sparse_tensor %argA : !SparseTensor to tensor<10x20x30xf32>
+func @{func_name}(%argA: !SparseTensor, %argx: tensor<{mlir_type}>) -> {mlir_type} {{
+  %arga = linalg.sparse_tensor %argA : !SparseTensor to tensor<10x20x30x{mlir_type}>
   %reduction = linalg.generic #trait_sum_reduction
-     ins(%arga: tensor<10x20x30xf32>)
-    outs(%argx: tensor<f32>) {
-      ^bb(%a: f32, %x: f32):
-        %0 = addf %x, %a : f32
-        linalg.yield %0 : f32
-  } -> tensor<f32>
-  %answer = tensor.extract %reduction[] : tensor<f32>
-  return %answer : f32
-}
+     ins(%arga: tensor<10x20x30x{mlir_type}>)
+    outs(%argx: tensor<{mlir_type}>) {{
+      ^bb(%a: {mlir_type}, %x: {mlir_type}):
+        %0 = addf %x, %a : {mlir_type}
+        linalg.yield %0 : {mlir_type}
+  }} -> tensor<{mlir_type}>
+  %answer = tensor.extract %reduction[] : tensor<{mlir_type}>
+  return %answer : {mlir_type}
+}}
 
 """
 
-    indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
-    values = np.array([1.2, 3.4], dtype=np.float32)
-    sizes = np.array([10, 20, 30], dtype=np.uint64)
-    sparsity = np.array([True, True, True], dtype=np.bool8)
+    for mlir_type, np_type in [("f32", np.float32), ("f64", np.float64)]:
+        func_name = f"func_{mlir_type}"
 
-    a = mlir_graphblas.wrap.MLIRSparseTensor(indices, values, sizes, sparsity)
-    x = np.array(0.0, dtype=np.float32)
-    args = [a, x]
+        mlir_text = mlir_template.format(func_name=func_name, mlir_type=mlir_type)
 
-    expected_result = 4.6
+        indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
+        values = np.array([1.2, 3.4], dtype=np_type)
+        sizes = np.array([10, 20, 30], dtype=np.uint64)
+        sparsity = np.array([True, True, True], dtype=np.bool8)
 
-    assert engine.add(mlir_text, STANDARD_PASSES) == ["sum_reduction"]
+        a = mlir_graphblas.wrap.MLIRSparseTensor(indices, values, sizes, sparsity)
+        x = np.array(0.0, dtype=np_type)
+        args = [a, x]
 
-    result = engine.sum_reduction(*args)
-    assert (
-        abs(result - expected_result) < 1e-6
-    ), f"""
+        assert engine.add(mlir_text, STANDARD_PASSES) == [func_name]
+
+        result = engine[func_name](*args)
+        expected_result = 4.6
+        assert (
+            abs(result - expected_result) < 1e-6
+        ), f"""
 Input MLIR: 
 {mlir_text}
 

@@ -5,6 +5,7 @@ import ctypes
 import operator
 import llvmlite.binding as llvm
 import numpy as np
+from .wrap import MLIRSparseTensor
 from functools import reduce
 from .cli import MlirOptCli, MlirOptError
 from typing import Tuple, List, Dict, Callable, Union, Any
@@ -13,8 +14,12 @@ _CURRENT_MODULE_DIR = os.path.dirname(__file__)
 _SPARSE_UTILS_SO = os.path.join(_CURRENT_MODULE_DIR, "SparseUtils.so")
 if not os.path.isfile(_SPARSE_UTILS_SO):
     # TODO this hard-codes the setup.py option and the location of setup.py
-    raise RuntimeError(f'{_SPARSE_UTILS_SO} not found. This can typically be solved by running "python setup.py compile_sparse_utils_so" from {os.path.dirname(_CURRENT_MODULE_DIR)}.')
-llvm.load_library_permanently(_SPARSE_UTILS_SO) # TODO will this cause name collisions with other uses of llvmlite by third-party libraries?
+    raise RuntimeError(
+        f'{_SPARSE_UTILS_SO} not found. This can typically be solved by running "python setup.py compile_sparse_utils_so" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
+    )
+llvm.load_library_permanently(
+    _SPARSE_UTILS_SO
+)  # TODO will this cause name collisions with other uses of llvmlite by third-party libraries?
 llvm.initialize()
 llvm.initialize_native_target()
 llvm.initialize_native_asmprinter()
@@ -173,10 +178,13 @@ def input_pretty_dialect_type_to_ctypes(
         ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
         ctypes_input_types = [ctypes_type]
 
-        def encoder(arg) -> list:
-            if not isinstance(arg, ctypes_type):
-                raise TypeError(f"{arg} expected to be instance of {ctypes_type}")
-            return [arg]
+        def encoder(arg: MLIRSparseTensor) -> list:
+            # TODO we blindly assume that an i8 pointer points to a sparse tensor
+            # since MLIR's sparse tensor support is currently up-in-the-air and this
+            # is how they currently handle sparse tensors
+            if not isinstance(arg, MLIRSparseTensor):
+                raise TypeError(f"{arg} expected to be instance of {MLIRSparseTensor}")
+            return [ctypes.cast(arg.data, ctypes_type)]
 
     else:
         raise NotImplementedError(
@@ -264,8 +272,7 @@ def input_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callable]
 
 
 def _resolve_type_aliases(
-    node: Any,
-    type_alias_table: Dict[mlir.astnodes.TypeAlias, mlir.astnodes.PrettyDialectType],
+    node: Any, type_alias_table: Dict[str, mlir.astnodes.PrettyDialectType],
 ) -> Any:
     if isinstance(node, (mlir.astnodes.Node, mlir.astnodes.Module)):
         for field in node._fields_:
