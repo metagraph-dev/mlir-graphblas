@@ -113,9 +113,7 @@ class Explorer:
         seq_code_row[0, 0] = seq_code_left
         seq_code_row[0, 1] = seq_code_right
         sequential[0, 0] = pn.Column(
-            seq_select,
-            pn.Row(seq_btn_left, seq_btn_right),
-            seq_code_row,
+            seq_select, pn.Row(seq_btn_left, seq_btn_right), seq_code_row,
         )
         tabs.append(("Sequential", sequential))
 

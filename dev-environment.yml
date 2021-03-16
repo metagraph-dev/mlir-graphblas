@@ -10,7 +10,7 @@ dependencies:
   - coverage
   - pytest
   - pytest-cov
-  - black
+  - black=19.10b0
 
 # documentation
   - sphinx=3.0.4

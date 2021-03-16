@@ -28,10 +28,7 @@ func @{func_name}(%arga: tensor<?x?x{mlir_type}>, %argb: tensor<?x?x{mlir_type}>
  return %answer : tensor<?x?x{mlir_type}>
 }}
 """,
-        [
-            np.arange(2 * 4).reshape((2, 4)),
-            np.full([2, 4], 10),
-        ],
+        [np.arange(2 * 4).reshape((2, 4)), np.full([2, 4], 10),],
         np.array([[10, 11, 12, 13], [14, 15, 16, 17]]),
     ),
     (  # fixed size tensor , fixed size tensor -> fixed size tensor
@@ -56,10 +53,7 @@ func @{func_name}(%arga: tensor<2x4x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
  return %answer : tensor<2x4x{mlir_type}>
 }}
 """,
-        [
-            np.arange(2 * 4).reshape((2, 4)),
-            np.full([2, 4], 10),
-        ],
+        [np.arange(2 * 4).reshape((2, 4)), np.full([2, 4], 10),],
         np.array([[10, 11, 12, 13], [14, 15, 16, 17]]),
     ),
     (  # arbitrary size tensor , fixed size tensor -> arbitrary size tensor
@@ -84,10 +78,7 @@ func @{func_name}(%arga: tensor<?x?x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
  return %answer : tensor<?x?x{mlir_type}>
 }}
 """,
-        [
-            np.arange(2 * 4).reshape((2, 4)),
-            np.full([2, 4], 10),
-        ],
+        [np.arange(2 * 4).reshape((2, 4)), np.full([2, 4], 10),],
         np.array([[10, 11, 12, 13], [14, 15, 16, 17]]),
     ),
     (  # fixed size tensor , scalar -> fixed size tensor
@@ -174,10 +165,7 @@ func @{func_name}(%arg0: tensor<?x{mlir_type}>, %arg1: tensor<?x{mlir_type}>) ->
   return %ans : {mlir_type}
 }}
 """,
-        [
-            np.arange(8),
-            np.arange(5),
-        ],
+        [np.arange(8), np.arange(5),],
         7,
     ),
     (  # scalar, arbitrary size 1D tensor, arbitrary size 1D tensor -> scalar
@@ -192,11 +180,7 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x{mlir_type}>, %arg1: ten
   return %ans : {mlir_type}
 }}
 """,
-        [
-            2,
-            np.arange(8),
-            np.arange(5),
-        ],
+        [2, np.arange(8), np.arange(5),],
         9,
     ),
     (  # simple and nested type asliases
@@ -214,11 +198,7 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x!mlir_type_alias>, %arg1
   return %ans : !mlir_type_alias
 }}
 """,
-        [
-            2,
-            np.arange(8),
-            np.arange(5),
-        ],
+        [2, np.arange(8), np.arange(5),],
         9,
     ),
 ]
