@@ -6,7 +6,6 @@ import pytest
 import numpy as np
 
 SIMPLE_TEST_CASES = [  # elements are ( mlir_template, args, expected_result x)
-    
     (  # arbitrary size tensor , arbitrary size tensor -> arbitrary size tensor
         """
 #trait_add = {{
@@ -29,7 +28,10 @@ func @{func_name}(%arga: tensor<?x?x{mlir_type}>, %argb: tensor<?x?x{mlir_type}>
  return %answer : tensor<?x?x{mlir_type}>
 }}
 """,
-        [np.arange(2 * 4).reshape((2, 4)), np.full([2, 4], 10),],
+        [
+            np.arange(2 * 4).reshape((2, 4)),
+            np.full([2, 4], 10),
+        ],
         np.array([[10, 11, 12, 13], [14, 15, 16, 17]]),
     ),
     (  # fixed size tensor , fixed size tensor -> fixed size tensor
@@ -54,7 +56,10 @@ func @{func_name}(%arga: tensor<2x4x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
  return %answer : tensor<2x4x{mlir_type}>
 }}
 """,
-        [np.arange(2 * 4).reshape((2, 4)), np.full([2, 4], 10),],
+        [
+            np.arange(2 * 4).reshape((2, 4)),
+            np.full([2, 4], 10),
+        ],
         np.array([[10, 11, 12, 13], [14, 15, 16, 17]]),
     ),
     (  # arbitrary size tensor , fixed size tensor -> arbitrary size tensor
@@ -79,7 +84,10 @@ func @{func_name}(%arga: tensor<?x?x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
  return %answer : tensor<?x?x{mlir_type}>
 }}
 """,
-        [np.arange(2 * 4).reshape((2, 4)), np.full([2, 4], 10),],
+        [
+            np.arange(2 * 4).reshape((2, 4)),
+            np.full([2, 4], 10),
+        ],
         np.array([[10, 11, 12, 13], [14, 15, 16, 17]]),
     ),
     (  # fixed size tensor , scalar -> fixed size tensor
@@ -166,7 +174,10 @@ func @{func_name}(%arg0: tensor<?x{mlir_type}>, %arg1: tensor<?x{mlir_type}>) ->
   return %ans : {mlir_type}
 }}
 """,
-        [np.arange(8), np.arange(5),],
+        [
+            np.arange(8),
+            np.arange(5),
+        ],
         7,
     ),
     (  # scalar, arbitrary size 1D tensor, arbitrary size 1D tensor -> scalar
@@ -181,7 +192,11 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x{mlir_type}>, %arg1: ten
   return %ans : {mlir_type}
 }}
 """,
-        [2, np.arange(8), np.arange(5),],
+        [
+            2,
+            np.arange(8),
+            np.arange(5),
+        ],
         9,
     ),
 ]
@@ -230,10 +245,11 @@ Result: {result}
 Expected Result: {expected_result}
 """
 
+
 def test_jit_engine_sparse_tensor():
 
     engine = mlir_graphblas.MlirJitEngine()
-    
+
     mlir_text = r"""
 
 #trait_sum_reduction = {
@@ -270,20 +286,25 @@ func @sum_reduction(%argA: !SparseTensor, %argx: tensor<f32>) -> f32 {
     values = np.array([1.2, 3.4], dtype=np.float32)
     sizes = np.array([10, 20, 30], dtype=np.uint64)
     sparsity = np.array([True, True, True], dtype=np.bool8)
-    sparse_tensor_ptr = mlir_graphblas.wrap.build_sparse_tensor(indices, values, sizes, sparsity)
+    sparse_tensor_ptr = mlir_graphblas.wrap.build_sparse_tensor(
+        indices, values, sizes, sparsity
+    )
 
-    import ctypes # TODO using ctypes here is not desired
+    import ctypes  # TODO Is this really how we want to define our inputs?
+
     c_int8_p = ctypes.POINTER(ctypes.c_int8)
     a = ctypes.cast(sparse_tensor_ptr, c_int8_p)
     x = np.array(0.0, dtype=np.float32)
     args = [a, x]
-    
+
     expected_result = 4.6
-    
-    engine.add(mlir_text, STANDARD_PASSES)
-    
+
+    assert engine.add(mlir_text, STANDARD_PASSES) == ["sum_reduction"]
+
     result = engine.sum_reduction(*args)
-    assert abs(result - expected_result) < 1e-6, f"""
+    assert (
+        abs(result - expected_result) < 1e-6
+    ), f"""
 Input MLIR: 
 {mlir_text}
 
