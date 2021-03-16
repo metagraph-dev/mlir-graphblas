@@ -14,29 +14,46 @@ cdef extern from "numpy/arrayobject.h" nogil:
     void PyArray_CLEARFLAGS(ndarray, int flags)
 
 
+cpdef ndarray claim_buffer(uintptr_t ptr, shape, strides, dtype):
+    return _wrap_buffer(ptr, shape, strides, dtype, np.NPY_ARRAY_WRITEABLE, np.NPY_ARRAY_OWNDATA)
+
+
+# Heh, there are likely better ways to create a read-only buffer, but
+# it's convenient for us to use the same API as `claim_buffer` above.
+cpdef ndarray view_buffer(uintptr_t ptr, shape, strides, dtype):
+    return _wrap_buffer(ptr, shape, strides, dtype, 0, 0)
+
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef ndarray claim_buffer(uintptr_t ptr, shape, strides, dtype):
+cdef ndarray _wrap_buffer(uintptr_t ptr, shape, strides, dtype, int init_flags, int post_flags):
     cdef intp_t[:] shape_array = np.ascontiguousarray(shape, dtype=np.intp)
-    cdef intp_t[:] strides_array = np.ascontiguousarray(strides, dtype=np.intp)
     cdef intp_t D = shape_array.shape[0]  # number of dimensions
-    if strides_array.shape[0] != D:
-        raise ValueError(
-            f'Length of shape and strides arrays must match: {shape_array.shape[0]} != {strides_array.shape[0]}'
-        )
+    cdef intp_t[:] strides_array
+    cdef intp_t *strides_ptr
+    if strides is not None:
+        strides_array = np.ascontiguousarray(strides, dtype=np.intp)
+        if strides_array.shape[0] != D:
+            raise ValueError(
+                f'Length of shape and strides arrays must match: {shape_array.shape[0]} != {strides_array.shape[0]}'
+            )
+        strides_ptr = &strides_array[0]
+    else:
+        # Defer to default: assume normal C-contiguous
+        strides_ptr = NULL
     cdef int typenum = np.dtype(dtype).num  # is there a better way to do this?
     cdef ndarray array = np.PyArray_New(
         ndarray,
         D,
         &shape_array[0],
         typenum,
-        &strides_array[0],
+        strides_ptr,
         <void*>ptr,
         -1,  # itemsize; ignored if the type always has the same number of bytes
-        np.NPY_ARRAY_WRITEABLE,  # yay or nay?
+        init_flags,
         <object>NULL
     )
-    PyArray_ENABLEFLAGS(array, np.NPY_ARRAY_OWNDATA)
+    PyArray_ENABLEFLAGS(array, post_flags)
     return array
 
 
@@ -55,6 +72,20 @@ cdef extern from "SparseUtils.cpp" nogil:
         void getIndices(vector[I] **, uint64_t)
         void getValues(vector[V] **)
 
+    cdef struct MemRef1DU32:
+        const uint32_t *base
+        const uint32_t *data
+        uint64_t off
+        uint64_t sizes[1]
+        uint64_t strides[1]
+
+    cdef struct MemRef1DU64:
+        const uint64_t *base
+        const uint64_t *data
+        uint64_t off
+        uint64_t sizes[1]
+        uint64_t strides[1]
+
     cdef struct MemRef1DF32:
         const float *base
         const float *data
@@ -69,21 +100,14 @@ cdef extern from "SparseUtils.cpp" nogil:
         uint64_t sizes[1]
         uint64_t strides[1]
 
-    void delSparseTensor(void *)
+    uint64_t sparseDimSize(void *, uint64_t)
+    MemRef1DU32 sparsePointers32(void *t, uint64_t)
+    MemRef1DU64 sparsePointers64(void *, uint64_t)
+    MemRef1DU32 sparseIndices32(void *, uint64_t)
+    MemRef1DU64 sparseIndices64(void *, uint64_t)
     MemRef1DF32 sparseValuesF32(void *)
     MemRef1DF64 sparseValuesF64(void *)
-
-
-def myfunc():
-    cdef vector[uint64_t] v = vector[uint64_t]()
-    v.push_back(1)
-    cdef SparseTensor *st = new SparseTensor(v, 1)
-    print(st.getRank())
-
-    cdef bool b = True
-    cdef SparseTensorStorage[uint64_t, uint64_t, double] *sts = new SparseTensorStorage[uint64_t, uint64_t, double](st, &b)
-    print(sts.getRank(), sts.getDimSize(0))
-    del st
+    void delSparseTensor(void *)
 
 
 # st for "sparse tensor"
@@ -96,17 +120,100 @@ ctypedef fused st_value_t:
     float64_t
 
 
+cdef class MLIRSparseTensor:
+    cdef readonly uintptr_t data
+    cdef readonly uint64_t ndim
+    cdef readonly object pointer_dtype
+    cdef readonly object index_dtype
+    cdef readonly object value_dtype
+
+    def __cinit__(self, indices, values, uint64_t[:] sizes, bool[:] sparsity, pointer_type=np.uint64):
+        _build_sparse_tensor(self, indices, values, sizes, sparsity, pointer_type)
+
+    def __dealloc__(self):
+        delSparseTensor(<void*>self.data)
+
+    cpdef uint64_t get_dimsize(self, uint64_t d):
+        if d >= self.ndim:
+            raise IndexError(f'Bad dimension index: {d} >= {self.ndim}')
+        return sparseDimSize(<void*>self.data, d)
+
+    @property
+    def shape(self):
+        cdef void *ptr = <void*>self.data
+        return tuple([sparseDimSize(ptr, i) for i in range(self.ndim)])
+
+    cpdef ndarray get_pointers(self, uint64_t d):
+        cdef MemRef1DU32 ref32
+        cdef MemRef1DU64 ref64
+        if d >= self.ndim:
+            raise IndexError(f'Bad dimension index: {d} >= {self.ndim}')
+        if self.pointer_dtype == np.uint32:
+            ref32 = sparsePointers32(<void*>self.data, d)
+            return view_buffer(<uintptr_t>ref32.data, ref32.sizes[0], ref32.strides[0] * 4, self.pointer_dtype)
+        elif self.pointer_dtype == np.uint64:
+            ref64 = sparsePointers64(<void*>self.data, d)
+            return view_buffer(<uintptr_t>ref64.data, ref64.sizes[0], ref64.strides[0] * 8, self.pointer_dtype)
+        else:
+            raise RuntimeError(f'Bad dtype: {self.ptr_dtype}')
+
+    @property
+    def pointers(self):
+        return tuple([self.get_pointers(i) for i in range(self.ndim)])
+
+    cpdef ndarray get_indices(self, uint64_t d):
+        cdef MemRef1DU32 ref32
+        cdef MemRef1DU64 ref64
+        if d >= self.ndim:
+            raise IndexError(f'Bad dimension index: {d} >= {self.ndim}')
+        if self.index_dtype == np.uint32:
+            ref32 = sparseIndices32(<void*>self.data, d)
+            return view_buffer(<uintptr_t>ref32.data, ref32.sizes[0], ref32.strides[0] * 4, self.index_dtype)
+        elif self.index_dtype == np.uint64:
+            ref64 = sparseIndices64(<void*>self.data, d)
+            return view_buffer(<uintptr_t>ref64.data, ref64.sizes[0], ref64.strides[0] * 8, self.index_dtype)
+        else:
+            raise RuntimeError(f'Bad dtype: {self.index_dtype}')
+
+    @property
+    def indices(self):
+        return tuple([self.get_indices(i) for i in range(self.ndim)])
+
+    @property
+    def values(self):
+        cdef MemRef1DF32 ref32
+        cdef MemRef1DF64 ref64
+        if self.value_dtype == np.float32:
+            ref32 = sparseValuesF32(<void*>self.data)
+            return view_buffer(<uintptr_t>ref32.data, ref32.sizes[0], ref32.strides[0] * 4, self.value_dtype)
+        elif self.value_dtype == np.float64:
+            ref64 = sparseValuesF64(<void*>self.data)
+            return view_buffer(<uintptr_t>ref64.data, ref64.sizes[0], ref64.strides[0] * 8, self.value_dtype)
+            # ALT
+            # cdef float64_t[:] view64
+            # view64 = <float64_t[:ref64.sizes[0]]>ref64.data
+            # return np.asarray(view64)
+        else:
+            raise RuntimeError(f'Bad dtype: {self.value_dtype}')
+
+
+# Use this to create `vector[vector[uint64_t]*]`, which isn't supported syntax
+ctypedef vector[uint64_t]* v_ptr
+
+
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cpdef uintptr_t build_sparse_tensor(
+def _build_sparse_tensor(
+    MLIRSparseTensor self,
     st_index_t[:, :] indices,  # N x D
     st_value_t[:] values,      # N
     uint64_t[:] sizes,         # D
     bool[:] sparsity,          # D
-    ptr_type=np.uint64,
-) except 0:
+    pointer_type,
+):
     cdef intp_t N = values.shape[0]  # number of values
     cdef intp_t D = sizes.shape[0]  # rank, number of dimensions
+    self.ndim = D
     if sparsity.shape[0] != D:
         raise ValueError(
             f'Length of sizes and sparsity arrays must match: {sizes.shape[0]} != {sparsity.shape[0]}'
@@ -121,20 +228,22 @@ cpdef uintptr_t build_sparse_tensor(
             'Second dimension of indices array must match length of sparsity and sizes arrays: '
             f'{indices.shape[1]} != {D}'
         )
-    cdef int ptr_type_num = np.dtype(ptr_type).num
-    if ptr_type_num != np.NPY_UINT32 and ptr_type_num != np.NPY_UINT64:
-        raise TypeError(f"ptr_type must be np.uint32 or np.uint64, not: {ptr_type}")
+    self.pointer_dtype = np.dtype(pointer_type)
+    cdef int pointer_type_num = self.pointer_dtype.num
+    if pointer_type_num != np.NPY_UINT32 and pointer_type_num != np.NPY_UINT64:
+        raise TypeError(f"pointer_type must be np.uint32 or np.uint64, not: {pointer_type}")
 
     cdef vector[uint64_t] sizes_vector = vector[uint64_t](D)
     for i in range(D):
         sizes_vector[i] = sizes[i]
     cdef SparseTensor *tensor = new SparseTensor(sizes_vector, N)
 
-    cdef vector[uint64_t] *ind_ptr
+    cdef vector[v_ptr] index_vectors = vector[v_ptr](N)
+    cdef v_ptr ind_ptr
     cdef vector[uint64_t] ind
     for i in range(N):
-        ind_ptr = new vector[uint64_t](D)
-        ind = ind_ptr[0]
+        index_vectors[i] = new vector[uint64_t](D)
+        ind = index_vectors[i][0]
         for j in range(D):
             ind[j] = indices[i, j]
         tensor.add(ind, values[i])
@@ -142,22 +251,33 @@ cpdef uintptr_t build_sparse_tensor(
     cdef bool *sparsity_array = <bool*>malloc(sizeof(bool) * D)
     for i in range(D):
         sparsity_array[i] = sparsity[i]
-    cdef uintptr_t rv
-    if ptr_type_num == np.NPY_UINT32:
-        rv = <uintptr_t>(new SparseTensorStorage[uint32_t, st_index_t, st_value_t](tensor, sparsity_array))
+    cdef uintptr_t data
+    if pointer_type_num == np.NPY_UINT32:
+        self.data = <uintptr_t>(new SparseTensorStorage[uint32_t, st_index_t, st_value_t](tensor, sparsity_array))
     else:
-        rv = <uintptr_t>(new SparseTensorStorage[uint64_t, st_index_t, st_value_t](tensor, sparsity_array))
+        self.data = <uintptr_t>(new SparseTensorStorage[uint64_t, st_index_t, st_value_t](tensor, sparsity_array))
     free(sparsity_array)
     del tensor
-    return rv
+    for i in range(N):
+        del index_vectors[i]
+    if st_index_t is uint32_t:
+        self.index_dtype = np.dtype(np.uint32)
+    else:
+        self.index_dtype = np.dtype(np.uint64)
+    if st_value_t is float32_t:
+        self.value_dtype = np.dtype(np.float32)
+    else:
+        self.value_dtype = np.dtype(np.float64)
 
 
 def run_example():
-    cdef ndarray[uint64_t, ndim=2] indices = np.array([[0, 0], [1, 1]], dtype=np.uint64)
+    cdef ndarray[uint64_t, ndim=2] indices = np.array([[0, 1], [1, 0]], dtype=np.uint64)
     cdef ndarray[float64_t, ndim=1] values = np.array([1.2, 3.4], dtype=np.float64)
     cdef ndarray[uint64_t, ndim=1] sizes = np.array([2, 2], dtype=np.uint64)
     cdef ndarray[bool, ndim=1] sparsity = np.array([True, True], dtype=np.bool8)
-    cdef uintptr_t ptr = build_sparse_tensor[uint64_t, float64_t](indices, values, sizes, sparsity)
+    cdef MLIRSparseTensor sparse_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
+    # cdef MLIRSparseTensor sparse_tensor = build_sparse_tensor[uint64_t, float64_t](indices, values, sizes, sparsity)
+    cdef uintptr_t ptr = sparse_tensor.data
     cdef SparseTensorStorage[uint64_t, uint64_t, float64_t] *tensor = (
         <SparseTensorStorage[uint64_t, uint64_t, float64_t]*>ptr
     )
@@ -178,6 +298,8 @@ def run_example():
     tensor.getIndices(&ind_ptr, 1)
     print('  1:', ind_ptr[0])
 
+    print('sparse_tensor.value_dtype', sparse_tensor.value_dtype)
+    print('sparse_tensor.values', sparse_tensor.values)
     print('values')
     cdef vector[double] *val_ptr
     tensor.getValues(&val_ptr)
@@ -186,14 +308,31 @@ def run_example():
     cdef MemRef1DF64 x64 = sparseValuesF64(tensor)
     print('sparseValuesF64:', x64.off, x64.sizes, x64.strides)
 
-    ptr = build_sparse_tensor[uint64_t, float32_t](indices, values.astype(np.float32), sizes, sparsity)
+    cdef MLIRSparseTensor sparse_tensor2 = MLIRSparseTensor(indices, values.astype(np.float32), sizes, sparsity)
+    ptr = sparse_tensor2.data
     cdef SparseTensorStorage[uint64_t, uint64_t, float32_t] *tensor32 = (
         <SparseTensorStorage[uint64_t, uint64_t, float32_t]*>ptr
     )
     cdef MemRef1DF32 x32 = sparseValuesF32(tensor32)
-    print('AA')
-    print('sparseValuesF32:', x32.off, x32.sizes, x32.strides)
 
-    # x64 = sparseValuesF64(tensor32)
+    for _ in range(10):
+    # for _ in range(10000000):  # watch for memory leak
+        sparse_tensor2 = MLIRSparseTensor(indices, values.astype(np.float32), sizes, sparsity)
+        sparse_tensor2.values
+
+    print('sparse_tensor.value_dtype', sparse_tensor.value_dtype)
+    print('sparse_tensor.values', sparse_tensor.values)
+    print('sparse_tensor.ndim', sparse_tensor.ndim)
+    print('sparse_tensor.shape', sparse_tensor.shape)
+    print('sparse_tensor.get_dimsize(0)', sparse_tensor.get_dimsize(0))
+    print('sparse_tensor.get_dimsize(1)', sparse_tensor.get_dimsize(1))
+    print('sparse_tensor.pointers', sparse_tensor.pointers)
+    print('sparse_tensor.get_pointers(0)', sparse_tensor.get_pointers(0))
+    print('sparse_tensor.get_pointers(1)', sparse_tensor.get_pointers(1))
+    print('sparse_tensor.indices', sparse_tensor.indices)
+    print('sparse_tensor.get_indices(0)', sparse_tensor.get_indices(0))
+    print('sparse_tensor.get_indices(1)', sparse_tensor.get_indices(1))
+
+    print('sparse_tensor.get_pointers(2)', sparse_tensor.get_pointers(2))  # raises
     return ptr
 
