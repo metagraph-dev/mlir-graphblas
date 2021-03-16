@@ -1,13 +1,25 @@
+import os
 import subprocess
 import mlir
 import ctypes
 import operator
 import llvmlite.binding as llvm
 import numpy as np
+from .sparse_utils import MLIRSparseTensor
 from functools import reduce
 from .cli import MlirOptCli, MlirOptError
-from typing import Tuple, List, Dict, Callable, Union
+from typing import Tuple, List, Dict, Callable, Union, Any
 
+_CURRENT_MODULE_DIR = os.path.dirname(__file__)
+_SPARSE_UTILS_SO = os.path.join(_CURRENT_MODULE_DIR, "SparseUtils.so")
+if not os.path.isfile(_SPARSE_UTILS_SO):
+    # TODO this hard-codes the setup.py option and the location of setup.py
+    raise RuntimeError(
+        f'{_SPARSE_UTILS_SO} not found. This can typically be solved by running "python setup.py compile_sparse_utils_so" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
+    )
+llvm.load_library_permanently(
+    _SPARSE_UTILS_SO
+)  # TODO will this cause name collisions with other uses of llvmlite by third-party libraries?
 llvm.initialize()
 llvm.initialize_native_target()
 llvm.initialize_native_asmprinter()
@@ -51,8 +63,8 @@ def convert_mlir_atomic_type(
     mlir_type: mlir.astnodes.Type, return_pointer_type: bool = False
 ) -> Tuple[type, type]:
     """
-    First return value is a subclass of _ctypes._CData .
-    Second return value is a subclass of np.generic .
+    First return value is a subclass of np.generic .
+    Second return value is a subclass of _ctypes._CData .
     """
 
     # TODO Add a custom hash/eq method for mlir.astnodes.Node so that we can put
@@ -66,9 +78,11 @@ def convert_mlir_atomic_type(
     if np_type is None:
         raise ValueError(f"Could not determine numpy type corresonding to {mlir_type}")
 
-    ctypes_type = NP_TYPE_TO_CTYPES_TYPE[np_type]
-    if return_pointer_type:
-        ctypes_type = np.ctypeslib.ndpointer(np_type)
+    ctypes_type = (
+        np.ctypeslib.ndpointer(np_type)
+        if return_pointer_type
+        else NP_TYPE_TO_CTYPES_TYPE[np_type]
+    )
 
     return np_type, ctypes_type
 
@@ -135,12 +149,48 @@ def return_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable
         result = return_tensor_to_ctypes(mlir_type)
     else:
         result = return_scalar_to_ctypes(mlir_type)
+    # TODO handle returned sparse tensors via handling mlir.astnodes.PrettyDialectType
     return result
 
 
 ###########################
 # MLIR Input Type Helpers #
 ###########################
+
+
+LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE: Dict[str, "_ctypes._CData"] = {
+    "i8": ctypes.POINTER(ctypes.c_int8),
+    # TODO extend this
+}
+
+
+def input_pretty_dialect_type_to_ctypes(
+    pretty_type: mlir.astnodes.PrettyDialectType,
+) -> Tuple[list, Callable]:
+    # TODO do pretty dialect types vary widely in how their ASTs are structured?
+    # i.e. are we required to special case them all like we're doing here?
+    if (
+        pretty_type.dialect == "llvm"
+        and pretty_type.type == "ptr"
+        and len(pretty_type.body) == 1
+    ):
+        type_string = pretty_type.body[0]
+        ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
+        ctypes_input_types = [ctypes_type]
+
+        def encoder(arg: MLIRSparseTensor) -> list:
+            # TODO we blindly assume that an i8 pointer points to a sparse tensor
+            # since MLIR's sparse tensor support is currently up-in-the-air and this
+            # is how they currently handle sparse tensors
+            if not isinstance(arg, MLIRSparseTensor):
+                raise TypeError(f"{arg} expected to be instance of {MLIRSparseTensor}")
+            return [ctypes.cast(arg.data, ctypes_type)]
+
+    else:
+        raise NotImplementedError(
+            f"Converting {mlir_type} to ctypes not yet supported."
+        )
+    return ctypes_input_types, encoder
 
 
 def input_tensor_to_ctypes(
@@ -206,11 +256,60 @@ def input_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callabl
 def input_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callable]:
     # TODO handle all other child classes of mlir.astnodes.Type
     # TODO consider inlining this if it only has 2 cases
-    if isinstance(mlir_type, mlir.astnodes.RankedTensorType):
+
+    if isinstance(mlir_type, mlir.astnodes.PrettyDialectType):
+        result = input_pretty_dialect_type_to_ctypes(mlir_type)
+    elif isinstance(mlir_type, mlir.astnodes.RankedTensorType):
         result = input_tensor_to_ctypes(mlir_type)
     else:
         result = input_scalar_to_ctypes(mlir_type)
     return result
+
+
+####################
+# PyMLIR Utilities #
+####################
+
+
+def _resolve_type_aliases(
+    node: Any, type_alias_table: Dict[str, mlir.astnodes.PrettyDialectType],
+) -> Any:
+    if isinstance(node, (mlir.astnodes.Node, mlir.astnodes.Module)):
+        for field in node._fields_:
+            field_value = getattr(node, field)
+            field_type = type(field_value)
+            if field_type in (list, tuple):
+                resolved_field_value = field_type(
+                    _resolve_type_aliases(sub_node, type_alias_table)
+                    for sub_node in field_value
+                )
+            elif issubclass(field_type, mlir.astnodes.TypeAlias):
+                alias_name = field_value.value
+                alias_value = type_alias_table[alias_name]
+                resolved_field_value = _resolve_type_aliases(
+                    alias_value, type_alias_table
+                )
+            else:
+                resolved_field_value = _resolve_type_aliases(
+                    field_value, type_alias_table
+                )
+            setattr(node, field, resolved_field_value)
+    return node
+
+
+def resolve_type_aliases(module: mlir.astnodes.Module) -> None:
+    """ Modifies module in place. """
+    # TODO this is currently only called by MlirJitEngine.add, which only uses the functions in the
+    # module, but we resolve all AST nodes, not just the functions. Consider whether or not it's necessary
+    # to resolve all AST nodes besides those of type mlir.astnodes.AttrAlias and mlir.astnodes.Function.
+    type_alias_table = {
+        alias.name.value: alias.value
+        for alias in module.body
+        if isinstance(alias, mlir.astnodes.TypeAliasDef)
+    }
+    if len(type_alias_table) > 0:
+        _resolve_type_aliases(module, type_alias_table)
+    return
 
 
 #################
@@ -299,11 +398,14 @@ class MlirJitEngine:
 
         # Generate Python callables
         mlir_ast = mlir.parse_string(mlir_text.decode())
+        resolve_type_aliases(mlir_ast)
+
         mlir_functions = filter(
             lambda e: isinstance(e, mlir.astnodes.Function)
             and e.visibility == "public",
             mlir_ast.body,
         )
+
         function_names: List[str] = []
         for mlir_function in mlir_functions:
             name: str = mlir_function.name.value

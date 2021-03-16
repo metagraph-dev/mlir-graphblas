@@ -1,10 +1,11 @@
 from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
 
 import mlir_graphblas
+import mlir_graphblas.sparse_utils
 import pytest
 import numpy as np
 
-TEST_CASES = [  # elements are ( mlir_template, args, expected_result x)
+SIMPLE_TEST_CASES = [  # elements are ( mlir_template, args, expected_result x)
     (  # arbitrary size tensor , arbitrary size tensor -> arbitrary size tensor
         """
 #trait_add = {{
@@ -182,13 +183,31 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x{mlir_type}>, %arg1: ten
         [2, np.arange(8), np.arange(5),],
         9,
     ),
+    (  # simple and nested type asliases
+        """
+!mlir_type_alias = type {mlir_type}
+!mlir_tensor_type_alias = type tensor<?x!mlir_type_alias>
+
+func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x!mlir_type_alias>, %arg1: !mlir_tensor_type_alias) -> {mlir_type} {{
+  %c3 = constant 3 : index
+  %c4 = constant 4 : index
+  %arg0_3 = tensor.extract %arg0[%c3] : tensor<?x{mlir_type}>
+  %arg1_4 = tensor.extract %arg1[%c4] : tensor<?x{mlir_type}>
+  %tensor_element_result = {linalg_add} %arg0_3, %arg1_4 : {mlir_type}
+  %ans = {linalg_add} %tensor_element_result, %scalar : {mlir_type}
+  return %ans : !mlir_type_alias
+}}
+""",
+        [2, np.arange(8), np.arange(5),],
+        9,
+    ),
 ]
 
 
 def test_jit_engine_tensor_result():
 
     engine = mlir_graphblas.MlirJitEngine()
-    for test_case_index, test_case in enumerate(TEST_CASES):
+    for test_case_index, test_case in enumerate(SIMPLE_TEST_CASES):
         for mlir_type, np_type in MLIR_TYPE_TO_NP_TYPE.items():
             func_name = f"func_{test_case_index}_{mlir_type}"
 
@@ -220,6 +239,72 @@ def test_jit_engine_tensor_result():
             assert np.all(
                 result == expected_result
             ), f"""
+Input MLIR: 
+{mlir_text}
+
+Inputs: {args}
+Result: {result}
+Expected Result: {expected_result}
+"""
+
+
+def test_jit_engine_sparse_tensor():
+
+    engine = mlir_graphblas.MlirJitEngine()
+
+    mlir_template = r"""
+
+#trait_sum_reduction = {{
+  indexing_maps = [
+    affine_map<(i,j,k) -> (i,j,k)>,  // A
+    affine_map<(i,j,k) -> ()>        // x (scalar out)
+  ],
+  sparse = [
+    [ "S", "S", "S" ],  // A
+    [ ]                 // x
+  ],
+  iterator_types = ["reduction", "reduction", "reduction"],
+  doc = "x += SUM_ijk A(i,j,k)"
+}}
+
+!SparseTensor = type !llvm.ptr<i8>
+
+func @{func_name}(%argA: !SparseTensor, %argx: tensor<{mlir_type}>) -> {mlir_type} {{
+  %arga = linalg.sparse_tensor %argA : !SparseTensor to tensor<10x20x30x{mlir_type}>
+  %reduction = linalg.generic #trait_sum_reduction
+     ins(%arga: tensor<10x20x30x{mlir_type}>)
+    outs(%argx: tensor<{mlir_type}>) {{
+      ^bb(%a: {mlir_type}, %x: {mlir_type}):
+        %0 = addf %x, %a : {mlir_type}
+        linalg.yield %0 : {mlir_type}
+  }} -> tensor<{mlir_type}>
+  %answer = tensor.extract %reduction[] : tensor<{mlir_type}>
+  return %answer : {mlir_type}
+}}
+
+"""
+
+    for mlir_type, np_type in [("f32", np.float32), ("f64", np.float64)]:
+        func_name = f"func_{mlir_type}"
+
+        mlir_text = mlir_template.format(func_name=func_name, mlir_type=mlir_type)
+
+        indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
+        values = np.array([1.2, 3.4], dtype=np_type)
+        sizes = np.array([10, 20, 30], dtype=np.uint64)
+        sparsity = np.array([True, True, True], dtype=np.bool8)
+
+        a = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
+        x = np.array(0.0, dtype=np_type)
+        args = [a, x]
+
+        assert engine.add(mlir_text, STANDARD_PASSES) == [func_name]
+
+        result = engine[func_name](*args)
+        expected_result = 4.6
+        assert (
+            abs(result - expected_result) < 1e-6
+        ), f"""
 Input MLIR: 
 {mlir_text}
 

@@ -20,3 +20,4 @@ dependencies:
   - llvmlite
   - donfig
   - pygments
+  - cython

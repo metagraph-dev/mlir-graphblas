@@ -10,7 +10,7 @@ dependencies:
   - coverage
   - pytest
   - pytest-cov
-  - black
+  - black=19.10b0
 
 # documentation
   - sphinx=3.0.4
@@ -27,5 +27,6 @@ dependencies:
   - llvmlite
   - donfig
   - pygments
+  - cython
   - panel
   - bokeh<2.3  # temp restriction until panel/bokeh bugs are worked out

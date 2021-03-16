@@ -106,6 +106,9 @@ venv.bak/
 # PyCharm
 .idea
 
+# Vi
+*.sw?
+
 # Mac
 .DS_Store
 
