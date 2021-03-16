@@ -288,14 +288,8 @@ func @sum_reduction(%argA: !SparseTensor, %argx: tensor<f32>) -> f32 {
     values = np.array([1.2, 3.4], dtype=np.float32)
     sizes = np.array([10, 20, 30], dtype=np.uint64)
     sparsity = np.array([True, True, True], dtype=np.bool8)
-    sparse_tensor_ptr = mlir_graphblas.wrap.build_sparse_tensor(
-        indices, values, sizes, sparsity
-    )
 
-    import ctypes  # TODO Is this really how we want to define our inputs?
-
-    c_int8_p = ctypes.POINTER(ctypes.c_int8)
-    a = ctypes.cast(sparse_tensor_ptr, c_int8_p)
+    a = mlir_graphblas.wrap.MLIRSparseTensor(indices, values, sizes, sparsity)
     x = np.array(0.0, dtype=np.float32)
     args = [a, x]
 

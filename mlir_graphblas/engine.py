@@ -11,7 +11,10 @@ from typing import Tuple, List, Dict, Callable, Union, Any
 
 _CURRENT_MODULE_DIR = os.path.dirname(__file__)
 _SPARSE_UTILS_SO = os.path.join(_CURRENT_MODULE_DIR, "SparseUtils.so")
-llvm.load_library_permanently(_SPARSE_UTILS_SO)
+if not os.path.isfile(_SPARSE_UTILS_SO):
+    # TODO this hard-codes the setup.py option and the location of setup.py
+    raise RuntimeError(f'{_SPARSE_UTILS_SO} not found. This can typically be solved by running "python setup.py compile_sparse_utils_so" from {os.path.dirname(_CURRENT_MODULE_DIR)}.')
+llvm.load_library_permanently(_SPARSE_UTILS_SO) # TODO will this cause name collisions with other uses of llvmlite by third-party libraries?
 llvm.initialize()
 llvm.initialize_native_target()
 llvm.initialize_native_asmprinter()
