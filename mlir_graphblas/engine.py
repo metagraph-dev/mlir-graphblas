@@ -269,13 +269,20 @@ def _resolve_type_aliases(
             field_value = getattr(node, field)
             field_type = type(field_value)
             if field_type in (list, tuple):
-                resolved_field_value = field_type(_resolve_type_aliases(sub_node, type_alias_table) for sub_node in field_value)
+                resolved_field_value = field_type(
+                    _resolve_type_aliases(sub_node, type_alias_table)
+                    for sub_node in field_value
+                )
             elif issubclass(field_type, mlir.astnodes.TypeAlias):
                 alias_name = field_value.value
                 alias_value = type_alias_table[alias_name]
-                resolved_field_value = _resolve_type_aliases(alias_value, type_alias_table)
+                resolved_field_value = _resolve_type_aliases(
+                    alias_value, type_alias_table
+                )
             else:
-                resolved_field_value = _resolve_type_aliases(field_value, type_alias_table)
+                resolved_field_value = _resolve_type_aliases(
+                    field_value, type_alias_table
+                )
             setattr(node, field, resolved_field_value)
     return node
 
