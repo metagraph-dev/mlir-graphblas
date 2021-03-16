@@ -199,6 +199,28 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x{mlir_type}>, %arg1: ten
         ],
         9,
     ),
+    (  # simple and nested type asliases
+        """
+!mlir_type_alias = type {mlir_type}
+!mlir_tensor_type_alias = type tensor<?x!mlir_type_alias>
+
+func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x!mlir_type_alias>, %arg1: !mlir_tensor_type_alias) -> {mlir_type} {{
+  %c3 = constant 3 : index
+  %c4 = constant 4 : index
+  %arg0_3 = tensor.extract %arg0[%c3] : tensor<?x{mlir_type}>
+  %arg1_4 = tensor.extract %arg1[%c4] : tensor<?x{mlir_type}>
+  %tensor_element_result = {linalg_add} %arg0_3, %arg1_4 : {mlir_type}
+  %ans = {linalg_add} %tensor_element_result, %scalar : {mlir_type}
+  return %ans : !mlir_type_alias
+}}
+""",
+        [
+            2,
+            np.arange(8),
+            np.arange(5),
+        ],
+        9,
+    ),
 ]
 
 

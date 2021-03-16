@@ -23,7 +23,7 @@ dependencies:
 
 # dependencies (so setup.py develop doesn't pip install them)
   - metagraph::mlir
-#  - metagraph::pymlir
+  - metagraph::pymlir
   - llvmlite
   - donfig
   - pygments

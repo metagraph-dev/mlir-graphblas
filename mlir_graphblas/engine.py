@@ -160,7 +160,7 @@ def input_pretty_dialect_type_to_ctypes(
     pretty_type: mlir.astnodes.PrettyDialectType,
 ) -> Tuple[list, Callable]:
     # TODO do pretty dialect types vary widely in how their ASTs are structured?
-    # Or do we have to special case them all like we're doing here?
+    # i.e. are we required to special case them all like we're doing here?
     if (
         pretty_type.dialect == "llvm"
         and pretty_type.type == "ptr"
@@ -263,21 +263,21 @@ def input_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callable]
 def _resolve_type_aliases(
     node: Any,
     type_alias_table: Dict[mlir.astnodes.TypeAlias, mlir.astnodes.PrettyDialectType],
-) -> None:
+) -> Any:
     if isinstance(node, (mlir.astnodes.Node, mlir.astnodes.Module)):
         for field in node._fields_:
             field_value = getattr(node, field)
             field_type = type(field_value)
-            if isinstance(field_value, (list, tuple)):
-                for sub_node in field_value:
-                    _resolve_type_aliases(sub_node, type_alias_table)
-            elif isinstance(field_value, mlir.astnodes.TypeAlias):
+            if field_type in (list, tuple):
+                resolved_field_value = field_type(_resolve_type_aliases(sub_node, type_alias_table) for sub_node in field_value)
+            elif issubclass(field_type, mlir.astnodes.TypeAlias):
                 alias_name = field_value.value
                 alias_value = type_alias_table[alias_name]
-                setattr(node, field, alias_value)
+                resolved_field_value = _resolve_type_aliases(alias_value, type_alias_table)
             else:
-                _resolve_type_aliases(field_value, type_alias_table)
-    return
+                resolved_field_value = _resolve_type_aliases(field_value, type_alias_table)
+            setattr(node, field, resolved_field_value)
+    return node
 
 
 def resolve_type_aliases(module: mlir.astnodes.Module) -> None:
