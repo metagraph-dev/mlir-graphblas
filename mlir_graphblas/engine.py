@@ -5,7 +5,7 @@ import ctypes
 import operator
 import llvmlite.binding as llvm
 import numpy as np
-from .wrap import MLIRSparseTensor
+from .sparse_utils import MLIRSparseTensor
 from functools import reduce
 from .cli import MlirOptCli, MlirOptError
 from typing import Tuple, List, Dict, Callable, Union, Any

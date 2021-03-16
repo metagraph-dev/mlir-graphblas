@@ -99,9 +99,9 @@ setup(
     packages=find_packages(include=["mlir_graphblas", "mlir_graphblas.*"]),
     ext_modules=cythonize(
         Extension(
-            "mlir_graphblas.wrap",
+            "mlir_graphblas.sparse_utils",
             language="c++",
-            sources=["mlir_graphblas/wrap.pyx"],
+            sources=["mlir_graphblas/sparse_utils.pyx"],
             extra_compile_args=["-std=c++11"],
             include_dirs=include_dirs,
             define_macros=define_macros,
