@@ -12,14 +12,14 @@ build:
 
 requirements:
   host:
-    - python
+    - python=3.8
     - numpy
     - cython
     - metagraph::mlir
 
   run:
-    - python
-    - mlir
+    - python=3.8
+    - metagraph::mlir
     - pymlir
     - llvmlite
     - pygments
@@ -35,8 +35,6 @@ test:
     - coverage
 
   commands:
-    - python -c "import mlir_graphblas"
-    - python -c "import mlir_graphblas.tests"
     - pytest --pyargs mlir_graphblas.tests
 
 about:

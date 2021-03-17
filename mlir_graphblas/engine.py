@@ -2,6 +2,7 @@ import os
 import subprocess
 import mlir
 import ctypes
+import glob
 import operator
 import llvmlite.binding as llvm
 import numpy as np
@@ -11,12 +12,18 @@ from .cli import MlirOptCli, MlirOptError
 from typing import Tuple, List, Dict, Callable, Union, Any
 
 _CURRENT_MODULE_DIR = os.path.dirname(__file__)
-_SPARSE_UTILS_SO = os.path.join(_CURRENT_MODULE_DIR, "SparseUtils.so")
-if not os.path.isfile(_SPARSE_UTILS_SO):
+_SPARSE_UTILS_SO_FILE_PATTERN = os.path.join(_CURRENT_MODULE_DIR, "SparseUtils*.so")
+_SPARSE_UTILS_SO_FILES = glob.glob(_SPARSE_UTILS_SO_FILE_PATTERN)
+if len(_SPARSE_UTILS_SO_FILES) == 0:
     # TODO this hard-codes the setup.py option and the location of setup.py
     raise RuntimeError(
         f'{_SPARSE_UTILS_SO} not found. This can typically be solved by running "python setup.py build_ext" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
     )
+elif len(_SPARSE_UTILS_SO_FILES) > 1:
+    raise RuntimeError(
+        f'Multiple files matching {_SPARSE_UTILS_SO_FILE_PATTERN} found.'
+    )
+[_SPARSE_UTILS_SO] = _SPARSE_UTILS_SO_FILES
 llvm.load_library_permanently(
     _SPARSE_UTILS_SO
 )  # TODO will this cause name collisions with other uses of llvmlite by third-party libraries?
