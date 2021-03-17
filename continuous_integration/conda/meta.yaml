@@ -15,6 +15,7 @@ requirements:
   host:
     - python
     - numpy
+    - cython
 
   run:
     - python
