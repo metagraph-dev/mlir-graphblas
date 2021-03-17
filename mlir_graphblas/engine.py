@@ -15,7 +15,7 @@ _SPARSE_UTILS_SO = os.path.join(_CURRENT_MODULE_DIR, "SparseUtils.so")
 if not os.path.isfile(_SPARSE_UTILS_SO):
     # TODO this hard-codes the setup.py option and the location of setup.py
     raise RuntimeError(
-        f'{_SPARSE_UTILS_SO} not found. This can typically be solved by running "python setup.py compile_sparse_utils_so" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
+        f'{_SPARSE_UTILS_SO} not found. This can typically be solved by running "python setup.py build_ext" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
     )
 llvm.load_library_permanently(
     _SPARSE_UTILS_SO

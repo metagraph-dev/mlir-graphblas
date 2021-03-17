@@ -21,93 +21,40 @@ include_dirs = [np.get_include(), environment_include_dir]
 define_macros = [("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")]
 annotate = True  # Creates html file
 
-#################################
-# SparseUtils.cpp Shared Object #
-#################################
-
-
-class CompileSparseUtilsSharedObjectCommand(distutils.cmd.Command):
-    """
-    Example Usage:
-        python3 setup.py compile_sparse_utils_so
-    """
-
-    sparse_utils_cpp_location = "./mlir_graphblas/SparseUtils.cpp"
-    description = f"Compile {sparse_utils_cpp_location}."
-    user_options = []
-
-    def initialize_options(self) -> None:
-        return
-
-    def finalize_options(self) -> None:
-        return
-
-    def run(self) -> None:
-
-        self.announce(
-            f"Compiling {self.sparse_utils_cpp_location}.", level=distutils.log.INFO
-        )
-        compile_command = f"g++ -std=c++11 -c -Wall -Werror -fpic -I{environment_include_dir} {self.sparse_utils_cpp_location} && g++ -shared -o ./mlir_graphblas/SparseUtils.so SparseUtils.o"
-        process = subprocess.Popen(
-            "/bin/bash",
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        stdout, stderr = process.communicate(compile_command.encode())
-        if process.returncode != 0:
-            raise RuntimeError(
-                f"""
-Could not compile {self.sparse_utils_cpp_location}.
-
-Compile Command:
-
-{compile_command}
-
-STDOUT:
-
-{stdout.decode()}
-
-STDERR:
-
-{stderr.decode()}
-
-"""
-            )
-        self.announce(
-            f"Finished compiling {self.sparse_utils_cpp_location}.",
-            level=distutils.log.INFO,
-        )
-        return
-
-
 #########
 # setup #
 #########
 
-cmdclass = {
-    "compile_sparse_utils_so": CompileSparseUtilsSharedObjectCommand,
-}
-cmdclass.update(versioneer.get_cmdclass())
+ext_modules = cythonize(
+    Extension(
+        "mlir_graphblas.sparse_utils",
+        language="c++",
+        sources=["mlir_graphblas/sparse_utils.pyx"],
+        extra_compile_args=["-std=c++11"],
+        include_dirs=include_dirs,
+        define_macros=define_macros,
+    ),
+    annotate=annotate,
+)
+
+ext_modules.append(
+    Extension(
+        'mlir_graphblas.SparseUtils',
+        sources=['mlir_graphblas/SparseUtils.cpp'],
+        include_dirs=[environment_include_dir],
+        extra_compile_args=["-std=c++11"],
+        # compile_command = f"g++ -std=c++11 -c -Wall -Werror -fpic -I{environment_include_dir} {self.sparse_utils_cpp_location} && g++ -shared -o ./mlir_graphblas/SparseUtils.so SparseUtils.o"
+    )
+)
 
 setup(
     name="mlir-graphblas",
     version=versioneer.get_version(),
-    cmdclass=cmdclass,
+    cmdclass=versioneer.get_cmdclass(),
     description="MLIR dialect for GraphBLAS",
     author="Anaconda, Inc.",
     packages=find_packages(include=["mlir_graphblas", "mlir_graphblas.*"]),
-    ext_modules=cythonize(
-        Extension(
-            "mlir_graphblas.sparse_utils",
-            language="c++",
-            sources=["mlir_graphblas/sparse_utils.pyx"],
-            extra_compile_args=["-std=c++11"],
-            include_dirs=include_dirs,
-            define_macros=define_macros,
-        ),
-        annotate=annotate,
-    ),
+    ext_modules=ext_modules,
     package_data={"mlir_graphblas": ["*.pyx"]},
     include_package_data=True,
     install_requires=["pymlir", "pygments"],
