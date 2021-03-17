@@ -47,7 +47,7 @@ class CompileSparseUtilsSharedObjectCommand(distutils.cmd.Command):
         self.announce(
             f"Compiling {self.sparse_utils_cpp_location}.", level=distutils.log.INFO
         )
-        compile_command = f"g++ -c -Wall -Werror -fpic -I{environment_include_dir} {self.sparse_utils_cpp_location} && g++ -shared -o ./mlir_graphblas/SparseUtils.so SparseUtils.o"
+        compile_command = f"g++ -std=c++11 -c -Wall -Werror -fpic -I{environment_include_dir} {self.sparse_utils_cpp_location} && g++ -shared -o ./mlir_graphblas/SparseUtils.so SparseUtils.o"
         process = subprocess.Popen(
             "/bin/bash",
             stdin=subprocess.PIPE,
