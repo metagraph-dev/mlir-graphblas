@@ -21,7 +21,7 @@ if len(_SPARSE_UTILS_SO_FILES) == 0:
     )
 elif len(_SPARSE_UTILS_SO_FILES) > 1:
     raise RuntimeError(
-        f'Multiple files matching {_SPARSE_UTILS_SO_FILE_PATTERN} found.'
+        f"Multiple files matching {_SPARSE_UTILS_SO_FILE_PATTERN} found."
     )
 [_SPARSE_UTILS_SO] = _SPARSE_UTILS_SO_FILES
 llvm.load_library_permanently(
