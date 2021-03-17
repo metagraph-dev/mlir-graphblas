@@ -35,6 +35,8 @@ test:
     - coverage
 
   commands:
+    - python -c "import mlir_graphblas"
+    - python -c "import mlir_graphblas.tests"
     - pytest --pyargs mlir_graphblas.tests
 
 about:
