@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 
 SIMPLE_TEST_CASES = [  # elements are ( mlir_template, args, expected_result x)
-    (  # arbitrary size tensor , arbitrary size tensor -> arbitrary size tensor
+    pytest.param(  # arbitrary size tensor , arbitrary size tensor -> arbitrary size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -30,8 +30,9 @@ func @{func_name}(%arga: tensor<?x?x{mlir_type}>, %argb: tensor<?x?x{mlir_type}>
 """,
         [np.arange(2 * 4).reshape((2, 4)), np.full([2, 4], 10),],
         np.array([[10, 11, 12, 13], [14, 15, 16, 17]]),
+        id="arbitrary_arbitrary_to_arbitrary",
     ),
-    (  # fixed size tensor , fixed size tensor -> fixed size tensor
+    pytest.param(  # fixed size tensor , fixed size tensor -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -55,8 +56,9 @@ func @{func_name}(%arga: tensor<2x4x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
 """,
         [np.arange(2 * 4).reshape((2, 4)), np.full([2, 4], 10),],
         np.array([[10, 11, 12, 13], [14, 15, 16, 17]]),
+        id="fixed_fixed_to_fixed",
     ),
-    (  # arbitrary size tensor , fixed size tensor -> arbitrary size tensor
+    pytest.param(  # arbitrary size tensor , fixed size tensor -> arbitrary size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -80,8 +82,9 @@ func @{func_name}(%arga: tensor<?x?x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
 """,
         [np.arange(2 * 4).reshape((2, 4)), np.full([2, 4], 10),],
         np.array([[10, 11, 12, 13], [14, 15, 16, 17]]),
+        id="arbitrary_fixed_to_arbitrary",
     ),
-    (  # fixed size tensor , scalar -> fixed size tensor
+    pytest.param(  # fixed size tensor , scalar -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -104,8 +107,9 @@ func @{func_name}(%arg_tensor: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}
 """,
         [np.arange(2 * 4).reshape((2, 4)), 2],
         np.array([[2, 3, 4, 5], [6, 7, 8, 9]]),
+        id="fixed_scalar_to_fixed",
     ),
-    (  # fixed size tensor , scalar , arbitrary size tensor -> fixed size tensor
+    pytest.param(  # fixed size tensor , scalar , arbitrary size tensor -> fixed size tensor
         """
 #trait_add = {{
  indexing_maps = [
@@ -130,8 +134,9 @@ func @{func_name}(%tensor_a: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}, 
 """,
         [np.arange(2 * 4).reshape((2, 4)), 2, np.full([2, 4], 10)],
         np.array([[12, 13, 14, 15], [16, 17, 18, 19]]),
+        id="fixed_scalar_arbitrary_to_arbitrary",
     ),
-    (  # arbitrary size 1D tensor -> scalar
+    pytest.param(  # arbitrary size 1D tensor -> scalar
         """
 func @{func_name}(%arg0: tensor<?x{mlir_type}>) -> {mlir_type} {{
   %c3 = constant 3 : index
@@ -141,8 +146,9 @@ func @{func_name}(%arg0: tensor<?x{mlir_type}>) -> {mlir_type} {{
 """,
         [np.arange(8)],
         3,
+        id="arbitrary_to_scalar",
     ),
-    (  # arbitrary size 1D tensor, scalar -> scalar
+    pytest.param(  # arbitrary size 1D tensor, scalar -> scalar
         """
 func @{func_name}(%tensor_arg: tensor<?x{mlir_type}>, %scalar_arg: {mlir_type}) -> {mlir_type} {{
   %c3 = constant 3 : index
@@ -153,8 +159,9 @@ func @{func_name}(%tensor_arg: tensor<?x{mlir_type}>, %scalar_arg: {mlir_type}) 
 """,
         [np.arange(8), 10],
         13,
+        id="arbitrary_scalar_to_scalar",
     ),
-    (  # arbitrary size 1D tensor, arbitrary size 1D tensor -> scalar
+    pytest.param(  # arbitrary size 1D tensor, arbitrary size 1D tensor -> scalar
         """
 func @{func_name}(%arg0: tensor<?x{mlir_type}>, %arg1: tensor<?x{mlir_type}>) -> {mlir_type} {{
   %c3 = constant 3 : index
@@ -167,8 +174,9 @@ func @{func_name}(%arg0: tensor<?x{mlir_type}>, %arg1: tensor<?x{mlir_type}>) ->
 """,
         [np.arange(8), np.arange(5),],
         7,
+        id="arbitrary_arbitrary_to_scalar",
     ),
-    (  # scalar, arbitrary size 1D tensor, arbitrary size 1D tensor -> scalar
+    pytest.param(  # scalar, arbitrary size 1D tensor, arbitrary size 1D tensor -> scalar
         """
 func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x{mlir_type}>, %arg1: tensor<?x{mlir_type}>) -> {mlir_type} {{
   %c3 = constant 3 : index
@@ -182,8 +190,9 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x{mlir_type}>, %arg1: ten
 """,
         [2, np.arange(8), np.arange(5),],
         9,
+        id="scalar_arbitrary_arbitrary_to_scalar",
     ),
-    (  # simple and nested type asliases
+    pytest.param(  # simple and nested type aliases
         """
 !mlir_type_alias = type {mlir_type}
 !mlir_tensor_type_alias = type tensor<?x!mlir_type_alias>
@@ -200,45 +209,49 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x!mlir_type_alias>, %arg1
 """,
         [2, np.arange(8), np.arange(5),],
         9,
+        id="simple_and_nested_type_aliases",
     ),
 ]
 
 
-def test_jit_engine_tensor_result():
+TEST_CASE_INDEX = 0
 
-    engine = mlir_graphblas.MlirJitEngine()
-    for test_case_index, test_case in enumerate(SIMPLE_TEST_CASES):
-        for mlir_type, np_type in MLIR_TYPE_TO_NP_TYPE.items():
-            func_name = f"func_{test_case_index}_{mlir_type}"
 
-            if issubclass(np_type, np.integer):
-                linalg_add = "addi"
-            elif issubclass(np_type, np.floating):
-                linalg_add = "addf"
-            else:
-                raise ValueError(f"No MLIR type for {np_type}.")
+@pytest.mark.parametrize("mlir_template,args,expected_result", SIMPLE_TEST_CASES)
+@pytest.mark.parametrize("mlir_type", MLIR_TYPE_TO_NP_TYPE.keys())
+def test_jit_engine_tensor_result(
+    engine, mlir_template, args, expected_result, mlir_type
+):
+    global TEST_CASE_INDEX
 
-            mlir_template, args, expected_result = test_case
-            mlir_text = mlir_template.format(
-                func_name=func_name, mlir_type=mlir_type, linalg_add=linalg_add
-            )
-            args = [
-                arg.astype(np_type) if isinstance(arg, np.ndarray) else arg
-                for arg in args
-            ]
-            expected_result = (
-                expected_result.astype(np_type)
-                if isinstance(expected_result, np.ndarray)
-                else expected_result
-            )
+    np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
+    func_name = f"func_{TEST_CASE_INDEX}_{mlir_type}"
+    TEST_CASE_INDEX += 1
 
-            engine.add(mlir_text, STANDARD_PASSES)
+    if issubclass(np_type, np.integer):
+        linalg_add = "addi"
+    elif issubclass(np_type, np.floating):
+        linalg_add = "addf"
+    else:
+        raise ValueError(f"No MLIR type for {np_type}.")
 
-            compiled_func = engine[func_name]
-            result = compiled_func(*args)
-            assert np.all(
-                result == expected_result
-            ), f"""
+    mlir_text = mlir_template.format(
+        func_name=func_name, mlir_type=mlir_type, linalg_add=linalg_add
+    )
+    args = [arg.astype(np_type) if isinstance(arg, np.ndarray) else arg for arg in args]
+    expected_result = (
+        expected_result.astype(np_type)
+        if isinstance(expected_result, np.ndarray)
+        else expected_result
+    )
+
+    engine.add(mlir_text, STANDARD_PASSES)
+
+    compiled_func = engine[func_name]
+    result = compiled_func(*args)
+    assert np.all(
+        result == expected_result
+    ), f"""
 Input MLIR: 
 {mlir_text}
 
@@ -248,10 +261,8 @@ Expected Result: {expected_result}
 """
 
 
-def test_jit_engine_sparse_tensor():
-
-    engine = mlir_graphblas.MlirJitEngine()
-
+@pytest.mark.parametrize("mlir_type", ["f32", "f64"])
+def test_jit_engine_sparse_tensor(engine, mlir_type):
     mlir_template = r"""
 
 #trait_sum_reduction = {{
@@ -284,29 +295,28 @@ func @{func_name}(%argA: !SparseTensor, %argx: tensor<{mlir_type}>) -> {mlir_typ
 
 """
 
-    for mlir_type, np_type in [("f32", np.float32), ("f64", np.float64)]:
-        func_name = f"func_{mlir_type}"
+    np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
 
-        mlir_text = mlir_template.format(func_name=func_name, mlir_type=mlir_type)
+    func_name = f"func_{mlir_type}"
 
-        indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
-        values = np.array([1.2, 3.4], dtype=np_type)
-        sizes = np.array([10, 20, 30], dtype=np.uint64)
-        sparsity = np.array([True, True, True], dtype=np.bool8)
+    mlir_text = mlir_template.format(func_name=func_name, mlir_type=mlir_type)
 
-        a = mlir_graphblas.sparse_utils.MLIRSparseTensor(
-            indices, values, sizes, sparsity
-        )
-        x = np.array(0.0, dtype=np_type)
-        args = [a, x]
+    indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
+    values = np.array([1.2, 3.4], dtype=np_type)
+    sizes = np.array([10, 20, 30], dtype=np.uint64)
+    sparsity = np.array([True, True, True], dtype=np.bool8)
 
-        assert engine.add(mlir_text, STANDARD_PASSES) == [func_name]
+    a = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
+    x = np.array(0.0, dtype=np_type)
+    args = [a, x]
 
-        result = engine[func_name](*args)
-        expected_result = 4.6
-        assert (
-            abs(result - expected_result) < 1e-6
-        ), f"""
+    assert engine.add(mlir_text, STANDARD_PASSES) == [func_name]
+
+    result = engine[func_name](*args)
+    expected_result = 4.6
+    assert (
+        abs(result - expected_result) < 1e-6
+    ), f"""
 Input MLIR: 
 {mlir_text}
 
@@ -314,3 +324,8 @@ Inputs: {args}
 Result: {result}
 Expected Result: {expected_result}
 """
+
+
+@pytest.fixture(scope="module")
+def engine():
+    return mlir_graphblas.MlirJitEngine()
