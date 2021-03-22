@@ -158,6 +158,13 @@ BAD_INPUT_TEST_CASES = [  # elements are ( error_type, error_match_string, bad_a
         "bad_input_string",
         id="string_for_sparse_tensor",
     ),
+    pytest.param(
+        TypeError,
+        " cannot be cast to ",
+        4,
+        np.float64(np.finfo(np.dtype('float32')).max**8),
+        id="f64_for_f32_scalar",
+    ),
 ]
 
 for np_type in (
