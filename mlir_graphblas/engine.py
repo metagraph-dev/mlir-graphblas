@@ -190,7 +190,9 @@ def input_pretty_dialect_type_to_ctypes(
             # since MLIR's sparse tensor support is currently up-in-the-air and this
             # is how they currently handle sparse tensors
             if not isinstance(arg, MLIRSparseTensor):
-                raise TypeError(f"{arg} expected to be instance of {MLIRSparseTensor}")
+                raise TypeError(
+                    f"{repr(arg)} is expected to be an instance of {MLIRSparseTensor.__qualname__}"
+                )
             return [ctypes.cast(arg.data, ctypes_type)]
 
     else:
@@ -218,12 +220,14 @@ def input_tensor_to_ctypes(
 
     def encoder(arg: np.ndarray) -> list:
         if not isinstance(arg, np.ndarray):
-            raise TypeError(f"{arg} is expected to be an instance of {np.ndarray}")
+            raise TypeError(
+                f"{repr(arg)} is expected to be an instance of {np.ndarray.__qualname__}"
+            )
         if not arg.dtype == np_type:
-            raise TypeError(f"{arg} is expected to have dtype {np_type}")
+            raise TypeError(f"{repr(arg)} is expected to have dtype {np_type}")
         if not len(dimensions) == len(arg.shape):
             raise ValueError(
-                f"{arg} is expected to have rank {len(dimensions)} but has rank {len(arg.shape)}."
+                f"{repr(arg)} is expected to have rank {len(dimensions)} but has rank {len(arg.shape)}."
             )
 
         encoded_args = [arg, arg, 0]
@@ -235,7 +239,7 @@ def input_tensor_to_ctypes(
                 and arg.shape[dim_index] != expected_dim_size
             ):
                 raise ValueError(
-                    f"{arg} is expected to have size {expected_dim_size} in the {dim_index}th dimension but has size {arg.shape[dim_index]}."
+                    f"{repr(arg)} is expected to have size {expected_dim_size} in the {dim_index}th dimension but has size {arg.shape[dim_index]}."
                 )
             encoded_args.append(arg.shape[dim_index])
 
@@ -253,8 +257,16 @@ def input_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callabl
     ctypes_input_types = [ctypes_type]
 
     def encoder(arg) -> list:
-        if not np.can_cast(arg, np_type):
-            raise TypeError(f"{arg} cannot be cast to {np_type}")
+        try:
+            can_cast = np.can_cast(arg, np_type, "safe")
+        except TypeError:
+            can_cast = False
+        if not can_cast:
+            raise TypeError(f"{repr(arg)} cannot be cast to {np_type}")
+        if not isinstance(arg, (np.number, int, float)):
+            raise TypeError(
+                f"{repr(arg)} is expected to be a scalar with dtype {np_type}"
+            )
         return [arg]
 
     return ctypes_input_types, encoder
@@ -369,10 +381,15 @@ class MlirJitEngine:
                 )
             encoded_args = (encoder(arg) for arg, encoder in zip(args, encoders))
             encoded_args = reduce(operator.add, encoded_args)
-            result = c_callable(*encoded_args)
-            result = decoder(result)
+            encoded_result = c_callable(*encoded_args)
+            result = decoder(encoded_result)
 
             return result
+
+        # python_callable only tracks the function pointer, not the
+        # function itself. If self._engine, gets garbage deallocated,
+        # we get a seg fault. Thus, we must keep the engine alive.
+        setattr(python_callable, "jit_engine", self)
 
         return python_callable
 
@@ -395,6 +412,7 @@ class MlirJitEngine:
             capture_output=True,
         )
         llvm_text = mlir_translate_run.stdout.decode()
+
         # Create a LLVM module object from the IR
         mod = llvm.parse_assembly(llvm_text)
         mod.verify()
