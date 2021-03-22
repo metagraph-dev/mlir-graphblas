@@ -5,7 +5,7 @@ import mlir_graphblas.sparse_utils
 import pytest
 import numpy as np
 
-SIMPLE_TEST_CASES = [  # elements are ( mlir_template, args, expected_result x)
+SIMPLE_TEST_CASES = [  # elements are ( mlir_template, args, expected_result )
     pytest.param(  # arbitrary size tensor , arbitrary size tensor -> arbitrary size tensor
         """
 #trait_add = {{
@@ -210,6 +210,18 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x!mlir_type_alias>, %arg1
         [2, np.arange(8), np.arange(5),],
         9,
         id="simple_and_nested_type_aliases",
+    ),
+    pytest.param(  # partially fixed size tensor -> scalar
+        """
+func @{func_name}(%arg_tensor: tensor<?x4x{mlir_type}>) -> {mlir_type} {{
+  %c0 = constant 0 : index
+  %ans = tensor.extract %arg_tensor[%c0, %c0] : tensor<?x4x{mlir_type}>
+  return %ans : {mlir_type}
+}}
+""",
+        [np.full([7, 4], 100)],
+        100,
+        id="partial_to_scalar",
     ),
 ]
 
