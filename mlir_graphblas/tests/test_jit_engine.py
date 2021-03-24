@@ -292,11 +292,12 @@ def test_jit_engine_sparse_tensor(engine, mlir_type):
 
 !SparseTensor = type !llvm.ptr<i8>
 
-func @{func_name}(%argA: !SparseTensor, %argx: tensor<{mlir_type}>) -> {mlir_type} {{
+func @{func_name}(%argA: !SparseTensor) -> {mlir_type} {{
+  %out_tensor = constant dense<0.0> : tensor<{mlir_type}>
   %arga = linalg.sparse_tensor %argA : !SparseTensor to tensor<10x20x30x{mlir_type}>
   %reduction = linalg.generic #trait_sum_reduction
      ins(%arga: tensor<10x20x30x{mlir_type}>)
-    outs(%argx: tensor<{mlir_type}>) {{
+    outs(%out_tensor: tensor<{mlir_type}>) {{
       ^bb(%a: {mlir_type}, %x: {mlir_type}):
         %0 = addf %x, %a : {mlir_type}
         linalg.yield %0 : {mlir_type}
@@ -319,12 +320,10 @@ func @{func_name}(%argA: !SparseTensor, %argx: tensor<{mlir_type}>) -> {mlir_typ
     sparsity = np.array([True, True, True], dtype=np.bool8)
 
     a = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
-    x = np.array(0.0, dtype=np_type)
-    args = [a, x]
 
     assert engine.add(mlir_text, STANDARD_PASSES) == [func_name]
 
-    result = engine[func_name](*args)
+    result = engine[func_name](a)
     expected_result = 4.6
     assert (
         abs(result - expected_result) < 1e-6
