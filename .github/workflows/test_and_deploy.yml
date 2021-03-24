@@ -20,7 +20,7 @@ jobs:
         pyver:
           - 3.8
     runs-on: ${{ matrix.os }}
-    env: &BUILD_ENV
+    env:
       ARTIFACT_NAME: built_package_py${{matrix.pyver}}_${{matrix.os}}.tar.bz2
     defaults:
       run:
@@ -87,7 +87,7 @@ jobs:
           - 3.8
     runs-on: ${{ matrix.os }}
     env:
-      <<: *BUILD_ENV
+      ARTIFACT_NAME: built_package_py${{matrix.pyver}}_${{matrix.os}}.tar.bz2
     steps:
       - name: Download build artifact
         uses: actions/download-artifact@v2
@@ -128,7 +128,7 @@ jobs:
     needs: test_pyver
     if: (github.ref == 'refs/heads/main') || contains(github.ref, 'refs/tags/')
     env:
-      <<: *BUILD_ENV
+      ARTIFACT_NAME: built_package_py${{matrix.pyver}}_${{matrix.os}}.tar.bz2
       AC_LABEL: dev
     steps:
       - name: Download build artifact
