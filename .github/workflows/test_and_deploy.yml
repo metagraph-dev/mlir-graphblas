@@ -20,6 +20,8 @@ jobs:
         pyver:
           - 3.8
     runs-on: ${{ matrix.os }}
+    env: &BUILD_ENV
+      ARTIFACT_NAME: built_package_py${{matrix.pyver}}_${{matrix.os}}.tar.bz2
     defaults:
       run:
         shell: bash -l {0}
@@ -67,7 +69,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v2
         with:
-          name: built_package
+          name: ${{ env.ARTIFACT_NAME }}
           path: ${{ env.CONDA_BUILD_OUTPUT }}
           retention-days: 7
 
@@ -84,11 +86,13 @@ jobs:
         pyver:
           - 3.8
     runs-on: ${{ matrix.os }}
+    env:
+      <<: *BUILD_ENV
     steps:
       - name: Download build artifact
         uses: actions/download-artifact@v2
         with:
-          name: built_package
+          name: ${{ env.ARTIFACT_NAME }}
           path: ./artifact_storage
       - name: Create env
         uses: conda-incubator/setup-miniconda@v2
@@ -124,12 +128,13 @@ jobs:
     needs: test_pyver
     if: (github.ref == 'refs/heads/main') || contains(github.ref, 'refs/tags/')
     env:
+      <<: *BUILD_ENV
       AC_LABEL: dev
     steps:
       - name: Download build artifact
         uses: actions/download-artifact@v2
         with:
-          name: built_package
+          name: ${{ env.ARTIFACT_NAME }}
           path: ./artifact_storage
       - name: Determine label
         if: contains(github.ref, 'refs/tags/')
