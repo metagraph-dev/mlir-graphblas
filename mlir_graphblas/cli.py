@@ -178,7 +178,19 @@ class DebugResult:
             ret.append(f"{i:{offset}}|{line}")
         return "\n".join(ret)
 
-    def explore(self, embed=False):
+    def explore(self, embed=False, initial_style=None):
+        """
+        Open an interactive explorer view of the passes
+
+        :param embed: If True, embeds the explorer in the notebook output
+                      If False (default), open the explorer in a new tab
+        :param initial_style: dict of styles to apply for the initial view of the explorer
+            line_numbers: bool
+            highlight_style: str
+            tab: str
+            pass: str
+            pass2: str (only applies if tab=="Double")
+        """
         from .explorer import Explorer
 
-        return Explorer(self).show(embed=embed)
+        return Explorer(self).show(embed=embed, initial_style=initial_style)

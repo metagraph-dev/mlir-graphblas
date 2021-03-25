@@ -58,10 +58,43 @@ class Explorer:
         self._shown_stages = [0, 1, 0, 0, 1]
         self._code_blocks = [None, None, None, None, None]
 
-    def show(self, embed=False):
+    def show(self, embed=False, initial_style=None):
         pn.extension()
         self.embed = embed
+
+        # Apply initial styles
+        if initial_style is None:
+            initial_style = {}
+        self.show_line_numbers = initial_style.get("line_numbers", self.show_line_numbers)
+        self.highlight_style = initial_style.get("highlight_style", self.highlight_style)
         self.build()
+        if "tab" in initial_style:
+            tab_name = initial_style.get("tab", "sequential").lower()
+            pass_name = initial_style.get("pass", "Initial")
+            ipass = 0 if pass_name == "Initial" else self.dr._find_pass_index(pass_name) + 1
+            if tab_name == "sequential":
+                assert pass_name != "Initial", "Sequential tab does not have Initial option"
+                self._ui["seq_select"].value = pass_name
+                self._shown_stages[0] = ipass - 1
+                self._shown_stages[1] = ipass
+            elif tab_name == "single":
+                self._ui["tabs"].active = 1
+                self._ui["sgl_select"].value = pass_name
+                self._shown_stages[2] = ipass
+            elif tab_name == "double":
+                self._ui["tabs"].active = 2
+                pass2_name = initial_style.get("pass2", self.dr.passes[0])
+                ipass2 = 0 if pass2_name == "Initial" else self.dr._find_pass_index(pass2_name) + 1
+                self._ui["dbl_select_left"].value = pass_name
+                self._ui["dbl_select_right"].value = pass2_name
+                self._shown_stages[3] = ipass
+                self._shown_stages[4] = ipass2
+            elif tab_name == "edit":
+                self._ui["tabs"].active = 3
+            else:
+                raise KeyError(f"Invalid tab name: {initial_style.get('tab')}")
+            self.rebuild()
+
         if embed:
             return self.panel
         else:
@@ -84,10 +117,10 @@ class Explorer:
         self.panel = pn.GridSpec(sizing_mode="stretch_width")
 
         ckbox_linenos = pn.widgets.Checkbox(
-            name="Show Line Numbers", value=True, width=150
+            name="Show Line Numbers", value=self.show_line_numbers, width=150
         )
         style_select = pn.widgets.Select(
-            name="Highlighting Style", options=list(styles.get_all_styles()), width=150
+            name="Highlighting Style", options=list(styles.get_all_styles()), value=self.highlight_style, width=150
         )
         tabs = pn.Tabs()
 
@@ -181,6 +214,7 @@ class Explorer:
             "dbl_select_right": dbl_select_right,
             "edit_text": edit_text,
             "ckbox_passes": ckbox_passes,
+            "tabs": tabs,
         }
         self._code_blocks = [
             seq_code_left,
