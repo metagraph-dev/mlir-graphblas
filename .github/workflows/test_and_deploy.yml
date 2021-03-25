@@ -42,6 +42,7 @@ jobs:
           pip install -e .
       - name: Lint with Black
         run: |
+          black --version
           black mlir_graphblas *.py --check --diff
       - name: Pytest
         run: |

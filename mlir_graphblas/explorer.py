@@ -65,15 +65,23 @@ class Explorer:
         # Apply initial styles
         if initial_style is None:
             initial_style = {}
-        self.show_line_numbers = initial_style.get("line_numbers", self.show_line_numbers)
-        self.highlight_style = initial_style.get("highlight_style", self.highlight_style)
+        self.show_line_numbers = initial_style.get(
+            "line_numbers", self.show_line_numbers
+        )
+        self.highlight_style = initial_style.get(
+            "highlight_style", self.highlight_style
+        )
         self.build()
         if "tab" in initial_style:
             tab_name = initial_style.get("tab", "sequential").lower()
             pass_name = initial_style.get("pass", "Initial")
-            ipass = 0 if pass_name == "Initial" else self.dr._find_pass_index(pass_name) + 1
+            ipass = (
+                0 if pass_name == "Initial" else self.dr._find_pass_index(pass_name) + 1
+            )
             if tab_name == "sequential":
-                assert pass_name != "Initial", "Sequential tab does not have Initial option"
+                assert (
+                    pass_name != "Initial"
+                ), "Sequential tab does not have Initial option"
                 self._ui["seq_select"].value = pass_name
                 self._shown_stages[0] = ipass - 1
                 self._shown_stages[1] = ipass
@@ -84,7 +92,11 @@ class Explorer:
             elif tab_name == "double":
                 self._ui["tabs"].active = 2
                 pass2_name = initial_style.get("pass2", self.dr.passes[0])
-                ipass2 = 0 if pass2_name == "Initial" else self.dr._find_pass_index(pass2_name) + 1
+                ipass2 = (
+                    0
+                    if pass2_name == "Initial"
+                    else self.dr._find_pass_index(pass2_name) + 1
+                )
                 self._ui["dbl_select_left"].value = pass_name
                 self._ui["dbl_select_right"].value = pass2_name
                 self._shown_stages[3] = ipass
@@ -120,7 +132,10 @@ class Explorer:
             name="Show Line Numbers", value=self.show_line_numbers, width=150
         )
         style_select = pn.widgets.Select(
-            name="Highlighting Style", options=list(styles.get_all_styles()), value=self.highlight_style, width=150
+            name="Highlighting Style",
+            options=list(styles.get_all_styles()),
+            value=self.highlight_style,
+            width=150,
         )
         tabs = pn.Tabs()
 
@@ -146,7 +161,9 @@ class Explorer:
         seq_code_row[0, 0] = seq_code_left
         seq_code_row[0, 1] = seq_code_right
         sequential[0, 0] = pn.Column(
-            seq_select, pn.Row(seq_btn_left, seq_btn_right), seq_code_row,
+            seq_select,
+            pn.Row(seq_btn_left, seq_btn_right),
+            seq_code_row,
         )
         tabs.append(("Sequential", sequential))
 

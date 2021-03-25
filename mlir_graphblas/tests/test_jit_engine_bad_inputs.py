@@ -121,7 +121,11 @@ BAD_INPUT_TEST_CASES = [  # elements are ( error_type, error_match_string, bad_a
         id="string_for_partially_fixed_size_tensor",
     ),
     pytest.param(
-        TypeError, "cannot be cast to", 4, "bad_input_string", id="string_for_scalar",
+        TypeError,
+        "cannot be cast to",
+        4,
+        "bad_input_string",
+        id="string_for_scalar",
     ),
     pytest.param(
         TypeError,
