@@ -10,7 +10,7 @@ dependencies:
   - coverage
   - pytest
   - pytest-cov
-  - black=20.8b1
+  - black
 
 
 # dependencies (so setup.py develop doesn't pip install them)

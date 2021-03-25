@@ -57,6 +57,16 @@ class Explorer:
         self.html_formatter = None
         self._shown_stages = [0, 1, 0, 0, 1]
         self._code_blocks = [None, None, None, None, None]
+        self.passes = [
+            f"[{i+1}/{len(self.dr.passes)}] {p}" for i, p in enumerate(self.dr.passes)
+        ]
+
+    @property
+    def initial_pass(self):
+        return f"[0/{len(self.passes)}] Initial"
+
+    def _find_pass_index(self, pass_name: str) -> int:
+        return int(pass_name.split("/")[0][1:])
 
     def show(self, embed=False, initial_style=None):
         pn.extension()
@@ -74,13 +84,11 @@ class Explorer:
         self.build()
         if "tab" in initial_style:
             tab_name = initial_style.get("tab", "sequential").lower()
-            pass_name = initial_style.get("pass", "Initial")
-            ipass = (
-                0 if pass_name == "Initial" else self.dr._find_pass_index(pass_name) + 1
-            )
+            pass_name = initial_style.get("pass", self.initial_pass)
+            ipass = self._find_pass_index(pass_name)
             if tab_name == "sequential":
                 assert (
-                    pass_name != "Initial"
+                    pass_name != self.initial_pass
                 ), "Sequential tab does not have Initial option"
                 self._ui["seq_select"].value = pass_name
                 self._shown_stages[0] = ipass - 1
@@ -91,12 +99,8 @@ class Explorer:
                 self._shown_stages[2] = ipass
             elif tab_name == "double":
                 self._ui["tabs"].active = 2
-                pass2_name = initial_style.get("pass2", self.dr.passes[0])
-                ipass2 = (
-                    0
-                    if pass2_name == "Initial"
-                    else self.dr._find_pass_index(pass2_name) + 1
-                )
+                pass2_name = initial_style.get("pass2", self.passes[0])
+                ipass2 = self._find_pass_index(pass2_name)
                 self._ui["dbl_select_left"].value = pass_name
                 self._ui["dbl_select_right"].value = pass2_name
                 self._shown_stages[3] = ipass
@@ -125,6 +129,22 @@ class Explorer:
             ]
             return self.panel.show("MLIR Code Pass Explorer")
 
+    def _uniquify_pass_names(self):
+        """
+        Checkbox groups and select options expect unique labels. Since passes can occur
+        multiple times, we need to differentiate the labels. We do that by adding spaces
+        to the pass names to differentiate them.
+        """
+        seen = set()
+        unique_pass_names = []
+        for p in self.dr.passes:
+            p = "--" + p
+            while p in seen:
+                p = p + " "
+            seen.add(p)
+            unique_pass_names.append(p)
+        return unique_pass_names
+
     def build(self):
         self.panel = pn.GridSpec(sizing_mode="stretch_width")
 
@@ -147,7 +167,7 @@ class Explorer:
         )
 
         # Sequential
-        seq_select = pn.widgets.Select(name="Passes", options=self.dr.passes, width=320)
+        seq_select = pn.widgets.Select(name="Passes", options=self.passes, width=320)
         seq_btn_left = pn.widgets.Button(
             name="\u25c0", width=150, button_type="primary"
         )
@@ -169,7 +189,7 @@ class Explorer:
 
         # Single
         sgl_select = pn.widgets.Select(
-            name="Passes", options=["Initial"] + self.dr.passes, width=320
+            name="Passes", options=[self.initial_pass] + self.passes, width=320
         )
         sgl_code = pn.pane.HTML("Not initialized")
         single = pn.GridSpec(sizing_mode="stretch_width")
@@ -178,10 +198,12 @@ class Explorer:
 
         # Double
         dbl_select_left = pn.widgets.Select(
-            name="Passes", options=["Initial"] + self.dr.passes
+            name="Passes", options=[self.initial_pass] + self.passes
         )
         dbl_select_right = pn.widgets.Select(
-            name="Passes", options=["Initial"] + self.dr.passes, value=self.dr.passes[0]
+            name="Passes",
+            options=[self.initial_pass] + self.passes,
+            value=self.passes[0],
         )
         dbl_code_left = pn.pane.HTML("Not initialized")
         dbl_code_right = pn.pane.HTML("Not initialized")
@@ -199,7 +221,10 @@ class Explorer:
             name="Edit Initial MLIR", value=self.dr.stages[0], min_height=800
         )
         ckbox_passes = pn.widgets.CheckBoxGroup(
-            name="Passes", inline=False, options=self.dr.passes, value=self.dr.passes
+            name="Passes",
+            inline=False,
+            options=self._uniquify_pass_names(),
+            value=self._uniquify_pass_names(),
         )
         apply_button = pn.widgets.Button(
             name="Apply Changes", width=150, button_type="primary", disabled=True
@@ -312,24 +337,22 @@ class Explorer:
         # Find which code block the target is, then update the saved stages
         cb_idx = self._code_blocks.index(target)
 
-        if event.new == "Initial":
-            self._shown_stages[cb_idx] = 0 + offset
-        else:
-            try:
-                ipass = self.dr._find_pass_index(event.new)
-                self._shown_stages[cb_idx] = ipass + 1 + offset
-            except KeyError:
-                target.object = f"No pass found named {event.new}"
-                return
+        try:
+            ipass = self._find_pass_index(event.new)
+            self._shown_stages[cb_idx] = ipass + offset
+        except KeyError:
+            target.object = f"No pass found named {event.new}"
+            return
 
         self.rebuild(cb_idx)
 
     def button_callback(self, target, event):
-        ipass = self.dr._find_pass_index(target.value)
+        # self._find_pass_index returns 1-based indices ; need 0-based
+        ipass = self._find_pass_index(target.value) - 1
         if event.obj.name == "\u25c0":
-            target.value = self.dr.passes[max(ipass - 1, 0)]
+            target.value = self.passes[max(ipass - 1, 0)]
         elif event.obj.name == "\u25b6":
-            target.value = self.dr.passes[min(ipass + 1, len(self.dr.passes) - 1)]
+            target.value = self.passes[min(ipass + 1, len(self.passes) - 1)]
 
     def enable_button(self, target, event):
         target.disabled = False
@@ -339,9 +362,12 @@ class Explorer:
 
         # Generate a new debug result
         input_mlir = self._ui["edit_text"].value.encode()
-        passes = self._ui["ckbox_passes"].value
-        new_results = self.dr._cli.debug_passes(input_mlir, [f"--{p}" for p in passes])
+        passes = [p.strip() for p in self._ui["ckbox_passes"].value]
+        new_results = self.dr._cli.debug_passes(input_mlir, passes)
         self.dr = new_results
+        self.passes = [
+            f"[{i+1}/{len(self.dr.passes)}] {p}" for i, p in enumerate(self.dr.passes)
+        ]
 
         # Reset back to original code views
         self._shown_stages = [0, 1, 0, 0, 1]
@@ -354,11 +380,15 @@ class Explorer:
             "dbl_select_right",
         ):
             sel = self._ui[sel_str]
-            if sel.options[0] == "Initial":
-                sel.options = ["Initial"] + passes
-                sel.value = "Initial" if sel_str != "dbl_select_right" else passes[0]
+            if sel_str != "seq_select":
+                sel.options = [self.initial_pass] + self.passes
+                sel.value = (
+                    self.initial_pass
+                    if sel_str != "dbl_select_right"
+                    else self.passes[0]
+                )
             else:
-                sel.options = passes
-                sel.value = passes[0]
+                sel.options = self.passes
+                sel.value = self.passes[0]
 
         self.rebuild()
