@@ -75,3 +75,26 @@ Example
     >>> x = np.array([1.1, 2.2, 3.3, 4.4, 5.5])
     >>> engine['scale_array'](x, 20.0)
     array([ 22.,  44.,  66.,  88., 110.])
+
+More Examples
+-------------
+
+Here is a series of tutorials and examples for the JIT engine.
+
+They assume knowledge of the MLIR's `linalg dialect <https://mlir.llvm.org/docs/Dialects/Linalg/>`_ and go over how to compile and use MLIR code via the JIT engine.
+
+The content of the tutorials are somewhat sequentially dependent as some later tutorials assume completion of previous tutorials.
+
+Much of the complexity when using the JIT engine in practice comes from writing the MLIR code itself. While some of these tutorials go over features specific to the JIT engine, many of them are simply example uses of the JIT engine plus some MLIR code that can be useful as a template to learn from. 
+
+.. toctree::
+   :maxdepth: 1
+
+   scalar_plus_scalar
+   tensor_plus_tensor
+   matrix_plus_broadcasted_vector
+   scalar_times_tensor
+   tensor_sum
+   spmv
+   sparse_vector_times_sparse_vector
+   sparse_tensor_sum
