@@ -4,7 +4,7 @@ mlir-opt CLI Wrapper
 ====================
 
 ``mlir-opt`` is the standard command line tool for applying passes to MLIR and lowering from one dialect
-to another.
+to another. 
 
 ``mlir_graphblas.MlirOptCli`` is a wrapper around the ``mlir-opt`` command line executable.
 
@@ -56,3 +56,14 @@ the :ref:`explorer`. To open the explorer, call
     result.explore()
 
 A new browser tab will appear showing the explorer.
+
+Examples
+--------
+
+Here are some examples of our CLI tool:
+
+.. toctree::
+   :maxdepth: 1
+
+   apply_passes_to_string_or_file
+   using_debugresult
