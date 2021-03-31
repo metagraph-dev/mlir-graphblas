@@ -337,6 +337,31 @@ Expected Result: {expected_result}
 """
 
 
+def test_jit_engine_skip(engine):
+    # scf.if cannot be parsed by pymlir currently
+    mlir_code = r"""
+// pymlir-skip: begin
+func private @relu_scalar(%arg0: f32) -> f32 {
+  %cst = constant 0.000000e+00 : f32
+  %0 = cmpf uge, %arg0, %cst : f32
+  %1 = scf.if %0 -> (f32) {
+    scf.yield %arg0 : f32
+  } else {
+    scf.yield %cst : f32
+  }
+  return %1 : f32
+}
+// pymlir-skip: end
+
+func @test_func(%arg0: f32) -> f32 {
+  return %arg0 : f32
+}
+"""
+
+    assert engine.add(mlir_code, STANDARD_PASSES) == ["test_func"]
+    assert engine["test_func"](4) == 4
+
+
 @pytest.fixture(scope="module")
 def engine():
     return mlir_graphblas.MlirJitEngine()

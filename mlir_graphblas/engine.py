@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import mlir
 import ctypes
@@ -291,8 +292,7 @@ def input_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callable]
 
 
 def _resolve_type_aliases(
-    node: Any,
-    type_alias_table: Dict[str, mlir.astnodes.PrettyDialectType],
+    node: Any, type_alias_table: Dict[str, mlir.astnodes.PrettyDialectType],
 ) -> Any:
     if isinstance(node, (mlir.astnodes.Node, mlir.astnodes.Module)):
         for field in node._fields_:
@@ -394,6 +394,14 @@ class MlirJitEngine:
 
         return python_callable
 
+    def _preprocess_mlir(self, mlir_text):
+        START_MARKER = "// pymlir-skip: begin"
+        END_MARKER = "// pymlir-skip: end"
+        PATTERN = START_MARKER + r".*?" + END_MARKER
+        regex = re.compile(PATTERN, flags=re.DOTALL)
+        preprocessed_mlir_text = regex.sub("", mlir_text.decode())
+        return preprocessed_mlir_text
+
     def add(
         self, mlir_text: Union[str, bytes], passes: List[str], debug=False
     ) -> List[str]:
@@ -423,7 +431,7 @@ class MlirJitEngine:
         self._engine.run_static_constructors()
 
         # Generate Python callables
-        mlir_ast = mlir.parse_string(mlir_text.decode())
+        mlir_ast = mlir.parse_string(self._preprocess_mlir(mlir_text))
         resolve_type_aliases(mlir_ast)
 
         mlir_functions = filter(
