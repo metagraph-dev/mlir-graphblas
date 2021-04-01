@@ -190,6 +190,11 @@ def input_pretty_dialect_type_to_ctypes(
             # TODO we blindly assume that an i8 pointer points to a sparse tensor
             # since MLIR's sparse tensor support is currently up-in-the-air and this
             # is how they currently handle sparse tensors
+
+            # protocol for indicating an object can be interpreted as a MLIRSparseTensor
+            if hasattr(arg, "__mlir_sparse__"):
+                arg = arg.__mlir_sparse__
+
             if not isinstance(arg, MLIRSparseTensor):
                 raise TypeError(
                     f"{repr(arg)} is expected to be an instance of {MLIRSparseTensor.__qualname__}"
