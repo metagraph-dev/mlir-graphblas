@@ -292,7 +292,8 @@ def input_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callable]
 
 
 def _resolve_type_aliases(
-    node: Any, type_alias_table: Dict[str, mlir.astnodes.PrettyDialectType],
+    node: Any,
+    type_alias_table: Dict[str, mlir.astnodes.PrettyDialectType],
 ) -> Any:
     if isinstance(node, (mlir.astnodes.Node, mlir.astnodes.Module)):
         for field in node._fields_:
