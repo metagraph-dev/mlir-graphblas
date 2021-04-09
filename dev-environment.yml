@@ -30,3 +30,6 @@ dependencies:
   - cython
   - panel
   - bokeh<2.3  # temp restriction until panel/bokeh bugs are worked out
+  - cmake >= 3.13.4
+  - conda-forge::ninja
+  - conda-forge::lit
