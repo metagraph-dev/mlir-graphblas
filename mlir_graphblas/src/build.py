@@ -2,6 +2,8 @@ import os
 import sys
 import site
 import subprocess
+import shutil
+import argparse
 
 from typing import Iterable, Tuple
 
@@ -47,10 +49,22 @@ def run_shell_commands(
 
 
 if __name__ == "__main__":
-
     script_dir = os.path.dirname(__file__)
-
     build_dir = os.path.join(script_dir, "build")
+
+    parser = argparse.ArgumentParser(
+        prog="tool",
+        formatter_class=lambda prog: argparse.HelpFormatter(
+            prog, max_help_position=9999
+        ),
+    )
+    parser.add_argument(
+        "-build-clean", action="store_true", help="Rebuild from scratch."
+    )
+    args = parser.parse_args()
+    if args.build_clean:
+        shutil.rmtree(build_dir)
+
     if not os.path.isdir(build_dir):
         os.makedirs(build_dir)
 
@@ -63,8 +77,8 @@ if __name__ == "__main__":
 
     command, stdout_string, stderr_string = run_shell_commands(
         build_dir,
-        "cmake -G Ninja .. -DMLIR_DIR=$PREFIX/lib/cmake/mlir -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit",
-        "cmake --build . --target check-graphblas",
+        "cmake -G Ninja .. -DMLIR_DIR=$PREFIX/lib/cmake/mlir -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit",  # creates ./build/graphblas-opt
+        "cmake --build . --target check-graphblas",  # creates ./build/bin/graphblas-opt and runs tests
         PREFIX=sys.exec_prefix,
         BUILD_DIR=sys.exec_prefix,
         LD_LIBRARY_PATH=LD_LIBRARY_PATH,
