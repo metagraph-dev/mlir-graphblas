@@ -83,6 +83,8 @@ def convert_mlir_atomic_type(
         np_type = MLIR_FLOAT_ENUM_TO_NP_TYPE[mlir_type.type]
     elif isinstance(mlir_type, mlir.astnodes.IntegerType):
         np_type = INTEGER_WIDTH_TO_NP_TYPE[int(mlir_type.width)]
+    elif isinstance(mlir_type, mlir.astnodes.IndexType):
+        np_type = np.uint64
     if np_type is None:
         raise ValueError(f"Could not determine numpy type corresonding to {mlir_type}")
 
