@@ -6,8 +6,9 @@ configure_lit_site_cfg(
 )
 
 set(GRAPHBLAS_TEST_DEPENDS
-#        FileCheck count not
+        FileCheck count not
         graphblas-opt
+
         )
 
 add_lit_testsuite(check-graphblas "Running the graphblas regression tests"

@@ -1,6 +1,6 @@
 //===- GraphBLASDialect.td - GraphBLAS dialect -----------*- tablegen -*-===//
 //
-// TODO add doc string
+// TODO add documentation
 //
 //===--------------------------------------------------------------------===//
 
@@ -9,22 +9,22 @@
 
 include "mlir/IR/OpBase.td"
 
-//===----------------------------------------------------------------------===//
+//===--------------------------------------------------------------------===//
 // GraphBLAS dialect definition.
-//===----------------------------------------------------------------------===//
+//===--------------------------------------------------------------------===//
 
 def GraphBLAS_Dialect : Dialect {
     let name = "graphblas";
-    let summary = "An MLIR dialect for GraphBLAS.";
+    let summary = "TODO add documentation";
     let description = [{
-        This dialect is designed to support GraphBLAS.
+        TODO add documentation
     }];
     let cppNamespace = "::mlir::graphblas";
 }
 
-//===----------------------------------------------------------------------===//
+//===--------------------------------------------------------------------===//
 // Base graphblas operation definition.
-//===----------------------------------------------------------------------===//
+//===--------------------------------------------------------------------===//
 
 class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> :
         Op<GraphBLAS_Dialect, mnemonic, traits>;

@@ -62,14 +62,14 @@ if __name__ == "__main__":
         "-build-clean", action="store_true", help="Rebuild from scratch."
     )
     args = parser.parse_args()
-    if args.build_clean:
+    if args.build_clean and os.path.isdir(build_dir):
         shutil.rmtree(build_dir)
 
     if not os.path.isdir(build_dir):
         os.makedirs(build_dir)
 
     env_lib_path = os.path.join(sys.exec_prefix, "lib")
-    LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", "")
+    LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", env_lib_path)
     if env_lib_path not in LD_LIBRARY_PATH.split(":"):
         LD_LIBRARY_PATH = LD_LIBRARY_PATH + ":" + env_lib_path
 
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     command, stdout_string, stderr_string = run_shell_commands(
         build_dir,
         "cmake -G Ninja .. -DMLIR_DIR=$PREFIX/lib/cmake/mlir -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit",  # creates ./build/graphblas-opt
-        "cmake --build . --target check-graphblas",  # creates ./build/bin/graphblas-opt and runs tests
+        "cmake --build . --target check-graphblas --verbose",  # creates ./build/bin/graphblas-opt and runs tests
         PREFIX=sys.exec_prefix,
         BUILD_DIR=sys.exec_prefix,
         LD_LIBRARY_PATH=LD_LIBRARY_PATH,
