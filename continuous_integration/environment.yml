@@ -21,3 +21,4 @@ dependencies:
   - donfig
   - pygments
   - cython
+  - jinja2
