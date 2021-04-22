@@ -1,8 +1,10 @@
 """
 Various functions written in MLIR which implement pieces of GraphBLAS or other utilities
 """
+import jinja2
 import numpy as np
 from string import Template
+from typing import Optional
 from .engine import MlirJitEngine
 from .sparse_utils import MLIRSparseTensor
 
@@ -54,7 +56,7 @@ def matrix_select(
         keep_condition = "cmpi ugt, %col, %row : index"
     elif patt == "tril":
         keep_condition = "cmpi ult, %col, %row : index"
-    elif patt == "":
+    elif patt == "gt0":
         keep_condition = "cmpf ogt, %val, %cf0 : f64"
     else:
         raise TypeError(f"Unsupported pattern: {pattern}")
@@ -91,7 +93,7 @@ def mxm(
     output: MLIRSparseTensor,
     a: MLIRSparseTensor,
     b: MLIRSparseTensor,
-    mask: MLIRSparseTensor = None,
+    mask: Optional[MLIRSparseTensor] = None,
     semiring="plus_times",
     *,
     engine=None,
@@ -107,19 +109,8 @@ def mxm(
 
     if mask is None:
         func_name = f"mxm_{sr}"
-        col_iter = """
-      scf.for %col = %c0 to %ncols step %c1 {
-        """
     else:
         func_name = f"structural_masked_mxm_{sr}"
-        col_iter = """
-      %mcol_start = load %Mp[%row] : memref<?xindex>
-      %mcol_end = load %Mp[%row_plus1] : memref<?xindex>
-
-      scf.for %mm = %mcol_start to %mcol_end step %c1 {
-        %col = load %Mj[%mm] : memref<?xindex>
-        // NOTE: for valued masks, we would need to check the value and yield if false
-        """
 
     if sr == "plus_times":
         op = """
@@ -141,20 +132,23 @@ def mxm(
         """
     else:
         raise TypeError(f"Unsupported semiring: {semiring}")
-    mlir_text = mxm_mlir_template.substitute(
-        FUNC_NAME=func_name, OP=op, COL_ITER=col_iter
+    mlir_text = mxm_mlir_template.render(
+        FUNC_NAME=func_name, OP=op, structural_mask=(mask is not None)
     )
 
     if func_name not in engine.name_to_callable:
         engine.add(mlir_text, _standard_passes)
     func = getattr(engine, func_name)
-    return func(output, a, b, mask)
+    if mask is None:
+        return func(output, a, b)
+    else:
+        return func(output, a, b, mask)
 
 
 def matrix_apply(
     output: MLIRSparseTensor,
     input: MLIRSparseTensor,
-    operator="",
+    operator="min",
     thunk=None,
     *,
     engine=None,
@@ -169,7 +163,7 @@ def matrix_apply(
     op = operator.lower()
     func_name = f"matrix_apply_{op}_{thunk}"
 
-    if op == "lt":
+    if op == "min":
         apply_str = """
         %cmp = cmpf olt, %val, %thunk : f64
         %new = select %cmp, %val, %thunk : f64
@@ -387,7 +381,7 @@ module  {
 """
 )
 
-mxm_mlir_template = Template(
+mxm_mlir_template = jinja2.Template(
     """
 module  {
   func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
@@ -395,7 +389,12 @@ module  {
   func private @sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
   func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
 
-  func @${FUNC_NAME}(%output: !llvm.ptr<i8>, %A: !llvm.ptr<i8>, %B: !llvm.ptr<i8>, %mask: !llvm.ptr<i8>) -> index {
+  func @{{ FUNC_NAME }}(
+      %output: !llvm.ptr<i8>, %A: !llvm.ptr<i8>, %B: !llvm.ptr<i8>
+      {%- if structural_mask -%}
+      , %mask: !llvm.ptr<i8>
+      {%- endif -%}
+  ) -> index {
     %c0 = constant 0 : index
     %c1 = constant 1 : index
     %cf0 = constant 0.0 : f64
@@ -416,8 +415,10 @@ module  {
     %Cp = call @sparsePointers64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
     %Cj = call @sparseIndices64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
     %Cx = call @sparseValuesF64(%output) : (!llvm.ptr<i8>) -> memref<?xf64>
+    {% if structural_mask -%}
     %Mp = call @sparsePointers64(%mask, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
     %Mj = call @sparseIndices64(%mask, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+    {%- endif %}
     %accumulator = alloc() : memref<f64>
     %not_empty = alloc() : memref<i1>
 
@@ -437,7 +438,16 @@ module  {
       %cp_curr_count = load %Cp[%row] : memref<?xindex>
       store %cp_curr_count, %Cp[%row_plus1] : memref<?xindex>
 
-      ${COL_ITER}
+      {% if structural_mask %}
+      %mcol_start = load %Mp[%row] : memref<?xindex>
+      %mcol_end = load %Mp[%row_plus1] : memref<?xindex>
+
+      scf.for %mm = %mcol_start to %mcol_end step %c1 {
+        %col = load %Mj[%mm] : memref<?xindex>
+        // NOTE: for valued masks, we would need to check the value and yield if false
+      {% else %}
+      scf.for %col = %c0 to %ncols step %c1 {
+      {% endif %}
 
         // Iterate over row in A as ka, col in B as kb
         // Find matches, ignore otherwise
@@ -462,7 +472,7 @@ module  {
           %ks_match = cmpi eq, %kj, %ki : index
           scf.if %ks_match {
             %existing = load %accumulator[] : memref<f64>
-            ${OP}
+            {{ OP }}
             store %new, %accumulator[] : memref<f64>
             store %ctrue, %not_empty[] : memref<i1>
           } else {
