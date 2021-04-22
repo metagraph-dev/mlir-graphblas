@@ -24,9 +24,7 @@ def run_shell_commands(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    stdout_string, stderr_string = map(
-        bytes.decode, process.communicate(command.encode())
-    )
+    stdout_string, stderr_string = map(bytes.decode, process.communicate(command.encode()))
 
     if process.returncode != 0:
         error_string = (
@@ -54,13 +52,9 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         prog="tool",
-        formatter_class=lambda prog: argparse.HelpFormatter(
-            prog, max_help_position=9999
-        ),
+        formatter_class=lambda prog: argparse.HelpFormatter(prog, max_help_position=9999),
     )
-    parser.add_argument(
-        "-build-clean", action="store_true", help="Rebuild from scratch."
-    )
+    parser.add_argument("-build-clean", action="store_true", help="Rebuild from scratch.")
     args = parser.parse_args()
     if args.build_clean:
         shutil.rmtree(build_dir)

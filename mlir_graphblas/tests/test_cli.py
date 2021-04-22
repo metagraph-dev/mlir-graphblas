@@ -71,9 +71,7 @@ module  {
 def test_apply_passes_fails(cli_input):
     cli = MlirOptCli()
     passes = ["--linalg-bufferize"]
-    cli_input = cli_input.replace(
-        b"return %0 : tensor<?xf32>", b"return %0 : memref<?xf32>"
-    )
+    cli_input = cli_input.replace(b"return %0 : tensor<?xf32>", b"return %0 : memref<?xf32>")
     with pytest.raises(MlirOptError) as excinfo:
         cli.apply_passes(cli_input, passes)
     err = excinfo.value

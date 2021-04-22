@@ -35,9 +35,7 @@ func @many_inputs_constant_output(
     values = np.array([1.2, 3.4], dtype=np.float32)
     sizes = np.array([10, 20, 30], dtype=np.uint64)
     sparsity = np.array([True, True, True], dtype=np.bool8)
-    sparse_tensor = mlir_graphblas.sparse_utils.MLIRSparseTensor(
-        indices, values, sizes, sparsity
-    )
+    sparse_tensor = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
 
     valid_args = [
         np.arange(7, dtype=np.float32).reshape([7, 1]),

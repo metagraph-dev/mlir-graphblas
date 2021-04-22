@@ -231,9 +231,7 @@ TEST_CASE_INDEX = 0
 
 @pytest.mark.parametrize("mlir_template,args,expected_result", SIMPLE_TEST_CASES)
 @pytest.mark.parametrize("mlir_type", MLIR_TYPE_TO_NP_TYPE.keys())
-def test_jit_engine_tensor_result(
-    engine, mlir_template, args, expected_result, mlir_type
-):
+def test_jit_engine_tensor_result(engine, mlir_template, args, expected_result, mlir_type):
     global TEST_CASE_INDEX
 
     np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
