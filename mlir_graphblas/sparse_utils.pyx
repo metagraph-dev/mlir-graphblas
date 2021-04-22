@@ -185,7 +185,17 @@ cdef class MLIRSparseTensor:
     cdef readonly object value_dtype
 
     def __cinit__(self, indices, values, uint64_t[:] sizes, bool[:] sparsity, pointer_type=np.uint64):
-        _build_sparse_tensor(self, indices, values, sizes, sparsity, pointer_type)
+        try:
+            _build_sparse_tensor(self, indices, values, sizes, sparsity, pointer_type)
+        except TypeError as exc:
+            if "Function call with ambiguous argument types" in str(exc):
+                indices = np.asarray(indices)
+                if indices.dtype.type not in {np.uint8, np.uint16, np.uint32, np.uint64}:
+                    raise TypeError(f"Bad dtype for indices: %s.  uint{8,16,32,64} expected." % indices.dtype)
+                values = np.asarray(values)
+                if values.dtype.type not in {np.int8, np.int16, np.int32, np.float32, np.float64}:
+                    raise TypeError("Bad dtype for values: %s.  int{8,16,32} or float{32,64} expected." % values.dtype)
+            raise
 
     def __dealloc__(self):
         delSparseTensor(<void*>self.data)

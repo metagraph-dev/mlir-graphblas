@@ -1,3 +1,4 @@
+import pytest
 import itertools
 import numpy as np
 import mlir_graphblas.sparse_utils
@@ -36,3 +37,36 @@ def test_mlirsparsetensor_dtypes():
 
         assert a.values.dtype == value_dtype
         np.testing.assert_array_almost_equal(a.values, values)
+
+
+def test_mlirsparsetensor_bad_dtypes():
+    pointer_dtype = np.uint64
+    sparsity = np.array([True, True, True], dtype=np.bool8)
+    sizes = np.array([10, 20, 30], dtype=np.uint64)
+    indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
+    values = np.array([1, 3], dtype=np.int32)
+
+    with pytest.raises(TypeError, match="Bad dtype for values"):
+        mlir_graphblas.sparse_utils.MLIRSparseTensor(
+            indices,
+            values.astype(np.int64),
+            sizes,
+            sparsity,
+            pointer_type=pointer_dtype,
+        )
+    with pytest.raises(TypeError, match="Bad dtype for values"):
+        mlir_graphblas.sparse_utils.MLIRSparseTensor(
+            indices,
+            values.astype(np.uint32),
+            sizes,
+            sparsity,
+            pointer_type=pointer_dtype,
+        )
+    with pytest.raises(TypeError, match="Bad dtype for indices"):
+        mlir_graphblas.sparse_utils.MLIRSparseTensor(
+            indices.astype(np.int32),
+            values,
+            sizes,
+            sparsity,
+            pointer_type=pointer_dtype,
+        )
