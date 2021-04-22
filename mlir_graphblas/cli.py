@@ -18,7 +18,9 @@ class MlirOptError(Exception):
 
 
 class MlirOptCli:
-    def __init__(self, executable: Optional[str] = None, options: Optional[List[str]] = None):
+    def __init__(
+        self, executable: Optional[str] = None, options: Optional[List[str]] = None
+    ):
         if executable is None:
             from . import config
 
@@ -65,7 +67,9 @@ class MlirOptCli:
         for p in passes:
             saved_passes.append(p.lstrip("-"))
             stages.append(input.decode())
-            result = logged_subprocess_run([self._executable, p], capture_output=True, input=input)
+            result = logged_subprocess_run(
+                [self._executable, p], capture_output=True, input=input
+            )
             if result.returncode == 0:
                 input = result.stdout
             else:
@@ -91,11 +95,15 @@ class DebugResult:
     def __init__(self, stages, passes, cli):
         self.stages = stages
         self.passes = passes
-        assert len(self.stages) == len(self.passes) + 1, "Stages must be one larger than passes"
+        assert (
+            len(self.stages) == len(self.passes) + 1
+        ), "Stages must be one larger than passes"
         self._cli = cli
 
     def __repr__(self):
-        ret = [self._add_banner(self.stages[-1], f"Error when running {self.passes[-1]}")]
+        ret = [
+            self._add_banner(self.stages[-1], f"Error when running {self.passes[-1]}")
+        ]
         for p, stage in zip(reversed(self.passes), reversed(self.stages[:-1])):
             if stage == self.stages[-2]:
                 stage = self._add_row_column_numbers(stage)
@@ -158,7 +166,9 @@ class DebugResult:
 
         offset = int(math.log10(num_rows)) + 1
         colheader_ones = [str(n % 10) for n in range(1, num_cols + 1)]
-        colheader_tens = [" " * 9] + [f"{n:<10}" for n in range(1, num_cols + 1) if n % 10 == 0]
+        colheader_tens = [" " * 9] + [
+            f"{n:<10}" for n in range(1, num_cols + 1) if n % 10 == 0
+        ]
         ret = [
             f'{" " * offset} {"".join(colheader_tens)}',
             f'{" " * offset} {"".join(colheader_ones)}',

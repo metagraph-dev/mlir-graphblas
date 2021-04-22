@@ -21,7 +21,9 @@ if len(_SPARSE_UTILS_SO_FILES) == 0:
         f'{_SPARSE_UTILS_SO} not found. This can typically be solved by running "python setup.py build_ext" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
     )
 elif len(_SPARSE_UTILS_SO_FILES) > 1:
-    raise RuntimeError(f"Multiple files matching {_SPARSE_UTILS_SO_FILE_PATTERN} found.")
+    raise RuntimeError(
+        f"Multiple files matching {_SPARSE_UTILS_SO_FILE_PATTERN} found."
+    )
 [_SPARSE_UTILS_SO] = _SPARSE_UTILS_SO_FILES
 llvm.load_library_permanently(
     _SPARSE_UTILS_SO
@@ -87,7 +89,9 @@ def convert_mlir_atomic_type(
         raise ValueError(f"Could not determine numpy type corresonding to {mlir_type}")
 
     ctypes_type = (
-        np.ctypeslib.ndpointer(np_type) if return_pointer_type else NP_TYPE_TO_CTYPES_TYPE[np_type]
+        np.ctypeslib.ndpointer(np_type)
+        if return_pointer_type
+        else NP_TYPE_TO_CTYPES_TYPE[np_type]
     )
 
     return np_type, ctypes_type
@@ -103,7 +107,9 @@ def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callab
 
     def decoder(result):
         if not np.can_cast(result, np_type):
-            raise TypeError(f"Return value {result} expected to be castable to {np_type}.")
+            raise TypeError(
+                f"Return value {result} expected to be castable to {np_type}."
+            )
         return result
 
     return ctypes_type, decoder
@@ -129,11 +135,15 @@ def return_tensor_to_ctypes(
 
     def decoder(result: CtypesType):
         if not isinstance(result, CtypesType):
-            raise TypeError(f"Return value {result} expected to have type {CtypesType}.")
+            raise TypeError(
+                f"Return value {result} expected to have type {CtypesType}."
+            )
         dimensions = [getattr(result, f"size{dim_index}") for dim_index in range(rank)]
         element_count = reduce(operator.mul, dimensions)
         decoded_result = np.frombuffer(
-            (ctypes_type * element_count).from_address(ctypes.addressof(result.base.contents)),
+            (ctypes_type * element_count).from_address(
+                ctypes.addressof(result.base.contents)
+            ),
             dtype=np_type,
         ).reshape(dimensions)
         return decoded_result
@@ -169,7 +179,11 @@ def input_pretty_dialect_type_to_ctypes(
 ) -> Tuple[list, Callable]:
     # TODO do pretty dialect types vary widely in how their ASTs are structured?
     # i.e. are we required to special case them all like we're doing here?
-    if pretty_type.dialect == "llvm" and pretty_type.type == "ptr" and len(pretty_type.body) == 1:
+    if (
+        pretty_type.dialect == "llvm"
+        and pretty_type.type == "ptr"
+        and len(pretty_type.body) == 1
+    ):
         type_string = pretty_type.body[0]
         ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
         ctypes_input_types = [ctypes_type]
@@ -190,7 +204,9 @@ def input_pretty_dialect_type_to_ctypes(
             return [ctypes.cast(arg.data, ctypes_type)]
 
     else:
-        raise NotImplementedError(f"Converting {mlir_type} to ctypes not yet supported.")
+        raise NotImplementedError(
+            f"Converting {mlir_type} to ctypes not yet supported."
+        )
     return ctypes_input_types, encoder
 
 
@@ -226,7 +242,10 @@ def input_tensor_to_ctypes(
 
         for dim_index, dim_size in enumerate(arg.shape):
             expected_dim_size = dimensions[dim_index]
-            if expected_dim_size is not None and arg.shape[dim_index] != expected_dim_size:
+            if (
+                expected_dim_size is not None
+                and arg.shape[dim_index] != expected_dim_size
+            ):
                 raise ValueError(
                     f"{repr(arg)} is expected to have size {expected_dim_size} in the {dim_index}th dimension but has size {arg.shape[dim_index]}."
                 )
@@ -253,7 +272,9 @@ def input_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[list, Callabl
         if not can_cast:
             raise TypeError(f"{repr(arg)} cannot be cast to {np_type}")
         if not isinstance(arg, (np.number, int, float)):
-            raise TypeError(f"{repr(arg)} is expected to be a scalar with dtype {np_type}")
+            raise TypeError(
+                f"{repr(arg)} is expected to be a scalar with dtype {np_type}"
+            )
         return [arg]
 
     return ctypes_input_types, encoder
@@ -287,14 +308,19 @@ def _resolve_type_aliases(
             field_type = type(field_value)
             if field_type in (list, tuple):
                 resolved_field_value = field_type(
-                    _resolve_type_aliases(sub_node, type_alias_table) for sub_node in field_value
+                    _resolve_type_aliases(sub_node, type_alias_table)
+                    for sub_node in field_value
                 )
             elif issubclass(field_type, mlir.astnodes.TypeAlias):
                 alias_name = field_value.value
                 alias_value = type_alias_table[alias_name]
-                resolved_field_value = _resolve_type_aliases(alias_value, type_alias_table)
+                resolved_field_value = _resolve_type_aliases(
+                    alias_value, type_alias_table
+                )
             else:
-                resolved_field_value = _resolve_type_aliases(field_value, type_alias_table)
+                resolved_field_value = _resolve_type_aliases(
+                    field_value, type_alias_table
+                )
             setattr(node, field, resolved_field_value)
     return node
 
@@ -332,12 +358,16 @@ class MlirJitEngine:
         self._cli = MlirOptCli()
         self.name_to_callable: Dict[str, Callable] = {}
 
-    def _generate_python_callable(self, mlir_function: mlir.astnodes.Function) -> Callable:
+    def _generate_python_callable(
+        self, mlir_function: mlir.astnodes.Function
+    ) -> Callable:
         name: str = mlir_function.name.value
         function_pointer: int = self._engine.get_function_address(name)
 
         if function_pointer == 0:
-            raise ValueError(f"The address for the function {repr(name)} is the null pointer.")
+            raise ValueError(
+                f"The address for the function {repr(name)} is the null pointer."
+            )
 
         mlir_result_type = mlir_function.result_types
         ctypes_return_type, decoder = return_type_to_ctypes(mlir_result_type)
@@ -349,7 +379,9 @@ class MlirJitEngine:
             ctypes_input_types += arg_ctypes_input_types
             encoders.append(encoder)
 
-        c_callable = ctypes.CFUNCTYPE(ctypes_return_type, *ctypes_input_types)(function_pointer)
+        c_callable = ctypes.CFUNCTYPE(ctypes_return_type, *ctypes_input_types)(
+            function_pointer
+        )
 
         def python_callable(*args):
             if len(args) != len(mlir_function.args):
@@ -378,7 +410,9 @@ class MlirJitEngine:
         preprocessed_mlir_text = regex.sub("", mlir_text.decode())
         return preprocessed_mlir_text
 
-    def add(self, mlir_text: Union[str, bytes], passes: List[str], debug=False) -> List[str]:
+    def add(
+        self, mlir_text: Union[str, bytes], passes: List[str], debug=False
+    ) -> List[str]:
         """List of new function names added."""
         if isinstance(mlir_text, str):
             mlir_text = mlir_text.encode()
@@ -409,7 +443,8 @@ class MlirJitEngine:
         resolve_type_aliases(mlir_ast)
 
         mlir_functions = filter(
-            lambda e: isinstance(e, mlir.astnodes.Function) and e.visibility == "public",
+            lambda e: isinstance(e, mlir.astnodes.Function)
+            and e.visibility == "public",
             mlir_ast.body,
         )
 

@@ -57,7 +57,9 @@ class Explorer:
         self.html_formatter = None
         self._shown_stages = [0, 1, 0, 0, 1]
         self._code_blocks = [None, None, None, None, None]
-        self.passes = [f"[{i+1}/{len(self.dr.passes)}] {p}" for i, p in enumerate(self.dr.passes)]
+        self.passes = [
+            f"[{i+1}/{len(self.dr.passes)}] {p}" for i, p in enumerate(self.dr.passes)
+        ]
 
     @property
     def initial_pass(self):
@@ -73,15 +75,21 @@ class Explorer:
         # Apply initial styles
         if initial_style is None:
             initial_style = {}
-        self.show_line_numbers = initial_style.get("line_numbers", self.show_line_numbers)
-        self.highlight_style = initial_style.get("highlight_style", self.highlight_style)
+        self.show_line_numbers = initial_style.get(
+            "line_numbers", self.show_line_numbers
+        )
+        self.highlight_style = initial_style.get(
+            "highlight_style", self.highlight_style
+        )
         self.build()
         if "tab" in initial_style:
             tab_name = initial_style.get("tab", "sequential").lower()
             pass_name = initial_style.get("pass", self.initial_pass)
             ipass = self._find_pass_index(pass_name)
             if tab_name == "sequential":
-                assert pass_name != self.initial_pass, "Sequential tab does not have Initial option"
+                assert (
+                    pass_name != self.initial_pass
+                ), "Sequential tab does not have Initial option"
                 self._ui["seq_select"].value = pass_name
                 self._shown_stages[0] = ipass - 1
                 self._shown_stages[1] = ipass
@@ -152,14 +160,20 @@ class Explorer:
         tabs = pn.Tabs()
 
         self.panel[0, 0] = pn.Column(
-            pn.Row(pn.Spacer(width=270), ckbox_linenos, style_select, background="#EEEEFF"),
+            pn.Row(
+                pn.Spacer(width=270), ckbox_linenos, style_select, background="#EEEEFF"
+            ),
             tabs,
         )
 
         # Sequential
         seq_select = pn.widgets.Select(name="Passes", options=self.passes, width=320)
-        seq_btn_left = pn.widgets.Button(name="\u25c0", width=150, button_type="primary")
-        seq_btn_right = pn.widgets.Button(name="\u25b6", width=150, button_type="primary")
+        seq_btn_left = pn.widgets.Button(
+            name="\u25c0", width=150, button_type="primary"
+        )
+        seq_btn_right = pn.widgets.Button(
+            name="\u25b6", width=150, button_type="primary"
+        )
         seq_code_left = pn.pane.HTML("Not initialized")
         seq_code_right = pn.pane.HTML("Not initialized")
         sequential = pn.GridSpec(sizing_mode="stretch_width")
@@ -225,7 +239,9 @@ class Explorer:
         sgl_select.link(sgl_code, callbacks={"value": self.code_callback})
         dbl_select_left.link(dbl_code_left, callbacks={"value": self.code_callback})
         dbl_select_right.link(dbl_code_right, callbacks={"value": self.code_callback})
-        seq_select.link(seq_code_left, callbacks={"value": partial(self.code_callback, offset=-1)})
+        seq_select.link(
+            seq_code_left, callbacks={"value": partial(self.code_callback, offset=-1)}
+        )
         seq_select.link(seq_code_right, callbacks={"value": self.code_callback})
         seq_btn_left.link(seq_select, callbacks={"value": self.button_callback})
         seq_btn_right.link(seq_select, callbacks={"value": self.button_callback})
@@ -263,7 +279,9 @@ class Explorer:
 
         if index is None:
             for codeblock, stage in zip(self._code_blocks, self._shown_stages):
-                codeblock.object = highlight(self.dr.stages[stage], self.lexer, self.html_formatter)
+                codeblock.object = highlight(
+                    self.dr.stages[stage], self.lexer, self.html_formatter
+                )
         else:
             self._code_blocks[index].object = highlight(
                 self.dr.stages[self._shown_stages[index]],
@@ -282,7 +300,9 @@ class Explorer:
             self.rebuild()
         else:
             formatter = get_formatter_by_name("html", style=self.highlight_style)
-            new_styles = formatter.get_style_defs(f".highlight_{self.rndchars}").splitlines()
+            new_styles = formatter.get_style_defs(
+                f".highlight_{self.rndchars}"
+            ).splitlines()
             # Must run javascript code to update the CSS in the DOM
             js_code = """
                 <script>
@@ -345,7 +365,9 @@ class Explorer:
         passes = [p.strip() for p in self._ui["ckbox_passes"].value]
         new_results = self.dr._cli.debug_passes(input_mlir, passes)
         self.dr = new_results
-        self.passes = [f"[{i+1}/{len(self.dr.passes)}] {p}" for i, p in enumerate(self.dr.passes)]
+        self.passes = [
+            f"[{i+1}/{len(self.dr.passes)}] {p}" for i, p in enumerate(self.dr.passes)
+        ]
 
         # Reset back to original code views
         self._shown_stages = [0, 1, 0, 0, 1]
@@ -360,7 +382,11 @@ class Explorer:
             sel = self._ui[sel_str]
             if sel_str != "seq_select":
                 sel.options = [self.initial_pass] + self.passes
-                sel.value = self.initial_pass if sel_str != "dbl_select_right" else self.passes[0]
+                sel.value = (
+                    self.initial_pass
+                    if sel_str != "dbl_select_right"
+                    else self.passes[0]
+                )
             else:
                 sel.options = self.passes
                 sel.value = self.passes[0]
