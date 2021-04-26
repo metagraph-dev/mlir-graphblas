@@ -44,9 +44,9 @@ def test_apply_passes(cli_input):
 module  {
   func @scale_func(%arg0: memref<?xf32>, %arg1: f32) -> memref<?xf32> {
     %c0 = constant 0 : index
-    %0 = dim %arg0, %c0 : memref<?xf32>
-    %1 = alloc(%0) : memref<?xf32>
-    %2 = dim %arg0, %c0 : memref<?xf32>
+    %0 = memref.dim %arg0, %c0 : memref<?xf32>
+    %1 = memref.alloc(%0) : memref<?xf32>
+    %2 = memref.dim %arg0, %c0 : memref<?xf32>
     %c0_0 = constant 0 : index
     %c1 = constant 1 : index
     br ^bb1(%c0_0 : index)
@@ -54,9 +54,9 @@ module  {
     %4 = cmpi slt, %3, %2 : index
     cond_br %4, ^bb2, ^bb3
   ^bb2:  // pred: ^bb1
-    %5 = load %arg0[%3] : memref<?xf32>
+    %5 = memref.load %arg0[%3] : memref<?xf32>
     %6 = mulf %5, %arg1 : f32
-    store %6, %1[%3] : memref<?xf32>
+    memref.store %6, %1[%3] : memref<?xf32>
     %7 = addi %3, %c1 : index
     br ^bb1(%7 : index)
   ^bb3:  // pred: ^bb1

@@ -40,6 +40,7 @@ jobs:
         run: |
           conda install -q conda-build
           pip install -e .
+          conda list
       - name: Lint with Black
         run: |
           black --version
@@ -55,9 +56,9 @@ jobs:
           coveralls --service=github
       - name: Conda Build
         run: |
-          conda build -c metagraph -c conda-forge --python ${{ matrix.pyver }} continuous_integration/conda
+          conda build -c metagraph/label/dev -c conda-forge --python ${{ matrix.pyver }} continuous_integration/conda # temp restriction to use metagraph dev label
           # This doesn't rebuild, but simply computes the name of the file that was previously built
-          OUTPUT=$(conda build --output -c metagraph -c conda-forge continuous_integration/conda)
+          OUTPUT=$(conda build --output -c metagraph/label/dev -c conda-forge continuous_integration/conda) # temp restriction to use metagraph dev label
           echo $OUTPUT
           # Build tarball of output
           mkdir tarball
@@ -111,7 +112,7 @@ jobs:
           cd ..
           # Install dependencies listed in built package
           # (This is a workaround because conda does not install dependencies for local file installs)
-          conda update -c metagraph -c conda-forge mlir-graphblas
+          conda update -c metagraph/label/dev -c conda-forge mlir-graphblas # temp restriction to use metagraph dev label
           conda list
       - name: Pytest
         run: |

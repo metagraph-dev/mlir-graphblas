@@ -1,6 +1,6 @@
 //===- GraphBLASDialect.h - GraphBLAS dialect -----------------*- C++ -*-===//
 //
-// TODO add doc string
+// TODO add documentation
 //
 //===--------------------------------------------------------------------===//
 
