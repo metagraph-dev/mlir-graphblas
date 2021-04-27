@@ -60,7 +60,7 @@ def dense_neural_network(
             mxm_plus_times(Y1, Y2, WT)
 
         # Normally, I would need to transpose this, but I know these are purely diagonal matrices
-        mxm_plus_plus(Y2, Y1, Bias[layer], semiring="plus_plus")
+        mxm_plus_plus(Y2, Y1, Bias[layer])
 
         matrix_select_gt0(Y1, Y2)
         matrix_apply_min(Y2, Y1, ymax)
