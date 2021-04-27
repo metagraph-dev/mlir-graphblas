@@ -326,7 +326,7 @@ def _resolve_type_aliases(
 
 
 def resolve_type_aliases(module: mlir.astnodes.Module) -> None:
-    """ Modifies module in place. """
+    """Modifies module in place."""
     # TODO this is currently only called by MlirJitEngine.add, which only uses the functions in the
     # module, but we resolve all AST nodes, not just the functions. Consider whether or not it's necessary
     # to resolve all AST nodes besides those of type mlir.astnodes.AttrAlias and mlir.astnodes.Function.
