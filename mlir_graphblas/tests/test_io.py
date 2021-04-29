@@ -78,12 +78,16 @@ def test_mlirsparsetensor_swap():
     sizes1 = np.array([10, 20, 30], dtype=np.uint64)
     indices1 = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
     values1 = np.array([1.2, 3.4], dtype=np.float64)
-    a1 = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices1, values1, sizes1, sparsity)
+    a1 = mlir_graphblas.sparse_utils.MLIRSparseTensor(
+        indices1, values1, sizes1, sparsity
+    )
 
     sizes2 = np.array([100, 200, 300], dtype=np.uint64)
     indices2 = np.array([[2, 2, 2], [3, 3, 3]], dtype=np.uint64)
     values2 = np.array([12, 34], dtype=np.float64)
-    a2 = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices2, values2, sizes2, sparsity)
+    a2 = mlir_graphblas.sparse_utils.MLIRSparseTensor(
+        indices2, values2, sizes2, sparsity
+    )
 
     i, j, k = a1.indices
     np.testing.assert_array_equal(i, [0, 1])
@@ -124,9 +128,9 @@ def test_mlirsparsetensor_empty():
     sizes = np.array([10], dtype=np.uint64)
     a1 = mlir_graphblas.sparse_utils.empty_mlir_sparse_tensor_safe(sizes, sparsity)
 
-    i, = a1.pointers
+    (i,) = a1.pointers
     np.testing.assert_array_equal(i, [0, 0])  # why not empty?
-    i, = a1.indices
+    (i,) = a1.indices
     assert i.shape == (0,)
     assert a1.values.shape == (0,)
 
