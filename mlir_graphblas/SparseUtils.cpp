@@ -133,6 +133,20 @@ public:
 
   virtual ~SparseTensorStorageBase() {}
 
+    /// ->
+    virtual uintptr_t get_sizes_ptr() { fatal("get_sizes_ptr"); return 0; }
+    virtual uintptr_t get_pointers_ptr() { fatal("get_pointers_ptr"); return 0; }
+    virtual uintptr_t get_indices_ptr() { fatal("get_indices_ptr"); return 0; }
+    virtual uintptr_t get_values_ptr() { fatal("get_values_ptr"); return 0; }
+
+    virtual void swap_sizes(uintptr_t new_sizes) { fatal("swap_sizes"); }
+    virtual void swap_pointers(uintptr_t new_pointers) { fatal("swap_pointers"); }
+    virtual void swap_indices(uintptr_t new_indices) { fatal("swap_indices"); }
+    virtual void swap_values(uintptr_t new_values) { fatal("swap_values"); }
+
+    virtual void resize_nnz(size_t nnz) { fatal("resize_nnz"); }
+    /// <-
+
 private:
   void fatal(const char *tp) {
     fprintf(stderr, "unsupported %s\n", tp);
@@ -235,6 +249,78 @@ private:
   std::vector<std::vector<P>> pointers;
   std::vector<std::vector<I>> indices;
   std::vector<V> values;
+
+/// ->
+public:
+    /*
+    SparseTensorStorage(
+        const std::vector<uint64_t> &other_sizes,
+        const std::vector<std::vector<P>> &other_pointers,
+        const std::vector<std::vector<I>> &other_indices,
+        const std::vector<V> &other_values)
+    :
+        sizes(other_sizes),
+        pointers(other_pointers),
+        indices(other_indices),
+        values(other_values)
+    {}
+
+    SparseTensorStorage(const SparseTensorStorage<P, I, V> &other)
+    :
+        sizes(other.sizes),
+        pointers(other.pointers),
+        indices(other.indices),
+        values(other.values)
+    {}
+    */
+
+    SparseTensorStorage(uintptr_t other)
+    :
+        sizes(static_cast<SparseTensorStorage<P, I, V>*>((void*)other)->sizes),
+        pointers(static_cast<SparseTensorStorage<P, I, V>*>((void*)other)->pointers),
+        indices(static_cast<SparseTensorStorage<P, I, V>*>((void*)other)->indices),
+        values(static_cast<SparseTensorStorage<P, I, V>*>((void*)other)->values)
+    {}
+
+    SparseTensorStorage(const std::vector<uint64_t> &other_sizes)
+        : sizes(other_sizes)
+    {
+        pointers.resize(sizes.size());
+        pointers[0].resize(2);  // I don't know why this isn't empty
+        indices.resize(sizes.size());
+    }
+
+    uintptr_t get_sizes_ptr() override {
+        return (uintptr_t)&sizes;
+    }
+    uintptr_t get_pointers_ptr() override {
+        return (uintptr_t)&pointers;
+    }
+    uintptr_t get_indices_ptr() override {
+        return (uintptr_t)&indices;
+    }
+    uintptr_t get_values_ptr() override {
+        return (uintptr_t)&values;
+    }
+    void swap_sizes(uintptr_t new_sizes) override {
+        sizes.swap(*(std::vector<uint64_t>*)new_sizes);
+    }
+    void swap_pointers(uintptr_t new_pointers) override {
+        pointers.swap(*(std::vector<std::vector<P>>*)new_pointers);
+    }
+    void swap_indices(uintptr_t new_indices) override {
+        indices.swap(*(std::vector<std::vector<I>>*)new_indices);
+    }
+    void swap_values(uintptr_t new_values) override {
+        values.swap(*(std::vector<V>*)new_values);
+    }
+    void resize_nnz(size_t nnz) override {
+        values.resize(nnz);
+        for (size_t i=0; i < indices.size(); ++i) {
+            indices[i].resize(nnz);
+        }
+    }
+/// <-
 };
 
 /// Templated reader.
@@ -575,6 +661,36 @@ void delSparseTensor(void *tensor) {
 #undef CASE
 #undef IMPL1
 #undef IMPL2
+
+/// -->
+uintptr_t get_sizes_ptr(uintptr_t tensor) {
+    return static_cast<SparseTensorStorageBase *>((void*)tensor)->get_sizes_ptr();
+}
+uintptr_t get_pointers_ptr(uintptr_t tensor) {
+    return static_cast<SparseTensorStorageBase *>((void*)tensor)->get_pointers_ptr();
+}
+uintptr_t get_indices_ptr(uintptr_t tensor) {
+    return static_cast<SparseTensorStorageBase *>((void*)tensor)->get_indices_ptr();
+}
+uintptr_t get_values_ptr(uintptr_t tensor) {
+    return static_cast<SparseTensorStorageBase *>((void*)tensor)->get_values_ptr();
+}
+void swap_sizes(uintptr_t tensor, uintptr_t new_sizes) {
+    static_cast<SparseTensorStorageBase *>((void*)tensor)->swap_sizes(new_sizes);
+}
+void swap_pointers(uintptr_t tensor, uintptr_t new_pointers) {
+    static_cast<SparseTensorStorageBase *>((void*)tensor)->swap_pointers(new_pointers);
+}
+void swap_indices(uintptr_t tensor, uintptr_t new_indices) {
+    static_cast<SparseTensorStorageBase *>((void*)tensor)->swap_indices(new_indices);
+}
+void swap_values(uintptr_t tensor, uintptr_t new_values) {
+    static_cast<SparseTensorStorageBase *>((void*)tensor)->swap_values(new_values);
+}
+void resize_nnz(uintptr_t tensor, size_t nnz) {
+    static_cast<SparseTensorStorageBase *>((void*)tensor)->resize_nnz(nnz);
+}
+/// <-
 
 } // extern "C"
 
