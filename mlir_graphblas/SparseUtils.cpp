@@ -144,7 +144,9 @@ public:
     virtual void swap_indices(uintptr_t new_indices) { fatal("swap_indices"); }
     virtual void swap_values(uintptr_t new_values) { fatal("swap_values"); }
 
-    virtual void resize_nnz(size_t nnz) { fatal("resize_nnz"); }
+    virtual void resize_pointers(size_t size) { fatal("resize_pointers"); }
+    virtual void resize_index(size_t d, size_t size) { fatal("resize_index"); }
+    virtual void resize_values(size_t size) { fatal("resize_values"); }
     /// <-
 
 private:
@@ -282,11 +284,13 @@ public:
         values(static_cast<SparseTensorStorage<P, I, V>*>((void*)other)->values)
     {}
 
-    SparseTensorStorage(const std::vector<uint64_t> &other_sizes)
+    SparseTensorStorage(const std::vector<uint64_t> &other_sizes, bool is_sparse)
         : sizes(other_sizes)
     {
         pointers.resize(sizes.size());
-        pointers[0].resize(2);  // I don't know why this isn't empty
+        if (is_sparse) {
+            pointers[0].resize(2);
+        }
         indices.resize(sizes.size());
     }
 
@@ -314,11 +318,14 @@ public:
     void swap_values(uintptr_t new_values) override {
         values.swap(*(std::vector<V>*)new_values);
     }
-    void resize_nnz(size_t nnz) override {
-        values.resize(nnz);
-        for (size_t i=0; i < indices.size(); ++i) {
-            indices[i].resize(nnz);
-        }
+    void resize_pointers(size_t size) override {
+        pointers.resize(size);
+    }
+    void resize_index(size_t d, size_t size) override {
+        indices[d].resize(size);
+    }
+    void resize_values(size_t size) override {
+        values.resize(size);
     }
 /// <-
 };
@@ -687,8 +694,14 @@ void swap_indices(uintptr_t tensor, uintptr_t new_indices) {
 void swap_values(uintptr_t tensor, uintptr_t new_values) {
     static_cast<SparseTensorStorageBase *>((void*)tensor)->swap_values(new_values);
 }
-void resize_nnz(uintptr_t tensor, size_t nnz) {
-    static_cast<SparseTensorStorageBase *>((void*)tensor)->resize_nnz(nnz);
+void resize_pointers(uintptr_t tensor, size_t size) {
+    static_cast<SparseTensorStorageBase *>((void*)tensor)->resize_pointers(size);
+}
+void resize_index(uintptr_t tensor, size_t d, size_t size) {
+    static_cast<SparseTensorStorageBase *>((void*)tensor)->resize_index(d, size);
+}
+void resize_values(uintptr_t tensor, size_t size) {
+    static_cast<SparseTensorStorageBase *>((void*)tensor)->resize_values(size);
 }
 /// <-
 

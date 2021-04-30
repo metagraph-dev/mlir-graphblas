@@ -129,7 +129,7 @@ def test_mlirsparsetensor_empty():
     a1 = mlir_graphblas.sparse_utils.empty_mlir_sparse_tensor_safe(sizes, sparsity)
 
     (i,) = a1.pointers
-    np.testing.assert_array_equal(i, [0, 0])  # why not empty?
+    np.testing.assert_array_equal(i, [0, 0])
     (i,) = a1.indices
     assert i.shape == (0,)
     assert a1.values.shape == (0,)
@@ -147,7 +147,7 @@ def test_mlirsparsetensor_empty():
     a1 = mlir_graphblas.sparse_utils.empty_mlir_sparse_tensor_safe(sizes, sparsity)
 
     i, j = a1.pointers
-    np.testing.assert_array_equal(i, [0, 0])  # why not empty?
+    np.testing.assert_array_equal(i, [0, 0])
     assert j.shape == (0,)
     i, j = a1.indices
     assert i.shape == (0,)
@@ -167,7 +167,7 @@ def test_mlirsparsetensor_empty():
     a1 = mlir_graphblas.sparse_utils.empty_mlir_sparse_tensor_safe(sizes, sparsity)
 
     i, j, k = a1.pointers
-    np.testing.assert_array_equal(i, [0, 0])  # why not empty?
+    np.testing.assert_array_equal(i, [0, 0])
     assert j.shape == (0,)
     assert k.shape == (0,)
     i, j, k = a1.indices
@@ -202,7 +202,10 @@ def test_mlirsparsetensor_dup():
         np.testing.assert_array_equal(x, y)
     np.testing.assert_array_equal(values, a2.values)
 
-    a1.resize_nnz(1)
+    a1.resize_values(1)
+    a1.resize_index(0, 1)
+    a1.resize_index(1, 1)
+    a1.resize_index(2, 1)
 
     for x, y in zip(pointers, a2.pointers):
         np.testing.assert_array_equal(x, y)
