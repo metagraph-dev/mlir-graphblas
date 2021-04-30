@@ -178,7 +178,7 @@ cdef extern from "SparseUtils.cpp" nogil:
     void swap_indices(uintptr_t tensor, uintptr_t new_indices)
     void swap_values(uintptr_t tensor, uintptr_t new_values)
 
-    void resize_pointers(uintptr_t tensor, size_t size)
+    void resize_pointers(uintptr_t tensor, size_t d, size_t size)
     void resize_index(uintptr_t tensor, size_t d, size_t size)
     void resize_values(uintptr_t tensor, size_t size)
 
@@ -536,8 +536,8 @@ cdef class MLIRSparseTensor:
     cpdef swap_values(self, MLIRSparseTensor other):
         swap_values(self.data, get_values_ptr(other.data))
 
-    cpdef resize_pointers(self, size_t size):
-        resize_pointers(self.data, size)
+    cpdef resize_pointers(self, size_t d, size_t size):
+        resize_pointers(self.data, d, size)
 
     cpdef resize_index(self, size_t d, size_t size):
         resize_index(self.data, d, size)
