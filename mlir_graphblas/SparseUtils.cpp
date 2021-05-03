@@ -134,6 +134,7 @@ public:
   virtual ~SparseTensorStorageBase() {}
 
     /// ->
+    virtual uint64_t getRank() const { return 0; }
     virtual void *get_sizes_ptr() { fatal("get_sizes_ptr"); return 0; }
     virtual void *get_pointers_ptr() { fatal("get_pointers_ptr"); return 0; }
     virtual void *get_indices_ptr() { fatal("get_indices_ptr"); return 0; }
@@ -193,7 +194,7 @@ public:
 
   virtual ~SparseTensorStorage() {}
 
-  uint64_t getRank() const { return sizes.size(); }
+  uint64_t getRank() const override { return sizes.size(); }
 
   uint64_t getDimSize(uint64_t d) override { return sizes[d]; }
 
@@ -707,41 +708,44 @@ void delSparseTensor(void *tensor) {
 #undef IMPL2
 
 /// -->
+uint64_t get_rank(void *tensor) {
+    return static_cast<SparseTensorStorageBase *>(tensor)->getRank();
+}
 void *get_sizes_ptr(void *tensor) {
-    return static_cast<SparseTensorStorageBase *>((void*)tensor)->get_sizes_ptr();
+    return static_cast<SparseTensorStorageBase *>(tensor)->get_sizes_ptr();
 }
 void *get_pointers_ptr(void *tensor) {
-    return static_cast<SparseTensorStorageBase *>((void*)tensor)->get_pointers_ptr();
+    return static_cast<SparseTensorStorageBase *>(tensor)->get_pointers_ptr();
 }
 void *get_indices_ptr(void *tensor) {
-    return static_cast<SparseTensorStorageBase *>((void*)tensor)->get_indices_ptr();
+    return static_cast<SparseTensorStorageBase *>(tensor)->get_indices_ptr();
 }
 void *get_values_ptr(void *tensor) {
-    return static_cast<SparseTensorStorageBase *>((void*)tensor)->get_values_ptr();
+    return static_cast<SparseTensorStorageBase *>(tensor)->get_values_ptr();
 }
 void swap_sizes(void *tensor, void *new_sizes) {
-    static_cast<SparseTensorStorageBase *>((void*)tensor)->swap_sizes(new_sizes);
+    static_cast<SparseTensorStorageBase *>(tensor)->swap_sizes(new_sizes);
 }
 void swap_pointers(void *tensor, void *new_pointers) {
-    static_cast<SparseTensorStorageBase *>((void*)tensor)->swap_pointers(new_pointers);
+    static_cast<SparseTensorStorageBase *>(tensor)->swap_pointers(new_pointers);
 }
 void swap_indices(void *tensor, void *new_indices) {
-    static_cast<SparseTensorStorageBase *>((void*)tensor)->swap_indices(new_indices);
+    static_cast<SparseTensorStorageBase *>(tensor)->swap_indices(new_indices);
 }
 void swap_values(void *tensor, void *new_values) {
-    static_cast<SparseTensorStorageBase *>((void*)tensor)->swap_values(new_values);
+    static_cast<SparseTensorStorageBase *>(tensor)->swap_values(new_values);
 }
 void resize_pointers(void *tensor, uint64_t d, uint64_t size) {
-    static_cast<SparseTensorStorageBase *>((void*)tensor)->resize_pointers(d, size);
+    static_cast<SparseTensorStorageBase *>(tensor)->resize_pointers(d, size);
 }
 void resize_index(void *tensor, uint64_t d, uint64_t size) {
-    static_cast<SparseTensorStorageBase *>((void*)tensor)->resize_index(d, size);
+    static_cast<SparseTensorStorageBase *>(tensor)->resize_index(d, size);
 }
 void resize_values(void *tensor, uint64_t size) {
-    static_cast<SparseTensorStorageBase *>((void*)tensor)->resize_values(size);
+    static_cast<SparseTensorStorageBase *>(tensor)->resize_values(size);
 }
 void resize_dim(void *tensor, uint64_t d, uint64_t size) {
-    static_cast<SparseTensorStorageBase *>((void*)tensor)->resize_dim(d, size);
+    static_cast<SparseTensorStorageBase *>(tensor)->resize_dim(d, size);
 }
 void *dup_tensor(void *tensor) {
     return static_cast<SparseTensorStorageBase *>(tensor)->dup();

@@ -168,6 +168,7 @@ cdef extern from "SparseUtils.cpp" nogil:
 
     # HACKED IN
     # These return pointers to the vectors
+    uint64_t get_rank(void *tensor)
     void *get_sizes_ptr(void *)
     void *get_pointers_ptr(void *)
     void *get_indices_ptr(void *)
@@ -439,6 +440,16 @@ cdef class MLIRSparseTensor:
 
     def __dealloc__(self):
         delSparseTensor(self._data)
+
+    @classmethod
+    def from_raw_pointer(cls, uintptr_t data, pointer_dtype, index_dtype, value_dtype):
+        cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
+        rv._data = <void *>data
+        rv.ndim = get_rank(rv._data)
+        rv.pointer_dtype = pointer_dtype
+        rv.index_dtype = index_dtype
+        rv.value_dtype = value_dtype
+        return rv
 
     cpdef uint64_t get_dimsize(self, uint64_t d):
         if d >= self.ndim:
