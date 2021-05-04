@@ -102,16 +102,31 @@ def convert_mlir_atomic_type(
 ############################
 
 
-def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
-    np_type, ctypes_type = convert_mlir_atomic_type(mlir_type)
+def return_pretty_dialect_type_to_ctypes(
+    pretty_type: mlir.astnodes.PrettyDialectType,
+) -> Tuple[type, Callable]:
+    # TODO do pretty dialect types vary widely in how their ASTs are structured?
+    # i.e. are we required to special case them all like we're doing here?
+    if (
+        pretty_type.dialect == "llvm"
+        and pretty_type.type == "ptr"
+        and pretty_type.body == ["i8"]
+    ):
+        type_string = pretty_type.body[0]
+        ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
 
-    def decoder(result):
-        if not np.can_cast(result, np_type):
-            raise TypeError(
-                f"Return value {result} expected to be castable to {np_type}."
-            )
-        return result
+        def decoder(arg):
+            # TODO we blindly assume that an i8 pointer points to a sparse tensor
+            # since MLIR's sparse tensor support is currently up-in-the-air and this
+            # is how they currently handle sparse tensors
 
+            # Return the pointer address as a Python int
+            # To create the MLIRSparseTensor, use MLIRSparseTensor.from_raw_pointer()
+            return ctypes.cast(arg, ctypes.c_void_p).value
+    else:
+        raise NotImplementedError(
+            f"Converting {pretty_type} to ctypes not yet supported."
+        )
     return ctypes_type, decoder
 
 
@@ -151,32 +166,16 @@ def return_tensor_to_ctypes(
     return CtypesType, decoder
 
 
-def return_pretty_dialect_type_to_ctypes(
-    pretty_type: mlir.astnodes.PrettyDialectType,
-) -> Tuple[list, Callable]:
-    # TODO do pretty dialect types vary widely in how their ASTs are structured?
-    # i.e. are we required to special case them all like we're doing here?
-    if (
-        pretty_type.dialect == "llvm"
-        and pretty_type.type == "ptr"
-        and len(pretty_type.body) == 1
-    ):
-        type_string = pretty_type.body[0]
-        ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
+def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
+    np_type, ctypes_type = convert_mlir_atomic_type(mlir_type)
 
-        def decoder(arg):
-            # TODO we blindly assume that an i8 pointer points to a sparse tensor
-            # since MLIR's sparse tensor support is currently up-in-the-air and this
-            # is how they currently handle sparse tensors
+    def decoder(result):
+        if not np.can_cast(result, np_type):
+            raise TypeError(
+                f"Return value {result} expected to be castable to {np_type}."
+            )
+        return result
 
-            # Return the pointer address as a Python int
-            # To create the MLIRSparseTensor, use MLIRSparseTensor.from_raw_pointer()
-            return ctypes.cast(arg, ctypes.c_void_p).value
-
-    else:
-        raise NotImplementedError(
-            f"Converting {pretty_type} to ctypes not yet supported."
-        )
     return ctypes_type, decoder
 
 
@@ -184,13 +183,14 @@ def return_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable
     """Returns a ctypes type for the given MLIR type."""
     # TODO handle all other child classes of mlir.astnodes.Type
     # TODO consider inlining this if it only has 2 cases
+
     if isinstance(mlir_type, mlir.astnodes.PrettyDialectType):
         result = return_pretty_dialect_type_to_ctypes(mlir_type)
     elif isinstance(mlir_type, mlir.astnodes.RankedTensorType):
         result = return_tensor_to_ctypes(mlir_type)
     else:
         result = return_scalar_to_ctypes(mlir_type)
-    # TODO handle returned sparse tensors via handling mlir.astnodes.PrettyDialectType
+
     return result
 
 
@@ -213,9 +213,9 @@ def input_pretty_dialect_type_to_ctypes(
     if (
         pretty_type.dialect == "llvm"
         and pretty_type.type == "ptr"
-        and len(pretty_type.body) == 1
+        and pretty_type.body == ["i8"]
     ):
-        type_string = pretty_type.body[0]
+        (type_string,) = pretty_type.body
         ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
         ctypes_input_types = [ctypes_type]
 
@@ -371,6 +371,24 @@ def resolve_type_aliases(module: mlir.astnodes.Module) -> None:
     return
 
 
+def _preprocess_mlir(mlir_text: str):
+    START_MARKER = "// pymlir-skip: begin"
+    END_MARKER = "// pymlir-skip: end"
+    PATTERN = START_MARKER + r".*?" + END_MARKER
+    regex = re.compile(PATTERN, flags=re.DOTALL)
+    preprocessed_mlir_text = regex.sub("", mlir_text)
+    return preprocessed_mlir_text
+
+
+def parse_mlir_string(mlir_text: Union[str, bytes]) -> mlir.astnodes.Module:
+    if isinstance(mlir_text, bytes):
+        mlir_text = mlir_text.decode()
+    mlir_text = _preprocess_mlir(mlir_text)
+    mlir_ast = mlir.parse_string(mlir_text)
+    resolve_type_aliases(mlir_ast)
+    return mlir_ast
+
+
 #################
 # MlirJitEngine #
 #################
@@ -433,14 +451,6 @@ class MlirJitEngine:
 
         return python_callable
 
-    def _preprocess_mlir(self, mlir_text):
-        START_MARKER = "// pymlir-skip: begin"
-        END_MARKER = "// pymlir-skip: end"
-        PATTERN = START_MARKER + r".*?" + END_MARKER
-        regex = re.compile(PATTERN, flags=re.DOTALL)
-        preprocessed_mlir_text = regex.sub("", mlir_text.decode())
-        return preprocessed_mlir_text
-
     def add(
         self, mlir_text: Union[str, bytes], passes: List[str], debug=False
     ) -> List[str]:
@@ -470,8 +480,7 @@ class MlirJitEngine:
         self._engine.run_static_constructors()
 
         # Generate Python callables
-        mlir_ast = mlir.parse_string(self._preprocess_mlir(mlir_text))
-        resolve_type_aliases(mlir_ast)
+        mlir_ast = parse_mlir_string(mlir_text)
 
         mlir_functions = filter(
             lambda e: isinstance(e, mlir.astnodes.Function)
