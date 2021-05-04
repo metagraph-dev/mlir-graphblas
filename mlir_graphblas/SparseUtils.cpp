@@ -284,16 +284,14 @@ public:
 
     // Used by `empty_like`
     SparseTensorStorage(const std::vector<uint64_t> &other_sizes)
-        : sizes(other_sizes) {}
+        : sizes(other_sizes), pointers(other_sizes.size()), indices(other_sizes.size())
+    {}
 
     // Used by `empty`
     // Note that `len(pointers[0]) == 0`!
     SparseTensorStorage(uint64_t ndims)
-    {
-        pointers.resize(ndims);
-        indices.resize(ndims);
-        sizes.resize(ndims);
-    }
+        : sizes(ndims), pointers(ndims), indices(ndims)
+    {}
 
     // Used by `dup`
     SparseTensorStorage(void *other)
