@@ -123,6 +123,7 @@ def return_pretty_dialect_type_to_ctypes(
             # Return the pointer address as a Python int
             # To create the MLIRSparseTensor, use MLIRSparseTensor.from_raw_pointer()
             return ctypes.cast(arg, ctypes.c_void_p).value
+
     else:
         raise NotImplementedError(
             f"Converting {pretty_type} to ctypes not yet supported."
