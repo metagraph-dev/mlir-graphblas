@@ -218,3 +218,28 @@ def test_mlirsparsetensor_dup():
     for x, y in zip(indices, a1.indices):
         np.testing.assert_array_equal(x[:1], y)
     np.testing.assert_array_equal(values[:1], a1.values)
+
+
+def test_from_raw_pointer():
+    sparsity = np.array([True, True, True], dtype=np.bool8)
+    sizes = np.array([10, 20, 30], dtype=np.uint64)
+    indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
+    values = np.array([1.2, 3.4], dtype=np.float64)
+
+    a1 = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
+    a2 = mlir_graphblas.sparse_utils.MLIRSparseTensor.from_raw_pointer(
+        a1.data, a1.pointer_dtype, a1.index_dtype, a1.value_dtype
+    )
+    pointers = p1, p2, p3 = a1.pointers
+    indices = i1, i2, i3 = a1.indices
+    values = a1.values
+    for x, y in zip(pointers, a2.pointers):
+        np.testing.assert_array_equal(x, y)
+    for x, y in zip(indices, a2.indices):
+        np.testing.assert_array_equal(x, y)
+    np.testing.assert_array_equal(values, a2.values)
+    assert a1.pointer_dtype == a2.pointer_dtype
+    assert a1.index_dtype == a2.index_dtype
+    assert a1.value_dtype == a2.value_dtype
+
+    a2.data = 0  # So we don't free the data twice

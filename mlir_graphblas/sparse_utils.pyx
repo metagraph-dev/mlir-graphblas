@@ -446,9 +446,9 @@ cdef class MLIRSparseTensor:
         cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
         rv._data = <void *>data
         rv.ndim = get_rank(rv._data)
-        rv.pointer_dtype = pointer_dtype
-        rv.index_dtype = index_dtype
-        rv.value_dtype = value_dtype
+        rv.pointer_dtype = np.dtype(pointer_dtype)
+        rv.index_dtype = np.dtype(index_dtype)
+        rv.value_dtype = np.dtype(value_dtype)
         return rv
 
     cpdef uint64_t get_dimsize(self, uint64_t d):
@@ -459,6 +459,11 @@ cdef class MLIRSparseTensor:
     @property
     def data(self):
         return <uintptr_t>self._data
+
+    # Use with caution!  Set to zero if data gets freed elsewhere
+    @data.setter
+    def data(self, uintptr_t data):
+        self._data = <void*>data
 
     @property
     def shape(self):
