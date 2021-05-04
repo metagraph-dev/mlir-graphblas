@@ -18,7 +18,7 @@ _SPARSE_UTILS_SO_FILES = glob.glob(_SPARSE_UTILS_SO_FILE_PATTERN)
 if len(_SPARSE_UTILS_SO_FILES) == 0:
     # TODO this hard-codes the setup.py option and the location of setup.py
     raise RuntimeError(
-        f'{_SPARSE_UTILS_SO} not found. This can typically be solved by running "python setup.py build_ext" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
+        f'{_SPARSE_UTILS_SO_FILE_PATTERN} not found. This can typically be solved by running "python setup.py build_ext" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
     )
 elif len(_SPARSE_UTILS_SO_FILES) > 1:
     raise RuntimeError(
@@ -151,11 +151,42 @@ def return_tensor_to_ctypes(
     return CtypesType, decoder
 
 
+def return_pretty_dialect_type_to_ctypes(
+    pretty_type: mlir.astnodes.PrettyDialectType,
+) -> Tuple[list, Callable]:
+    # TODO do pretty dialect types vary widely in how their ASTs are structured?
+    # i.e. are we required to special case them all like we're doing here?
+    if (
+        pretty_type.dialect == "llvm"
+        and pretty_type.type == "ptr"
+        and len(pretty_type.body) == 1
+    ):
+        type_string = pretty_type.body[0]
+        ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
+
+        def decoder(arg):
+            # TODO we blindly assume that an i8 pointer points to a sparse tensor
+            # since MLIR's sparse tensor support is currently up-in-the-air and this
+            # is how they currently handle sparse tensors
+
+            # Return the pointer address as a Python int
+            # To create the MLIRSparseTensor, use MLIRSparseTensor.from_raw_pointer()
+            return ctypes.cast(arg, ctypes.c_void_p).value
+
+    else:
+        raise NotImplementedError(
+            f"Converting {pretty_type} to ctypes not yet supported."
+        )
+    return ctypes_type, decoder
+
+
 def return_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
     """Returns a ctypes type for the given MLIR type."""
     # TODO handle all other child classes of mlir.astnodes.Type
     # TODO consider inlining this if it only has 2 cases
-    if isinstance(mlir_type, mlir.astnodes.RankedTensorType):
+    if isinstance(mlir_type, mlir.astnodes.PrettyDialectType):
+        result = return_pretty_dialect_type_to_ctypes(mlir_type)
+    elif isinstance(mlir_type, mlir.astnodes.RankedTensorType):
         result = return_tensor_to_ctypes(mlir_type)
     else:
         result = return_scalar_to_ctypes(mlir_type)
@@ -205,7 +236,7 @@ def input_pretty_dialect_type_to_ctypes(
 
     else:
         raise NotImplementedError(
-            f"Converting {mlir_type} to ctypes not yet supported."
+            f"Converting {pretty_type} to ctypes not yet supported."
         )
     return ctypes_input_types, encoder
 
