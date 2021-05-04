@@ -133,6 +133,28 @@ public:
 
   virtual ~SparseTensorStorageBase() {}
 
+    /// ->
+    virtual uint64_t getRank() const { return 0; }
+    virtual void *get_sizes_ptr() { fatal("get_sizes_ptr"); return 0; }
+    virtual void *get_pointers_ptr() { fatal("get_pointers_ptr"); return 0; }
+    virtual void *get_indices_ptr() { fatal("get_indices_ptr"); return 0; }
+    virtual void *get_values_ptr() { fatal("get_values_ptr"); return 0; }
+
+    virtual void swap_sizes(void *new_sizes) { fatal("swap_sizes"); }
+    virtual void swap_pointers(void *new_pointers) { fatal("swap_pointers"); }
+    virtual void swap_indices(void *new_indices) { fatal("swap_indices"); }
+    virtual void swap_values(void *new_values) { fatal("swap_values"); }
+
+    virtual void resize_pointers(uint64_t d, uint64_t size) { fatal("resize_pointers"); }
+    virtual void resize_index(uint64_t d, uint64_t size) { fatal("resize_index"); }
+    virtual void resize_values(uint64_t size) { fatal("resize_values"); }
+    virtual void resize_dim(uint64_t d, uint64_t size) { fatal("resize_dim"); }
+
+    virtual void *dup() { fatal("dup"); return NULL; }
+    virtual void *empty_like() { fatal("empty_like"); return NULL; }
+    virtual void *empty(uint64_t ndims) { fatal("empty"); return NULL; }
+    /// <-
+
 private:
   void fatal(const char *tp) {
     fprintf(stderr, "unsupported %s\n", tp);
@@ -172,7 +194,7 @@ public:
 
   virtual ~SparseTensorStorage() {}
 
-  uint64_t getRank() const { return sizes.size(); }
+  uint64_t getRank() const override { return sizes.size(); }
 
   uint64_t getDimSize(uint64_t d) override { return sizes[d]; }
 
@@ -235,6 +257,113 @@ private:
   std::vector<std::vector<P>> pointers;
   std::vector<std::vector<I>> indices;
   std::vector<V> values;
+
+/// ->
+public:
+    /*
+    SparseTensorStorage(
+        const std::vector<uint64_t> &other_sizes,
+        const std::vector<std::vector<P>> &other_pointers,
+        const std::vector<std::vector<I>> &other_indices,
+        const std::vector<V> &other_values)
+    :
+        sizes(other_sizes),
+        pointers(other_pointers),
+        indices(other_indices),
+        values(other_values)
+    {}
+
+    SparseTensorStorage(const SparseTensorStorage<P, I, V> &other)
+    :
+        sizes(other.sizes),
+        pointers(other.pointers),
+        indices(other.indices),
+        values(other.values)
+    {}
+    */
+
+    // Used by `empty_like`
+    SparseTensorStorage(const std::vector<uint64_t> &other_sizes)
+        : sizes(other_sizes), pointers(other_sizes.size()), indices(other_sizes.size())
+    {}
+
+    // Used by `empty`
+    // Note that `len(pointers[0]) == 0`!
+    SparseTensorStorage(uint64_t ndims)
+        : sizes(ndims), pointers(ndims), indices(ndims)
+    {}
+
+    // Used by `dup`
+    SparseTensorStorage(void *other)
+    :
+        sizes(static_cast<SparseTensorStorage<P, I, V>*>(other)->sizes),
+        pointers(static_cast<SparseTensorStorage<P, I, V>*>(other)->pointers),
+        indices(static_cast<SparseTensorStorage<P, I, V>*>(other)->indices),
+        values(static_cast<SparseTensorStorage<P, I, V>*>(other)->values)
+    {}
+
+    SparseTensorStorage(const std::vector<uint64_t> &other_sizes, bool is_sparse)
+        : sizes(other_sizes)
+    {
+        pointers.resize(sizes.size());
+        if (is_sparse) {
+            pointers[0].resize(2);
+        }
+        indices.resize(sizes.size());
+    }
+
+    void *get_sizes_ptr() override {
+        return &sizes;
+    }
+    void *get_pointers_ptr() override {
+        return &pointers;
+    }
+    void *get_indices_ptr() override {
+        return &indices;
+    }
+    void *get_values_ptr() override {
+        return &values;
+    }
+    void swap_sizes(void *new_sizes) override {
+        sizes.swap(*(std::vector<uint64_t>*)new_sizes);
+    }
+    void swap_pointers(void *new_pointers) override {
+        pointers.swap(*(std::vector<std::vector<P>>*)new_pointers);
+    }
+    void swap_indices(void *new_indices) override {
+        indices.swap(*(std::vector<std::vector<I>>*)new_indices);
+    }
+    void swap_values(void *new_values) override {
+        values.swap(*(std::vector<V>*)new_values);
+    }
+    void resize_pointers(uint64_t d, uint64_t size) override {
+        pointers[d].resize(size);
+    }
+    void resize_index(uint64_t d, uint64_t size) override {
+        indices[d].resize(size);
+    }
+    void resize_values(uint64_t size) override {
+        values.resize(size);
+    }
+    void resize_dim(uint64_t d, uint64_t size) override {
+        sizes[d] = size;
+    }
+    // New tensor of same type with same data
+    void *dup() override {
+        SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(this);
+        return tensor;
+    }
+    // New tensor of same type with same shape
+    void *empty_like() override {
+        SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(sizes);
+        return tensor;
+    }
+    // New tensor of dimentions `ndims` (no shape; must use `resize_dim`)
+    void *empty(uint64_t ndims) override {
+        SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(ndims);
+        return tensor;
+    }
+/// <-
 };
 
 /// Templated reader.
@@ -575,6 +704,57 @@ void delSparseTensor(void *tensor) {
 #undef CASE
 #undef IMPL1
 #undef IMPL2
+
+/// -->
+uint64_t get_rank(void *tensor) {
+    return static_cast<SparseTensorStorageBase *>(tensor)->getRank();
+}
+void *get_sizes_ptr(void *tensor) {
+    return static_cast<SparseTensorStorageBase *>(tensor)->get_sizes_ptr();
+}
+void *get_pointers_ptr(void *tensor) {
+    return static_cast<SparseTensorStorageBase *>(tensor)->get_pointers_ptr();
+}
+void *get_indices_ptr(void *tensor) {
+    return static_cast<SparseTensorStorageBase *>(tensor)->get_indices_ptr();
+}
+void *get_values_ptr(void *tensor) {
+    return static_cast<SparseTensorStorageBase *>(tensor)->get_values_ptr();
+}
+void swap_sizes(void *tensor, void *new_sizes) {
+    static_cast<SparseTensorStorageBase *>(tensor)->swap_sizes(new_sizes);
+}
+void swap_pointers(void *tensor, void *new_pointers) {
+    static_cast<SparseTensorStorageBase *>(tensor)->swap_pointers(new_pointers);
+}
+void swap_indices(void *tensor, void *new_indices) {
+    static_cast<SparseTensorStorageBase *>(tensor)->swap_indices(new_indices);
+}
+void swap_values(void *tensor, void *new_values) {
+    static_cast<SparseTensorStorageBase *>(tensor)->swap_values(new_values);
+}
+void resize_pointers(void *tensor, uint64_t d, uint64_t size) {
+    static_cast<SparseTensorStorageBase *>(tensor)->resize_pointers(d, size);
+}
+void resize_index(void *tensor, uint64_t d, uint64_t size) {
+    static_cast<SparseTensorStorageBase *>(tensor)->resize_index(d, size);
+}
+void resize_values(void *tensor, uint64_t size) {
+    static_cast<SparseTensorStorageBase *>(tensor)->resize_values(size);
+}
+void resize_dim(void *tensor, uint64_t d, uint64_t size) {
+    static_cast<SparseTensorStorageBase *>(tensor)->resize_dim(d, size);
+}
+void *dup_tensor(void *tensor) {
+    return static_cast<SparseTensorStorageBase *>(tensor)->dup();
+}
+void *empty_like(void *tensor) {
+    return static_cast<SparseTensorStorageBase *>(tensor)->empty_like();
+}
+void *empty(void *tensor, uint64_t ndims) {
+    return static_cast<SparseTensorStorageBase *>(tensor)->empty(ndims);
+}
+/// <-
 
 } // extern "C"
 
