@@ -113,7 +113,7 @@ def test_ir_builder_transpose_wrapper(engine: MlirJitEngine):
     return
 
 
-def test_ir_builder_double_transpose(engine: MlirJitEngine):
+def test_ir_builder_triple_transpose(engine: MlirJitEngine):
     # Build Function
 
     input_var = MLIRVar("input_tensor", "!llvm.ptr<i8>")
@@ -122,8 +122,9 @@ def test_ir_builder_double_transpose(engine: MlirJitEngine):
         "in_place_double_transpose", input_var, return_type="!llvm.ptr<i8>"
     )
     # Use different instances of Tranpose to ideally get exactly one transpose helper in the final MLIR text
-    scratch_var = ir_builder.call(Transpose(), input_var)
-    return_var = ir_builder.call(Transpose(), scratch_var)
+    inter1 = ir_builder.call(Transpose(), input_var)
+    inter2 = ir_builder.call(Transpose(), inter1)
+    return_var = ir_builder.call(Transpose(), inter2)
     ir_builder.return_var(return_var)
 
     mlir_text = ir_builder.get_mlir(make_private=False)
@@ -137,18 +138,23 @@ def test_ir_builder_double_transpose(engine: MlirJitEngine):
     assert public_func.name.value == "in_place_double_transpose"
     assert public_func.visibility == "public"
 
-    # verify in_place_double_transpose has two transpose calls
+    # verify in_place_triple_transpose has three transpose calls
     region = public_func.body
     (block,) = region.body
-    call_op_1, call_op_2, return_op = block.body
-    assert call_op_1.op.func.value == call_op_2.op.func.value == "transpose"
+    call_op_1, call_op_2, call_op_3, return_op = block.body
+    assert (
+        call_op_1.op.func.value
+        == call_op_2.op.func.value
+        == call_op_3.op.func.value
+        == "transpose"
+    )
     (return_op_type,) = [
         t for t in mlir.dialects.standard.ops if t.__name__ == "ReturnOperation"
     ]
     assert isinstance(return_op.op, return_op_type)
 
     # Test Compiled Function
-    double_transpose_callable = ir_builder.compile(engine=engine)
+    triple_transpose_callable = ir_builder.compile(engine=engine)
 
     indices = np.array(
         [
@@ -168,11 +174,12 @@ def test_ir_builder_double_transpose(engine: MlirJitEngine):
     dense_input_tensor[4, 3] = 4.3
     assert np.isclose(dense_input_tensor, engine.densify(input_tensor)).all()
 
-    doubly_transposed_tensor = double_transpose_callable(input_tensor)
+    transposed_tensor = triple_transpose_callable(input_tensor)
 
     assert np.isclose(
-        dense_input_tensor, engine.densify(doubly_transposed_tensor)
+        dense_input_tensor, engine.densify(input_tensor)
     ).all(), f"{input_tensor} values unexpectedly changed."
+    assert np.isclose(dense_input_tensor.T, engine.densify(transposed_tensor)).all()
 
     return
 
