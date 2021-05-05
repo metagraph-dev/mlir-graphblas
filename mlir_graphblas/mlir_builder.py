@@ -66,6 +66,33 @@ class MLIRFunctionBuilder(BaseFunction):
 
         return
 
+    def compile(self, engine=None, passes=None):
+        func = super().compile(engine, passes)
+
+        if self.return_type == "!llvm.ptr<i8>":
+
+            def func_wrapper(*args, **kwargs):
+                # Find an MLIRSparseTensor in the inputs, then use its dtypes
+                for x in list(args) + list(kwargs.values()):
+                    if isinstance(x, MLIRSparseTensor):
+                        break
+                else:
+                    msg = (
+                        "Unable to find an MLIRSparseTensor in the inputs.\n"
+                        "Cannot return MLIRSparseTensor from raw pointer"
+                    )
+                    raise TypeError(msg)
+
+                ptr = func(*args, **kwargs)
+                tensor = MLIRSparseTensor.from_raw_pointer(
+                    ptr, x.pointer_dtype, x.index_dtype, x.value_dtype
+                )
+                return tensor
+
+            return func_wrapper
+
+        return func
+
     def get_mlir(self, make_private=True) -> str:
         joined_statements = "\n".join(self.function_body_statements)
         signature = ", ".join(
