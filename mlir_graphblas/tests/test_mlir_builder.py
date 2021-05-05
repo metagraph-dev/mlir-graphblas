@@ -11,7 +11,6 @@ from mlir_graphblas.functions import (
     MatrixSelect,
     MatrixReduceToScalar,
     MatrixMultiply,
-    create_empty_matrix,
 )
 
 from typing import List
@@ -74,12 +73,11 @@ def test_ir_builder_transpose_wrapper(engine: MlirJitEngine):
     transpose_function = Transpose()
 
     input_var = MLIRVar("input_tensor", "!llvm.ptr<i8>")
-    output_var = MLIRVar("output_tensor", "!llvm.ptr<i8>")
 
     ir_builder = MLIRFunctionBuilder(
-        "transpose_wrapper", output_var, input_var, return_type="index"
+        "transpose_wrapper", input_var, return_type="!llvm.ptr<i8>"
     )
-    transpose_result = ir_builder.call(transpose_function, output_var, input_var)
+    transpose_result = ir_builder.call(transpose_function, input_var)
     ir_builder.return_var(transpose_result)
 
     assert ir_builder.get_mlir()
@@ -99,16 +97,13 @@ def test_ir_builder_transpose_wrapper(engine: MlirJitEngine):
     sparsity = np.array([False, True], dtype=np.bool8)
 
     input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
-    output_tensor = create_empty_matrix(
-        *input_tensor.shape, nnz=input_tensor.pointers[1][-1]
-    )
 
     dense_input_tensor = np.zeros([8, 8], dtype=np.float64)
     dense_input_tensor[1, 2] = 1.2
     dense_input_tensor[4, 3] = 4.3
     assert np.isclose(dense_input_tensor, engine.densify(input_tensor)).all()
 
-    assert 0 == transpose_wrapper_callable(output_tensor, input_tensor)
+    output_tensor = transpose_wrapper_callable(input_tensor)
 
     assert np.isclose(
         dense_input_tensor, engine.densify(input_tensor)
@@ -118,21 +113,19 @@ def test_ir_builder_transpose_wrapper(engine: MlirJitEngine):
     return
 
 
-def test_ir_builder_double_transpose(engine: MlirJitEngine):
+def test_ir_builder_triple_transpose(engine: MlirJitEngine):
     # Build Function
 
     input_var = MLIRVar("input_tensor", "!llvm.ptr<i8>")
-    scratch_var = MLIRVar(
-        "transposed_tensor", "!llvm.ptr<i8>"
-    )  # for throw away intermediate values
 
     ir_builder = MLIRFunctionBuilder(
-        "in_place_double_transpose", scratch_var, input_var, return_type="index"
+        "in_place_double_transpose", input_var, return_type="!llvm.ptr<i8>"
     )
     # Use different instances of Tranpose to ideally get exactly one transpose helper in the final MLIR text
-    _ = ir_builder.call(Transpose(), scratch_var, input_var)
-    dummy_return_var = ir_builder.call(Transpose(), input_var, scratch_var)
-    ir_builder.return_var(dummy_return_var)
+    inter1 = ir_builder.call(Transpose(), input_var)
+    inter2 = ir_builder.call(Transpose(), inter1)
+    return_var = ir_builder.call(Transpose(), inter2)
+    ir_builder.return_var(return_var)
 
     mlir_text = ir_builder.get_mlir(make_private=False)
     ast = parse_mlir_string(mlir_text)
@@ -145,18 +138,23 @@ def test_ir_builder_double_transpose(engine: MlirJitEngine):
     assert public_func.name.value == "in_place_double_transpose"
     assert public_func.visibility == "public"
 
-    # verify in_place_double_transpose has two transpose calls
+    # verify in_place_triple_transpose has three transpose calls
     region = public_func.body
     (block,) = region.body
-    call_op_1, call_op_2, return_op = block.body
-    assert call_op_1.op.func.value == call_op_2.op.func.value == "transpose"
+    call_op_1, call_op_2, call_op_3, return_op = block.body
+    assert (
+        call_op_1.op.func.value
+        == call_op_2.op.func.value
+        == call_op_3.op.func.value
+        == "transpose"
+    )
     (return_op_type,) = [
         t for t in mlir.dialects.standard.ops if t.__name__ == "ReturnOperation"
     ]
     assert isinstance(return_op.op, return_op_type)
 
     # Test Compiled Function
-    in_place_double_transpose_callable = ir_builder.compile(engine=engine)
+    triple_transpose_callable = ir_builder.compile(engine=engine)
 
     indices = np.array(
         [
@@ -170,16 +168,13 @@ def test_ir_builder_double_transpose(engine: MlirJitEngine):
     sparsity = np.array([False, True], dtype=np.bool8)
 
     input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
-    transposed_tensor = create_empty_matrix(
-        *input_tensor.shape, nnz=input_tensor.pointers[1][-1]
-    )
 
     dense_input_tensor = np.zeros([8, 8], dtype=np.float64)
     dense_input_tensor[1, 2] = 1.2
     dense_input_tensor[4, 3] = 4.3
     assert np.isclose(dense_input_tensor, engine.densify(input_tensor)).all()
 
-    assert 0 == in_place_double_transpose_callable(transposed_tensor, input_tensor)
+    transposed_tensor = triple_transpose_callable(input_tensor)
 
     assert np.isclose(
         dense_input_tensor, engine.densify(input_tensor)
@@ -191,25 +186,19 @@ def test_ir_builder_double_transpose(engine: MlirJitEngine):
 
 def test_ir_builder_triangle_count(engine: MlirJitEngine):
     # Build Function
-    transpose_function = Transpose()
+    csr_to_csc_function = Transpose(swap_sizes=False)
     matrix_select_triu_function = MatrixSelect("TRIU")
     matrix_select_tril_function = MatrixSelect("TRIL")
     matrix_reduce_function = MatrixReduceToScalar()
     mxm_plus_pair_function = MatrixMultiply("plus_pair", mask=True)
 
     A_var = MLIRVar("A", "!llvm.ptr<i8>")
-    U_var = MLIRVar("U", "!llvm.ptr<i8>")
-    L_var = MLIRVar("L", "!llvm.ptr<i8>")
-    UT_var = MLIRVar("UT", "!llvm.ptr<i8>")
-    C_var = MLIRVar("C", "!llvm.ptr<i8>")
 
-    ir_builder = MLIRFunctionBuilder(
-        "triangle_count", A_var, L_var, U_var, UT_var, C_var, return_type="f64"
-    )
-    ir_builder.call(matrix_select_triu_function, U_var, A_var)
-    ir_builder.call(matrix_select_tril_function, L_var, A_var)
-    ir_builder.call(transpose_function, UT_var, U_var)
-    ir_builder.call(mxm_plus_pair_function, C_var, L_var, UT_var, L_var)
+    ir_builder = MLIRFunctionBuilder("triangle_count", A_var, return_type="f64")
+    U_var = ir_builder.call(matrix_select_triu_function, A_var)
+    L_var = ir_builder.call(matrix_select_tril_function, A_var)
+    U_csc = ir_builder.call(csr_to_csc_function, U_var)
+    C_var = ir_builder.call(mxm_plus_pair_function, L_var, U_csc, L_var)
     reduce_result = ir_builder.call(matrix_reduce_function, C_var)
     ir_builder.return_var(reduce_result)
 
@@ -219,13 +208,8 @@ def test_ir_builder_triangle_count(engine: MlirJitEngine):
     triangle_count_internal = ir_builder.compile(engine=engine)
 
     def triangle_count(A: MLIRSparseTensor) -> int:
-        U = create_empty_matrix(*A.shape, nnz=A.pointers[1][-1])
-        L = create_empty_matrix(*A.shape, nnz=A.pointers[1][-1])
-        UT = create_empty_matrix(*U.shape, nnz=U.pointers[1][-1])
-        C = create_empty_matrix(*A.shape, nnz=L.pointers[1][-1])
-        answer = triangle_count_internal(A, U, L, UT, C)
-        answer = int(answer)
-        return answer
+        answer = triangle_count_internal(A)
+        return int(answer)
 
     # 0 - 1    5 - 6
     # | X |    | /

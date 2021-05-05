@@ -27,17 +27,6 @@ _standard_passes = [
 ]
 
 
-# TODO: revamp this once Erik adds new method
-def create_empty_matrix(nrows, ncols, nnz) -> MLIRSparseTensor:
-    indices = np.empty((nnz, 2), dtype=np.uint64)
-    indices[:, 0] = np.arange(nnz) // nrows
-    indices[:, 1] = np.arange(nnz) % nrows
-    values = np.zeros((nnz,), dtype=np.float64)
-    sizes = np.array([nrows, ncols], dtype=np.uint64)
-    sparsity = np.array([False, True], dtype=np.bool8)
-    return MLIRSparseTensor(indices, values, sizes, sparsity)
-
-
 class BaseFunction:
     func_name = None
 
@@ -78,9 +67,18 @@ class BaseFunction:
     module_wrapper_text = jinja2.Template(
         """
     module  {
-      func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
-      func private @sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
+      func private @empty(!llvm.ptr<i8>, index) -> !llvm.ptr<i8>
+      func private @empty_like(!llvm.ptr<i8>) -> !llvm.ptr<i8>
+      func private @dup_tensor(!llvm.ptr<i8>) -> !llvm.ptr<i8>
+
+      func private @resize_pointers(!llvm.ptr<i8>, index, index) -> ()
+      func private @resize_index(!llvm.ptr<i8>, index, index) -> ()
+      func private @resize_values(!llvm.ptr<i8>, index) -> ()
+      func private @resize_dim(!llvm.ptr<i8>, index, index) -> ()
+
       func private @sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
+      func private @sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
+      func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
       func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
 
       {{ body }}
@@ -93,24 +91,42 @@ class BaseFunction:
 class Transpose(BaseFunction):
     """
     Call signature:
-      transpose(output: MLIRSparseTensor, input: MLIRSparseTensor) -> None
-
-      input is (nrows x ncols with nnz non-zero values)
-      output must be (ncols x nrows with nnz non-zero values)
-
-      The output will be written to during the function call
+      transpose(input: MLIRSparseTensor) -> MLIRSparseTensor
     """
 
-    def __init__(self):
+    def __init__(self, swap_sizes=True):
+        """
+        swap_sizes will perform a normal transpose where the dimension sizes swap
+        Set this to false if transposing to change from CSR to CSC format, and therefore
+        don't want the dimension sizes to change.
+        """
         super().__init__()
-        self.func_name = "transpose"
+        func_name = "transpose_noswap" if not swap_sizes else "transpose"
+        self.func_name = func_name
+        self.swap_sizes = swap_sizes
 
     def get_mlir(self, *, make_private=True):
-        return self.mlir_template.render(private_func=make_private)
+        return self.mlir_template.render(
+            func_name=self.func_name,
+            private_func=make_private,
+            swap_sizes=self.swap_sizes,
+        )
+
+    def compile(self, engine=None, passes=None):
+        func = super().compile(engine, passes)
+
+        def transpose(input: MLIRSparseTensor) -> MLIRSparseTensor:
+            ptr = func(input)
+            tensor = MLIRSparseTensor.from_raw_pointer(
+                ptr, input.pointer_dtype, input.index_dtype, input.value_dtype
+            )
+            return tensor
+
+        return transpose
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@transpose(%output: !llvm.ptr<i8>, %input: !llvm.ptr<i8>) -> index {
+      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> !llvm.ptr<i8> {
         // Attempting to implement identical code as in scipy
         // https://github.com/scipy/scipy/blob/3b36a574dc657d1ca116f6e230be694f3de31afc/scipy/sparse/sparsetools/csr.h
         // function csr_tocsc
@@ -120,19 +136,33 @@ class Transpose(BaseFunction):
 
         // pymlir-skip: begin
 
-        %n_row = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
-        %n_col = call @sparseDimSize(%input, %c1) : (!llvm.ptr<i8>, index) -> index
         %Ap = call @sparsePointers64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Aj = call @sparseIndices64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Ax = call @sparseValuesF64(%input) : (!llvm.ptr<i8>) -> memref<?xf64>
+
+        %nrow = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
+        %ncol = call @sparseDimSize(%input, %c1) : (!llvm.ptr<i8>, index) -> index
+        %ncol_plus_one = addi %ncol, %c1 : index
+        %nnz = memref.load %Ap[%nrow] : memref<?xindex>
+
+        %output = call @empty_like(%input) : (!llvm.ptr<i8>) -> !llvm.ptr<i8>
+        {% if swap_sizes %}
+        call @resize_dim(%output, %c0, %ncol) : (!llvm.ptr<i8>, index, index) -> ()
+        call @resize_dim(%output, %c1, %nrow) : (!llvm.ptr<i8>, index, index) -> ()
+        {% else %}
+        call @resize_dim(%output, %c0, %nrow) : (!llvm.ptr<i8>, index, index) -> ()
+        call @resize_dim(%output, %c1, %ncol) : (!llvm.ptr<i8>, index, index) -> ()
+        {% endif %}
+        call @resize_pointers(%output, %c1, %ncol_plus_one) : (!llvm.ptr<i8>, index, index) -> ()
+        call @resize_index(%output, %c1, %nnz) : (!llvm.ptr<i8>, index, index) -> ()
+        call @resize_values(%output, %nnz) : (!llvm.ptr<i8>, index) -> ()
+        
         %Bp = call @sparsePointers64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Bi = call @sparseIndices64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Bx = call @sparseValuesF64(%output) : (!llvm.ptr<i8>) -> memref<?xf64>
 
-        %nnz = memref.load %Ap[%n_row] : memref<?xindex>
-
         // compute number of non-zero entries per column of A
-        scf.for %arg2 = %c0 to %n_col step %c1 {
+        scf.for %arg2 = %c0 to %ncol step %c1 {
           memref.store %c0, %Bp[%arg2] : memref<?xindex>
         }
         scf.for %n = %c0 to %nnz step %c1 {
@@ -143,16 +173,16 @@ class Transpose(BaseFunction):
         }
 
         // cumsum the nnz per column to get Bp
-        memref.store %c0, %Bp[%n_col] : memref<?xindex>
-        scf.for %col = %c0 to %n_col step %c1 {
+        memref.store %c0, %Bp[%ncol] : memref<?xindex>
+        scf.for %col = %c0 to %ncol step %c1 {
           %temp = memref.load %Bp[%col] : memref<?xindex>
-          %cumsum = memref.load %Bp[%n_col] : memref<?xindex>
+          %cumsum = memref.load %Bp[%ncol] : memref<?xindex>
           memref.store %cumsum, %Bp[%col] : memref<?xindex>
           %cumsum2 = addi %cumsum, %temp : index
-          memref.store %cumsum2, %Bp[%n_col] : memref<?xindex>
+          memref.store %cumsum2, %Bp[%ncol] : memref<?xindex>
         }
 
-        scf.for %row = %c0 to %n_row step %c1 {
+        scf.for %row = %c0 to %nrow step %c1 {
           %j_start = memref.load %Ap[%row] : memref<?xindex>
           %row_plus1 = addi %row, %c1 : index
           %j_end = memref.load %Ap[%row_plus1] : memref<?xindex>
@@ -171,19 +201,19 @@ class Transpose(BaseFunction):
           }
         }
 
-        %last_last = memref.load %Bp[%n_col] : memref<?xindex>
-        memref.store %c0, %Bp[%n_col] : memref<?xindex>
-        scf.for %col = %c0 to %n_col step %c1 {
+        %last_last = memref.load %Bp[%ncol] : memref<?xindex>
+        memref.store %c0, %Bp[%ncol] : memref<?xindex>
+        scf.for %col = %c0 to %ncol step %c1 {
           %temp = memref.load %Bp[%col] : memref<?xindex>
-          %last = memref.load %Bp[%n_col] : memref<?xindex>
+          %last = memref.load %Bp[%ncol] : memref<?xindex>
           memref.store %last, %Bp[%col] : memref<?xindex>
-          memref.store %temp, %Bp[%n_col] : memref<?xindex>
+          memref.store %temp, %Bp[%ncol] : memref<?xindex>
         }
-        memref.store %last_last, %Bp[%n_col] : memref<?xindex>
+        memref.store %last_last, %Bp[%ncol] : memref<?xindex>
 
         // pymlir-skip: end
 
-        return %c0 : index
+        return %output : !llvm.ptr<i8>
       }
     """
     )
@@ -192,12 +222,7 @@ class Transpose(BaseFunction):
 class MatrixSelect(BaseFunction):
     """
     Call signature:
-      matrix_select(output: MLIRSparseTensor, input: MLIRSparseTensor) -> None
-
-      input is (nrows x ncols with nnz non-zero values)
-      output must be (nrows x ncols with nnz non-zero values)
-
-      The output will be written to during the function call.
+      matrix_select(input: MLIRSparseTensor) -> MLIRSparseTensor
     """
 
     _valid_selectors = {
@@ -229,20 +254,34 @@ class MatrixSelect(BaseFunction):
             needs_val=needs_val,
         )
 
+    def compile(self, engine=None, passes=None):
+        func = super().compile(engine, passes)
+
+        def matrix_select(input: MLIRSparseTensor) -> MLIRSparseTensor:
+            ptr = func(input)
+            tensor = MLIRSparseTensor.from_raw_pointer(
+                ptr, input.pointer_dtype, input.index_dtype, input.value_dtype
+            )
+            return tensor
+
+        return matrix_select
+
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(%output: !llvm.ptr<i8>, %input: !llvm.ptr<i8>) -> index {
+      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> !llvm.ptr<i8> {
         %c0 = constant 0 : index
         %c1 = constant 1 : index
         %cf0 = constant 0.0 : f64
 
         // pymlir-skip: begin
 
-        %n_row = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
-        %n_col = call @sparseDimSize(%input, %c1) : (!llvm.ptr<i8>, index) -> index
+        %nrow = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
+        %ncol = call @sparseDimSize(%input, %c1) : (!llvm.ptr<i8>, index) -> index
         %Ap = call @sparsePointers64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Aj = call @sparseIndices64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Ax = call @sparseValuesF64(%input) : (!llvm.ptr<i8>) -> memref<?xf64>
+        
+        %output = call @dup_tensor(%input) : (!llvm.ptr<i8>) -> !llvm.ptr<i8>
         %Bp = call @sparsePointers64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Bj = call @sparseIndices64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Bx = call @sparseValuesF64(%output) : (!llvm.ptr<i8>) -> memref<?xf64>
@@ -261,7 +300,7 @@ class MatrixSelect(BaseFunction):
 
         // Bp[0] = 0
         memref.store %c0, %Bp[%c0] : memref<?xindex>
-        scf.for %row = %c0 to %n_row step %c1 {
+        scf.for %row = %c0 to %nrow step %c1 {
           // Copy Bp[row] into Bp[row+1]
           %row_plus1 = addi %row, %c1 : index
           %bp_curr_count = memref.load %Bp[%row] : memref<?xindex>
@@ -308,9 +347,14 @@ class MatrixSelect(BaseFunction):
           }
         }
 
+        // Trim output
+        %nnz = memref.load %Bp[%nrow] : memref<?xindex>
+        call @resize_index(%output, %c1, %nnz) : (!llvm.ptr<i8>, index, index) -> ()
+        call @resize_values(%output, %nnz) : (!llvm.ptr<i8>, index) -> ()
+
         // pymlir-skip: end
 
-        return %c0 : index
+        return %output : !llvm.ptr<i8>
       }
     """
     )
@@ -393,9 +437,7 @@ class MatrixReduceToScalar(BaseFunction):
 class MatrixApply(BaseFunction):
     """
     Call signature:
-      matrix_apply(output: MLIRSparseTensor, input: MLIRSparseTensor, thunk: f64) -> index
-
-      output must have the same shape and size as input
+      matrix_apply(input: MLIRSparseTensor, thunk: f64) -> MLIRSparseTensor
     """
 
     _valid_operators = {"min"}
@@ -419,26 +461,40 @@ class MatrixApply(BaseFunction):
             op=self.op,
         )
 
+    def compile(self, engine=None, passes=None):
+        func = super().compile(engine, passes)
+
+        def matrix_apply(input: MLIRSparseTensor, thunk) -> MLIRSparseTensor:
+            ptr = func(input, thunk)
+            tensor = MLIRSparseTensor.from_raw_pointer(
+                ptr, input.pointer_dtype, input.index_dtype, input.value_dtype
+            )
+            return tensor
+
+        return matrix_apply
+
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(%output: !llvm.ptr<i8>, %input: !llvm.ptr<i8>, %thunk: f64) -> index {
+      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>, %thunk: f64) -> !llvm.ptr<i8> {
         %c0 = constant 0 : index
         %c1 = constant 1 : index
         %cf0 = constant 0.0 : f64
 
         // pymlir-skip: begin
 
-        %n_row = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
-        %n_col = call @sparseDimSize(%input, %c1) : (!llvm.ptr<i8>, index) -> index
+        %nrow = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
+        %ncol = call @sparseDimSize(%input, %c1) : (!llvm.ptr<i8>, index) -> index
         %Ap = call @sparsePointers64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Aj = call @sparseIndices64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Ax = call @sparseValuesF64(%input) : (!llvm.ptr<i8>) -> memref<?xf64>
+        
+        %output = call @dup_tensor(%input) : (!llvm.ptr<i8>) -> !llvm.ptr<i8>
         %Bp = call @sparsePointers64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Bj = call @sparseIndices64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Bx = call @sparseValuesF64(%output) : (!llvm.ptr<i8>) -> memref<?xf64>
 
         memref.store %c0, %Bp[%c0] : memref<?xindex>
-        scf.for %row = %c0 to %n_row step %c1 {
+        scf.for %row = %c0 to %nrow step %c1 {
           // Read start/end positions from Ap
           %row_plus1 = addi %row, %c1 : index
           %j_start = memref.load %Ap[%row] : memref<?xindex>
@@ -462,7 +518,7 @@ class MatrixApply(BaseFunction):
 
         // pymlir-skip: end
 
-        return %c0 : index
+        return %output : !llvm.ptr<i8>
       }
     """
     )
@@ -473,20 +529,16 @@ class MatrixMultiply(BaseFunction):
     Call signature:
       If using a mask:
         matrix_multiply(
-            output: MLIRSparseTensor,
             a: MLIRSparseTensor,
             b: MLIRSparseTensor,
             mask: MLIRSparseTensor,
-        ) -> index
+        ) -> MLIRSparseTensor
 
       If not using a mask:
         matrix_multiply(
-            output: MLIRSparseTensor,
             a: MLIRSparseTensor,
             b: MLIRSparseTensor,
-        ) -> index
-
-      output must have the shape [a.nrows x b.ncols] and should have more nnz than either a or b
+        ) -> MLIRSparseTensor
     """
 
     _valid_semirings = {"plus_times", "plus_pair", "plus_plus"}
@@ -512,16 +564,44 @@ class MatrixMultiply(BaseFunction):
             structural_mask=self.structural_mask,
         )
 
+    def compile(self, engine=None, passes=None):
+        func = super().compile(engine, passes)
+
+        if self.structural_mask:
+
+            def matrix_multiply(
+                a: MLIRSparseTensor, b: MLIRSparseTensor, mask: MLIRSparseTensor
+            ) -> MLIRSparseTensor:
+                ptr = func(a, b, mask)
+                tensor = MLIRSparseTensor.from_raw_pointer(
+                    ptr, a.pointer_dtype, a.index_dtype, a.value_dtype
+                )
+                return tensor
+
+        else:
+
+            def matrix_multiply(
+                a: MLIRSparseTensor, b: MLIRSparseTensor
+            ) -> MLIRSparseTensor:
+                ptr = func(a, b)
+                tensor = MLIRSparseTensor.from_raw_pointer(
+                    ptr, a.pointer_dtype, a.index_dtype, a.value_dtype
+                )
+                return tensor
+
+        return matrix_multiply
+
     mlir_template = jinja2.Template(
         """
       func {% if private_func %}private{% endif %}@{{ func_name }}(
-          %output: !llvm.ptr<i8>, %A: !llvm.ptr<i8>, %B: !llvm.ptr<i8>
+          %A: !llvm.ptr<i8>, %B: !llvm.ptr<i8>
           {%- if structural_mask -%}
           , %mask: !llvm.ptr<i8>
           {%- endif -%}
-      ) -> index {
+      ) -> !llvm.ptr<i8> {
         %c0 = constant 0 : index
         %c1 = constant 1 : index
+        %c10 = constant 10 : index
         %cf0 = constant 0.0 : f64
         %cf1 = constant 1.0 : f64
         %ctrue = constant 1 : i1
@@ -529,23 +609,40 @@ class MatrixMultiply(BaseFunction):
 
         // pymlir-skip: begin
 
-        %nrows = call @sparseDimSize(%A, %c0) : (!llvm.ptr<i8>, index) -> index
-        %ncols = call @sparseDimSize(%B, %c1) : (!llvm.ptr<i8>, index) -> index
         %Ap = call @sparsePointers64(%A, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Aj = call @sparseIndices64(%A, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Ax = call @sparseValuesF64(%A) : (!llvm.ptr<i8>) -> memref<?xf64>
         %Bp = call @sparsePointers64(%B, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Bi = call @sparseIndices64(%B, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Bx = call @sparseValuesF64(%B) : (!llvm.ptr<i8>) -> memref<?xf64>
+
+        %nrow = call @sparseDimSize(%A, %c0) : (!llvm.ptr<i8>, index) -> index
+        %ncol = call @sparseDimSize(%B, %c1) : (!llvm.ptr<i8>, index) -> index
+        %nrow_plus_one = addi %nrow, %c1 : index
+        
+        {% if structural_mask %}
+        %Mp = call @sparsePointers64(%mask, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %Mj = call @sparseIndices64(%mask, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %nnz_init = memref.load %Mp[%nrow] : memref<?xindex>
+        {% else %}
+        %nnz = memref.load %Ap[%nrow] : memref<?xindex>
+        %nnz_init = muli %nnz, %c10 : index
+        {% endif %}
+
+        %output = call @empty_like(%A) : (!llvm.ptr<i8>) -> !llvm.ptr<i8>
+        call @resize_dim(%output, %c0, %nrow) : (!llvm.ptr<i8>, index, index) -> ()
+        call @resize_dim(%output, %c1, %ncol) : (!llvm.ptr<i8>, index, index) -> ()
+        call @resize_pointers(%output, %c1, %nrow_plus_one) : (!llvm.ptr<i8>, index, index) -> ()
+        call @resize_index(%output, %c1, %nnz_init) : (!llvm.ptr<i8>, index, index) -> ()
+        call @resize_values(%output, %nnz_init) : (!llvm.ptr<i8>, index) -> ()
+
         %Cp = call @sparsePointers64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Cj = call @sparseIndices64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
         %Cx = call @sparseValuesF64(%output) : (!llvm.ptr<i8>) -> memref<?xf64>
-        {% if structural_mask -%}
-        %Mp = call @sparsePointers64(%mask, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
-        %Mj = call @sparseIndices64(%mask, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
-        {%- endif %}
         %accumulator = memref.alloc() : memref<f64>
         %not_empty = memref.alloc() : memref<i1>
+        %cur_size = memref.alloc() : memref<index>
+        memref.store %nnz_init, %cur_size[]: memref<index>
 
         // Method for constructing C in CSR format:
         // 1. Cp[0] = 0
@@ -557,7 +654,7 @@ class MatrixMultiply(BaseFunction):
 
         // Cp[0] = 0
         memref.store %c0, %Cp[%c0] : memref<?xindex>
-        scf.for %row = %c0 to %nrows step %c1 {
+        scf.for %row = %c0 to %nrow step %c1 {
           // Copy Cp[row] into Cp[row+1]
           %row_plus1 = addi %row, %c1 : index
           %cp_curr_count = memref.load %Cp[%row] : memref<?xindex>
@@ -571,7 +668,7 @@ class MatrixMultiply(BaseFunction):
             %col = memref.load %Mj[%mm] : memref<?xindex>
             // NOTE: for valued masks, we would need to check the value and yield if false
           {% else %}
-          scf.for %col = %c0 to %ncols step %c1 {
+          scf.for %col = %c0 to %ncol step %c1 {
           {% endif %}
 
             // Iterate over row in A as ka, col in B as kb
@@ -643,9 +740,14 @@ class MatrixMultiply(BaseFunction):
           }
         }
 
+        // Trim output
+        %nnz_final = memref.load %Cp[%nrow] : memref<?xindex>
+        call @resize_index(%output, %c1, %nnz_final) : (!llvm.ptr<i8>, index, index) -> ()
+        call @resize_values(%output, %nnz_final) : (!llvm.ptr<i8>, index) -> ()
+
         // pymlir-skip: end
 
-        return %c0 : index
+        return %output : !llvm.ptr<i8>
       }
     """
     )
