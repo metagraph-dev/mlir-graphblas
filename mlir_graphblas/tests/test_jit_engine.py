@@ -232,7 +232,7 @@ TEST_CASE_INDEX = 0
 
 @pytest.mark.parametrize("mlir_template,args,expected_result", SIMPLE_TEST_CASES)
 @pytest.mark.parametrize("mlir_type", MLIR_TYPE_TO_NP_TYPE.keys())
-def test_jit_engine_tensor_result(
+def test_jit_engine_simple(
     engine, mlir_template, args, expected_result, mlir_type
 ):
     global TEST_CASE_INDEX
@@ -338,21 +338,116 @@ Expected Result: {expected_result}
 """
 
 
-# def test_jit_engine_multiple_return_values(engine):
-#     mlir_text = '''
-# func @func_main() -> (i32, f32) {
-#     %a = constant 99 : i32
-#     %b = constant 12.34 : f32
-#     return %a, %b : i32, f32
-# }
-# '''
-#     assert engine.add(mlir_text, STANDARD_PASSES) == ['func_main']
-#     assert (99, 12.34) == engine.func_main()
+def test_jit_engine_multiple_return_values(engine):
+    pytest.xfail() # C-ABI incompatibililty issue
+    mlir_text = '''
+func @func_main() -> (i32, f32) {
+    %a = constant 99 : i32
+    %b = constant 12.34 : f32
+    return %a, %b : i32, f32
+}
+'''
+    assert engine.add(mlir_text, STANDARD_PASSES) == ['func_main']
+    assert (99, 12.34) == engine.func_main()
 
-#     return
+    return
 
+@pytest.mark.parametrize("mlir_type", MLIR_TYPE_TO_NP_TYPE.keys())
+def test_jit_engine_sequence_of_scalars_input(engine, mlir_type):
+    pytest.xfail() # Currently doesn't consistently pass ; non-deterministic bug
+    # TODO how to debug this:
+    #      - Minimize the MLIR text
+    #          - we don't need the scf.for loop
+    #          - just pass in the pointer and dereference element 0 (this has failed in the past)
+    #          - this test consistently faills with i64
+    #      - Get the LLVM IR (not the LLVM Dialect)
+    #      - Get the notebook example running with just LLVM lite
+    #      - Ask Siu
+    if mlir_type == "i8":
+        return
+    # TODO make this case part of SIMPLE_TEST_CASES when !llvm.ptr<i8>
+    # no longer must denote a sparse tensor
+    mlir_template, args, expected_result = (  # sequence of scalars -> scalar
+        """
+func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
+  // pymlir-skip: begin
 
-def test_jit_engine_sequence_of_sparse_tensor_input(engine):
+  %sum_memref = memref.alloc() : memref<{mlir_type}>
+  
+  %c0 = constant 0 : index
+  %c1 = constant 1 : index
+  %sequence_length = constant 5 : index // hard-coded length
+
+  %ci0 = constant 0 : i64
+  %ci1 = constant 1 : i64
+  scf.for %i = %c0 to %sequence_length step %c1 iter_args(%iter=%ci0) -> (i64) {{
+  
+    // llvm.getelementptr just does pointer arithmetic
+    %element_ptr = llvm.getelementptr %sequence[%iter] : (!llvm.ptr<{mlir_type}>, i64) -> !llvm.ptr<{mlir_type}>
+    
+    // dereference %sparse_tensor_ptr_ptr to get an !llvm.ptr<i8>
+    %element = llvm.load %element_ptr : !llvm.ptr<{mlir_type}>
+    
+    %current_sum = memref.load %sum_memref[] : memref<{mlir_type}>
+    %updated_sum = {linalg_add} %current_sum, %element : {mlir_type}
+    memref.store %updated_sum, %sum_memref[] : memref<{mlir_type}>
+  
+    %plus_one = addi %iter, %ci1 : i64
+    scf.yield %plus_one : i64
+  }}
+  
+  %sum = memref.load %sum_memref[] : memref<{mlir_type}>
+  
+  // pymlir-skip: end
+
+  return %sum : {mlir_type}
+}}
+""",
+        [(2, 4, 6, 8, 10)],
+        30,
+        # id="sequence_to_scalar",
+    )
+
+    global TEST_CASE_INDEX
+    
+    np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
+    func_name = f"func_{TEST_CASE_INDEX}_{mlir_type}"
+    TEST_CASE_INDEX += 1
+
+    if issubclass(np_type, np.integer):
+        linalg_add = "addi"
+    elif issubclass(np_type, np.floating):
+        linalg_add = "addf"
+    else:
+        raise ValueError(f"No MLIR type for {np_type}.")
+
+    mlir_text = mlir_template.format(
+        func_name=func_name, mlir_type=mlir_type, linalg_add=linalg_add
+    )
+    args = [arg.astype(np_type) if isinstance(arg, np.ndarray) else arg for arg in args]
+    expected_result = (
+        expected_result.astype(np_type)
+        if isinstance(expected_result, np.ndarray)
+        else expected_result
+    )
+
+    engine.add(mlir_text, STANDARD_PASSES)
+
+    compiled_func = engine[func_name]
+    result = compiled_func(*args)
+    assert np.all(
+        result == expected_result
+    ), f"""
+Input MLIR: 
+{mlir_text}
+
+Inputs: {args}
+Result: {result}
+Expected Result: {expected_result}
+"""
+    return
+
+def test_jit_engine_sequence_of_sparse_tensors_input(engine):
     mlir_text = """
 #trait_sum_reduction = {
   indexing_maps = [
