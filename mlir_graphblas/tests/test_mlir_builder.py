@@ -77,10 +77,10 @@ def test_ir_builder_transpose_wrapper(engine: MlirJitEngine):
     output_var = MLIRVar("output_tensor", "!llvm.ptr<i8>")
 
     ir_builder = MLIRFunctionBuilder(
-        "transpose_wrapper", output_var, input_var, return_type="index"
+        "transpose_wrapper", input_vars=(output_var, input_var), return_types=("index",)
     )
     transpose_result = ir_builder.call(transpose_function, output_var, input_var)
-    ir_builder.return_var(transpose_result)
+    ir_builder.return_vars(transpose_result)
 
     assert ir_builder.get_mlir()
 
@@ -127,12 +127,14 @@ def test_ir_builder_double_transpose(engine: MlirJitEngine):
     )  # for throw away intermediate values
 
     ir_builder = MLIRFunctionBuilder(
-        "in_place_double_transpose", scratch_var, input_var, return_type="index"
+        "in_place_double_transpose",
+        input_vars=(scratch_var, input_var),
+        return_types=("index",),
     )
     # Use different instances of Tranpose to ideally get exactly one transpose helper in the final MLIR text
     _ = ir_builder.call(Transpose(), scratch_var, input_var)
     dummy_return_var = ir_builder.call(Transpose(), input_var, scratch_var)
-    ir_builder.return_var(dummy_return_var)
+    ir_builder.return_vars(dummy_return_var)
 
     mlir_text = ir_builder.get_mlir(make_private=False)
     ast = parse_mlir_string(mlir_text)
@@ -204,14 +206,16 @@ def test_ir_builder_triangle_count(engine: MlirJitEngine):
     C_var = MLIRVar("C", "!llvm.ptr<i8>")
 
     ir_builder = MLIRFunctionBuilder(
-        "triangle_count", A_var, L_var, U_var, UT_var, C_var, return_type="f64"
+        "triangle_count",
+        input_vars=(A_var, L_var, U_var, UT_var, C_var),
+        return_types=("f64",),
     )
     ir_builder.call(matrix_select_triu_function, U_var, A_var)
     ir_builder.call(matrix_select_tril_function, L_var, A_var)
     ir_builder.call(transpose_function, UT_var, U_var)
     ir_builder.call(mxm_plus_pair_function, C_var, L_var, UT_var, L_var)
     reduce_result = ir_builder.call(matrix_reduce_function, C_var)
-    ir_builder.return_var(reduce_result)
+    ir_builder.return_vars(reduce_result)
 
     assert ir_builder.get_mlir()
 
