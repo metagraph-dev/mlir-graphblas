@@ -603,7 +603,9 @@ def test_ir_builder_dnn(
         dense_result = engine.densify(sparse_result)
 
         with np.printoptions(suppress=True):
-            error_message = f"""
+            assert np.isclose(
+                dense_result, numpy_dense_result
+            ).all(), f"""
 num_layers
 {num_layers}
 
@@ -619,6 +621,5 @@ numpy_dense_result
 np.isclose(dense_result, numpy_dense_result)
 {np.isclose(dense_result, numpy_dense_result)}
 """
-            assert np.isclose(dense_result, numpy_dense_result).all(), error_message
 
     return
