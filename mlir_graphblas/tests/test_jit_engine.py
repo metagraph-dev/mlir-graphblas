@@ -23,7 +23,7 @@ func @{func_name}(%arga: tensor<?x?x{mlir_type}>, %argb: tensor<?x?x{mlir_type}>
     ins(%arga, %argb: tensor<?x?x{mlir_type}>, tensor<?x?x{mlir_type}>)
    outs(%arga: tensor<?x?x{mlir_type}>) {{
      ^bb(%a: {mlir_type}, %b: {mlir_type}, %s: {mlir_type}):
-       %sum = {linalg_add} %a, %b : {mlir_type}
+       %sum = {std_add} %a, %b : {mlir_type}
        linalg.yield %sum : {mlir_type}
  }} -> tensor<?x?x{mlir_type}>
  return %answer : tensor<?x?x{mlir_type}>
@@ -49,7 +49,7 @@ func @{func_name}(%arga: tensor<2x4x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
     ins(%arga, %argb: tensor<2x4x{mlir_type}>, tensor<2x4x{mlir_type}>)
    outs(%arga: tensor<2x4x{mlir_type}>) {{
      ^bb(%a: {mlir_type}, %b: {mlir_type}, %s: {mlir_type}):
-       %sum = {linalg_add} %a, %b : {mlir_type}
+       %sum = {std_add} %a, %b : {mlir_type}
        linalg.yield %sum : {mlir_type}
  }} -> tensor<2x4x{mlir_type}>
  return %answer : tensor<2x4x{mlir_type}>
@@ -75,7 +75,7 @@ func @{func_name}(%arga: tensor<?x?x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
     ins(%arga, %argb: tensor<?x?x{mlir_type}>, tensor<2x4x{mlir_type}>)
    outs(%arga: tensor<?x?x{mlir_type}>) {{
      ^bb(%a: {mlir_type}, %b: {mlir_type}, %s: {mlir_type}):
-       %sum = {linalg_add} %a, %b : {mlir_type}
+       %sum = {std_add} %a, %b : {mlir_type}
        linalg.yield %sum : {mlir_type}
  }} -> tensor<?x?x{mlir_type}>
  return %answer : tensor<?x?x{mlir_type}>
@@ -100,7 +100,7 @@ func @{func_name}(%arg_tensor: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}
     ins(%arg_tensor: tensor<2x4x{mlir_type}>)
    outs(%arg_tensor: tensor<2x4x{mlir_type}>) {{
      ^bb(%a: {mlir_type}, %s: {mlir_type}):
-       %sum = {linalg_add} %a, %arg_scalar : {mlir_type}
+       %sum = {std_add} %a, %arg_scalar : {mlir_type}
        linalg.yield %sum : {mlir_type}
  }} -> tensor<2x4x{mlir_type}>
  return %answer : tensor<2x4x{mlir_type}>
@@ -126,8 +126,8 @@ func @{func_name}(%tensor_a: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}, 
     ins(%tensor_a, %tensor_b: tensor<2x4x{mlir_type}>, tensor<?x?x{mlir_type}>)
    outs(%tensor_a: tensor<2x4x{mlir_type}>) {{
      ^bb(%a: {mlir_type}, %b: {mlir_type}, %s: {mlir_type}):
-       %ab = {linalg_add} %a, %b : {mlir_type}
-       %sum = {linalg_add} %ab, %arg_scalar : {mlir_type}
+       %ab = {std_add} %a, %b : {mlir_type}
+       %sum = {std_add} %ab, %arg_scalar : {mlir_type}
        linalg.yield %sum : {mlir_type}
  }} -> tensor<2x4x{mlir_type}>
  return %answer : tensor<2x4x{mlir_type}>
@@ -154,7 +154,7 @@ func @{func_name}(%arg0: tensor<?x{mlir_type}>) -> {mlir_type} {{
 func @{func_name}(%tensor_arg: tensor<?x{mlir_type}>, %scalar_arg: {mlir_type}) -> {mlir_type} {{
   %c3 = constant 3 : index
   %element_3 = tensor.extract %tensor_arg[%c3] : tensor<?x{mlir_type}>
-  %ans = {linalg_add} %element_3, %scalar_arg : {mlir_type}
+  %ans = {std_add} %element_3, %scalar_arg : {mlir_type}
   return %ans : {mlir_type}
 }}
 """,
@@ -169,7 +169,7 @@ func @{func_name}(%arg0: tensor<?x{mlir_type}>, %arg1: tensor<?x{mlir_type}>) ->
   %c4 = constant 4 : index
   %arg0_3 = tensor.extract %arg0[%c3] : tensor<?x{mlir_type}>
   %arg1_4 = tensor.extract %arg1[%c4] : tensor<?x{mlir_type}>
-  %ans = {linalg_add} %arg0_3, %arg1_4 : {mlir_type}
+  %ans = {std_add} %arg0_3, %arg1_4 : {mlir_type}
   return %ans : {mlir_type}
 }}
 """,
@@ -184,8 +184,8 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x{mlir_type}>, %arg1: ten
   %c4 = constant 4 : index
   %arg0_3 = tensor.extract %arg0[%c3] : tensor<?x{mlir_type}>
   %arg1_4 = tensor.extract %arg1[%c4] : tensor<?x{mlir_type}>
-  %tensor_element_result = {linalg_add} %arg0_3, %arg1_4 : {mlir_type}
-  %ans = {linalg_add} %tensor_element_result, %scalar : {mlir_type}
+  %tensor_element_result = {std_add} %arg0_3, %arg1_4 : {mlir_type}
+  %ans = {std_add} %tensor_element_result, %scalar : {mlir_type}
   return %ans : {mlir_type}
 }}
 """,
@@ -203,8 +203,8 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x!mlir_type_alias>, %arg1
   %c4 = constant 4 : index
   %arg0_3 = tensor.extract %arg0[%c3] : tensor<?x{mlir_type}>
   %arg1_4 = tensor.extract %arg1[%c4] : tensor<?x{mlir_type}>
-  %tensor_element_result = {linalg_add} %arg0_3, %arg1_4 : {mlir_type}
-  %ans = {linalg_add} %tensor_element_result, %scalar : {mlir_type}
+  %tensor_element_result = {std_add} %arg0_3, %arg1_4 : {mlir_type}
+  %ans = {std_add} %tensor_element_result, %scalar : {mlir_type}
   return %ans : !mlir_type_alias
 }}
 """,
@@ -235,15 +235,16 @@ def test_jit_engine_simple(engine, mlir_template, args, expected_result, mlir_ty
     np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
     func_name = f"func_{next(TEST_CASE_ID_GENERATOR)}_{mlir_type}"
 
+    std_operations_prefixes = ("add", "sub", "mul")
     if issubclass(np_type, np.integer):
-        linalg_add = "addi"
+        std_operations = {f"std_{op}": f"{op}i" for op in std_operations_prefixes}
     elif issubclass(np_type, np.floating):
-        linalg_add = "addf"
+        std_operations = {f"std_{op}": f"{op}f" for op in std_operations_prefixes}
     else:
         raise ValueError(f"No MLIR type for {np_type}.")
 
     mlir_text = mlir_template.format(
-        func_name=func_name, mlir_type=mlir_type, linalg_add=linalg_add
+        func_name=func_name, mlir_type=mlir_type, **std_operations
     )
     args = [arg.astype(np_type) if isinstance(arg, np.ndarray) else arg for arg in args]
     expected_result = (
@@ -349,15 +350,6 @@ func @func_main() -> (i32, f32) {
 
 @pytest.mark.parametrize("mlir_type", MLIR_TYPE_TO_NP_TYPE.keys())
 def test_jit_engine_sequence_of_scalars_input(engine, mlir_type):
-    pytest.xfail()  # Currently doesn't consistently pass ; non-deterministic bug
-    # TODO how to debug this:
-    #      - Minimize the MLIR text
-    #          - we don't need the scf.for loop
-    #          - just pass in the pointer and dereference element 0 (this has failed in the past)
-    #          - this test consistently faills with i64
-    #      - Get the LLVM IR (not the LLVM Dialect)
-    #      - Get the notebook example running with just LLVM lite
-    #      - Ask Siu
     if mlir_type == "i8":
         return
     # TODO make this case part of SIMPLE_TEST_CASES when !llvm.ptr<i8>
@@ -368,23 +360,29 @@ func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
   // pymlir-skip: begin
 
   %sum_memref = memref.alloc() : memref<{mlir_type}>
+  %sum_garbage = memref.load %sum_memref[] : memref<{mlir_type}>
+  // Not the best way to zero out garbage values but is easier to template for testing
+  %sum_init = {std_sub} %sum_garbage, %sum_garbage : {mlir_type}
+  memref.store %sum_init, %sum_memref[] : memref<{mlir_type}>
   
   %c0 = constant 0 : index
   %c1 = constant 1 : index
+
   %sequence_length = constant 5 : index // hard-coded length
 
   %ci0 = constant 0 : i64
   %ci1 = constant 1 : i64
+
   scf.for %i = %c0 to %sequence_length step %c1 iter_args(%iter=%ci0) -> (i64) {{
   
     // llvm.getelementptr just does pointer arithmetic
     %element_ptr = llvm.getelementptr %sequence[%iter] : (!llvm.ptr<{mlir_type}>, i64) -> !llvm.ptr<{mlir_type}>
     
-    // dereference %sparse_tensor_ptr_ptr to get an !llvm.ptr<i8>
+    // dereference %element_ptr to get an !llvm.ptr<i8>
     %element = llvm.load %element_ptr : !llvm.ptr<{mlir_type}>
     
     %current_sum = memref.load %sum_memref[] : memref<{mlir_type}>
-    %updated_sum = {linalg_add} %current_sum, %element : {mlir_type}
+    %updated_sum = {std_add} %current_sum, %element : {mlir_type}
     memref.store %updated_sum, %sum_memref[] : memref<{mlir_type}>
   
     %plus_one = addi %iter, %ci1 : i64
@@ -406,15 +404,16 @@ func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
     np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
     func_name = f"func_{next(TEST_CASE_ID_GENERATOR)}_{mlir_type}"
 
+    std_operations_prefixes = ("add", "sub", "mul")
     if issubclass(np_type, np.integer):
-        linalg_add = "addi"
+        std_operations = {f"std_{op}": f"{op}i" for op in std_operations_prefixes}
     elif issubclass(np_type, np.floating):
-        linalg_add = "addf"
+        std_operations = {f"std_{op}": f"{op}f" for op in std_operations_prefixes}
     else:
         raise ValueError(f"No MLIR type for {np_type}.")
 
     mlir_text = mlir_template.format(
-        func_name=func_name, mlir_type=mlir_type, linalg_add=linalg_add
+        func_name=func_name, mlir_type=mlir_type, **std_operations
     )
     args = [arg.astype(np_type) if isinstance(arg, np.ndarray) else arg for arg in args]
     expected_result = (
