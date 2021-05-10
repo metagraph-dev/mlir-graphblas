@@ -226,20 +226,14 @@ func @{func_name}(%arg_tensor: tensor<?x4x{mlir_type}>) -> {mlir_type} {{
     ),
 ]
 
-
-TEST_CASE_INDEX = 0
+TEST_CASE_ID_GENERATOR = itertools.count()
 
 
 @pytest.mark.parametrize("mlir_template,args,expected_result", SIMPLE_TEST_CASES)
 @pytest.mark.parametrize("mlir_type", MLIR_TYPE_TO_NP_TYPE.keys())
-def test_jit_engine_simple(
-    engine, mlir_template, args, expected_result, mlir_type
-):
-    global TEST_CASE_INDEX
-
+def test_jit_engine_simple(engine, mlir_template, args, expected_result, mlir_type):
     np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
-    func_name = f"func_{TEST_CASE_INDEX}_{mlir_type}"
-    TEST_CASE_INDEX += 1
+    func_name = f"func_{next(TEST_CASE_ID_GENERATOR)}_{mlir_type}"
 
     if issubclass(np_type, np.integer):
         linalg_add = "addi"
@@ -339,22 +333,23 @@ Expected Result: {expected_result}
 
 
 def test_jit_engine_multiple_return_values(engine):
-    pytest.xfail() # C-ABI incompatibililty issue
-    mlir_text = '''
+    pytest.xfail()  # C-ABI incompatibililty issue
+    mlir_text = """
 func @func_main() -> (i32, f32) {
     %a = constant 99 : i32
     %b = constant 12.34 : f32
     return %a, %b : i32, f32
 }
-'''
-    assert engine.add(mlir_text, STANDARD_PASSES) == ['func_main']
+"""
+    assert engine.add(mlir_text, STANDARD_PASSES) == ["func_main"]
     assert (99, 12.34) == engine.func_main()
 
     return
 
+
 @pytest.mark.parametrize("mlir_type", MLIR_TYPE_TO_NP_TYPE.keys())
 def test_jit_engine_sequence_of_scalars_input(engine, mlir_type):
-    pytest.xfail() # Currently doesn't consistently pass ; non-deterministic bug
+    pytest.xfail()  # Currently doesn't consistently pass ; non-deterministic bug
     # TODO how to debug this:
     #      - Minimize the MLIR text
     #          - we don't need the scf.for loop
@@ -408,11 +403,8 @@ func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
         # id="sequence_to_scalar",
     )
 
-    global TEST_CASE_INDEX
-    
     np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
-    func_name = f"func_{TEST_CASE_INDEX}_{mlir_type}"
-    TEST_CASE_INDEX += 1
+    func_name = f"func_{next(TEST_CASE_ID_GENERATOR)}_{mlir_type}"
 
     if issubclass(np_type, np.integer):
         linalg_add = "addi"
@@ -446,6 +438,7 @@ Result: {result}
 Expected Result: {expected_result}
 """
     return
+
 
 def test_jit_engine_sequence_of_sparse_tensors_input(engine):
     mlir_text = """

@@ -46,7 +46,7 @@ func @many_inputs_constant_output(
         np.arange(8, dtype=np.float32).reshape([2, 4]),
         sparse_tensor,
         123.456,
-        (10,20,30),
+        (10, 20, 30),
     ]
 
     assert callable_func(*valid_args) == 1234
@@ -174,37 +174,39 @@ BAD_INPUT_TEST_CASES = [  # elements are ( error_type, error_match_string, bad_a
 ]
 
 for np_type in (
-        np.int8,
-        np.int16,
-        np.int32,
-        np.int64,
-        np.longlong,
-        np.uint8,
-        np.uint16,
-        np.uint32,
-        np.uint64,
-        np.ulonglong,
-        np.float16,
-        np.float64,
-        np.float128,
-        np.complex64,
-        np.complex128,
-        np.complex256,
-        np.record,
-        np.bool_,
-        bool,
+    np.int8,
+    np.int16,
+    np.int32,
+    np.int64,
+    np.longlong,
+    np.uint8,
+    np.uint16,
+    np.uint32,
+    np.uint64,
+    np.ulonglong,
+    np.float16,
+    np.float64,
+    np.float128,
+    np.complex64,
+    np.complex128,
+    np.complex256,
+    np.record,
+    np.bool_,
+    bool,
 ):
     if not issubclass(np_type, (bool, np.record, np.integer)):
         error_match_string = r".*12\.3.* cannot be cast to "
         if np_type is np.bool_:
             error_match_string = r"True is expected to be a scalar with dtype "
-        BAD_INPUT_TEST_CASES.append(pytest.param(
-            TypeError,
-            error_match_string,
-            5,
-            [np_type(12.3)],
-            id=f"{np_type.__name__}_array_for_i64_array",
-        ))
+        BAD_INPUT_TEST_CASES.append(
+            pytest.param(
+                TypeError,
+                error_match_string,
+                5,
+                [np_type(12.3)],
+                id=f"{np_type.__name__}_array_for_i64_array",
+            )
+        )
     BAD_INPUT_TEST_CASES += [
         pytest.param(
             TypeError,

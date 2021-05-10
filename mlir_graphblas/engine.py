@@ -152,6 +152,7 @@ def return_tensor_to_ctypes(
 
     return CtypesType, decoder
 
+
 def return_llvm_pointer_to_ctypes(
     mlir_type: _DIALECT_TYPES["llvm"]["LLVMPtr"],
 ) -> Tuple[type, Callable]:
@@ -162,7 +163,7 @@ def return_llvm_pointer_to_ctypes(
         type_string = mlir_type.type.dump()
         ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
 
-        def decoder(arg):
+        def decoder(arg) -> int:
             # TODO we blindly assume that an i8 pointer points to a sparse tensor
             # since MLIR's sparse tensor support is currently up-in-the-air and this
             # is how they currently handle sparse tensors
@@ -171,13 +172,14 @@ def return_llvm_pointer_to_ctypes(
             # To create the MLIRSparseTensor, use MLIRSparseTensor.from_raw_pointer(),
             # which we can't do here because we are missing dtype information.
             return ctypes.cast(arg, ctypes.c_void_p).value
-        
+
     else:
         raise NotImplementedError(
             f"Converting {mlir_type} to ctypes not yet supported."
         )
-        
+
     return ctypes_type, decoder
+
 
 def return_llvm_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
     if isinstance(mlir_type, _DIALECT_TYPES["llvm"]["LLVMPtr"]):
@@ -191,6 +193,7 @@ def return_llvm_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Cal
             f"Converting {mlir_type} to ctypes not yet supported."
         )
     return result
+
 
 def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
     np_type, ctypes_type = convert_mlir_atomic_type(mlir_type)
@@ -206,7 +209,7 @@ def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callab
 
 
 def return_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
-    """Returns a single ctypes type for a single given MLIR type."""
+    """Returns a single ctypes type for a single given MLIR type as well as a decoder."""
     # TODO handle all other child classes of mlir.astnodes.Type
     # TODO consider inlining this if it only has 2 cases
 
@@ -277,6 +280,7 @@ def input_pretty_dialect_type_to_ctypes(
 ) -> Tuple[list, Callable]:
     # Pretty dialect types must be special-cased since they're arbitrarily structured.
     raise NotImplementedError(f"Converting {pretty_type} to ctypes not yet supported.")
+
 
 def input_tensor_to_ctypes(
     tensor_type: mlir.astnodes.RankedTensorType,
