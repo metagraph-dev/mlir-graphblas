@@ -21,7 +21,8 @@ func @many_inputs_constant_output(
    %arg_fixed_size_tensor: tensor<2x3xf32>,
    %arg_partially_fixed_size_tensor: tensor<2x?xf32>,
    %arg_sparse_tensor: !SparseTensor,
-   %arg_f32: f32
+   %arg_f32: f32,
+   %arg_pointer: !llvm.ptr<i64>
 ) -> i32 {
  %c1234 = constant 1234 : i32
  return %c1234 : i32
@@ -45,6 +46,7 @@ func @many_inputs_constant_output(
         np.arange(8, dtype=np.float32).reshape([2, 4]),
         sparse_tensor,
         123.456,
+        (10, 20, 30),
     ]
 
     assert callable_func(*valid_args) == 1234
@@ -189,8 +191,22 @@ for np_type in (
     np.complex128,
     np.complex256,
     np.record,
-    np.bool,
+    np.bool_,
+    bool,
 ):
+    if not issubclass(np_type, (bool, np.record, np.integer)):
+        error_match_string = r".*12\.3.* cannot be cast to "
+        if np_type is np.bool_:
+            error_match_string = r"True is expected to be a scalar with dtype "
+        BAD_INPUT_TEST_CASES.append(
+            pytest.param(
+                TypeError,
+                error_match_string,
+                5,
+                [np_type(12.3)],
+                id=f"{np_type.__name__}_array_for_i64_array",
+            )
+        )
     BAD_INPUT_TEST_CASES += [
         pytest.param(
             TypeError,

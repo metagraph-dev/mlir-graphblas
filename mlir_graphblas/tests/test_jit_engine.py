@@ -1,7 +1,8 @@
 from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
 
+import itertools
 import mlir_graphblas
-import mlir_graphblas.sparse_utils
+from mlir_graphblas.sparse_utils import MLIRSparseTensor
 import pytest
 import numpy as np
 
@@ -225,20 +226,14 @@ func @{func_name}(%arg_tensor: tensor<?x4x{mlir_type}>) -> {mlir_type} {{
     ),
 ]
 
-
-TEST_CASE_INDEX = 0
+TEST_CASE_ID_GENERATOR = itertools.count()
 
 
 @pytest.mark.parametrize("mlir_template,args,expected_result", SIMPLE_TEST_CASES)
 @pytest.mark.parametrize("mlir_type", MLIR_TYPE_TO_NP_TYPE.keys())
-def test_jit_engine_tensor_result(
-    engine, mlir_template, args, expected_result, mlir_type
-):
-    global TEST_CASE_INDEX
-
+def test_jit_engine_simple(engine, mlir_template, args, expected_result, mlir_type):
     np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
-    func_name = f"func_{TEST_CASE_INDEX}_{mlir_type}"
-    TEST_CASE_INDEX += 1
+    func_name = f"func_{next(TEST_CASE_ID_GENERATOR)}_{mlir_type}"
 
     if issubclass(np_type, np.integer):
         linalg_add = "addi"
@@ -319,7 +314,7 @@ func @{func_name}(%argA: !SparseTensor) -> {mlir_type} {{
     sizes = np.array([10, 20, 30], dtype=np.uint64)
     sparsity = np.array([True, True, True], dtype=np.bool8)
 
-    a = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
+    a = MLIRSparseTensor(indices, values, sizes, sparsity)
 
     assert engine.add(mlir_text, STANDARD_PASSES) == [func_name]
 
@@ -335,6 +330,352 @@ Inputs: {args}
 Result: {result}
 Expected Result: {expected_result}
 """
+
+
+def test_jit_engine_multiple_return_values(engine):
+    pytest.xfail()  # C-ABI incompatibililty issue
+    mlir_text = """
+func @func_main() -> (i32, f32) {
+    %a = constant 99 : i32
+    %b = constant 12.34 : f32
+    return %a, %b : i32, f32
+}
+"""
+    assert engine.add(mlir_text, STANDARD_PASSES) == ["func_main"]
+    assert (99, 12.34) == engine.func_main()
+
+    return
+
+
+@pytest.mark.parametrize("mlir_type", MLIR_TYPE_TO_NP_TYPE.keys())
+def test_jit_engine_sequence_of_scalars_input(engine, mlir_type):
+    pytest.xfail()  # Currently doesn't consistently pass ; non-deterministic bug
+    # TODO how to debug this:
+    #      - Minimize the MLIR text
+    #          - we don't need the scf.for loop
+    #          - just pass in the pointer and dereference element 0 (this has failed in the past)
+    #          - this test consistently faills with i64
+    #      - Get the LLVM IR (not the LLVM Dialect)
+    #      - Get the notebook example running with just LLVM lite
+    #      - Ask Siu
+    if mlir_type == "i8":
+        return
+    # TODO make this case part of SIMPLE_TEST_CASES when !llvm.ptr<i8>
+    # no longer must denote a sparse tensor
+    mlir_template, args, expected_result = (  # sequence of scalars -> scalar
+        """
+func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
+  // pymlir-skip: begin
+
+  %sum_memref = memref.alloc() : memref<{mlir_type}>
+  
+  %c0 = constant 0 : index
+  %c1 = constant 1 : index
+  %sequence_length = constant 5 : index // hard-coded length
+
+  %ci0 = constant 0 : i64
+  %ci1 = constant 1 : i64
+  scf.for %i = %c0 to %sequence_length step %c1 iter_args(%iter=%ci0) -> (i64) {{
+  
+    // llvm.getelementptr just does pointer arithmetic
+    %element_ptr = llvm.getelementptr %sequence[%iter] : (!llvm.ptr<{mlir_type}>, i64) -> !llvm.ptr<{mlir_type}>
+    
+    // dereference %sparse_tensor_ptr_ptr to get an !llvm.ptr<i8>
+    %element = llvm.load %element_ptr : !llvm.ptr<{mlir_type}>
+    
+    %current_sum = memref.load %sum_memref[] : memref<{mlir_type}>
+    %updated_sum = {linalg_add} %current_sum, %element : {mlir_type}
+    memref.store %updated_sum, %sum_memref[] : memref<{mlir_type}>
+  
+    %plus_one = addi %iter, %ci1 : i64
+    scf.yield %plus_one : i64
+  }}
+  
+  %sum = memref.load %sum_memref[] : memref<{mlir_type}>
+  
+  // pymlir-skip: end
+
+  return %sum : {mlir_type}
+}}
+""",
+        [(2, 4, 6, 8, 10)],
+        30,
+        # id="sequence_to_scalar",
+    )
+
+    np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
+    func_name = f"func_{next(TEST_CASE_ID_GENERATOR)}_{mlir_type}"
+
+    if issubclass(np_type, np.integer):
+        linalg_add = "addi"
+    elif issubclass(np_type, np.floating):
+        linalg_add = "addf"
+    else:
+        raise ValueError(f"No MLIR type for {np_type}.")
+
+    mlir_text = mlir_template.format(
+        func_name=func_name, mlir_type=mlir_type, linalg_add=linalg_add
+    )
+    args = [arg.astype(np_type) if isinstance(arg, np.ndarray) else arg for arg in args]
+    expected_result = (
+        expected_result.astype(np_type)
+        if isinstance(expected_result, np.ndarray)
+        else expected_result
+    )
+
+    engine.add(mlir_text, STANDARD_PASSES)
+
+    compiled_func = engine[func_name]
+    result = compiled_func(*args)
+    assert np.all(
+        result == expected_result
+    ), f"""
+Input MLIR: 
+{mlir_text}
+
+Inputs: {args}
+Result: {result}
+Expected Result: {expected_result}
+"""
+    return
+
+
+def test_jit_engine_sequence_of_sparse_tensors_input(engine):
+    mlir_text = """
+#trait_sum_reduction = {
+  indexing_maps = [
+    affine_map<(i,j) -> (i,j)>,
+    affine_map<(i,j) -> ()>
+  ],
+  sparse = [
+    [ "S", "S" ],
+    [ ]
+  ],
+  iterator_types = ["reduction", "reduction"],
+  doc = "Sparse Tensor Sum"
+}
+
+func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_length: index) -> f64 {
+  // Take an array of sparse 2x3 matrices
+
+  // pymlir-skip: begin
+
+  %output_storage = constant dense<0.0> : tensor<f64>
+
+  %c0 = constant 0 : index
+  %c1 = constant 1 : index
+  %ci0 = constant 0 : i64
+  %ci1 = constant 1 : i64
+  %sum_memref = memref.alloc() : memref<f64>
+
+  scf.for %i = %c0 to %sequence_length step %c1 iter_args(%iter=%ci0) -> (i64) {
+    
+    // llvm.getelementptr just does pointer arithmetic
+    %sparse_tensor_ptr_ptr = llvm.getelementptr %sequence[%iter] : (!llvm.ptr<!llvm.ptr<i8>>, i64) -> !llvm.ptr<!llvm.ptr<i8>>
+    
+    // dereference %sparse_tensor_ptr_ptr to get an !llvm.ptr<i8>
+    %sparse_tensor_ptr = llvm.load %sparse_tensor_ptr_ptr : !llvm.ptr<!llvm.ptr<i8>>
+    
+    %sparse_tensor = linalg.sparse_tensor %sparse_tensor_ptr : !llvm.ptr<i8> to tensor<2x3xf64>
+    
+    %reduction = linalg.generic #trait_sum_reduction
+        ins(%sparse_tensor: tensor<2x3xf64>)
+        outs(%output_storage: tensor<f64>) {
+          ^bb(%a: f64, %x: f64):
+            %0 = addf %x, %a : f64
+            linalg.yield %0 : f64
+      } -> tensor<f64>
+    %reduction_value = tensor.extract %reduction[] : tensor<f64>
+
+    %current_sum = memref.load %sum_memref[] : memref<f64>
+    %updated_sum = addf %reduction_value, %current_sum : f64
+    memref.store %updated_sum, %sum_memref[] : memref<f64>
+
+    %plus_one = addi %iter, %ci1 : i64
+    scf.yield %plus_one : i64
+  }
+
+  %sum = memref.load %sum_memref[] : memref<f64>
+
+  // pymlir-skip: end
+
+  return %sum : f64
+}
+"""
+    assert engine.add(mlir_text, STANDARD_PASSES) == ["sparse_tensors_summation"]
+
+    num_sparse_tensors = 10
+
+    # generate values
+    sqrt_values = np.sqrt(np.arange(1, num_sparse_tensors + 1, 0.5))
+    value_iter = iter(sqrt_values)
+    next_values = lambda: np.array(
+        [next(value_iter), next(value_iter)], dtype=np.float64
+    )
+
+    # generate coordinates
+    coordinate_iter = itertools.cycle(range(2 * 3))
+    next_indices = lambda: np.array(
+        [next(coordinate_iter) for _ in range(4)], dtype=np.uint64
+    ).reshape([2, 2])
+
+    sparse_tensors = []
+    for _ in range(num_sparse_tensors):
+        indices = next_indices()
+        values = next_values()
+        sizes = np.array([2, 3], dtype=np.uint64)
+        sparsity = np.array([True, True], dtype=np.bool8)
+        sparse_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
+        sparse_tensors.append(sparse_tensor)
+
+    expected_sum = sqrt_values.sum()
+    assert np.isclose(
+        expected_sum,
+        engine.sparse_tensors_summation(sparse_tensors, num_sparse_tensors),
+    )
+
+    return
+
+
+def test_jit_engine_multiple_zero_values(engine):
+    # TODO move this densify helper to the pytest fixture and make it work with any input shape
+    engine.add(
+        """
+#trait_densify = {
+  indexing_maps = [
+    affine_map<(i,j) -> (i,j)>,
+    affine_map<(i,j) -> (i,j)>
+  ],
+  iterator_types = ["parallel", "parallel"],
+  sparse = [
+    [ "D", "S" ],
+    [ "D", "D" ]
+  ],
+  sparse_dim_map = [
+    affine_map<(i,j) -> (j,i)>,
+    affine_map<(i,j) -> (i,j)>
+  ]
+}
+
+!SparseTensor = type !llvm.ptr<i8>
+
+func @densify2x2(%argA: !SparseTensor) -> tensor<2x2xf64> {
+  %output_storage = constant dense<0.0> : tensor<2x2xf64>
+  %arga = linalg.sparse_tensor %argA : !SparseTensor to tensor<2x2xf64>
+  %0 = linalg.generic #trait_densify
+    ins(%arga: tensor<2x2xf64>)
+    outs(%output_storage: tensor<2x2xf64>) {
+      ^bb(%A: f64, %x: f64):
+        linalg.yield %A : f64
+    } -> tensor<2x2xf64>
+  return %0 : tensor<2x2xf64>
+}
+""",
+        STANDARD_PASSES,
+    )
+
+    mlir_text = """
+    module  {
+      func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
+      func private @sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
+      func private @sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
+      func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
+
+      func @transpose(%output: !llvm.ptr<i8>, %input: !llvm.ptr<i8>) {
+        %c0 = constant 0 : index
+        %c1 = constant 1 : index
+
+        // pymlir-skip: begin
+
+        %n_row = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
+        %n_col = call @sparseDimSize(%input, %c1) : (!llvm.ptr<i8>, index) -> index
+        %Ap = call @sparsePointers64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %Aj = call @sparseIndices64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %Ax = call @sparseValuesF64(%input) : (!llvm.ptr<i8>) -> memref<?xf64>
+        %Bp = call @sparsePointers64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %Bi = call @sparseIndices64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %Bx = call @sparseValuesF64(%output) : (!llvm.ptr<i8>) -> memref<?xf64>
+
+        %nnz = memref.load %Ap[%n_row] : memref<?xindex>
+
+        // compute number of non-zero entries per column of A
+        scf.for %arg2 = %c0 to %n_col step %c1 {
+          memref.store %c0, %Bp[%arg2] : memref<?xindex>
+        }
+        scf.for %n = %c0 to %nnz step %c1 {
+          %colA = memref.load %Aj[%n] : memref<?xindex>
+          %colB = memref.load %Bp[%colA] : memref<?xindex>
+          %colB1 = addi %colB, %c1 : index
+          memref.store %colB1, %Bp[%colA] : memref<?xindex>
+        }
+
+        // cumsum the nnz per column to get Bp
+        memref.store %c0, %Bp[%n_col] : memref<?xindex>
+        scf.for %col = %c0 to %n_col step %c1 {
+          %temp = memref.load %Bp[%col] : memref<?xindex>
+          %cumsum = memref.load %Bp[%n_col] : memref<?xindex>
+          memref.store %cumsum, %Bp[%col] : memref<?xindex>
+          %cumsum2 = addi %cumsum, %temp : index
+          memref.store %cumsum2, %Bp[%n_col] : memref<?xindex>
+        }
+
+        scf.for %row = %c0 to %n_row step %c1 {
+          %j_start = memref.load %Ap[%row] : memref<?xindex>
+          %row_plus1 = addi %row, %c1 : index
+          %j_end = memref.load %Ap[%row_plus1] : memref<?xindex>
+          scf.for %jj = %j_start to %j_end step %c1 {
+            %col = memref.load %Aj[%jj] : memref<?xindex>
+            %dest = memref.load %Bp[%col] : memref<?xindex>
+
+            memref.store %row, %Bi[%dest] : memref<?xindex>
+            %axjj = memref.load %Ax[%jj] : memref<?xf64>
+            memref.store %axjj, %Bx[%dest] : memref<?xf64>
+
+            // Bp[col]++
+            %bp_inc = memref.load %Bp[%col] : memref<?xindex>
+            %bp_inc1 = addi %bp_inc, %c1 : index
+            memref.store %bp_inc1, %Bp[%col]: memref<?xindex>
+          }
+        }
+
+        %last_last = memref.load %Bp[%n_col] : memref<?xindex>
+        memref.store %c0, %Bp[%n_col] : memref<?xindex>
+        scf.for %col = %c0 to %n_col step %c1 {
+          %temp = memref.load %Bp[%col] : memref<?xindex>
+          %last = memref.load %Bp[%n_col] : memref<?xindex>
+          memref.store %last, %Bp[%col] : memref<?xindex>
+          memref.store %temp, %Bp[%n_col] : memref<?xindex>
+        }
+        memref.store %last_last, %Bp[%n_col] : memref<?xindex>
+
+        // pymlir-skip: end
+        return
+      }
+    }
+    """
+
+    indices = np.array(
+        [
+            [0, 0],
+            [1, 0],
+        ],
+        dtype=np.uint64,
+    )
+    values = np.array([8, 9], dtype=np.float64)
+    sizes = np.array([2, 2], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+
+    input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
+    output_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    assert engine.add(mlir_text, STANDARD_PASSES) == ["transpose"]
+    assert engine.transpose(output_tensor, input_tensor) is None
+    assert np.isclose(engine.densify2x2(input_tensor), np.array([[8, 0], [9, 0]])).all()
+    assert np.isclose(
+        engine.densify2x2(output_tensor), np.array([[8, 9], [0, 0]])
+    ).all()
+
+    return
 
 
 def test_jit_engine_skip(engine):
