@@ -61,7 +61,7 @@ class BaseFunction:
         )
 
         engine.add(wrapped_text, passes)
-        func = getattr(engine, self.func_name)
+        func = engine[self.func_name]
         return func
 
     module_wrapper_text = jinja2.Template(
