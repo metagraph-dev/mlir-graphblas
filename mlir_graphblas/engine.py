@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import itertools
 import mlir
 import ctypes
 import glob
@@ -9,8 +10,19 @@ import llvmlite.binding as llvm
 import numpy as np
 from .sparse_utils import MLIRSparseTensor
 from functools import reduce
-from .cli import MlirOptCli, MlirOptError
-from typing import Tuple, List, Dict, Callable, Union, Any
+from .cli import MlirOptCli, MlirOptError, DebugResult
+from typing import (
+    Tuple,
+    List,
+    Iterable,
+    Sequence,
+    Set,
+    Dict,
+    Callable,
+    Union,
+    Any,
+    Optional,
+)
 
 # TODO we need O(1) access to the types of each dialect ; make this part of PyMLIR
 _DIALECT_TYPES = {
@@ -198,12 +210,12 @@ def return_llvm_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Cal
 def return_scalar_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
     np_type, ctypes_type = convert_mlir_atomic_type(mlir_type)
 
-    def decoder(result):
+    def decoder(result) -> np_type:
         if not np.can_cast(result, np_type):
             raise TypeError(
                 f"Return value {result} expected to be castable to {np_type}."
             )
-        return result
+        return np_type(result)
 
     return ctypes_type, decoder
 
@@ -231,6 +243,7 @@ def return_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable
 def mlir_function_return_decoder(
     mlir_function: mlir.astnodes.Function,
 ) -> Tuple[type, Callable]:
+    """Only works with functions returning one or zero values."""
     mlir_types = mlir_function.result_types
 
     if not isinstance(mlir_types, list):
@@ -239,27 +252,9 @@ def mlir_function_return_decoder(
         ctypes_type = ctypes.c_char  # arbitrary dummy type
         decoder = lambda *args: None
     else:
-        ctypes_return_types, element_decoders = zip(
-            *map(return_type_to_ctypes, mlir_types)
+        raise ValueError(
+            f"MLIR functions with multiple return values should be handled elsewhere."
         )
-        field_names = [f"result_{i}" for i in range(len(ctypes_return_types))]
-
-        class ctypes_type(ctypes.Structure):
-            _fields_ = [
-                (field_name, return_type)
-                for field_name, return_type in zip(field_names, ctypes_return_types)
-            ]
-
-        def decoder(encoded_result: ctypes_type) -> tuple:
-            encoded_elements = (
-                getattr(encoded_result, field_name) for field_name in field_names
-            )
-            return tuple(
-                element_decoder(encoded_element)
-                for element_decoder, encoded_element in zip(
-                    element_decoders, encoded_elements
-                )
-            )
 
     return ctypes_type, decoder
 
@@ -527,60 +522,24 @@ class MlirJitEngine:
         self._cli = MlirOptCli()
         self.name_to_callable: Dict[str, Callable] = {}
 
-    def _generate_python_callable(
-        self, mlir_function: mlir.astnodes.Function
-    ) -> Callable:
-        name: str = mlir_function.name.value
-        function_pointer: int = self._engine.get_function_address(name)
-
-        if function_pointer == 0:
-            raise ValueError(
-                f"The address for the function {repr(name)} is the null pointer."
-            )
-
-        ctypes_return_type, decoder = mlir_function_return_decoder(mlir_function)
-        ctypes_input_types, encoders = mlir_function_input_encoders(mlir_function)
-        c_callable = ctypes.CFUNCTYPE(ctypes_return_type, *ctypes_input_types)(
-            function_pointer
-        )
-
-        def python_callable(*args):
-            if len(args) != len(mlir_function.args):
-                raise ValueError(
-                    f"{name} expected {len(mlir_function.args)} args but got {len(args)}."
-                )
-            encoded_args = (encoder(arg) for arg, encoder in zip(args, encoders))
-            encoded_args = sum(encoded_args, [])
-            encoded_result = c_callable(*encoded_args)
-            result = decoder(encoded_result)
-
-            return result
-
-        # python_callable only tracks the function pointer, not the
-        # function itself. If self._engine, gets garbage collected,
-        # we get a seg fault. Thus, we must keep the engine alive.
-        setattr(python_callable, "jit_engine", self)
-
-        return python_callable
-
-    def add(
-        self, mlir_text: Union[str, bytes], passes: List[str], debug=False
-    ) -> List[str]:
-        """List of new function names added."""
-        if isinstance(mlir_text, str):
-            mlir_text = mlir_text.encode()
+    def _add_mlir_module(
+        self, mlir_text: bytes, passes: List[str], debug=False
+    ) -> Optional[DebugResult]:
+        """Translates MLIR code to LLVM IR (not the LLVM dialect of MLIR)."""
         if debug:
             try:
-                llvmir_text = self._cli.apply_passes(mlir_text, passes)
+                llvm_dialect_text = self._cli.apply_passes(mlir_text, passes)
             except MlirOptError as e:
                 return e.debug_result
         else:
-            llvmir_text = self._cli.apply_passes(mlir_text, passes)
+            llvm_dialect_text = self._cli.apply_passes(mlir_text, passes)
+
         mlir_translate_run = subprocess.run(
             ["mlir-translate", "--mlir-to-llvmir"],
-            input=llvmir_text.encode(),
+            input=llvm_dialect_text.encode(),
             capture_output=True,
         )
+
         llvm_text = mlir_translate_run.stdout.decode()
 
         # Create a LLVM module object from the IR
@@ -591,22 +550,248 @@ class MlirJitEngine:
         self._engine.finalize_object()
         self._engine.run_static_constructors()
 
-        # Generate Python callables
-        mlir_ast = parse_mlir_string(mlir_text)
+        return
 
-        mlir_functions = filter(
-            lambda e: isinstance(e, mlir.astnodes.Function)
-            and e.visibility == "public",
-            mlir_ast.body,
+    def _generate_zero_or_single_valued_functions(
+        self,
+        mlir_functions: Iterable[mlir.astnodes.Function],
+    ) -> Dict[str, Callable]:
+        """Generates a Python callable from a function returning zero values or one value."""
+        name_to_callable: Dict[str, Callable] = {}
+        for mlir_function in mlir_functions:
+
+            name: str = mlir_function.name.value
+            function_pointer: int = self._engine.get_function_address(name)
+
+            if function_pointer == 0:
+                raise ValueError(
+                    f"The address for the function {repr(name)} is the null pointer."
+                )
+
+            ctypes_return_type, decoder = mlir_function_return_decoder(mlir_function)
+            ctypes_input_types, encoders = mlir_function_input_encoders(mlir_function)
+            c_callable = ctypes.CFUNCTYPE(ctypes_return_type, *ctypes_input_types)(
+                function_pointer
+            )
+
+            def python_callable(*args):
+                if len(args) != len(mlir_function.args):
+                    raise ValueError(
+                        f"{name} expected {len(mlir_function.args)} args but got {len(args)}."
+                    )
+                encoded_args = (encoder(arg) for arg, encoder in zip(args, encoders))
+                encoded_args = sum(encoded_args, [])
+                encoded_result = c_callable(*encoded_args)
+                result = decoder(encoded_result)
+
+                return result
+
+            name_to_callable[name] = python_callable
+
+        return name_to_callable
+
+    def _lower_types_to_strings(
+        self, ast_types: Sequence[mlir.astnodes.Type], passes: List[str]
+    ) -> List[str]:
+        """Uses mlir-opt to lower a type."""
+        # TODO the act of lowering types seems like a workaround
+        # TODO this function seems kind of expensive since we have to run a subprocess
+        # TODO must do string manipulation bc PyMLIR doesn't work with nested LLVM dialect
+        # types, e.g. !llvm.struct<(ptr<f32>, ptr<f32>, i64, array<2 x i64>, array<2 x i64>)
+        padding = int(np.ceil(np.log10(len(ast_types))))
+        dummy_declarations_string = "\n".join(
+            f"func private @func_{i:#0{padding}}() -> {ast_type.dump()}"
+            for i, ast_type in enumerate(ast_types)
+        ).encode()
+        lowered_text = self._cli.apply_passes(dummy_declarations_string, passes)
+        lowered_lines = lowered_text.split("\n")
+        assert lowered_lines[0] == 'module attributes {llvm.data_layout = ""}  {'
+        assert lowered_lines[-3:] == ["}", "", ""]
+        lowered_lines = lowered_lines[1:-3]
+        assert all(
+            line.endswith(' attributes {sym_visibility = "private"}')
+            for line in lowered_lines
         )
+        assert all(line.startswith("  llvm.func @func_") for line in lowered_lines)
+        lowered_type_strings = [line[24 + padding : -40] for line in lowered_lines]
+        return lowered_type_strings
+
+    def _generate_multivalued_functions(
+        self, mlir_functions: Iterable[mlir.astnodes.Function], passes: List[str]
+    ) -> Dict[str, Callable]:
+        name_to_callable: Dict[str, Callable] = {}
+        # TODO this for loop calls mlir-opt at least once per iteration, which is
+        # expensive since we have to run a subprocess each time ; make one
+        # conglomerate mlir string and call mlir-opt once instead.
+        for mlir_function in mlir_functions:
+
+            mlir_function_name = mlir_function.name.value
+            # TODO this call seems kind of expensive and like a workaround
+            lowered_result_type_names = self._lower_types_to_strings(
+                mlir_function.result_types, passes
+            )
+            joined_result_types = ", ".join(lowered_result_type_names)
+            joined_original_arg_signature = ", ".join(
+                arg.dump() for arg in mlir_function.args
+            )
+            declaration = f"func private @{mlir_function.name.value}({joined_original_arg_signature}) -> ({joined_result_types})"
+
+            wrapper_name = mlir_function_name + "wrapper"
+
+            new_var_names = (f"var{i}" for i in itertools.count())
+            arg_names: Set[str] = {arg.name.value for arg in mlir_function.args}
+            num_results = len(mlir_function.result_types)
+            lowered_result_arg_types = [
+                f"!llvm.ptr<{result_type_name}>"
+                for result_type_name in lowered_result_type_names
+            ]
+            result_arg_names = (name for name in new_var_names if name not in arg_names)
+            result_arg_names = list(itertools.islice(result_arg_names, num_results))
+            wrapper_signature = ", ".join(
+                f"%{name}: {result_arg_type}"
+                for name, result_arg_type in zip(
+                    result_arg_names, lowered_result_arg_types
+                )
+            )
+            if len(mlir_function.args) > 0:
+                wrapper_signature += ", " + joined_original_arg_signature
+            joined_arg_types = ", ".join(arg.type.dump() for arg in mlir_function.args)
+            joined_arg_names = ", ".join(arg.name.dump() for arg in mlir_function.args)
+            aggregate_result_var_name = next(new_var_names)
+            body_lines = itertools.chain(
+                [
+                    f"%{aggregate_result_var_name}:{num_results} "
+                    f"= call @{mlir_function.name.value}({joined_arg_names}) "
+                    f": ({joined_arg_types}) -> ({joined_result_types})"
+                ],
+                (
+                    f"llvm.store %{aggregate_result_var_name}#{i}, %{result_arg_name} : {result_arg_type}"
+                    for i, (result_arg_name, result_arg_type) in enumerate(
+                        zip(result_arg_names, lowered_result_arg_types)
+                    )
+                ),
+            )
+            body = "\n    ".join(body_lines)
+
+            mlir_text = f"""
+module  {{
+  {declaration}
+  
+  func @{wrapper_name}({wrapper_signature}) -> () {{
+    {body}
+    return
+  }}
+
+}}
+"""
+            # this shouldn't fail as the user-provided code was already added (failures would occur then)
+            self._add_mlir_module(mlir_text.encode(), passes)
+
+            ctypes_input_types, input_encoders = mlir_function_input_encoders(
+                mlir_function
+            )
+            ctypes_result_arg_pointer_types = []
+            ctypes_result_arg_types = []
+            decoders = []
+            for result_type in mlir_function.result_types:
+                result_type_ctypes_type, decoder = return_type_to_ctypes(result_type)
+                ctypes_result_arg_pointer_types.append(
+                    ctypes.POINTER(result_type_ctypes_type)
+                )
+                ctypes_result_arg_types.append(result_type_ctypes_type)
+                decoders.append(decoder)
+
+            function_pointer: int = self._engine.get_function_address(wrapper_name)
+            c_callable = ctypes.CFUNCTYPE(
+                None, *ctypes_result_arg_pointer_types, *ctypes_input_types
+            )(function_pointer)
+
+            def python_callable(*args) -> tuple:
+                if len(args) != len(mlir_function.args):
+                    raise ValueError(
+                        f"{name} expected {len(mlir_function.args)} args but got {len(args)}."
+                    )
+                result_arg_values = [
+                    result_arg_type() for result_arg_type in ctypes_result_arg_types
+                ]
+                result_arg_pointers = [
+                    ctypes.pointer(value) for value in result_arg_values
+                ]
+                encoded_args = (
+                    encoder(arg) for arg, encoder in zip(args, input_encoders)
+                )
+                encoded_args = itertools.chain(*encoded_args)
+                returned_result = c_callable(*result_arg_pointers, *encoded_args)
+                assert returned_result is None
+                return tuple(
+                    decoder(result_arg_pointer.contents)
+                    for decoder, result_arg_pointer in zip(
+                        decoders, result_arg_pointers
+                    )
+                )
+
+            name_to_callable[mlir_function.name.value] = python_callable
+
+        return name_to_callable
+
+    def add(
+        self, mlir_text: Union[str, bytes], passes: List[str], debug=False
+    ) -> Union[List[str], DebugResult]:
+        """List of new function names added."""
+        if isinstance(mlir_text, str):
+            mlir_text = mlir_text.encode()
+
+        optional_debug_result = self._add_mlir_module(mlir_text, passes, debug)
+        if isinstance(optional_debug_result, DebugResult):
+            return optional_debug_result
 
         function_names: List[str] = []
+        mlir_ast = parse_mlir_string(mlir_text)
+        mlir_functions: List[mlir.astnodes.Function] = [
+            func
+            for func in mlir_ast.body
+            if isinstance(func, mlir.astnodes.Function) and func.visibility == "public"
+        ]
+
+        # Separate zero/single return valued funcs from multivalued funcs
+        zero_or_single_valued_funcs = []
+        multivalued_funcs = []
         for mlir_function in mlir_functions:
             name: str = mlir_function.name.value
             if name in self.name_to_callable:
                 raise ValueError(f"The function {repr(name)} is already defined.")
             function_names.append(name)
-            python_callable = self._generate_python_callable(mlir_function)
+
+            if (
+                not isinstance(mlir_function.result_types, list)
+                or len(mlir_function.result_types) == 0
+            ):
+                zero_or_single_valued_funcs.append(mlir_function)
+            else:
+                multivalued_funcs.append(mlir_function)
+
+        # Compile & add functions
+        name_to_zero_or_single_callable = (
+            self._generate_zero_or_single_valued_functions(zero_or_single_valued_funcs)
+        )
+        # TODO we currently need two separate compilations ; we can avoid this if
+        # we can use PyMLIR to simply add on the extra functions/wrappers we need
+        # to handle multivalued functions (we would just parse for an AST, add onto
+        # the AST, and then dump the AST). This is currently not possible since
+        # PyMLIR can't parse all MLIR. It'd also be difficult without an IR
+        # builder (which is currently a PyMLIR WIP).
+        name_to_multicallable = self._generate_multivalued_functions(
+            multivalued_funcs, passes
+        )
+
+        for name, python_callable in itertools.chain(
+            name_to_zero_or_single_callable.items(), name_to_multicallable.items()
+        ):
+            # python_callable only tracks the function pointer, not the
+            # function itself. If self._engine, gets garbage collected,
+            # we get a seg fault. Thus, we must keep the engine alive.
+            setattr(python_callable, "jit_engine", self)
+
             self.name_to_callable[name] = python_callable
 
         return function_names
