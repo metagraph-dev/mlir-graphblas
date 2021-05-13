@@ -15,7 +15,6 @@ from typing import (
     Tuple,
     List,
     Iterable,
-    Sequence,
     Set,
     Dict,
     Callable,
@@ -591,52 +590,59 @@ class MlirJitEngine:
         return name_to_callable
 
     def _lower_types_to_strings(
-        self, ast_types: Sequence[mlir.astnodes.Type], passes: List[str]
-    ) -> List[str]:
-        """Uses mlir-opt to lower a type."""
-        # TODO the act of lowering types seems like a workaround
-        # TODO this function seems kind of expensive since we have to run a subprocess
+        self, ast_types: Iterable[mlir.astnodes.Type], passes: List[str]
+    ) -> Dict[str, str]:
+        """
+        Uses mlir-opt to lower types. This assumes that the passes will 
+        lower to the LLVM dialect.
+        """
+        # TODO this costs one mlir-opt subprocess ; can we avoid it?
         # TODO must do string manipulation bc PyMLIR doesn't work with nested LLVM dialect
         # types, e.g. !llvm.struct<(ptr<f32>, ptr<f32>, i64, array<2 x i64>, array<2 x i64>)
+        ast_type_strings = list({ast_type.dump() for ast_type in ast_types})
+        if len(ast_type_strings) == 0:
+            return {}
         padding = int(np.ceil(np.log10(len(ast_types))))
         dummy_declarations_string = "\n".join(
-            f"func private @func_{i:#0{padding}}() -> {ast_type.dump()}"
-            for i, ast_type in enumerate(ast_types)
+            f"func private @func_{i:#0{padding}}() -> {ast_type_string}"
+            for i, ast_type_string in enumerate(ast_type_strings)
         ).encode()
         lowered_text = self._cli.apply_passes(dummy_declarations_string, passes)
-        lowered_lines = lowered_text.split("\n")
+        lowered_lines = list(filter(len, lowered_text.splitlines()))
         assert lowered_lines[0] == 'module attributes {llvm.data_layout = ""}  {'
-        assert lowered_lines[-3:] == ["}", "", ""]
-        lowered_lines = lowered_lines[1:-3]
+        assert lowered_lines[-1] == "}"
+        lowered_lines = lowered_lines[1:-1]
         assert all(
             line.endswith(' attributes {sym_visibility = "private"}')
             for line in lowered_lines
         )
         assert all(line.startswith("  llvm.func @func_") for line in lowered_lines)
         lowered_type_strings = [line[24 + padding : -40] for line in lowered_lines]
-        return lowered_type_strings
+        return dict(zip(ast_type_strings, lowered_type_strings))
 
     def _generate_multivalued_functions(
         self, mlir_functions: Iterable[mlir.astnodes.Function], passes: List[str]
     ) -> Dict[str, Callable]:
         name_to_callable: Dict[str, Callable] = {}
-        # TODO this for loop calls mlir-opt at least once per iteration, which is
-        # expensive since we have to run a subprocess each time ; make one
-        # conglomerate mlir string and call mlir-opt once instead.
-        for mlir_function in mlir_functions:
-
-            mlir_function_name = mlir_function.name.value
-            # TODO this call seems kind of expensive and like a workaround
-            lowered_result_type_names = self._lower_types_to_strings(
-                mlir_function.result_types, passes
-            )
+        
+        result_type_name_to_lowered_result_type_name = self._lower_types_to_strings(
+            sum((mlir_function.result_types for mlir_function in mlir_functions), []),
+            passes
+        )
+        
+        # Generate conglomerate MLIR string for all wrappers
+        mlir_wrapper_texts: List[str] = []
+        wrapper_names = [mlir_function.name.value + "wrapper" for mlir_function in mlir_functions]
+        for mlir_function, wrapper_name in zip(mlir_functions, wrapper_names):
+            lowered_result_type_names = [
+                result_type_name_to_lowered_result_type_name[result_type.dump()]
+                for result_type in mlir_function.result_types
+            ]
             joined_result_types = ", ".join(lowered_result_type_names)
             joined_original_arg_signature = ", ".join(
                 arg.dump() for arg in mlir_function.args
             )
             declaration = f"func private @{mlir_function.name.value}({joined_original_arg_signature}) -> ({joined_result_types})"
-
-            wrapper_name = mlir_function_name + "wrapper"
 
             new_var_names = (f"var{i}" for i in itertools.count())
             arg_names: Set[str] = {arg.name.value for arg in mlir_function.args}
@@ -671,22 +677,26 @@ class MlirJitEngine:
                     )
                 ),
             )
-            body = "\n    ".join(body_lines)
+            body = "\n  ".join(body_lines)
 
-            mlir_text = f"""
-module  {{
-  {declaration}
-  
-  func @{wrapper_name}({wrapper_signature}) -> () {{
-    {body}
-    return
-  }}
+            mlir_wrapper_text = f"""
+{declaration}
 
+func @{wrapper_name}({wrapper_signature}) -> () {{
+  {body}
+  return
 }}
 """
-            # this shouldn't fail as the user-provided code was already added (failures would occur then)
-            self._add_mlir_module(mlir_text.encode(), passes)
+            mlir_wrapper_texts.append(mlir_wrapper_text)
 
+        mlir_text = "\n".join(mlir_wrapper_texts)
+
+        # this won't fail (if we generated valid wrapper code) since the
+        # user-provided code was already added (failures would occur then)
+        self._add_mlir_module(mlir_text.encode(), passes)
+
+        # Generate callables
+        for mlir_function, wrapper_name in zip(mlir_functions, wrapper_names):
             ctypes_input_types, input_encoders = mlir_function_input_encoders(
                 mlir_function
             )
