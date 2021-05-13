@@ -593,7 +593,7 @@ class MlirJitEngine:
         self, ast_types: Iterable[mlir.astnodes.Type], passes: List[str]
     ) -> Dict[str, str]:
         """
-        Uses mlir-opt to lower types. This assumes that the passes will 
+        Uses mlir-opt to lower types. This assumes that the passes will
         lower to the LLVM dialect.
         """
         # TODO this costs one mlir-opt subprocess ; can we avoid it?
@@ -620,19 +620,20 @@ class MlirJitEngine:
         lowered_type_strings = [line[24 + padding : -40] for line in lowered_lines]
         return dict(zip(ast_type_strings, lowered_type_strings))
 
-    def _generate_multivalued_functions(
+    def _generate_mlir_string_for_multivalued_functions(
         self, mlir_functions: Iterable[mlir.astnodes.Function], passes: List[str]
-    ) -> Dict[str, Callable]:
-        name_to_callable: Dict[str, Callable] = {}
-        
+    ) -> Tuple[str, str]:
+
         result_type_name_to_lowered_result_type_name = self._lower_types_to_strings(
             sum((mlir_function.result_types for mlir_function in mlir_functions), []),
-            passes
+            passes,
         )
-        
+
         # Generate conglomerate MLIR string for all wrappers
         mlir_wrapper_texts: List[str] = []
-        wrapper_names = [mlir_function.name.value + "wrapper" for mlir_function in mlir_functions]
+        wrapper_names = [
+            mlir_function.name.value + "wrapper" for mlir_function in mlir_functions
+        ]
         for mlir_function, wrapper_name in zip(mlir_functions, wrapper_names):
             lowered_result_type_names = [
                 result_type_name_to_lowered_result_type_name[result_type.dump()]
@@ -690,6 +691,16 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
             mlir_wrapper_texts.append(mlir_wrapper_text)
 
         mlir_text = "\n".join(mlir_wrapper_texts)
+        return mlir_text, wrapper_names
+
+    def _generate_multivalued_functions(
+        self, mlir_functions: Iterable[mlir.astnodes.Function], passes: List[str]
+    ) -> Dict[str, Callable]:
+        name_to_callable: Dict[str, Callable] = {}
+
+        mlir_text, wrapper_names = self._generate_mlir_string_for_multivalued_functions(
+            mlir_functions, passes
+        )
 
         # this won't fail (if we generated valid wrapper code) since the
         # user-provided code was already added (failures would occur then)
