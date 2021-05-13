@@ -239,25 +239,6 @@ def return_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable
     return result
 
 
-def mlir_function_return_decoder(
-    mlir_function: mlir.astnodes.Function,
-) -> Tuple[type, Callable]:
-    """Only works with functions returning one or zero values."""
-    mlir_types = mlir_function.result_types
-
-    if not isinstance(mlir_types, list):
-        ctypes_type, decoder = return_type_to_ctypes(mlir_types)
-    elif len(mlir_types) == 0:
-        ctypes_type = ctypes.c_char  # arbitrary dummy type
-        decoder = lambda *args: None
-    else:
-        raise ValueError(
-            f"MLIR functions with multiple return values should be handled elsewhere."
-        )
-
-    return ctypes_type, decoder
-
-
 ###########################
 # MLIR Input Type Helpers #
 ###########################
@@ -524,7 +505,7 @@ class MlirJitEngine:
     def _add_mlir_module(
         self, mlir_text: bytes, passes: List[str], debug=False
     ) -> Optional[DebugResult]:
-        """Translates MLIR code to LLVM IR (not the LLVM dialect of MLIR)."""
+        """Translates MLIR code -> LLVM dialect of MLIR -> actual LLVM IR."""
         if debug:
             try:
                 llvm_dialect_text = self._cli.apply_passes(mlir_text, passes)
@@ -539,10 +520,10 @@ class MlirJitEngine:
             capture_output=True,
         )
 
-        llvm_text = mlir_translate_run.stdout.decode()
+        llvm_ir_text = mlir_translate_run.stdout.decode()
 
         # Create a LLVM module object from the IR
-        mod = llvm.parse_assembly(llvm_text)
+        mod = llvm.parse_assembly(llvm_ir_text)
         mod.verify()
         # Now add the module and make sure it is ready for execution
         self._engine.add_module(mod)
@@ -567,7 +548,16 @@ class MlirJitEngine:
                     f"The address for the function {repr(name)} is the null pointer."
                 )
 
-            ctypes_return_type, decoder = mlir_function_return_decoder(mlir_function)
+            mlir_types = mlir_function.result_types
+            if not isinstance(mlir_types, list):
+                ctypes_return_type, decoder = return_type_to_ctypes(mlir_types)
+            elif len(mlir_types) == 0:
+                ctypes_return_type = ctypes.c_char  # arbitrary dummy type
+                decoder = lambda *args: None
+            else:
+                raise ValueError(
+                    f"MLIR functions with multiple return values should be handled elsewhere."
+                )
             ctypes_input_types, encoders = mlir_function_input_encoders(mlir_function)
             c_callable = ctypes.CFUNCTYPE(ctypes_return_type, *ctypes_input_types)(
                 function_pointer
@@ -702,8 +692,8 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
             mlir_functions, passes
         )
 
-        # this won't fail (if we generated valid wrapper code) since the
-        # user-provided code was already added (failures would occur then)
+        # this is guaranteed to not fail since the user-provided
+        # code was already added (failures would occur then)
         self._add_mlir_module(mlir_text.encode(), passes)
 
         # Generate callables
@@ -723,6 +713,10 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                 decoders.append(decoder)
 
             function_pointer: int = self._engine.get_function_address(wrapper_name)
+            if function_pointer == 0:
+                raise ValueError(
+                    f"The address for the function {repr(wrapper_name)} is the null pointer."
+                )
             c_callable = ctypes.CFUNCTYPE(
                 None, *ctypes_result_arg_pointer_types, *ctypes_input_types
             )(function_pointer)
