@@ -44,25 +44,25 @@ class BaseFunction:
         raise NotImplementedError()
 
     MODULE_WRAPPER_TEXT = jinja2.Template(
-            """
-        module  {
-            func private @empty(!llvm.ptr<i8>, index) -> !llvm.ptr<i8>
-            func private @empty_like(!llvm.ptr<i8>) -> !llvm.ptr<i8>
-            func private @dup_tensor(!llvm.ptr<i8>) -> !llvm.ptr<i8>
+            """\
+module  {
+    func private @empty(!llvm.ptr<i8>, index) -> !llvm.ptr<i8>
+    func private @empty_like(!llvm.ptr<i8>) -> !llvm.ptr<i8>
+    func private @dup_tensor(!llvm.ptr<i8>) -> !llvm.ptr<i8>
 
-            func private @resize_pointers(!llvm.ptr<i8>, index, index) -> ()
-            func private @resize_index(!llvm.ptr<i8>, index, index) -> ()
-            func private @resize_values(!llvm.ptr<i8>, index) -> ()
-            func private @resize_dim(!llvm.ptr<i8>, index, index) -> ()
+    func private @resize_pointers(!llvm.ptr<i8>, index, index) -> ()
+    func private @resize_index(!llvm.ptr<i8>, index, index) -> ()
+    func private @resize_values(!llvm.ptr<i8>, index) -> ()
+    func private @resize_dim(!llvm.ptr<i8>, index, index) -> ()
 
-            func private @sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
-            func private @sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
-            func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
-            func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
+    func private @sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
+    func private @sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
+    func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
+    func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
 
-            {{ body }}
+    {{ body }}
 
-        }
+}
         """
     )
 
