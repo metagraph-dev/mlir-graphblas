@@ -91,7 +91,7 @@ module  {
         mlir = self.get_mlir_module()
 
         engine.add(mlir, passes)
-        func = getattr(engine, self.func_name)
+        func = engine[self.func_name]
         return func
 
     

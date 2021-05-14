@@ -333,17 +333,78 @@ Expected Result: {expected_result}
 """
 
 
-def test_jit_engine_multiple_return_values(engine):
-    pytest.xfail()  # C-ABI incompatibililty issue
+@pytest.mark.parametrize("mlir_type", ["f32", "f64"])
+def test_jit_engine_singleton_tuple_return_value(engine, mlir_type):
+    mlir_text = f"""
+func @func_singleton_tuple_return_value_{mlir_type}() -> ({mlir_type}) {{
+    %result_0 = constant 12.34 : {mlir_type}
+    return %result_0 : {mlir_type}
+}}
+"""
+
+    assert engine.add(mlir_text, STANDARD_PASSES) == [
+        f"func_singleton_tuple_return_value_{mlir_type}"
+    ]
+    results = engine[f"func_singleton_tuple_return_value_{mlir_type}"]()
+    assert isinstance(results, tuple)
+    assert len(results) == 1
+    assert np.isclose(results[0], 12.34)
+
+    return
+
+
+def test_jit_engine_multiple_scalar_return_values(engine):
     mlir_text = """
-func @func_main() -> (i32, f32) {
-    %a = constant 99 : i32
-    %b = constant 12.34 : f32
-    return %a, %b : i32, f32
+func @func_multiple_scalar_return_values() -> (i8, i16, i32, i64, f32, f64) {
+    %result_0 = constant 8 : i8
+    %result_1 = constant 16 : i16
+    %result_2 = constant 32 : i32
+    %result_3 = constant 64 : i64
+    %result_4 = constant 12.34 : f32
+    %result_5 = constant 5.6e200 : f64
+    return %result_0, %result_1, %result_2, %result_3, %result_4, %result_5 : i8, i16, i32, i64, f32, f64
 }
 """
-    assert engine.add(mlir_text, STANDARD_PASSES) == ["func_main"]
-    assert (99, 12.34) == engine.func_main()
+    assert engine.add(mlir_text, STANDARD_PASSES) == [
+        "func_multiple_scalar_return_values"
+    ]
+    results = engine.func_multiple_scalar_return_values()
+    assert results[0] == 8
+    assert results[1] == 16
+    assert results[2] == 32
+    assert results[3] == 64
+    assert np.isclose(results[4], 12.34)
+    assert np.isclose(results[5], 5.6e200)
+
+    return
+
+
+def test_jit_engine_multiple_dense_tensor_return_values(engine):
+    mlir_text = """
+func @func_multiple_dense_tensor_return_values(%dummy_input_a: tensor<1xi8>, %dummy_input_b: i64) -> (f32, tensor<2x2xf32>, tensor<3x3xi8>) {
+    %result_0 = constant 12.34 : f32
+    %result_1 = constant dense<[[1.0, 2.0], [3.0, 4.0]]> : tensor<2x2xf32>
+    %result_2 = constant dense<[[1, 2, 3], [4, 5, 6], [7, 8, 9]]> : tensor<3x3xi8>
+    return %result_0, %result_1, %result_2 : f32, tensor<2x2xf32>, tensor<3x3xi8>
+}
+"""
+    assert engine.add(mlir_text, STANDARD_PASSES) == [
+        "func_multiple_dense_tensor_return_values"
+    ]
+    dummy_input_a = np.array([111], dtype=np.int8)
+    dummy_input_b = 222
+    results = engine.func_multiple_dense_tensor_return_values(
+        dummy_input_a, dummy_input_b
+    )
+    assert isinstance(results, tuple)
+    assert len(results) == 3
+    assert np.isclose(results[0], 12.34)
+    assert np.isclose(
+        results[1], np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+    ).all()
+    assert np.all(
+        results[2] == np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.int8)
+    )
 
     return
 
@@ -536,42 +597,7 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
     return
 
 
-def test_jit_engine_multiple_zero_values(engine):
-    # TODO move this densify helper to the pytest fixture and make it work with any input shape
-    engine.add(
-        """
-#trait_densify = {
-  indexing_maps = [
-    affine_map<(i,j) -> (i,j)>,
-    affine_map<(i,j) -> (i,j)>
-  ],
-  iterator_types = ["parallel", "parallel"],
-  sparse = [
-    [ "D", "S" ],
-    [ "D", "D" ]
-  ],
-  sparse_dim_map = [
-    affine_map<(i,j) -> (j,i)>,
-    affine_map<(i,j) -> (i,j)>
-  ]
-}
-
-!SparseTensor = type !llvm.ptr<i8>
-
-func @densify2x2(%argA: !SparseTensor) -> tensor<2x2xf64> {
-  %output_storage = constant dense<0.0> : tensor<2x2xf64>
-  %arga = linalg.sparse_tensor %argA : !SparseTensor to tensor<2x2xf64>
-  %0 = linalg.generic #trait_densify
-    ins(%arga: tensor<2x2xf64>)
-    outs(%output_storage: tensor<2x2xf64>) {
-      ^bb(%A: f64, %x: f64):
-        linalg.yield %A : f64
-    } -> tensor<2x2xf64>
-  return %0 : tensor<2x2xf64>
-}
-""",
-        STANDARD_PASSES,
-    )
+def test_jit_engine_zero_values(engine):
 
     mlir_text = """
     module  {
@@ -704,4 +730,39 @@ func @test_func(%arg0: f32) -> f32 {
 
 @pytest.fixture(scope="module")
 def engine():
-    return mlir_graphblas.MlirJitEngine()
+    engine = mlir_graphblas.MlirJitEngine()
+    engine.add(
+        """
+#trait_densify = {
+  indexing_maps = [
+    affine_map<(i,j) -> (i,j)>,
+    affine_map<(i,j) -> (i,j)>
+  ],
+  iterator_types = ["parallel", "parallel"],
+  sparse = [
+    [ "D", "S" ],
+    [ "D", "D" ]
+  ],
+  sparse_dim_map = [
+    affine_map<(i,j) -> (j,i)>,
+    affine_map<(i,j) -> (i,j)>
+  ]
+}
+
+!SparseTensor = type !llvm.ptr<i8>
+
+func @densify2x2(%argA: !SparseTensor) -> tensor<2x2xf64> {
+  %output_storage = constant dense<0.0> : tensor<2x2xf64>
+  %arga = linalg.sparse_tensor %argA : !SparseTensor to tensor<2x2xf64>
+  %0 = linalg.generic #trait_densify
+    ins(%arga: tensor<2x2xf64>)
+    outs(%output_storage: tensor<2x2xf64>) {
+      ^bb(%A: f64, %x: f64):
+        linalg.yield %A : f64
+    } -> tensor<2x2xf64>
+  return %0 : tensor<2x2xf64>
+}
+""",
+        STANDARD_PASSES,
+    )
+    return engine
