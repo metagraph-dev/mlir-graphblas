@@ -44,7 +44,7 @@ class BaseFunction:
         raise NotImplementedError()
 
     MODULE_WRAPPER_TEXT = jinja2.Template(
-            """\
+        """\
 module  {
     func private @empty(!llvm.ptr<i8>, index) -> !llvm.ptr<i8>
     func private @empty_like(!llvm.ptr<i8>) -> !llvm.ptr<i8>
@@ -67,8 +67,8 @@ module  {
     )
 
     def get_mlir_module(self):
-        '''Get the MLIR text for this function wrapped in a MLIR module with
-        declarations of external helper functions.'''
+        """Get the MLIR text for this function wrapped in a MLIR module with
+        declarations of external helper functions."""
         return self.MODULE_WRAPPER_TEXT.render(
             body=self.get_mlir(make_private=False),
         )
@@ -94,7 +94,6 @@ module  {
         func = engine[self.func_name]
         return func
 
-    
 
 class Transpose(BaseFunction):
     """

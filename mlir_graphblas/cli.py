@@ -105,12 +105,12 @@ class DebugResult:
 
     def __repr__(self):
         if self.success:
-            ret = [
-                self._add_banner(self.stages[-1], "Optimization successful")
-            ]
+            ret = [self._add_banner(self.stages[-1], "Optimization successful")]
         else:
             ret = [
-                self._add_banner(self.stages[-1], f"Error when running {self.passes[-1]}")
+                self._add_banner(
+                    self.stages[-1], f"Error when running {self.passes[-1]}"
+                )
             ]
         for p, stage in zip(reversed(self.passes), reversed(self.stages[:-1])):
             if stage == self.stages[-2]:
