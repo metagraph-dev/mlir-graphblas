@@ -64,6 +64,7 @@ class MlirOptCli:
     def debug_passes(self, input: bytes, passes: List[str]) -> "DebugResult":
         stages = []
         saved_passes = []
+        success = True
         for p in passes:
             saved_passes.append(p.lstrip("-"))
             stages.append(input.decode())
@@ -84,26 +85,33 @@ class MlirOptCli:
                     input=input,
                 )
                 stages.append(result.stderr.decode())
+                success = False
                 break
         else:
             # append final output
             stages.append(result.stdout.decode())
-        return DebugResult(stages, saved_passes, self)
+        return DebugResult(stages, saved_passes, self, success=success)
 
 
 class DebugResult:
-    def __init__(self, stages, passes, cli):
+    def __init__(self, stages, passes, cli, success):
         self.stages = stages
         self.passes = passes
         assert (
             len(self.stages) == len(self.passes) + 1
         ), "Stages must be one larger than passes"
         self._cli = cli
+        self.success = success
 
     def __repr__(self):
-        ret = [
-            self._add_banner(self.stages[-1], f"Error when running {self.passes[-1]}")
-        ]
+        if self.success:
+            ret = [
+                self._add_banner(self.stages[-1], "Optimization successful")
+            ]
+        else:
+            ret = [
+                self._add_banner(self.stages[-1], f"Error when running {self.passes[-1]}")
+            ]
         for p, stage in zip(reversed(self.passes), reversed(self.stages[:-1])):
             if stage == self.stages[-2]:
                 stage = self._add_row_column_numbers(stage)
@@ -122,7 +130,7 @@ class DebugResult:
             trim_passes = self.passes[item.start :]
         else:
             trim_passes = self.passes[item.start : item.stop - 1]
-        return DebugResult(trim_stages, trim_passes, self._cli)
+        return DebugResult(trim_stages, trim_passes, self._cli, self.success)
 
     def _find_pass_index(self, pass_):
         for ip, p in enumerate(self.passes):
