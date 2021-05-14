@@ -134,7 +134,7 @@ class Transpose(BaseFunction):
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> !llvm.ptr<i8> {
+      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> !llvm.ptr<i8> {
         // Attempting to implement identical code as in scipy
         // https://github.com/scipy/scipy/blob/3b36a574dc657d1ca116f6e230be694f3de31afc/scipy/sparse/sparsetools/csr.h
         // function csr_tocsc
@@ -276,7 +276,7 @@ class MatrixSelect(BaseFunction):
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> !llvm.ptr<i8> {
+      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> !llvm.ptr<i8> {
         %c0 = constant 0 : index
         %c1 = constant 1 : index
         %cf0 = constant 0.0 : f64
@@ -401,7 +401,7 @@ class MatrixReduceToScalar(BaseFunction):
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> f64 {
+      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> f64 {
         %cf0 = constant 0.0 : f64
         %c0 = constant 0 : index
         %c1 = constant 1 : index
@@ -483,7 +483,7 @@ class MatrixApply(BaseFunction):
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>, %thunk: f64) -> !llvm.ptr<i8> {
+      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>, %thunk: f64) -> !llvm.ptr<i8> {
         %c0 = constant 0 : index
         %c1 = constant 1 : index
         %cf0 = constant 0.0 : f64
@@ -601,7 +601,7 @@ class MatrixMultiply(BaseFunction):
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(
+      func {% if private_func %}private {% endif %}@{{ func_name }}(
           %A: !llvm.ptr<i8>, %B: !llvm.ptr<i8>
           {%- if structural_mask -%}
           , %mask: !llvm.ptr<i8>
