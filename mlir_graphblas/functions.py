@@ -36,9 +36,42 @@ class BaseFunction:
     def get_mlir(self, *, make_private=True):
         """
         `make_private` is used to indicate whether the function should be private for fusion
-        or public for standalone calling in the `compile` method
+        or public for standalone calling in the `compile` method.
+
+        `module_wrapper` indicates whether to wrap the function text in a MLIR module
+        with external function declarations for common helper functions.
         """
         raise NotImplementedError()
+
+    MODULE_WRAPPER_TEXT = jinja2.Template(
+            """
+        module  {
+            func private @empty(!llvm.ptr<i8>, index) -> !llvm.ptr<i8>
+            func private @empty_like(!llvm.ptr<i8>) -> !llvm.ptr<i8>
+            func private @dup_tensor(!llvm.ptr<i8>) -> !llvm.ptr<i8>
+
+            func private @resize_pointers(!llvm.ptr<i8>, index, index) -> ()
+            func private @resize_index(!llvm.ptr<i8>, index, index) -> ()
+            func private @resize_values(!llvm.ptr<i8>, index) -> ()
+            func private @resize_dim(!llvm.ptr<i8>, index, index) -> ()
+
+            func private @sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
+            func private @sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
+            func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
+            func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
+
+            {{ body }}
+
+        }
+        """
+    )
+
+    def get_mlir_module(self):
+        '''Get the MLIR text for this function wrapped in a MLIR module with
+        declarations of external helper functions.'''
+        return self.MODULE_WRAPPER_TEXT.render(
+            body=self.get_mlir(make_private=False),
+        )
 
     def compile(self, engine=None, passes=None):
         if engine is None:
@@ -55,38 +88,13 @@ class BaseFunction:
         if self.func_name in engine.name_to_callable:
             del engine.name_to_callable[self.func_name]
 
-        # Add module wrapper
-        wrapped_text = self.module_wrapper_text.render(
-            body=self.get_mlir(make_private=False)
-        )
+        mlir = self.get_mlir_module()
 
-        engine.add(wrapped_text, passes)
+        engine.add(mlir, passes)
         func = getattr(engine, self.func_name)
         return func
 
-    module_wrapper_text = jinja2.Template(
-        """
-    module  {
-      func private @empty(!llvm.ptr<i8>, index) -> !llvm.ptr<i8>
-      func private @empty_like(!llvm.ptr<i8>) -> !llvm.ptr<i8>
-      func private @dup_tensor(!llvm.ptr<i8>) -> !llvm.ptr<i8>
-
-      func private @resize_pointers(!llvm.ptr<i8>, index, index) -> ()
-      func private @resize_index(!llvm.ptr<i8>, index, index) -> ()
-      func private @resize_values(!llvm.ptr<i8>, index) -> ()
-      func private @resize_dim(!llvm.ptr<i8>, index, index) -> ()
-
-      func private @sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
-      func private @sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
-      func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
-      func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
-
-      {{ body }}
-
-    }
-    """
-    )
-
+    
 
 class Transpose(BaseFunction):
     """
