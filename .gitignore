@@ -1,3 +1,7 @@
+# Cython
+mlir_graphblas/sparse_utils.cpp
+mlir_graphblas/sparse_utils.html
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

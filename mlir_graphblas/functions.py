@@ -37,9 +37,39 @@ class BaseFunction:
     def get_mlir(self, *, make_private=True):
         """
         `make_private` is used to indicate whether the function should be private for fusion
-        or public for standalone calling in the `compile` method
+        or public for standalone calling in the `compile` method.
         """
         raise NotImplementedError()
+
+    MODULE_WRAPPER_TEXT = jinja2.Template(
+        """\
+module  {
+    func private @empty(!llvm.ptr<i8>, index) -> !llvm.ptr<i8>
+    func private @empty_like(!llvm.ptr<i8>) -> !llvm.ptr<i8>
+    func private @dup_tensor(!llvm.ptr<i8>) -> !llvm.ptr<i8>
+
+    func private @resize_pointers(!llvm.ptr<i8>, index, index) -> ()
+    func private @resize_index(!llvm.ptr<i8>, index, index) -> ()
+    func private @resize_values(!llvm.ptr<i8>, index) -> ()
+    func private @resize_dim(!llvm.ptr<i8>, index, index) -> ()
+
+    func private @sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
+    func private @sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
+    func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
+    func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
+
+    {{ body }}
+
+}
+        """
+    )
+
+    def get_mlir_module(self):
+        """Get the MLIR text for this function wrapped in a MLIR module with
+        declarations of external helper functions."""
+        return self.MODULE_WRAPPER_TEXT.render(
+            body=self.get_mlir(make_private=False),
+        )
 
     def compile(self, engine=None, passes=None):
         if engine is None:
@@ -62,38 +92,12 @@ class BaseFunction:
         if self.func_name in engine.name_to_callable:
             del engine.name_to_callable[self.func_name]
 
-        # Add module wrapper
-        wrapped_text = self.module_wrapper_text.render(
-            body=self.get_mlir(make_private=False)
-        )
+        mlir = self.get_mlir_module()
 
-        engine.add(wrapped_text, passes)
+        engine.add(mlir, passes)
         func = engine[self.func_name]
         self._compiled = (engine, tuple(passes), func)
         return func
-
-    module_wrapper_text = jinja2.Template(
-        """
-    module  {
-      func private @empty(!llvm.ptr<i8>, index) -> !llvm.ptr<i8>
-      func private @empty_like(!llvm.ptr<i8>) -> !llvm.ptr<i8>
-      func private @dup_tensor(!llvm.ptr<i8>) -> !llvm.ptr<i8>
-
-      func private @resize_pointers(!llvm.ptr<i8>, index, index) -> ()
-      func private @resize_index(!llvm.ptr<i8>, index, index) -> ()
-      func private @resize_values(!llvm.ptr<i8>, index) -> ()
-      func private @resize_dim(!llvm.ptr<i8>, index, index) -> ()
-
-      func private @sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
-      func private @sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
-      func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
-      func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
-
-      {{ body }}
-
-    }
-    """
-    )
 
 
 class Transpose(BaseFunction):
@@ -134,7 +138,7 @@ class Transpose(BaseFunction):
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> !llvm.ptr<i8> {
+      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> !llvm.ptr<i8> {
         // Attempting to implement identical code as in scipy
         // https://github.com/scipy/scipy/blob/3b36a574dc657d1ca116f6e230be694f3de31afc/scipy/sparse/sparsetools/csr.h
         // function csr_tocsc
@@ -276,7 +280,7 @@ class MatrixSelect(BaseFunction):
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> !llvm.ptr<i8> {
+      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> !llvm.ptr<i8> {
         %c0 = constant 0 : index
         %c1 = constant 1 : index
         %cf0 = constant 0.0 : f64
@@ -401,7 +405,7 @@ class MatrixReduceToScalar(BaseFunction):
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> f64 {
+      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>) -> f64 {
         %cf0 = constant 0.0 : f64
         %c0 = constant 0 : index
         %c1 = constant 1 : index
@@ -483,7 +487,7 @@ class MatrixApply(BaseFunction):
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>, %thunk: f64) -> !llvm.ptr<i8> {
+      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: !llvm.ptr<i8>, %thunk: f64) -> !llvm.ptr<i8> {
         %c0 = constant 0 : index
         %c1 = constant 1 : index
         %cf0 = constant 0.0 : f64
@@ -601,7 +605,7 @@ class MatrixMultiply(BaseFunction):
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private{% endif %}@{{ func_name }}(
+      func {% if private_func %}private {% endif %}@{{ func_name }}(
           %A: !llvm.ptr<i8>, %B: !llvm.ptr<i8>
           {%- if structural_mask -%}
           , %mask: !llvm.ptr<i8>
