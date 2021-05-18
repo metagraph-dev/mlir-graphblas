@@ -38,9 +38,6 @@ class BaseFunction:
         """
         `make_private` is used to indicate whether the function should be private for fusion
         or public for standalone calling in the `compile` method.
-
-        `module_wrapper` indicates whether to wrap the function text in a MLIR module
-        with external function declarations for common helper functions.
         """
         raise NotImplementedError()
 
