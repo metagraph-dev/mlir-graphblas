@@ -13,7 +13,7 @@ class MLIRCompileError(Exception):
 
 _default_engine = MlirJitEngine()
 
-_standard_passes = [
+_standard_passes = (
     "--test-sparsification=lower",
     "--linalg-bufferize",
     "--convert-scf-to-std",
@@ -24,11 +24,12 @@ _standard_passes = [
     "--convert-linalg-to-loops",
     "--convert-scf-to-std",
     "--convert-std-to-llvm",
-]
+)
 
 
 class BaseFunction:
     func_name = None
+    _compiled = None  # (engine, passes, callable)
 
     def __init__(self):
         pass
@@ -45,11 +46,17 @@ class BaseFunction:
             engine = _default_engine
         if passes is None:
             passes = _standard_passes
+        passes = tuple(passes)
 
         if self.func_name is None:
             raise MLIRCompileError(
                 f"{self.__class__.__name__} does not define func_name"
             )
+
+        if self._compiled is not None:
+            prev_engine, prev_passes, compiled_func = self._compiled
+            if prev_engine is engine and prev_passes == passes:
+                return compiled_func
 
         # Force recompilation if name is already registered
         if self.func_name in engine.name_to_callable:
@@ -62,6 +69,7 @@ class BaseFunction:
 
         engine.add(wrapped_text, passes)
         func = engine[self.func_name]
+        self._compiled = (engine, tuple(passes), func)
         return func
 
     module_wrapper_text = jinja2.Template(
