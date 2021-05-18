@@ -750,7 +750,7 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
         return name_to_callable
 
     def add(
-        self, mlir_text: Union[str, bytes], passes: List[str], debug=False
+        self, mlir_text: Union[str, bytes], passes: Tuple[str], debug=False
     ) -> Union[List[str], DebugResult]:
         """List of new function names added."""
         if isinstance(mlir_text, str):

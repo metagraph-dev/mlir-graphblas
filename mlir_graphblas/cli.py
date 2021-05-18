@@ -51,7 +51,7 @@ class MlirOptCli:
         """
         input = self._read_input(file)
         result = logged_subprocess_run(
-            [self._executable] + self._options + passes,
+            [self._executable] + self._options + list(passes),
             capture_output=True,
             input=input,
         )
