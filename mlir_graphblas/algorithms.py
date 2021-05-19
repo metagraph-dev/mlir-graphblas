@@ -42,7 +42,7 @@ _triangle_count_compiled = None
 def triangle_count_combined(A: MLIRSparseTensor) -> int:
     global _triangle_count_compiled
     if _triangle_count_compiled is None:
-        inp = MLIRVar("A", "!llvm.ptr<i8>")
+        inp = MLIRVar("A", "tensor<?x?xf64, #CSR64>")
 
         ir_builder = MLIRFunctionBuilder(
             "triangle_count", input_vars=[inp], return_types=["f64"]
