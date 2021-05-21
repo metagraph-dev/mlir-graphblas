@@ -53,6 +53,8 @@ module  {
     func private @empty(tensor<?x?xf64, #CSR64>, index) -> tensor<?x?xf64, #CSR64>
     func private @empty_like(tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64>
     func private @dup_tensor(tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64>
+    func private @ptr8_to_tensor(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSR64>
+    func private @tensor_to_ptr8(tensor<?x?xf64, #CSR64>) -> !llvm.ptr<i8>
 
     func private @resize_pointers(tensor<?x?xf64, #CSR64>, index, index) -> ()
     func private @resize_index(tensor<?x?xf64, #CSR64>, index, index) -> ()
@@ -124,18 +126,6 @@ class Transpose(BaseFunction):
             private_func=make_private,
             swap_sizes=self.swap_sizes,
         )
-
-    def compile(self, engine=None, passes=None):
-        func = super().compile(engine, passes)
-
-        def transpose(input: MLIRSparseTensor) -> MLIRSparseTensor:
-            ptr = func(input)
-            tensor = MLIRSparseTensor.from_raw_pointer(
-                ptr, input.pointer_dtype, input.index_dtype, input.value_dtype
-            )
-            return tensor
-
-        return transpose
 
     mlir_template = jinja2.Template(
         """
@@ -275,18 +265,6 @@ class MatrixSelect(BaseFunction):
             needs_col=needs_col,
             needs_val=needs_val,
         )
-
-    def compile(self, engine=None, passes=None):
-        func = super().compile(engine, passes)
-
-        def matrix_select(input: MLIRSparseTensor) -> MLIRSparseTensor:
-            ptr = func(input)
-            tensor = MLIRSparseTensor.from_raw_pointer(
-                ptr, input.pointer_dtype, input.index_dtype, input.value_dtype
-            )
-            return tensor
-
-        return matrix_select
 
     mlir_template = jinja2.Template(
         """
@@ -496,18 +474,6 @@ class MatrixApply(BaseFunction):
             op=self.op,
         )
 
-    def compile(self, engine=None, passes=None):
-        func = super().compile(engine, passes)
-
-        def matrix_apply(input: MLIRSparseTensor, thunk) -> MLIRSparseTensor:
-            ptr = func(input, thunk)
-            tensor = MLIRSparseTensor.from_raw_pointer(
-                ptr, input.pointer_dtype, input.index_dtype, input.value_dtype
-            )
-            return tensor
-
-        return matrix_apply
-
     mlir_template = jinja2.Template(
         """
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>, %thunk: f64) -> tensor<?x?xf64, #CSR64> {
@@ -603,33 +569,6 @@ class MatrixMultiply(BaseFunction):
             semiring=self.semiring,
             structural_mask=self.structural_mask,
         )
-
-    def compile(self, engine=None, passes=None):
-        func = super().compile(engine, passes)
-
-        if self.structural_mask:
-
-            def matrix_multiply(
-                a: MLIRSparseTensor, b: MLIRSparseTensor, mask: MLIRSparseTensor
-            ) -> MLIRSparseTensor:
-                ptr = func(a, b, mask)
-                tensor = MLIRSparseTensor.from_raw_pointer(
-                    ptr, a.pointer_dtype, a.index_dtype, a.value_dtype
-                )
-                return tensor
-
-        else:
-
-            def matrix_multiply(
-                a: MLIRSparseTensor, b: MLIRSparseTensor
-            ) -> MLIRSparseTensor:
-                ptr = func(a, b)
-                tensor = MLIRSparseTensor.from_raw_pointer(
-                    ptr, a.pointer_dtype, a.index_dtype, a.value_dtype
-                )
-                return tensor
-
-        return matrix_multiply
 
     mlir_template = jinja2.Template(
         """

@@ -44,18 +44,18 @@ def triangle_count_combined(A: MLIRSparseTensor) -> int:
     if _triangle_count_compiled is None:
         inp = MLIRVar("A", "tensor<?x?xf64, #CSR64>")
 
-        ir_builder = MLIRFunctionBuilder(
+        irb = MLIRFunctionBuilder(
             "triangle_count", input_vars=[inp], return_types=["f64"]
         )
-        U = ir_builder.call(matrix_select_triu, inp)
-        L = ir_builder.call(matrix_select_tril, inp)
-        U_csc = ir_builder.call(csr_to_csc, U)
-        C = ir_builder.call(mxm_plus_pair, L, U_csc, L)
+        U = irb.call(matrix_select_triu, inp)
+        L = irb.call(matrix_select_tril, inp)
+        U_csc = irb.call(csr_to_csc, U)
+        C = irb.call(mxm_plus_pair, L, U_csc, L)
 
-        reduce_result = ir_builder.call(matrix_reduce, C)
-        ir_builder.return_vars(reduce_result)
+        reduce_result = irb.call(matrix_reduce, C)
+        irb.return_vars(reduce_result)
 
-        _triangle_count_compiled = ir_builder.compile()
+        _triangle_count_compiled = irb.compile()
 
     num_triangles = _triangle_count_compiled(A)
     return int(num_triangles)
@@ -104,66 +104,92 @@ def dense_neural_network_combined(
         weight_list = MLIRVar("weight_list", "!llvm.ptr<!llvm.ptr<i8>>")
         bias_list = MLIRVar("bias_list", "!llvm.ptr<!llvm.ptr<i8>>")
         num_layers = MLIRVar("num_layers", "index")
-        Y_init = MLIRVar("Y0", "!llvm.ptr<i8>")
+        Y_init = MLIRVar("Y0", "tensor<?x?xf64, #CSR64>")
         clamp_threshold = MLIRVar("ymax", "f64")
 
         # Build Function
-        ir_builder = MLIRFunctionBuilder(
+        irb = MLIRFunctionBuilder(
             "dense_neural_network",
             input_vars=[weight_list, bias_list, num_layers, Y_init, clamp_threshold],
-            return_types=["!llvm.ptr<i8>"],
+            return_types=["tensor<?x?xf64, #CSR64>"],
         )
-        ir_builder.add_statement("// pymlir-skip: begin")
-        c0_var = ir_builder.constant(0, "i64")
-        c1_var = ir_builder.constant(1, "i64")
+        irb.add_statement("// pymlir-skip: begin")
+        c0 = irb.constant(0, "i64")
+        c1 = irb.constant(1, "i64")
 
-        Y_var = MLIRVar("Y", "!llvm.ptr<i8>")
+        Y_init_ptr8 = MLIRVar("Y_init_ptr8", "!llvm.ptr<i8>")
+        irb.add_statement(
+            f"{Y_init_ptr8.assign_string()} = call @tensor_to_ptr8({Y_init.access_string()}) : (tensor<?x?xf64, #CSR64>) -> !llvm.ptr<i8>"
+        )
+
+        Y_ptr8 = MLIRVar("Y_ptr8", "!llvm.ptr<i8>")
         layer_idx = MLIRVar("layer_index", "i64")
 
-        with ir_builder.for_loop(
-            0, num_layers, iter_vars=[(Y_var, Y_init), (layer_idx, c0_var)]
+        with irb.for_loop(
+            0, num_layers, iter_vars=[(Y_ptr8, Y_init_ptr8), (layer_idx, c0)]
         ) as for_vars:
             # Get weight matrix
-            ir_builder.add_statement(
-                f"%weight_matrix_ptr_ptr = llvm.getelementptr {weight_list.access_string()}[{layer_idx.access_string()}] : (!llvm.ptr<!llvm.ptr<i8>>, i64) -> !llvm.ptr<!llvm.ptr<i8>>"
+            irb.add_statement(
+                f"%weight_matrix_ptr_ptr = llvm.getelementptr {weight_list.access_string()}[{layer_idx.access_string()}] : (!llvm.ptr<ptr<i8>>, i64) -> !llvm.ptr<ptr<i8>>"
             )
-            weight_matrix_ptr_var = MLIRVar("weight_matrix_ptr", "!llvm.ptr<i8>")
-            ir_builder.add_statement(
-                f"{weight_matrix_ptr_var.assign_string()} = llvm.load %weight_matrix_ptr_ptr : !llvm.ptr<!llvm.ptr<i8>>"
+            irb.add_statement(
+                "%weight_matrix_ptr = llvm.load %weight_matrix_ptr_ptr : !llvm.ptr<ptr<i8>>"
+            )
+            weight_matrix = MLIRVar("weight_matrix", "tensor<?x?xf64, #CSR64>")
+            irb.add_statement(
+                f"{weight_matrix.assign_string()} = call @ptr8_to_tensor(%weight_matrix_ptr) : (!llvm.ptr<i8>) -> tensor<?x?xf64, #CSR64>"
             )
 
             # Get bias matrix
-            ir_builder.add_statement(
-                f"%bias_matrix_ptr_ptr = llvm.getelementptr {bias_list.access_string()}[{layer_idx.access_string()}] : (!llvm.ptr<!llvm.ptr<i8>>, i64) -> !llvm.ptr<!llvm.ptr<i8>>"
+            irb.add_statement(
+                f"%bias_matrix_ptr_ptr = llvm.getelementptr {bias_list.access_string()}[{layer_idx.access_string()}] : (!llvm.ptr<ptr<i8>>, i64) -> !llvm.ptr<ptr<i8>>"
             )
-            bias_matrix_ptr_var = MLIRVar("bias_matrix_ptr", "!llvm.ptr<i8>")
-            ir_builder.add_statement(
-                f"{bias_matrix_ptr_var.assign_string()} = llvm.load %bias_matrix_ptr_ptr : !llvm.ptr<!llvm.ptr<i8>>"
+            irb.add_statement(
+                "%bias_matrix_ptr = llvm.load %bias_matrix_ptr_ptr : !llvm.ptr<ptr<i8>>"
+            )
+            bias_matrix = MLIRVar("bias_matrix", "tensor<?x?xf64, #CSR64")
+            irb.add_statement(
+                f"{bias_matrix.assign_string()} = call @ptr8_to_tensor(%bias_matrix_ptr) : (!llvm.ptr<i8>) -> tensor<?x?xf64, #CSR64>"
+            )
+
+            # Cast Y from pointer to tensor
+            Y = MLIRVar("Y", "tensor<?x?xf64, #CSR64>")
+            irb.add_statement(
+                f"{Y.assign_string()} = call @ptr8_to_tensor({Y_ptr8.access_string()}) : (!llvm.ptr<i8>) -> tensor<?x?xf64, #CSR64>"
             )
 
             # Perform inference
-            W_csc_var = ir_builder.call(csr_to_csc, weight_matrix_ptr_var)
-            matmul_result_var = ir_builder.call(mxm_plus_times, Y_var, W_csc_var)
-            add_bias_result_var = ir_builder.call(
-                mxm_plus_plus, matmul_result_var, bias_matrix_ptr_var
-            )
-            relu_result_var = ir_builder.call(matrix_select_gt0, add_bias_result_var)
-            clamp_result_var = ir_builder.call(
-                matrix_apply_min, relu_result_var, clamp_threshold
+            W_csc = irb.call(csr_to_csc, weight_matrix)
+            matmul_result = irb.call(mxm_plus_times, Y, W_csc)
+            add_bias_result = irb.call(mxm_plus_plus, matmul_result, bias_matrix)
+            relu_result = irb.call(matrix_select_gt0, add_bias_result)
+            clamp_result = irb.call(matrix_apply_min, relu_result, clamp_threshold)
+
+            # Cast clamp_result to a pointer
+            result_ptr8 = MLIRVar("result_ptr8", "!llvm.ptr<i8>")
+            irb.add_statement(
+                f"{result_ptr8.assign_string()} = call @tensor_to_ptr8({clamp_result.access_string()}) : (tensor<?x?xf64, #CSR64>) -> !llvm.ptr<i8>"
             )
 
             # increment iterator vars
-            incremented_layer_index_i64_var = MLIRVar("incremented_layer_index", "i64")
-            ir_builder.add_statement(
-                f"{incremented_layer_index_i64_var.assign_string()} = addi {layer_idx.access_string()}, {c1_var.access_string()} : i64"
+            incremented_layer_index_i64 = MLIRVar("incremented_layer_index", "i64")
+            irb.add_statement(
+                f"{incremented_layer_index_i64.assign_string()} = addi {layer_idx.access_string()}, {c1.access_string()} : i64"
             )
-            for_vars.yield_vars(clamp_result_var, incremented_layer_index_i64_var)
+            for_vars.yield_vars(result_ptr8, incremented_layer_index_i64)
 
-        ir_builder.add_statement("// pymlir-skip: end")
-        ir_builder.return_vars(for_vars.returned_variable[0])
+        irb.add_statement("// pymlir-skip: end")
+
+        # One final cast from ptr8 to tensor
+        Y_final = MLIRVar("Y_final", "tensor<?x?xf64, #CSR64>")
+        irb.add_statement(
+            f"{Y_final.assign_string()} = call @ptr8_to_tensor({for_vars.returned_variable.access_string(0)}) : (!llvm.ptr<i8>) -> tensor<?x?xf64, #CSR64>"
+        )
+
+        irb.return_vars(Y_final)
 
         # Test Compiled Function
-        _dense_neural_network_compiled = ir_builder.compile()
+        _dense_neural_network_compiled = irb.compile()
 
     if len(W) != len(Bias):
         raise TypeError(f"num_layers mismatch: {len(W)} != {len(Bias)}")

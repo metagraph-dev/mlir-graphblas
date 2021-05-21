@@ -136,11 +136,22 @@ def return_tensor_to_ctypes(
         # After lowering, this will become !llvm.ptr<i8>
         CtypesType = ctypes.POINTER(ctypes.c_int8)
 
-        def decoder(arg) -> int:
-            # Return the pointer address as a Python int
-            # To create the MLIRSparseTensor, use MLIRSparseTensor.from_raw_pointer(),
-            # which we can't do here because we are missing dtype information.
-            return ctypes.cast(arg, ctypes.c_void_p).value
+        if tensor_type.encoding.value.endswith("32"):
+            pointer_type = "uint32"
+            index_type = "uint32"
+        else:
+            pointer_type = "uint64"
+            index_type = "uint64"
+        value_type = {
+            "i32": "int32",
+            "i64": "int64",
+            "f32": "float32",
+            "f64": "float64",
+        }[tensor_type.element_type.type.name]
+
+        def decoder(arg, ptype=pointer_type, itype=index_type, vtype=value_type) -> int:
+            ptr = ctypes.cast(arg, ctypes.c_void_p).value
+            return MLIRSparseTensor.from_raw_pointer(ptr, ptype, itype, vtype)
 
     else:
         np_type, ctypes_type = convert_mlir_atomic_type(tensor_type.element_type)
@@ -163,7 +174,9 @@ def return_tensor_to_ctypes(
                 raise TypeError(
                     f"Return value {result} expected to have type {CtypesType}."
                 )
-            dimensions = [getattr(result, f"size{dim_index}") for dim_index in range(rank)]
+            dimensions = [
+                getattr(result, f"size{dim_index}") for dim_index in range(rank)
+            ]
             element_count = reduce(operator.mul, dimensions)
             decoded_result = np.frombuffer(
                 (ctypes_type * element_count).from_address(
@@ -179,9 +192,7 @@ def return_tensor_to_ctypes(
 def return_llvm_pointer_to_ctypes(
     mlir_type: _DIALECT_TYPES["llvm"]["LLVMPtr"],
 ) -> Tuple[type, Callable]:
-    raise NotImplementedError(
-        f"Converting {mlir_type} to ctypes not yet supported."
-    )
+    raise NotImplementedError(f"Converting {mlir_type} to ctypes not yet supported.")
 
 
 def return_llvm_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable]:
@@ -234,6 +245,12 @@ def return_type_to_ctypes(mlir_type: mlir.astnodes.Type) -> Tuple[type, Callable
 ###########################
 # MLIR Input Type Helpers #
 ###########################
+
+LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE: Dict[str, "_ctypes._CData"] = {
+    "i8": ctypes.POINTER(ctypes.c_int8),
+    # TODO extend this
+}
+
 
 def input_pretty_dialect_type_to_ctypes(
     pretty_type: mlir.astnodes.PrettyDialectType,
@@ -313,24 +330,46 @@ def input_tensor_to_ctypes(
 def input_llvm_pointer_to_ctypes(
     mlir_type: _DIALECT_TYPES["llvm"]["LLVMPtr"],
 ) -> Tuple[list, Callable]:
-    # Treat the pointer as an array (intended to represent a Python sequence).
-    element_ctypes_input_types, element_encoder = input_type_to_ctypes(
-        mlir_type.type
-    )
-    # element_ctypes_input_types has exactly one element type since
-    # a pointer type can only point to one type
-    (element_ctypes_input_type,) = element_ctypes_input_types
-    ctypes_input_types = [ctypes.POINTER(element_ctypes_input_type)]
+    if (
+        isinstance(mlir_type.type, mlir.astnodes.IntegerType)
+        and int(mlir_type.type.width) == 8
+    ):
+        # We blindly assume that an i8 pointer points to a sparse tensor
+        # since MLIR's sparse tensor object isn't supported inside an LLVMPtr
+        # Instead, we pass a ptr<ptr<i8>> and blindly assume it means a list of sparse tensors
+        type_string = mlir_type.type.dump()
+        ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
+        ctypes_input_types = [ctypes_type]
 
-    def encoder(arg: Union[list, tuple]) -> list:
-        if not isinstance(arg, (list, tuple)):
-            raise TypeError(
-                f"{repr(arg)} is expected to be an instance of {list} or {tuple}."
-            )
-        ArrayType = element_ctypes_input_type * len(arg)
-        encoded_elements = sum(map(element_encoder, arg), [])
-        array = ArrayType(*encoded_elements)
-        return [array]
+        def encoder(arg: MLIRSparseTensor) -> list:
+            # protocol for indicating an object can be interpreted as a MLIRSparseTensor
+            if hasattr(arg, "__mlir_sparse__"):
+                arg = arg.__mlir_sparse__
+            if not isinstance(arg, MLIRSparseTensor):
+                raise TypeError(
+                    f"{repr(arg)} is expected to be an instance of {MLIRSparseTensor.__qualname__}"
+                )
+            return [ctypes.cast(arg.data, ctypes_type)]
+
+    else:
+        # Treat the pointer as an array (intended to represent a Python sequence).
+        element_ctypes_input_types, element_encoder = input_type_to_ctypes(
+            mlir_type.type
+        )
+        # element_ctypes_input_types has exactly one element type since
+        # a pointer type can only point to one type
+        (element_ctypes_input_type,) = element_ctypes_input_types
+        ctypes_input_types = [ctypes.POINTER(element_ctypes_input_type)]
+
+        def encoder(arg: Union[list, tuple]) -> list:
+            if not isinstance(arg, (list, tuple)):
+                raise TypeError(
+                    f"{repr(arg)} is expected to be an instance of {list} or {tuple}."
+                )
+            ArrayType = element_ctypes_input_type * len(arg)
+            encoded_elements = sum(map(element_encoder, arg), [])
+            array = ArrayType(*encoded_elements)
+            return [array]
 
     return ctypes_input_types, encoder
 
