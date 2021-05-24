@@ -32,7 +32,6 @@ module {
         
 }
 
-
 module {
         
     // CHECK: func @matrix_select_triu(%[[ARG0:.*]]: [[CSR_TYPE:.*]]) -> [[CSR_TYPE]] {
@@ -61,7 +60,6 @@ module {
     
 }
 
-
 module {
     
     // CHECK: func @matrix_reduce_to_scalar(%[[ARG0:.*]]: [[CSR_TYPE:.*]]) -> [[RETURN_TYPE:.*]] {
@@ -70,6 +68,20 @@ module {
         %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<2x3xi64, #CSR64> to i64
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : i64
+    }
+            
+}
+
+module {
+    
+    // CHECK: func @matrix_apply(%[[ARG0:.*]]: [[CSR_TYPE:.*]]) -> [[RETURN_TYPE:.*]] {
+    func @matrix_apply(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
+        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : i64
+        %thunk = constant 100 : i64
+      	// CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_apply %[[ARG0]], %[[THUNK]] {apply_operator = "min"} : ([[CSR_TYPE]], i64) to [[CSR_TYPE]]
+        %answer = graphblas.matrix_apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<2x3xi64, #CSR64>, i64) to tensor<2x3xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x3xi64, #CSR64>
     }
             
 }
