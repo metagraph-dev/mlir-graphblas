@@ -21,11 +21,19 @@ module {
         return
     }
     
-    // CHECK: func @transpose_wrapper(%[[ARG0:.*]]: [[CSR_TYPE:.*]]) -> [[CSC_TYPE:.*]] {
-    func @transpose_wrapper(%sparse_tensor: tensor<2x3xf64, #CSR64>) -> tensor<2x3xf64, #CSC64> {
+    // CHECK: func @transpose_wrapper_no_swap(%[[ARG0:.*]]: [[CSR_TYPE:.*]]) -> [[CSC_TYPE:.*]] {
+    func @transpose_wrapper_no_swap(%sparse_tensor: tensor<2x3xf64, #CSR64>) -> tensor<2x3xf64, #CSC64> {
       	// CHECK-NEXT: %[[ANSWER:.*]] = graphblas.transpose %[[ARG0]] {swap_sizes = false} : [[CSR_TYPE]] to [[CSC_TYPE]]
         %answer = graphblas.transpose %sparse_tensor { swap_sizes = false } : tensor<2x3xf64, #CSR64> to tensor<2x3xf64, #CSC64>
         // CHECK-NEXT: return %[[ANSWER]] : [[CSC_TYPE]]
         return %answer : tensor<2x3xf64, #CSC64>
+    }
+    
+    // COM: CHECK: func @transpose_wrapper(%[[ARG0:.*]]: tensor<2x3xf64, [[CSR64:.*]]>) -> tensor<3x2xf64, [[CSC64:.*]]> {
+    func @transpose_wrapper(%sparse_tensor: tensor<2x3xf64, #CSR64>) -> tensor<3x2xf64, #CSC64> {
+      	// COM: CHECK-NEXT: %[[ANSWER:.*]] = graphblas.transpose %[[ARG0]] {swap_sizes = false} : tensor<2x3xf64, [[CSR64:.*]]> to tensor<3x2xf64, [[CSC64:.*]]>
+        %answer = graphblas.transpose %sparse_tensor { swap_sizes = true } : tensor<2x3xf64, #CSR64> to tensor<3x2xf64, #CSC64>
+        // COM: CHECK-NEXT: return %[[ANSWER]] : tensor<3x2xf64, [[CSC64:.*]]>
+        return %answer : tensor<3x2xf64, #CSC64>
     }
 }

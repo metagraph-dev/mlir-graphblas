@@ -25,7 +25,7 @@ def GraphBLAS_FooOp : GraphBLAS_Op<"foo", [//NoSideEffect,
     }];
 }
 
-def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect, SameOperandsAndResultType]> {
+def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
     let summary = "transpose operation";
     let description = [{
         Returns a new sparse tensor that's the transpose of the original sparse tensor.
