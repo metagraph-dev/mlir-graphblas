@@ -26,7 +26,7 @@ module {
     func @transpose_wrapper(%sparse_tensor: tensor<2x3xf64, #CSR64>) -> tensor<3x2xf64, #CSC64> {
       	// CHECK-NEXT: %[[ANSWER:.*]] = graphblas.transpose %[[ARG0]] {swap_sizes = true} : tensor<2x3xf64, [[CSR64]]> to tensor<3x2xf64, [[CSC64]]>
         %answer = graphblas.transpose %sparse_tensor { swap_sizes = true } : tensor<2x3xf64, #CSR64> to tensor<3x2xf64, #CSC64>
-        // COM: CHECK-NEXT: return %[[ANSWER]] : tensor<3x2xf64, [[CSC64]]>
+        // CHECK-NEXT: return %[[ANSWER]] : tensor<3x2xf64, [[CSC64]]>
         return %answer : tensor<3x2xf64, #CSC64>
     }
         
@@ -59,4 +59,17 @@ module {
         return %answer : tensor<100x100xf64, #CSR64>
     }
     
+}
+
+
+module {
+    
+    // CHECK: func @matrix_reduce_to_scalar(%[[ARG0:.*]]: [[CSR_TYPE:.*]]) -> [[RETURN_TYPE:.*]] {
+    func @matrix_reduce_to_scalar(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> i64 {
+      	// CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_reduce_to_scalar %[[ARG0]] {aggregator = "sum"} : [[CSR_TYPE]] to [[RETURN_TYPE:.*]]
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<2x3xi64, #CSR64> to i64
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : i64
+    }
+            
 }
