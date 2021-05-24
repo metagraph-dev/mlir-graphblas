@@ -3,6 +3,7 @@
 
 #include "mlir/IR/Builders.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 
@@ -18,6 +19,7 @@ int main()
     context->loadAllAvailableDialects();
     context->getOrLoadDialect<mlir::sparse_tensor::SparseTensorDialect>();
     context->getOrLoadDialect<mlir::StandardOpsDialect>();
+    context->getOrLoadDialect<mlir::scf::SCFDialect>();
 
     cerr << "Building empty module..." << endl;
 
