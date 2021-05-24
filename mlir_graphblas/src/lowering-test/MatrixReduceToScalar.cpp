@@ -3,6 +3,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
@@ -40,6 +41,20 @@ void addMatrixReduceToScalarFunc(mlir::ModuleOp mod, const std::string &aggregat
     auto cf0 = builder.create<ConstantFloatOp>(unLoc, APFloat(0.0), valueType);
     auto c0 = builder.create<ConstantIndexOp>(unLoc, 0);
     auto c1 = builder.create<ConstantIndexOp>(unLoc, 1);
+
+    // Get sparse tensor info
+    //auto nrows = builder.create<CallOp>()
+    /*         %0 = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
+        %1 = call @sparsePointers64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %2 = call @sparseIndices64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %3 = call @sparseValuesF64(%input) : (!llvm.ptr<i8>) -> memref<?xf64>
+        */
+    // TBD
+    
+    // Allocate temporary storage
+    auto memrefF64 = MemRefType::get({}, valueType);
+    auto acc = builder.create<memref::AllocOp>(unLoc, memrefF64);
+    builder.create<memref::StoreOp>(unLoc, cf0, acc);
 
     // Add return op
     builder.create<ReturnOp>(builder.getUnknownLoc());
