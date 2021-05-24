@@ -11,6 +11,7 @@
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 
 #define GET_OP_CLASSES
 #include "GraphBLAS/GraphBLASOps.h.inc"

@@ -16,14 +16,14 @@ requirements:
     - python ==3.8
     - numpy >=1.19.2
     - cython >=0.29.23
-    - mlir ==12.0=ge413b86_3 # temp restriction to use metagraph dev label
+    - mlir >=13.0 # temp restriction to use metagraph dev label
     - cmake >=3.13.4
     - ninja
     - lit
 
   run:
     - python ==3.8
-    - mlir ==12.0=ge413b86_3 # temp restriction to use metagraph dev label
+    - mlir >=13.0 # temp restriction to use metagraph dev label
     - pymlir
     - llvmlite
     - pygments
