@@ -15,7 +15,7 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
     let description = [{
         Returns a new sparse tensor that's the transpose of the original sparse tensor.
         The given sparse tensor must be a matrix, i.e. have rank 2.
-        The given tensor must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
+        The given tensor must have a CSR sparsity or a CSC sparsity.
         This operation is guaranteed to swap the sparsity of CSR -> CSC or CSC -> CSR.
 
         Example 1:
@@ -42,7 +42,7 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, Same
         Returns a new sparse tensor with a subset of element from the given matrix.
         The elements included in the resulting sparse tensor vary depending on the selector given (one of "triu", "tril", or "gt0").
         The given sparse tensor must be a matrix, i.e. have rank 2.
-        The given tensor must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
+        The given tensor must have a CSR sparsity or a CSC sparsity.
         The resulting sparse tensor will have the same sparsity as the given sparse tensor.
 
         Example:
@@ -63,9 +63,9 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, Same
 def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [NoSideEffect]> {
     let summary = "matrix reduce to scalar operation";
     let description = [{
-        Reduces a sparse tensor to a scalar.
+        Reduces a sparse tensor to a scalar according to the given aggregator.
         The given sparse tensor must be a matrix, i.e. have rank 2.
-        The given tensor must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
+        The given tensor must have a CSR sparsity or a CSC sparsity.
         The resulting scalar's type will depend on the type of the input tensor.
 
         Example:
@@ -79,7 +79,7 @@ def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [
            $input attr-dict `:` type($input) `to` type($output)
     }];
 
-    // TODO add custom verifier sanity checking the type of $output is sane
+    // TODO add custom verifier sanity checking the type of $output is sane ; sanity check the aggregator
     // let verifier = 
 }
 
@@ -90,7 +90,7 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
         How the thunk is used depends on the chosen operator.
         Currently, the only valid operator is "min".
         The given sparse tensor must be a matrix, i.e. have rank 2.
-        The given tensor must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
+        The given tensor must have a CSR sparsity or a CSC sparsity.
 
         Example:
         ```
@@ -106,7 +106,7 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
            $input `,` $thunk attr-dict `:` `(` type($input) `,` type($thunk) `)` `to` type($output)
     }];
 
-    // TODO add custom verifier sanity checking the types of $output and $thunk are sane
+    // TODO add custom verifier sanity checking the types of $output and $thunk are sane ; sanity check the apply operator
     // let verifier = 
 }
 
@@ -119,9 +119,7 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
         The given tensors must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
 
         Example:
-        ```
-        TODO Add an example
-        ```
+        ```%answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSR64>) to tensor<2x2xi64, #CSR64>```
     }];
 
     let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$semiring);
@@ -131,7 +129,30 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
            $a `,` $b attr-dict `:` `(` type($a) `,` type($b) `)` `to` type($output)
     }];
 
-    // TODO add custom verifier sanity checking the types of the inputs and outputs are sane
+    // TODO add custom verifier sanity checking the types of the inputs and outputs are sane ; sanity check the semiring
+    // let verifier = 
+}
+
+def GraphBLAS_MatrixMultiplyMaskOp : GraphBLAS_Op<"matrix_multiply_mask", [NoSideEffect]> {
+    let summary = "matrix multiply operation with a structural mask";
+    let description = [{
+        Performs a matrix multiply according to the given semiring and given structural mask.
+        The semiring must be one of "plus_times", "plus_pair", or "plus_plus".
+        The given sparse tensors must be a matrix, i.e. have rank 2.
+        The given tensors must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
+
+        Example:
+        ```%answer = graphblas.matrix_multiply_mask %argA, %argB, %mask { semiring = "plus_plus" } : (tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSC64>) to tensor<2x2xf64, #CSC64>```
+    }];
+
+    let arguments = (ins AnyTensor:$a, AnyTensor:$b, AnyTensor:$mask, StrAttr:$semiring);
+    let results = (outs AnyTensor:$output);
+    
+    let assemblyFormat = [{
+           $a `,` $b `,` $mask attr-dict `:` `(` type($a) `,` type($b)  `,` type($mask) `)` `to` type($output)
+    }];
+
+    // TODO add custom verifier sanity checking the types of the inputs and outputs and mask are sane ; sanity check the semiring
     // let verifier = 
 }
 
