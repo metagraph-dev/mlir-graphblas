@@ -13,14 +13,15 @@ import numpy as np
 @pytest.fixture(scope="module")
 def compiled_func_and_valid_args():
     mlir_text = """
-
-!SparseTensor = type !llvm.ptr<i8>
+#sparseTensor = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ]
+}>
 
 func @many_inputs_constant_output(
    %arg_arbitrary_size_tensor: tensor<?x?xf32>,
    %arg_fixed_size_tensor: tensor<2x3xf32>,
    %arg_partially_fixed_size_tensor: tensor<2x?xf32>,
-   %arg_sparse_tensor: !SparseTensor,
+   %arg_sparse_tensor: tensor<?x?xf32, #sparseTensor>,
    %arg_f32: f32,
    %arg_pointer: !llvm.ptr<i64>
 ) -> i32 {

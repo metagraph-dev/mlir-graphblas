@@ -4,7 +4,8 @@ from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from typing import Sequence
 
 STANDARD_PASSES = [
-    "--test-sparsification=lower",
+    "--sparsification",
+    "--sparse-tensor-conversion",
     "--linalg-bufferize",
     "--func-bufferize",
     "--tensor-bufferize",

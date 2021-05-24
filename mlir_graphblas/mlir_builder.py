@@ -159,57 +159,6 @@ class MLIRFunctionBuilder(BaseFunction):
     # MLIR Generation/Compilation Methods #
     #######################################
 
-    def compile(self, engine=None, passes=None):
-        func = super().compile(engine, passes)
-
-        indices_of_returned_sparse_tensors = {
-            i
-            for i, return_type in enumerate(self.return_types)
-            if mlir_type_strings_equal(return_type, "!llvm.ptr<i8>")
-        }
-
-        if len(indices_of_returned_sparse_tensors) != 0:
-
-            def func_wrapper(*args, **kwargs):
-                # Find an MLIRSparseTensor in the inputs, then use its dtypes
-                # TODO find a more principled approach
-                try:
-                    input_sparse_tensor = next(
-                        x
-                        for x in list(args) + list(kwargs.values())
-                        if isinstance(x, MLIRSparseTensor)
-                    )
-                except StopIteration:
-                    raise TypeError(
-                        "Unable to find an MLIRSparseTensor in the inputs.\n"
-                        "Cannot return MLIRSparseTensor from raw pointer"
-                    )
-
-                raw_results = func(*args, **kwargs)
-                if len(self.return_types) == 1:
-                    raw_results = (raw_results,)
-
-                dwimmed_results = tuple(
-                    MLIRSparseTensor.from_raw_pointer(
-                        raw_result,
-                        input_sparse_tensor.pointer_dtype,
-                        input_sparse_tensor.index_dtype,
-                        input_sparse_tensor.value_dtype,
-                    )
-                    if i in indices_of_returned_sparse_tensors
-                    else raw_result
-                    for i, raw_result in enumerate(raw_results)
-                )
-
-                if len(self.return_types) == 1:
-                    (dwimmed_results,) = dwimmed_results
-
-                return dwimmed_results
-
-            return func_wrapper
-
-        return func
-
     def get_mlir(self, make_private=True) -> str:
         needed_function_definitions = "\n\n".join(
             func_def for func_def, _, _ in self.needed_function_table.values()
