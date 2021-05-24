@@ -23,7 +23,7 @@ dependencies:
       - rst2pdf
 
 # dependencies (so setup.py develop doesn't pip install them)
-  - metagraph/label/dev::mlir # temp restriction to use metagraph dev label
+  - metagraph/label/new_sparse::mlir # temp restriction to use metagraph new_sparse label
   - metagraph::pymlir
   - llvmlite
   - donfig
