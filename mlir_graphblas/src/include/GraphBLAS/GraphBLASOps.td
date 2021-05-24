@@ -83,4 +83,32 @@ def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [
     // let verifier = 
 }
 
+
+def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
+    let summary = "matrix apply operation";
+    let description = [{
+        Applies an operator to all elements of the given sparse matrix.
+        How the parameter "thunk" is used depends on the chosen operator.
+        Currently, the only valid operator is "min".
+        The given sparse tensor must be a matrix, i.e. have rank 2.
+        The given tensor must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
+
+        Example:
+        ```
+        %thunk = constant 100 : i64
+        %answer = graphblas.matrix_apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<2x3xi64, #CSR64>, i64) to tensor<2x3xi64, #CSR64>
+        ```
+    }];
+
+    let arguments = (ins AnyTensor:$input, AnyType:$thunk, StrAttr:$apply_operator);
+    let results = (outs AnyTensor:$output);
+    
+    let assemblyFormat = [{
+           $input `,` $thunk attr-dict `:` `(` type($input) `,` type($thunk) `)` `to` type($output)
+    }];
+
+    // TODO add custsom verifier sanity checking the type of $output and $thunk are sane
+    // let verifier = 
+}
+
 #endif // GRAPHBLAS_OPS
