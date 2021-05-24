@@ -32,7 +32,7 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
            $input attr-dict `:` type($input) `to` type($output)
     }];
 
-    // TODO add custsom verifier sanity checking the input and output types are sane
+    // TODO add custom verifier sanity checking the input and output types are sane
     // let verifier = 
 }
 
@@ -56,7 +56,7 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, Same
            $input attr-dict `:` type($input)
     }];
 
-    // TODO add custsom verifier sanity checking the selector attribute is sane
+    // TODO add custom verifier sanity checking the selector attribute is sane
     // let verifier = 
 }
 
@@ -79,16 +79,15 @@ def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [
            $input attr-dict `:` type($input) `to` type($output)
     }];
 
-    // TODO add custsom verifier sanity checking the type of $output is sane
+    // TODO add custom verifier sanity checking the type of $output is sane
     // let verifier = 
 }
-
 
 def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
     let summary = "matrix apply operation";
     let description = [{
         Applies an operator to all elements of the given sparse matrix.
-        How the parameter "thunk" is used depends on the chosen operator.
+        How the thunk is used depends on the chosen operator.
         Currently, the only valid operator is "min".
         The given sparse tensor must be a matrix, i.e. have rank 2.
         The given tensor must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
@@ -107,7 +106,32 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
            $input `,` $thunk attr-dict `:` `(` type($input) `,` type($thunk) `)` `to` type($output)
     }];
 
-    // TODO add custsom verifier sanity checking the type of $output and $thunk are sane
+    // TODO add custom verifier sanity checking the types of $output and $thunk are sane
+    // let verifier = 
+}
+
+def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]> {
+    let summary = "matrix multiply operation";
+    let description = [{
+        Performs a matrix multiply according to the given semiring.
+        The semiring must be one of "plus_times", "plus_pair", or "plus_plus".
+        The given sparse tensors must be a matrix, i.e. have rank 2.
+        The given tensors must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
+
+        Example:
+        ```
+        TODO Add an example
+        ```
+    }];
+
+    let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$semiring);
+    let results = (outs AnyTensor:$output);
+    
+    let assemblyFormat = [{
+           $a `,` $b attr-dict `:` `(` type($a) `,` type($b) `)` `to` type($output)
+    }];
+
+    // TODO add custom verifier sanity checking the types of the inputs and outputs are sane
     // let verifier = 
 }
 
