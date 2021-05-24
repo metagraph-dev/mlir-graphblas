@@ -31,17 +31,18 @@ def run_shell_commands(
     if process.returncode != 0:
         error_string = (
             "\n\n"
-            + f"Command Failed with exit code {process.returncode}:"
+            + "STDERR Messages:"
             + "\n\n"
-            + command
+            + stderr_string
             + "\n\n"
             + "STDOUT Messages:"
             + "\n\n"
             + stdout_string
             + "\n\n"
-            + "STDERR Messages:"
+            + f"Command Failed with exit code {process.returncode}:"
             + "\n\n"
-            + stderr_string
+            + command
+            + "\n\n"
         )
         raise RuntimeError(error_string)
 
@@ -87,16 +88,18 @@ if __name__ == "__main__":
 
     print(
         f"""
-Command:
+STDERR:
 
-{command}
+{stderr_string}
 
 STDOUT:
 
 {stdout_string}
 
-STDERR:
+Status: Success
 
-{stderr_string}
+Command:
+
+{command}
 """
     )
