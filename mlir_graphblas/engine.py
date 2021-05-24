@@ -269,7 +269,7 @@ def input_tensor_to_ctypes(
         ctypes_type = ctypes.POINTER(ctypes.c_int8)
         input_c_types = [ctypes_type]
 
-        def encoder(arg: MLIRSparseTensor) -> list:
+        def encoder(arg: MLIRSparseTensor) -> List[ctypes_type]:
             # protocol for indicating an object can be interpreted as a MLIRSparseTensor
             if hasattr(arg, "__mlir_sparse__"):
                 arg = arg.__mlir_sparse__
@@ -361,7 +361,7 @@ def input_llvm_pointer_to_ctypes(
         (element_ctypes_input_type,) = element_ctypes_input_types
         ctypes_input_types = [ctypes.POINTER(element_ctypes_input_type)]
 
-        def encoder(arg: Union[list, tuple]) -> list:
+        def encoder(arg: Union[list, tuple]) -> List[ctypes.Array]:
             if not isinstance(arg, (list, tuple)):
                 raise TypeError(
                     f"{repr(arg)} is expected to be an instance of {list} or {tuple}."
@@ -743,7 +743,7 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
             def python_callable(*args) -> tuple:
                 if len(args) != len(mlir_function.args):
                     raise ValueError(
-                        f"{mlir_function.name} expected {len(mlir_function.args)} args but got {len(args)}."
+                        f"{mlir_function.name.value} expected {len(mlir_function.args)} args but got {len(args)}."
                     )
                 result_arg_values = [
                     result_arg_type() for result_arg_type in ctypes_result_arg_types
@@ -768,6 +768,17 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
 
         return name_to_callable
 
+    def _walk_module(self, mlir_ast):
+        """Recursively walks an MLIR Module, yielding all non-Module objects"""
+        assert isinstance(
+            mlir_ast, mlir.astnodes.Module
+        ), f"Cannot walk a {type(mlir_ast)}; expected a Module"
+        for item in mlir_ast.body:
+            if isinstance(item, mlir.astnodes.Module):
+                yield from self._walk_module(item)
+            else:
+                yield item
+
     def add(
         self, mlir_text: Union[str, bytes], passes: Tuple[str], debug=False
     ) -> Union[List[str], DebugResult]:
@@ -781,18 +792,10 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
 
         function_names: List[str] = []
         mlir_ast = parse_mlir_string(mlir_text)
-        # Find the inner-most Module
-        while True:
-            for item in mlir_ast.body:
-                if isinstance(item, mlir.astnodes.Module):
-                    mlir_ast = item
-                    break
-            else:
-                break
         mlir_functions: List[mlir.astnodes.Function] = [
-            func
-            for func in mlir_ast.body
-            if isinstance(func, mlir.astnodes.Function) and func.visibility == "public"
+            obj
+            for obj in self._walk_module(mlir_ast)
+            if isinstance(obj, mlir.astnodes.Function) and obj.visibility == "public"
         ]
 
         # Separate zero/single return valued funcs from multivalued funcs
