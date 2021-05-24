@@ -21,7 +21,7 @@ void addMatrixReduceToScalarFunc(mlir::ModuleOp mod, const std::string &aggregat
 {
     MLIRContext *context = mod.getContext();
     OpBuilder builder(mod.getBodyRegion());
-    auto unLoc = builder.getUnknownLoc();
+    auto loc = builder.getUnknownLoc();  /* eventually this will get the location of the op being lowered */
 
     auto valueType = builder.getF64Type();
     string func_name = "matrix_reduce_to_scalar_" + aggregator;
@@ -31,7 +31,7 @@ void addMatrixReduceToScalarFunc(mlir::ModuleOp mod, const std::string &aggregat
     builder.setInsertionPointToStart(mod.getBody());
 
     // Create function signature
-    auto func = builder.create<FuncOp>(unLoc,
+    auto func = builder.create<FuncOp>(loc,
                            func_name,
                            FunctionType::get(context, csrTensor, valueType));
 
@@ -43,60 +43,60 @@ void addMatrixReduceToScalarFunc(mlir::ModuleOp mod, const std::string &aggregat
 
     // Initial constants
     auto int64Type = builder.getIntegerType(64);
-    auto cf0 = builder.create<ConstantFloatOp>(unLoc, APFloat(0.0), valueType);
-    auto c0 = builder.create<ConstantIndexOp>(unLoc, 0);
-    auto c1 = builder.create<ConstantIndexOp>(unLoc, 1);
+    auto cf0 = builder.create<ConstantFloatOp>(loc, APFloat(0.0), valueType);
+    auto c0 = builder.create<ConstantIndexOp>(loc, 0);
+    auto c1 = builder.create<ConstantIndexOp>(loc, 1);
 
     // Get sparse tensor info
     auto memref1DI64Type = MemRefType::get({-1}, int64Type);
     auto memref1DValueType = MemRefType::get({-1}, valueType);
 
-    auto nrows = builder.create<memref::DimOp>(unLoc, input, c0.getResult());
-    auto inputPtrs = builder.create<ToPointersOp>(unLoc, memref1DI64Type, input, c1);
-    auto inputIndices = builder.create<ToIndicesOp>(unLoc, memref1DI64Type, input, c1);
-    auto inputValues = builder.create<ToValuesOp>(unLoc, memref1DValueType, input);
+    auto nrows = builder.create<memref::DimOp>(loc, input, c0.getResult());
+    auto inputPtrs = builder.create<ToPointersOp>(loc, memref1DI64Type, input, c1);
+    auto inputIndices = builder.create<ToIndicesOp>(loc, memref1DI64Type, input, c1);
+    auto inputValues = builder.create<ToValuesOp>(loc, memref1DValueType, input);
 
     // Allocate temporary storage
     auto memrefF64 = MemRefType::get({}, valueType);
-    auto acc = builder.create<memref::AllocOp>(unLoc, memrefF64);
-    builder.create<memref::StoreOp>(unLoc, cf0, acc);
+    auto acc = builder.create<memref::AllocOp>(loc, memrefF64);
+    builder.create<memref::StoreOp>(loc, cf0, acc);
 
     // outer row loop
-    auto rowLoop = builder.create<scf::ForOp>(unLoc, c0, nrows, c1);
+    auto rowLoop = builder.create<scf::ForOp>(loc, c0, nrows, c1);
     auto rowLoopIdx = rowLoop.getInductionVar();
 
     builder.setInsertionPointToStart(rowLoop.getBody());
-    auto col64 = builder.create<memref::LoadOp>(unLoc, inputPtrs, rowLoopIdx);
+    auto col64 = builder.create<memref::LoadOp>(loc, inputPtrs, rowLoopIdx);
     auto indexType = builder.getIndexType();
-    auto col = builder.create<mlir::IndexCastOp>(unLoc, col64, indexType);
+    auto col = builder.create<mlir::IndexCastOp>(loc, col64, indexType);
 
-    auto colEndIdx = builder.create<mlir::AddIOp>(unLoc, rowLoopIdx, c1);
-    auto colEnd64 = builder.create<memref::LoadOp>(unLoc, inputPtrs, colEndIdx.getResult());
-    auto colEnd = builder.create<mlir::IndexCastOp>(unLoc, colEnd64, indexType);
-    auto curValue = builder.create<memref::LoadOp>(unLoc, acc);
+    auto colEndIdx = builder.create<mlir::AddIOp>(loc, rowLoopIdx, c1);
+    auto colEnd64 = builder.create<memref::LoadOp>(loc, inputPtrs, colEndIdx.getResult());
+    auto colEnd = builder.create<mlir::IndexCastOp>(loc, colEnd64, indexType);
+    auto curValue = builder.create<memref::LoadOp>(loc, acc);
 
     // begin inner col loop
-    auto valueLoop = builder.create<scf::ForOp>(unLoc, col, colEnd, c1, curValue.getResult());
+    auto valueLoop = builder.create<scf::ForOp>(loc, col, colEnd, c1, curValue.getResult());
     auto valueLoopIdx = valueLoop.getInductionVar();
     auto x = valueLoop.getLoopBody().getArgument(1); /* this seems weird, but works */
 
     builder.setInsertionPointToStart(valueLoop.getBody());
-    auto y = builder.create<memref::LoadOp>(unLoc, inputValues, valueLoopIdx);
+    auto y = builder.create<memref::LoadOp>(loc, inputValues, valueLoopIdx);
     Value z;
     if (aggregator == "sum") {
-        auto zOp = builder.create<mlir::AddFOp>(unLoc, x, y);
+        auto zOp = builder.create<mlir::AddFOp>(loc, x, y);
         z = zOp.getResult();
     }
-    builder.create<scf::YieldOp>(unLoc, z);
+    builder.create<scf::YieldOp>(loc, z);
     // end inner col loop
 
     builder.setInsertionPointAfter(valueLoop);
-    builder.create<memref::StoreOp>(unLoc, valueLoop.getResult(0), acc);
+    builder.create<memref::StoreOp>(loc, valueLoop.getResult(0), acc);
 
     // end outer row loop
     builder.setInsertionPointAfter(rowLoop);
-    auto finalResult = builder.create<memref::LoadOp>(unLoc, acc);
+    auto finalResult = builder.create<memref::LoadOp>(loc, acc);
 
     // Add return op
-    builder.create<ReturnOp>(builder.getUnknownLoc(), finalResult.getResult());
+    builder.create<ReturnOp>(loc, finalResult.getResult());
 }
