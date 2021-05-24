@@ -18,6 +18,7 @@ void addMatrixReduceToScalarFunc(mlir::ModuleOp mod, const std::string &aggregat
 {
     MLIRContext *context = mod.getContext();
     OpBuilder builder(mod.getBodyRegion());
+    auto unLoc = builder.getUnknownLoc();
 
     auto valueType = builder.getF64Type();
     string func_name = "matrix_reduce_to_scalar_" + aggregator;
@@ -27,13 +28,18 @@ void addMatrixReduceToScalarFunc(mlir::ModuleOp mod, const std::string &aggregat
     builder.setInsertionPointToStart(mod.getBody());
 
     // Create function signature
-    auto func = builder.create<FuncOp>(builder.getUnknownLoc(),
+    auto func = builder.create<FuncOp>(unLoc,
                            func_name,
                            FunctionType::get(context, csrTensor, valueType));
 
     // Move to function body
     auto &entry_block = *func.addEntryBlock();
     builder.setInsertionPointToStart(&entry_block);
+
+    // Initial constants
+    auto cf0 = builder.create<ConstantFloatOp>(unLoc, APFloat(0.0), valueType);
+    auto c0 = builder.create<ConstantIndexOp>(unLoc, 0);
+    auto c1 = builder.create<ConstantIndexOp>(unLoc, 1);
 
     // Add return op
     builder.create<ReturnOp>(builder.getUnknownLoc());
