@@ -85,3 +85,31 @@ module {
     }
             
 }
+
+module {
+    
+    // CHECK: func @matrix_multiply_plus_times(%[[ARGA:.*]]: [[CSR_TYPE_A:.*]], %[[ARGB:.*]]: [[CSR_TYPE_B:.*]]) -> [[RETURN_TYPE:.*]] {
+    func @matrix_multiply_plus_times(%argA: tensor<2x3xi64, #CSR64>, %argB: tensor<3x2xi64, #CSR64>) -> tensor<2x2xi64, #CSR64> {
+	// CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_multiply %[[ARGA]], %[[ARGB]] {semiring = "plus_times"} : ([[CSR_TYPE_A]], [[CSR_TYPE_B]]) to [[RETURN_TYPE]]
+        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSR64>) to tensor<2x2xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x2xi64, #CSR64>
+    }
+    
+    // CHECK: func @matrix_multiply_plus_pair(%[[ARGA:.*]]: [[CSR_TYPE_A:.*]], %[[ARGB:.*]]: [[CSR_TYPE_B:.*]]) -> [[RETURN_TYPE:.*]] {
+    func @matrix_multiply_plus_pair(%argA: tensor<2x3xi64, #CSR64>, %argB: tensor<3x2xi64, #CSR64>) -> tensor<2x2xi64, #CSR64> {
+	// CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_multiply %[[ARGA]], %[[ARGB]] {semiring = "plus_pair"} : ([[CSR_TYPE_A]], [[CSR_TYPE_B]]) to [[RETURN_TYPE]]
+        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_pair" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSR64>) to tensor<2x2xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x2xi64, #CSR64>
+    }
+    
+    // CHECK: func @matrix_multiply_plus_plus(%[[ARGA:.*]]: [[CSR_TYPE_A:.*]], %[[ARGB:.*]]: [[CSR_TYPE_B:.*]]) -> [[RETURN_TYPE:.*]] {
+    func @matrix_multiply_plus_plus(%argA: tensor<2x3xi64, #CSR64>, %argB: tensor<3x2xi64, #CSR64>) -> tensor<2x2xi64, #CSR64> {
+	// CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_multiply %[[ARGA]], %[[ARGB]] {semiring = "plus_plus"} : ([[CSR_TYPE_A]], [[CSR_TYPE_B]]) to [[RETURN_TYPE]]
+        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_plus" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSR64>) to tensor<2x2xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x2xi64, #CSR64>
+    }
+            
+}
