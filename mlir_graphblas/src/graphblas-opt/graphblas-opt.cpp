@@ -18,10 +18,11 @@
 #include "llvm/Support/ToolOutputFile.h"
 
 #include "GraphBLAS/GraphBLASDialect.h"
+#include "GraphBLAS/GraphBLASPasses.h"
 
 int main(int argc, char **argv) {
   mlir::registerAllPasses();
-  // TODO: Register graphblas passes here.
+  registerGraphBLASPasses();
 
   mlir::DialectRegistry registry;
   registry.insert<mlir::graphblas::GraphBLASDialect>();
