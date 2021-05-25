@@ -185,6 +185,8 @@ cdef extern from "SparseUtils.cpp" nogil:
     void resize_dim(void *tensor, uint64_t d, uint64_t size)
 
     void *dup_tensor(void *tensor)
+    void *ptr8_to_tensor(void *tensor)
+    void *tensor_to_ptr8(void *tensor)
     void *empty_like(void *tensor)
     void *empty(void *tensor, uint64_t ndims)
 

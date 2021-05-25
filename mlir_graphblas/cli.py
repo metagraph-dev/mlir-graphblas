@@ -57,7 +57,8 @@ class MlirOptCli:
         )
         if result.returncode == 0:
             return result.stdout.decode()
-        err = MlirOptError(result.stderr.split(b"\n")[0])
+        err_lines = result.stderr.split(b"\n")
+        err = MlirOptError("\n".join(el.decode() for el in err_lines[:3]))
         err.debug_result = self.debug_passes(input, passes)
         raise err
 

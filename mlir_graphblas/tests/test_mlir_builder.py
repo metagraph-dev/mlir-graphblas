@@ -8,12 +8,10 @@ from mlir_graphblas import MlirJitEngine
 from mlir_graphblas.engine import parse_mlir_string
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
-from mlir_graphblas.functions import (
-    Transpose,
-    MatrixSelect,
-    MatrixReduceToScalar,
-    MatrixApply,
-    MatrixMultiply,
+from mlir_graphblas.functions import Transpose
+from mlir_graphblas.algorithms import (
+    triangle_count_combined,
+    dense_neural_network_combined,
 )
 
 from .jit_engine_test_utils import sparsify_array
@@ -36,24 +34,20 @@ def engine():
     affine_map<(i,j) -> (i,j)>,
     affine_map<(i,j) -> (i,j)>
   ],
-  iterator_types = ["parallel", "parallel"],
-  sparse = [
-    [ "D", "S" ],
-    [ "D", "D" ]
-  ],
-  sparse_dim_map = [
-    affine_map<(i,j) -> (j,i)>,
-    affine_map<(i,j) -> (i,j)>
-  ]
+  iterator_types = ["parallel", "parallel"]
 }
 
-!SparseTensor = type !llvm.ptr<i8>
+#sparseTensor = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
 
-func @densify(%argA: !SparseTensor) -> tensor<8x8xf64> {
+func @densify(%argA: tensor<8x8xf64, #sparseTensor>) -> tensor<8x8xf64> {
   %output_storage = constant dense<0.0> : tensor<8x8xf64>
-  %arga = linalg.sparse_tensor %argA : !SparseTensor to tensor<8x8xf64>
   %0 = linalg.generic #trait_densify
-    ins(%arga: tensor<8x8xf64>)
+    ins(%argA: tensor<8x8xf64, #sparseTensor>)
     outs(%output_storage: tensor<8x8xf64>) {
       ^bb(%A: f64, %x: f64):
         linalg.yield %A : f64
@@ -62,7 +56,8 @@ func @densify(%argA: !SparseTensor) -> tensor<8x8xf64> {
 }
 """,
         [
-            "--test-sparsification=lower",
+            "--sparsification",
+            "--sparse-tensor-conversion",
             "--linalg-bufferize",
             "--convert-scf-to-std",
             "--func-bufferize",
@@ -81,10 +76,12 @@ def test_ir_builder_transpose_wrapper(engine: MlirJitEngine):
     # Build Function
     transpose_function = Transpose()
 
-    input_var = MLIRVar("input_tensor", "!llvm.ptr<i8>")
+    input_var = MLIRVar("input_tensor", "tensor<?x?xf64, #CSR64>")
 
     ir_builder = MLIRFunctionBuilder(
-        "transpose_wrapper", input_vars=[input_var], return_types=("!llvm.ptr<i8>",)
+        "transpose_wrapper",
+        input_vars=[input_var],
+        return_types=("tensor<?x?xf64, #CSR64>",),
     )
     transpose_result = ir_builder.call(transpose_function, input_var)
     ir_builder.return_vars(transpose_result)
@@ -125,10 +122,12 @@ def test_ir_builder_transpose_wrapper(engine: MlirJitEngine):
 def test_ir_builder_triple_transpose(engine: MlirJitEngine):
     # Build Function
 
-    input_var = MLIRVar("input_tensor", "!llvm.ptr<i8>")
+    input_var = MLIRVar("input_tensor", "tensor<?x?xf64, #CSR64>")
 
     ir_builder = MLIRFunctionBuilder(
-        "triple_transpose", input_vars=(input_var,), return_types=["!llvm.ptr<i8>"]
+        "triple_transpose",
+        input_vars=(input_var,),
+        return_types=["tensor<?x?xf64, #CSR64>"],
     )
     # Use different instances of Tranpose to ideally get exactly one transpose helper in the final MLIR text
     inter1 = ir_builder.call(Transpose(), input_var)
@@ -194,35 +193,6 @@ def test_ir_builder_triple_transpose(engine: MlirJitEngine):
 
 
 def test_ir_builder_triangle_count(engine: MlirJitEngine):
-    # Build Function
-    csr_to_csc_function = Transpose(swap_sizes=False)
-    matrix_select_triu_function = MatrixSelect("TRIU")
-    matrix_select_tril_function = MatrixSelect("TRIL")
-    matrix_reduce_function = MatrixReduceToScalar()
-    mxm_plus_pair_function = MatrixMultiply("plus_pair", mask=True)
-
-    A_var = MLIRVar("A", "!llvm.ptr<i8>")
-
-    ir_builder = MLIRFunctionBuilder(
-        "triangle_count", input_vars=[A_var], return_types=["f64"]
-    )
-    U_var = ir_builder.call(matrix_select_triu_function, A_var)
-    L_var = ir_builder.call(matrix_select_tril_function, A_var)
-    U_csc = ir_builder.call(csr_to_csc_function, U_var)
-    C_var = ir_builder.call(mxm_plus_pair_function, L_var, U_csc, L_var)
-
-    reduce_result = ir_builder.call(matrix_reduce_function, C_var)
-    ir_builder.return_vars(reduce_result)
-
-    assert ir_builder.get_mlir()
-
-    # Test Compiled Function
-    triangle_count_internal = ir_builder.compile(engine=engine)
-
-    def triangle_count(A: MLIRSparseTensor) -> int:
-        answer = triangle_count_internal(A)
-        return int(answer)
-
     # 0 - 1    5 - 6
     # | X |    | /
     # 3 - 4 -- 2 - 7
@@ -264,7 +234,7 @@ def test_ir_builder_triangle_count(engine: MlirJitEngine):
     sparsity = np.array([False, True], dtype=np.bool8)
     input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
 
-    assert 5 == triangle_count(input_tensor)
+    assert 5 == triangle_count_combined(input_tensor)
 
     return
 
@@ -483,80 +453,6 @@ def test_ir_builder_dnn(
     max_num_layers: int,
     clamp_threshold: float,
 ):
-    # Needed Functions
-    csr_to_csc = Transpose(swap_sizes=False)
-    mxm_plus_times = MatrixMultiply("plus_times")
-    mxm_plus_plus = MatrixMultiply("plus_plus")
-    matrix_select_gt0 = MatrixSelect("gt0")
-    matrix_apply_min = MatrixApply("min")
-
-    # Input Vars
-    weight_list_var = MLIRVar("weight_list", "!llvm.ptr<!llvm.ptr<i8>>")
-    bias_list_var = MLIRVar("bias_list", "!llvm.ptr<!llvm.ptr<i8>>")
-    num_layers_var = MLIRVar("num_layers", "index")
-    Y0_var = MLIRVar("Y0", "!llvm.ptr<i8>")
-
-    # Build Function
-    ir_builder = MLIRFunctionBuilder(
-        "dense_neural_network",
-        input_vars=[weight_list_var, bias_list_var, num_layers_var, Y0_var],
-        return_types=["!llvm.ptr<i8>"],
-    )
-    ir_builder.add_statement("// pymlir-skip: begin")
-    c0_var = ir_builder.constant(0, "i64")
-    c1_var = ir_builder.constant(1, "i64")
-    clamp_threshold_var = ir_builder.constant(clamp_threshold, "f64")
-
-    Y_var = MLIRVar("Y", "!llvm.ptr<i8>")
-    layer_index_i64_var = MLIRVar("layer_index", "i64")
-
-    with ir_builder.for_loop(
-        0, num_layers_var, iter_vars=[(Y_var, Y0_var), (layer_index_i64_var, c0_var)]
-    ) as for_vars:
-        # Get weight matrix
-        ir_builder.add_statement(
-            f"%weight_matrix_ptr_ptr = llvm.getelementptr {weight_list_var.access_string()}[{layer_index_i64_var.access_string()}] : (!llvm.ptr<!llvm.ptr<i8>>, i64) -> !llvm.ptr<!llvm.ptr<i8>>"
-        )
-        weight_matrix_ptr_var = MLIRVar("weight_matrix_ptr", "!llvm.ptr<i8>")
-        ir_builder.add_statement(
-            f"{weight_matrix_ptr_var.assign_string()} = llvm.load %weight_matrix_ptr_ptr : !llvm.ptr<!llvm.ptr<i8>>"
-        )
-
-        # Get bias matrix
-        ir_builder.add_statement(
-            f"%bias_matrix_ptr_ptr = llvm.getelementptr {bias_list_var.access_string()}[{layer_index_i64_var.access_string()}] : (!llvm.ptr<!llvm.ptr<i8>>, i64) -> !llvm.ptr<!llvm.ptr<i8>>"
-        )
-        bias_matrix_ptr_var = MLIRVar("bias_matrix_ptr", "!llvm.ptr<i8>")
-        ir_builder.add_statement(
-            f"{bias_matrix_ptr_var.assign_string()} = llvm.load %bias_matrix_ptr_ptr : !llvm.ptr<!llvm.ptr<i8>>"
-        )
-
-        # Perform inference
-        W_csc_var = ir_builder.call(csr_to_csc, weight_matrix_ptr_var)
-        matmul_result_var = ir_builder.call(mxm_plus_times, Y_var, W_csc_var)
-        add_bias_result_var = ir_builder.call(
-            mxm_plus_plus, matmul_result_var, bias_matrix_ptr_var
-        )
-        relu_result_var = ir_builder.call(matrix_select_gt0, add_bias_result_var)
-        clamp_result_var = ir_builder.call(
-            matrix_apply_min, relu_result_var, clamp_threshold_var
-        )
-
-        # increment iterator vars
-        incremented_layer_index_i64_var = MLIRVar("incremented_layer_index", "i64")
-        ir_builder.add_statement(
-            f"{incremented_layer_index_i64_var.assign_string()} = addi {layer_index_i64_var.access_string()}, {c1_var.access_string()} : i64"
-        )
-        for_vars.yield_vars(clamp_result_var, incremented_layer_index_i64_var)
-
-    ir_builder.add_statement("// pymlir-skip: end")
-    ir_builder.return_vars(for_vars.returned_variable[0])
-
-    assert ir_builder.get_mlir()
-
-    # Test Compiled Function
-    func = ir_builder.compile(engine=engine)
-
     sparsify_matrix = lambda matrix: sparsify_array(matrix, [False, True])
     np.random.seed(hash(datetime.date.today()) % 2 ** 32)
 
@@ -594,11 +490,11 @@ def test_ir_builder_dnn(
             sparsify_matrix(matrix) for matrix in dense_bias_matrices
         ]
         sparse_input_tensor = sparsify_matrix(dense_input_tensor)
-        sparse_result = func(
+        sparse_result = dense_neural_network_combined(
             sparse_weight_matrices,
             sparse_bias_matrices,
-            num_layers,
             sparse_input_tensor,
+            clamp_threshold,
         )
         dense_result = engine.densify(sparse_result)
 
