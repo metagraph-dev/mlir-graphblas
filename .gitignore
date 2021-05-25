@@ -19,6 +19,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!mlir_graphblas/src/lib
 lib64/
 parts/
 sdist/
