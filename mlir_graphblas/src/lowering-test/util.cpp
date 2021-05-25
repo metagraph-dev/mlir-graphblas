@@ -55,6 +55,15 @@ mlir::CallOp callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::
     return result;
 }
 
+mlir::CallOp callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor) {
+    auto tensorType = tensor.getType();
+
+    auto func = getFunc(mod, loc, "dup_tensor", tensorType, tensorType);
+    auto result = builder.create<mlir::CallOp>(loc, func, tensorType, tensor);
+
+    return result;
+}
+
 mlir::CallOp callResizeDim(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc,
                            mlir::Value tensor, mlir::Value d, mlir::Value size)
 {
