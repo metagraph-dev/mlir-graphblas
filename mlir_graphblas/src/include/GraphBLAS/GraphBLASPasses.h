@@ -10,16 +10,17 @@
 #include "mlir/Pass/Pass.h"
 
 namespace mlir {
-
-namespace graphblas {
-
-void populateGraphBLASLowerMatrixMultiplyPatterns(RewritePatternSet &patterns);
-
-}
   
 std::unique_ptr<OperationPass<FuncOp>> createGraphBLASLowerMatrixMultiplyPass();
 
 }
+
+//===----------------------------------------------------------------------===//
+// Ops declaration.
+//===----------------------------------------------------------------------===//
+
+#define GET_OP_CLASSES
+#include "GraphBLAS/GraphBLASOps.h.inc"
 
 //===----------------------------------------------------------------------===//
 // Registration.
