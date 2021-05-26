@@ -11,6 +11,12 @@
 
 namespace mlir {
 
+namespace graphblas {
+
+void populateGraphBLASLowerMatrixMultiplyPatterns(RewritePatternSet &patterns);
+
+}
+  
 std::unique_ptr<OperationPass<FuncOp>> createGraphBLASLowerMatrixMultiplyPass();
 
 }
