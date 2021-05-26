@@ -61,8 +61,8 @@ void addMatrixApplyFunc(mlir::ModuleOp mod, const std::string &operation)
     auto nnz = builder.create<mlir::IndexCastOp>(loc, nnz64, indexType);
 
     // Loop over values
-    auto valueLoop = builder.create<scf::ForOp>(loc, c0, nnz, c1);
-    auto valueLoopIdx = valueLoop.getInductionVar();
+    auto valueLoop = builder.create<scf::ParallelOp>(loc, c0.getResult(), nnz.getResult(), c1.getResult());
+    auto valueLoopIdx = valueLoop.getInductionVars();
 
     builder.setInsertionPointToStart(valueLoop.getBody());
     auto val = builder.create<memref::LoadOp>(loc, inputValues, valueLoopIdx);

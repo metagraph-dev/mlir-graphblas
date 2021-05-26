@@ -405,44 +405,30 @@ class MatrixReduceToScalar(BaseFunction):
         %cf0 = constant 0.0 : f64
         %c0 = constant 0 : index
         %c1 = constant 1 : index
-        %c0_64 = constant 0 : i64
-        %c1_64 = constant 1 : i64
 
         // pymlir-skip: begin
         
-        // TODO: can we use scf.parallel in the reduction?
+        %Ap = sparse_tensor.pointers %input, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
+        %Ax = sparse_tensor.values %input : tensor<?x?xf64, #CSR64> to memref<?xf64>
+        %nrows = memref.dim %input, %c0 : tensor<?x?xf64, #CSR64>
+        %nnz_64 = memref.load %Ap[%nrows] : memref<?xi64>
+        %nnz = index_cast %nnz_64 : i64 to index
 
-        %0 = memref.dim %input, %c0 : tensor<?x?xf64, #CSR64>
-        %1 = sparse_tensor.pointers %input, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
-        %2 = sparse_tensor.indices %input, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
-        %3 = sparse_tensor.values %input : tensor<?x?xf64, #CSR64> to memref<?xf64>
-        //%4 = memref.buffer_cast %cst : memref<f64>
-        %5 = memref.alloc() : memref<f64>
-        memref.store %cf0, %5[] : memref<f64>
-        //linalg.copy(%4, %5) : memref<f64>, memref<f64>
-        scf.for %arg1 = %c0 to %0 step %c1 {
-          %col_64 = memref.load %1[%arg1] : memref<?xi64>
-          %col = index_cast %col_64 : i64 to index
-          %9 = addi %arg1, %c1 : index
-          %col_end_64 = memref.load %1[%9] : memref<?xi64>
-          %col_end = index_cast %col_end_64 : i64 to index
-          %11 = memref.load %5[] : memref<f64>
-          %12 = scf.for %arg2 = %col to %col_end step %c1 iter_args(%x = %11) -> (f64) {
-            %y = memref.load %3[%arg2] : memref<?xf64>
+        %total = scf.parallel (%pos) = (%c0) to (%nnz) step (%c1) init(%cf0) -> f64 {
+          %y = memref.load %Ax[%pos] : memref<?xf64>
+          scf.reduce(%y) : f64 {
+            ^bb0(%lhs : f64, %rhs: f64):
 
             {% if agg == 'sum' -%}
-              %z = addf %x, %y : f64
+              %z = addf %lhs, %rhs : f64
             {%- endif %}
 
-            scf.yield %z : f64
+              scf.reduce.return %z : f64
           }
-          memref.store %12, %5[] : memref<f64>
         }
-        %7 = memref.load %5[] : memref<f64>
-
         // pymlir-skip: end
 
-        return %7 : f64
+        return %total : f64
       }
     """
     )
@@ -492,7 +478,7 @@ class MatrixApply(BaseFunction):
         %nnz_64 = memref.load %Ap[%nrow] : memref<?xi64>
         %nnz = index_cast %nnz_64 : i64 to index
 
-        scf.for %pos = %c0 to %nnz step %c1 {
+        scf.parallel (%pos) = (%c0) to (%nnz) step (%c1) {
           %val = memref.load %Ax[%pos] : memref<?xf64>
 
           {% if op == "min" %}
