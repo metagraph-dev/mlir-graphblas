@@ -79,7 +79,29 @@ void addTransposeFunc(mlir::ModuleOp mod, bool swap_sizes)
     auto outputIndices = builder.create<ToIndicesOp>(loc, memref1DI64Type, output, c1);
     auto outputValues = builder.create<ToValuesOp>(loc, memref1DValueType, output);
 
-    // FIXME: More to put here
+    // compute number of non-zero entries per column of A
+
+    // init B.pointers to zero
+    auto initLoop = builder.create<scf::ForOp>(loc, c0, ncol, c1);
+    auto initLoopIdx = initLoop.getInductionVar();
+    builder.setInsertionPointToStart(initLoop.getBody());
+    builder.create<memref::StoreOp>(loc, c0_64, outputPtrs, initLoopIdx);
+    builder.setInsertionPointAfter(initLoop);
+
+    // store pointers
+    auto ptrLoop = builder.create<scf::ForOp>(loc, c0, nnz, c1);
+    auto ptrLoopIdx = ptrLoop.getInductionVar();
+
+    builder.setInsertionPointToStart(ptrLoop.getBody());
+    auto colA64 = builder.create<memref::LoadOp>(loc, inputIndices, ptrLoopIdx);
+    auto colA = builder.create<mlir::IndexCastOp>(loc, colA64, indexType).getResult();
+    auto colB = builder.create<memref::LoadOp>(loc, outputPtrs, colA);
+    auto colB1 = builder.create<mlir::AddIOp>(loc, colB, c1_64);
+    builder.create<memref::StoreOp>(loc, colB1.getResult(), outputPtrs, colA);
+
+    builder.setInsertionPointAfter(ptrLoop);
+
+    // cumsum the nnz per column to get Bp
 
     builder.create<ReturnOp>(loc, output);
 }
