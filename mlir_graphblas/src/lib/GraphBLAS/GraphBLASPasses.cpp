@@ -7,10 +7,17 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
-#include "GraphBLAS/GraphBLASPasses.h"
 #include "mlir/Pass/Pass.h"
 
+#include "GraphBLAS/GraphBLASPasses.h"
+
 using namespace ::mlir;
+using namespace ::mlir::graphblas;
+
+void mlir::graphblas::populateGraphBLASLowerMatrixMultiplyPatterns(RewritePatternSet &patterns) {
+  // TODO fill this in
+  // ~/code/llvm-project/mlir/lib/Conversion/LinalgToStandard/LinalgToStandard.cpp
+}
 
 namespace {
 
@@ -27,8 +34,22 @@ namespace {
 
 struct GraphBLASLowerMatrixMultiplyPass : public GraphBLASLowerMatrixMultiplyBase<GraphBLASLowerMatrixMultiplyPass> {
   void runOnOperation() override {
-    // TODO implement something
-    signalPassFailure();
+    auto *ctx = &getContext();
+    auto module = getOperation();
+    RewritePatternSet patterns(ctx);
+    ConversionTarget target(*ctx);
+    // TODO update the legal and illegal ops
+    // target.addLegalDialect<
+    //   AffineDialect,
+    //   memref::MemRefDialect,
+    //   scf::SCFDialect,
+    //   StandardOpsDialect
+    //   >();
+    // target.addLegalOp<ModuleOp, FuncOp, ReturnOp>();
+    // target.addIllegalOp<NewOp, ToPointersOp, ToIndicesOp, ToValuesOp>();
+    mlir::graphblas::populateGraphBLASLowerMatrixMultiplyPatterns(patterns);
+    if (failed(applyPartialConversion(module, target, std::move(patterns))))
+      signalPassFailure();
   }
 };
 
