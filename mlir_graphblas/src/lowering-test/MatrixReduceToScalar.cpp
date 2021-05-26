@@ -24,6 +24,8 @@ void addMatrixReduceToScalarFunc(mlir::ModuleOp mod, const std::string &aggregat
     auto loc = builder.getUnknownLoc();  /* eventually this will get the location of the op being lowered */
 
     auto valueType = builder.getF64Type();
+    auto int64Type = builder.getIntegerType(64);
+    auto indexType = builder.getIndexType();
     string func_name = "matrix_reduce_to_scalar_" + aggregator;
 
     RankedTensorType csrTensor = getCSRTensorType(context, valueType);
@@ -42,7 +44,6 @@ void addMatrixReduceToScalarFunc(mlir::ModuleOp mod, const std::string &aggregat
     auto input = entry_block.getArgument(0);
 
     // Initial constants
-    auto int64Type = builder.getIntegerType(64);
     auto cf0 = builder.create<ConstantFloatOp>(loc, APFloat(0.0), valueType);
     auto c0 = builder.create<ConstantIndexOp>(loc, 0);
     auto c1 = builder.create<ConstantIndexOp>(loc, 1);
@@ -53,50 +54,35 @@ void addMatrixReduceToScalarFunc(mlir::ModuleOp mod, const std::string &aggregat
 
     auto nrows = builder.create<memref::DimOp>(loc, input, c0.getResult());
     auto inputPtrs = builder.create<ToPointersOp>(loc, memref1DI64Type, input, c1);
-    auto inputIndices = builder.create<ToIndicesOp>(loc, memref1DI64Type, input, c1);
     auto inputValues = builder.create<ToValuesOp>(loc, memref1DValueType, input);
+    auto nnz64 = builder.create<memref::LoadOp>(loc, inputPtrs, nrows.getResult());
+    auto nnz = builder.create<mlir::IndexCastOp>(loc, nnz64, indexType);
 
-    // Allocate temporary storage
-    auto memrefF64 = MemRefType::get({}, valueType);
-    auto acc = builder.create<memref::AllocOp>(loc, memrefF64);
-    builder.create<memref::StoreOp>(loc, cf0, acc);
-
-    // outer row loop
-    auto rowLoop = builder.create<scf::ForOp>(loc, c0, nrows, c1);
-    auto rowLoopIdx = rowLoop.getInductionVar();
-
-    builder.setInsertionPointToStart(rowLoop.getBody());
-    auto col64 = builder.create<memref::LoadOp>(loc, inputPtrs, rowLoopIdx);
-    auto indexType = builder.getIndexType();
-    auto col = builder.create<mlir::IndexCastOp>(loc, col64, indexType);
-
-    auto colEndIdx = builder.create<mlir::AddIOp>(loc, rowLoopIdx, c1);
-    auto colEnd64 = builder.create<memref::LoadOp>(loc, inputPtrs, colEndIdx.getResult());
-    auto colEnd = builder.create<mlir::IndexCastOp>(loc, colEnd64, indexType);
-    auto curValue = builder.create<memref::LoadOp>(loc, acc);
-
-    // begin inner col loop
-    auto valueLoop = builder.create<scf::ForOp>(loc, col, colEnd, c1, curValue.getResult());
-    auto valueLoopIdx = valueLoop.getInductionVar();
-    auto x = valueLoop.getLoopBody().getArgument(1); /* this seems weird, but works */
+    // begin loop
+    auto valueLoop = builder.create<scf::ParallelOp>(loc, c0.getResult(), nnz.getResult(), c1.getResult(), cf0.getResult());
+    auto valueLoopIdx = valueLoop.getInductionVars();
 
     builder.setInsertionPointToStart(valueLoop.getBody());
     auto y = builder.create<memref::LoadOp>(loc, inputValues, valueLoopIdx);
+
+    auto reducer = builder.create<scf::ReduceOp>(loc, y);
+    auto lhs = reducer.getRegion().getArgument(0);
+    auto rhs = reducer.getRegion().getArgument(1);
+
+    builder.setInsertionPointToStart(&reducer.getRegion().front());
+
     Value z;
     if (aggregator == "sum") {
-        auto zOp = builder.create<mlir::AddFOp>(loc, x, y);
+        auto zOp = builder.create<mlir::AddFOp>(loc, lhs, rhs);
         z = zOp.getResult();
     }
-    builder.create<scf::YieldOp>(loc, z);
-    // end inner col loop
+    builder.create<scf::ReduceReturnOp>(loc, z);
 
+    builder.setInsertionPointAfter(reducer);
+
+    // end loop
     builder.setInsertionPointAfter(valueLoop);
-    builder.create<memref::StoreOp>(loc, valueLoop.getResult(0), acc);
-
-    // end outer row loop
-    builder.setInsertionPointAfter(rowLoop);
-    auto finalResult = builder.create<memref::LoadOp>(loc, acc);
 
     // Add return op
-    builder.create<ReturnOp>(loc, finalResult.getResult());
+    builder.create<ReturnOp>(loc, valueLoop.getResult(0));
 }

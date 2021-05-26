@@ -16,9 +16,10 @@ void addTransposeFunc(mlir::ModuleOp mod, bool swap_sizes);
 // util.cpp
 mlir::RankedTensorType getCSRTensorType(mlir::MLIRContext *context, mlir::FloatType valueType);
 mlir::CallOp callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
+mlir::CallOp callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
+
 mlir::CallOp callResizeDim(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc,
                            mlir::Value tensor, mlir::Value d, mlir::Value size);
-
 mlir::CallOp callResizePointers(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc,
                                 mlir::Value tensor, mlir::Value d, mlir::Value size);
 mlir::CallOp callResizeIndex(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc,

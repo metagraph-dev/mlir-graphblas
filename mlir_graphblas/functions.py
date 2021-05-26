@@ -45,6 +45,7 @@ class BaseFunction:
         """\
 #CSR64 = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
@@ -404,44 +405,30 @@ class MatrixReduceToScalar(BaseFunction):
         %cf0 = constant 0.0 : f64
         %c0 = constant 0 : index
         %c1 = constant 1 : index
-        %c0_64 = constant 0 : i64
-        %c1_64 = constant 1 : i64
 
         // pymlir-skip: begin
         
-        // TODO: can we use scf.parallel in the reduction?
+        %Ap = sparse_tensor.pointers %input, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
+        %Ax = sparse_tensor.values %input : tensor<?x?xf64, #CSR64> to memref<?xf64>
+        %nrows = memref.dim %input, %c0 : tensor<?x?xf64, #CSR64>
+        %nnz_64 = memref.load %Ap[%nrows] : memref<?xi64>
+        %nnz = index_cast %nnz_64 : i64 to index
 
-        %0 = memref.dim %input, %c0 : tensor<?x?xf64, #CSR64>
-        %1 = sparse_tensor.pointers %input, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
-        %2 = sparse_tensor.indices %input, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
-        %3 = sparse_tensor.values %input : tensor<?x?xf64, #CSR64> to memref<?xf64>
-        //%4 = memref.buffer_cast %cst : memref<f64>
-        %5 = memref.alloc() : memref<f64>
-        memref.store %cf0, %5[] : memref<f64>
-        //linalg.copy(%4, %5) : memref<f64>, memref<f64>
-        scf.for %arg1 = %c0 to %0 step %c1 {
-          %col_64 = memref.load %1[%arg1] : memref<?xi64>
-          %col = index_cast %col_64 : i64 to index
-          %9 = addi %arg1, %c1 : index
-          %col_end_64 = memref.load %1[%9] : memref<?xi64>
-          %col_end = index_cast %col_end_64 : i64 to index
-          %11 = memref.load %5[] : memref<f64>
-          %12 = scf.for %arg2 = %col to %col_end step %c1 iter_args(%x = %11) -> (f64) {
-            %y = memref.load %3[%arg2] : memref<?xf64>
+        %total = scf.parallel (%pos) = (%c0) to (%nnz) step (%c1) init(%cf0) -> f64 {
+          %y = memref.load %Ax[%pos] : memref<?xf64>
+          scf.reduce(%y) : f64 {
+            ^bb0(%lhs : f64, %rhs: f64):
 
             {% if agg == 'sum' -%}
-              %z = addf %x, %y : f64
+              %z = addf %lhs, %rhs : f64
             {%- endif %}
 
-            scf.yield %z : f64
+              scf.reduce.return %z : f64
           }
-          memref.store %12, %5[] : memref<f64>
         }
-        %7 = memref.load %5[] : memref<f64>
-
         // pymlir-skip: end
 
-        return %7 : f64
+        return %total : f64
       }
     """
     )
@@ -479,47 +466,27 @@ class MatrixApply(BaseFunction):
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>, %thunk: f64) -> tensor<?x?xf64, #CSR64> {
         %c0 = constant 0 : index
         %c1 = constant 1 : index
-        %c0_64 = constant 0 : i64
-        %c1_64 = constant 1 : i64
-        %cf0 = constant 0.0 : f64
 
         // pymlir-skip: begin
 
-        %nrow = memref.dim %input, %c0 : tensor<?x?xf64, #CSR64>
-        %ncol = memref.dim %input, %c1 : tensor<?x?xf64, #CSR64>
-        %Ap = sparse_tensor.pointers %input, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
-        %Aj = sparse_tensor.indices %input, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
-        %Ax = sparse_tensor.values %input : tensor<?x?xf64, #CSR64> to memref<?xf64>
-        
         %output = call @dup_tensor(%input) : (tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64>
-        %Bp = sparse_tensor.pointers %output, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
-        %Bj = sparse_tensor.indices %output, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
+        %Ap = sparse_tensor.pointers %input, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
+        %Ax = sparse_tensor.values %input : tensor<?x?xf64, #CSR64> to memref<?xf64>
         %Bx = sparse_tensor.values %output : tensor<?x?xf64, #CSR64> to memref<?xf64>
 
-        // TODO: remove all writes to Bp and Bj; apply will never change these
-        memref.store %c0_64, %Bp[%c0] : memref<?xi64>
-        scf.for %row = %c0 to %nrow step %c1 {
-          // Read start/end positions from Ap
-          %row_plus1 = addi %row, %c1 : index
-          %j_start_64 = memref.load %Ap[%row] : memref<?xi64>
-          %j_end_64 = memref.load %Ap[%row_plus1] : memref<?xi64>
-          memref.store %j_end_64, %Bp[%row_plus1] : memref<?xi64>
-          %j_start = index_cast %j_start_64 : i64 to index
-          %j_end = index_cast %j_end_64 : i64 to index
+        %nrow = memref.dim %input, %c0 : tensor<?x?xf64, #CSR64>
+        %nnz_64 = memref.load %Ap[%nrow] : memref<?xi64>
+        %nnz = index_cast %nnz_64 : i64 to index
 
-          scf.for %jj = %j_start to %j_end step %c1 {
-            %col = memref.load %Aj[%jj] : memref<?xi64>
-            %val = memref.load %Ax[%jj] : memref<?xf64>
+        scf.parallel (%pos) = (%c0) to (%nnz) step (%c1) {
+          %val = memref.load %Ax[%pos] : memref<?xf64>
 
-            memref.store %col, %Bj[%jj] : memref<?xi64>
+          {% if op == "min" %}
+          %cmp = cmpf olt, %val, %thunk : f64
+          %new = select %cmp, %val, %thunk : f64
+          {% endif %}
 
-            {% if op == "min" %}
-            %cmp = cmpf olt, %val, %thunk : f64
-            %new = select %cmp, %val, %thunk : f64
-            {% endif %}
-
-            memref.store %new, %Bx[%jj] : memref<?xf64>
-          }
+          memref.store %new, %Bx[%pos] : memref<?xf64>
         }
 
         // pymlir-skip: end
