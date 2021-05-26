@@ -130,7 +130,7 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
     }];
 
     // TODO add custom verifier sanity checking the types of the inputs and outputs are sane ; sanity check the semiring
-    // let verifier = 
+    // let verifier =
 }
 
 def GraphBLAS_MatrixMultiplyMaskOp : GraphBLAS_Op<"matrix_multiply_mask", [NoSideEffect]> {

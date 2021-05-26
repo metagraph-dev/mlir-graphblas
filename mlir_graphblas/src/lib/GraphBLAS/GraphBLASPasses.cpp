@@ -12,12 +12,6 @@
 #include "GraphBLAS/GraphBLASPasses.h"
 
 using namespace ::mlir;
-using namespace ::mlir::graphblas;
-
-void mlir::graphblas::populateGraphBLASLowerMatrixMultiplyPatterns(RewritePatternSet &patterns) {
-  // TODO fill this in
-  // ~/code/llvm-project/mlir/lib/Conversion/LinalgToStandard/LinalgToStandard.cpp
-}
 
 namespace {
 
@@ -31,6 +25,20 @@ namespace {
 //===----------------------------------------------------------------------===//
 // Passes implementation.
 //===----------------------------------------------------------------------===//
+
+class LowerMatrixMultiplyRewrite : public OpRewritePattern<mlir::graphblas::MatrixMultiplyOp> {
+public:
+  using OpRewritePattern<mlir::graphblas::MatrixMultiplyOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mlir::graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
+    // TODO fill this in
+    return failure();
+    // return success();
+  };
+};
+
+void populateGraphBLASLowerMatrixMultiplyPatterns(RewritePatternSet &patterns) {
+  patterns.add<LowerMatrixMultiplyRewrite>(patterns.getContext());
+}
 
 struct GraphBLASLowerMatrixMultiplyPass : public GraphBLASLowerMatrixMultiplyBase<GraphBLASLowerMatrixMultiplyPass> {
   void runOnOperation() override {
@@ -47,7 +55,7 @@ struct GraphBLASLowerMatrixMultiplyPass : public GraphBLASLowerMatrixMultiplyBas
     //   >();
     // target.addLegalOp<ModuleOp, FuncOp, ReturnOp>();
     // target.addIllegalOp<NewOp, ToPointersOp, ToIndicesOp, ToValuesOp>();
-    mlir::graphblas::populateGraphBLASLowerMatrixMultiplyPatterns(patterns);
+    populateGraphBLASLowerMatrixMultiplyPatterns(patterns);
     if (failed(applyPartialConversion(module, target, std::move(patterns))))
       signalPassFailure();
   }
