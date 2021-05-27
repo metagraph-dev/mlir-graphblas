@@ -8,7 +8,7 @@
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Pass/Pass.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h" // TODO do we need this?
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "GraphBLAS/GraphBLASPasses.h"
 
@@ -19,10 +19,29 @@ using namespace ::mlir;
 namespace {
 
 //===----------------------------------------------------------------------===//
+// Passes Implementation Helpers.
+//===----------------------------------------------------------------------===//
+
+mlir::RankedTensorType getCSRTensorType(mlir::MLIRContext *context, mlir::Type valueType) {
+    SmallVector<mlir::sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 2> dlt;
+    dlt.push_back(mlir::sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense);
+    dlt.push_back(mlir::sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
+    unsigned ptr = 64;
+    unsigned ind = 64;
+    AffineMap map = AffineMap::getMultiDimIdentityMap(2, context);
+
+    RankedTensorType csrTensor = RankedTensorType::get(
+        {-1, -1}, /* 2D, unknown size */
+        valueType,
+        mlir::sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
+
+    return csrTensor;
+}
+
+//===----------------------------------------------------------------------===//
 // Passes declaration.
 //===----------------------------------------------------------------------===//
 
-// TODO should this go in GraphBLASPasses.h ?
 #define GEN_PASS_CLASSES
 #include "GraphBLAS/GraphBLASPasses.h.inc"
 
@@ -34,66 +53,98 @@ class LowerMatrixMultiplyRewrite : public OpRewritePattern<mlir::graphblas::Matr
 public:
   using OpRewritePattern<mlir::graphblas::MatrixMultiplyOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(mlir::graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
-    // TODO fill this in
-    // ~/code/llvm-project/mlir/lib/Dialect/SparseTensor/Transforms/Sparsification.cpp
-    std::cout << "1 --------------------------------" << std::endl;
-    op.dump();
-    std::cout << "2 --------------------------------" << std::endl;
-    llvm::StringRef semiring = op.semiring();
-    std::cout << "semiring: " << semiring.str() << std::endl;
-    std::cout << "3 --------------------------------" << std::endl;
-    mlir::Value a = op.a();
-    a.dump();
-    std::cout << "4 --------------------------------" << std::endl;
-    mlir::Value b = op.b();
-    b.dump();
-    std::cout << "5 --------------------------------" << std::endl;
-    mlir::Value output = op.output();
-    output.dump();
-    std::cout << "6 --------------------------------" << std::endl;
-    // mlir::ReturnOp returnOp = rewriter.create<ReturnOp>(rewriter.getUnknownLoc());
-    // returnOp.dump();
-    std::cout << "7 --------------------------------" << std::endl;
-    auto tensor = a;
-    auto tensorType = tensor.getType();
     
-    // auto func = getFunc(mod, loc, "empty_like", tensorType, tensorType);
-    MLIRContext *context = rewriter.getContext();
+    MLIRContext *context = op->getContext();
+    auto module = op->getParentOfType<ModuleOp>();
+    
+    // TODO get the types from the inputs during the "match" part of this func
+    auto valueType = rewriter.getI64Type();
+    RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
+    auto func_type = FunctionType::get(context, {csrTensorType, csrTensorType}, csrTensorType);
+
+    llvm::StringRef semi_ring = op.semiring();
+    std::string func_name = "matrix_multiply_" + semi_ring.str();
+    auto func = module.lookupSymbol<FuncOp>(func_name);
+    if (!func) {
+      OpBuilder moduleBuilder(module.getBodyRegion());
+      moduleBuilder.create<FuncOp>(op->getLoc(), func_name, func_type).setPrivate();
+    }
+    auto funcSymbol = SymbolRefAttr::get(context, func_name);
+    
+    mlir::Value a = op.a();
+    mlir::Value b = op.b();
     auto loc = rewriter.getUnknownLoc();
-    // rewriter.create<FuncOp>(loc, "dummy_func", FunctionType::get(context, tensorType, tensorType))
-    //         .setPrivate();
-    auto func = SymbolRefAttr::get(context, "dummy_func");
-  
-    auto callOp = rewriter.create<mlir::CallOp>(loc, func, tensorType, tensor);
-    callOp.dump();
+    
+    auto callOp = rewriter.create<mlir::CallOp>(loc,
+						funcSymbol,
+						csrTensorType,
+						llvm::ArrayRef<mlir::Value>({a, b})
+						);
+    
     rewriter.replaceOp(op, callOp->getResults());
-    std::cout << "8 --------------------------------" << std::endl;
-    rewriter.getBlock()->dump();
-    std::cout << "9 --------------------------------" << std::endl;
-    // op.dump();
-    std::cout << "10 --------------------------------" << std::endl;
-    std::cout << "\n\n\n\n\n\n\n\n\n\n\n" << std::endl;
-    return failure();
-    // return success();
+    
+    return success();
   };
 };
 
-void populateGraphBLASLowerMatrixMultiplyPatterns(RewritePatternSet &patterns) {
-  patterns.add<LowerMatrixMultiplyRewrite>(patterns.getContext());
+class LowerMatrixApplyRewrite : public OpRewritePattern<mlir::graphblas::MatrixApplyOp> {
+public:
+  using OpRewritePattern<mlir::graphblas::MatrixApplyOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(mlir::graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const {
+    
+    // MLIRContext *context = op->getContext();
+    // auto module = op->getParentOfType<ModuleOp>();
+    
+    // // TODO get the types from the inputs during the "match" part of this func
+    // auto valueType = rewriter.getI64Type();
+    // RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
+    // auto func_type = FunctionType::get(context, {csrTensorType, csrTensorType}, csrTensorType);
+
+    // llvm::StringRef semi_ring = op.semiring();
+    // std::string func_name = "matrix_apply_" + semi_ring.str();
+    // auto func = module.lookupSymbol<FuncOp>(func_name);
+    // if (!func) {
+    //   OpBuilder moduleBuilder(module.getBodyRegion());
+    //   moduleBuilder.create<FuncOp>(op->getLoc(), func_name, func_type).setPrivate();
+    // }
+    // auto funcSymbol = SymbolRefAttr::get(context, func_name);
+    
+    // mlir::Value a = op.a();
+    // mlir::Value b = op.b();
+    // auto loc = rewriter.getUnknownLoc();
+    
+    // auto callOp = rewriter.create<mlir::CallOp>(loc,
+    // 						funcSymbol,
+    // 						csrTensorType,
+    // 						llvm::ArrayRef<mlir::Value>({a, b})
+    // 						);
+    
+    // rewriter.replaceOp(op, callOp->getResults());
+    
+    // return success();
+    return failure();
+  };
+};
+
+void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
+  patterns.add<
+    LowerMatrixApplyRewrite,
+    LowerMatrixMultiplyRewrite
+    >(patterns.getContext());
 }
 
-struct GraphBLASLowerMatrixMultiplyPass : public GraphBLASLowerMatrixMultiplyBase<GraphBLASLowerMatrixMultiplyPass> {
+struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPass> {
   void runOnOperation() override {
     auto *ctx = &getContext();
     RewritePatternSet patterns(ctx);
     ConversionTarget target(*ctx);
-    populateGraphBLASLowerMatrixMultiplyPatterns(patterns);
+    populateGraphBLASLoweringPatterns(patterns);
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
   }
 };
 
 } // end anonymous namespace
 
-std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASLowerMatrixMultiplyPass() {
-  return std::make_unique<GraphBLASLowerMatrixMultiplyPass>();
+std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASLoweringPass() {
+  return std::make_unique<GraphBLASLoweringPass>();
 }

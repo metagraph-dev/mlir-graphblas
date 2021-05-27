@@ -1,3 +1,4 @@
+
 //===- GraphBLASPasses.h - GraphBLAS dialect passes -----------------*- C++ -*-===//
 //
 // TODO add documentation
@@ -11,7 +12,7 @@
 
 namespace mlir {
   
-std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASLowerMatrixMultiplyPass();
+std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASLoweringPass();
 
 }
 
