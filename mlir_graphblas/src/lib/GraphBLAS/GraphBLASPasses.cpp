@@ -60,8 +60,8 @@ public:
     // auto func = getFunc(mod, loc, "empty_like", tensorType, tensorType);
     MLIRContext *context = rewriter.getContext();
     auto loc = rewriter.getUnknownLoc();
-    rewriter.create<FuncOp>(loc, "dummy_func", FunctionType::get(context, tensorType, tensorType))
-            .setPrivate();
+    // rewriter.create<FuncOp>(loc, "dummy_func", FunctionType::get(context, tensorType, tensorType))
+    //         .setPrivate();
     auto func = SymbolRefAttr::get(context, "dummy_func");
   
     auto callOp = rewriter.create<mlir::CallOp>(loc, func, tensorType, tensor);
