@@ -13,7 +13,7 @@ include "mlir/Pass/PassBase.td"
 // GraphBLASLowerMatrixMultiply
 //===----------------------------------------------------------------------===//
 
-def GraphBLASLowerMatrixMultiply : Pass<"graphblas-lower-matrix-multiply", "FuncOp"> {
+def GraphBLASLowerMatrixMultiply : Pass<"graphblas-lower-matrix-multiply", "ModuleOp"> {
   let summary = "TODO add documentation";
   let constructor = "mlir::createGraphBLASLowerMatrixMultiplyPass()";
   let dependentDialects = [

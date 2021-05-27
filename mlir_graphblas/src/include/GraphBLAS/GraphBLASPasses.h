@@ -11,7 +11,7 @@
 
 namespace mlir {
   
-std::unique_ptr<OperationPass<FuncOp>> createGraphBLASLowerMatrixMultiplyPass();
+std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASLowerMatrixMultiplyPass();
 
 }
 
