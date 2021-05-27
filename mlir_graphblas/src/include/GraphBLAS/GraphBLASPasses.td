@@ -10,12 +10,12 @@
 include "mlir/Pass/PassBase.td"
 
 //===----------------------------------------------------------------------===//
-// GraphBLASLowerMatrixMultiply
+// GraphBLASLowering
 //===----------------------------------------------------------------------===//
 
-def GraphBLASLowerMatrixMultiply : Pass<"graphblas-lower-matrix-multiply", "ModuleOp"> {
+def GraphBLASLowering : Pass<"graphblas-lower", "ModuleOp"> {
   let summary = "TODO add documentation";
-  let constructor = "mlir::createGraphBLASLowerMatrixMultiplyPass()";
+  let constructor = "mlir::createGraphBLASLoweringPass()";
   let dependentDialects = [
     "linalg::LinalgDialect",
     "AffineDialect",

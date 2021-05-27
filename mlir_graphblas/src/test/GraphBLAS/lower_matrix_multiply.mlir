@@ -1,5 +1,6 @@
+
 // CHECK: {{.*}}
-// COM: // RUN: graphblas-opt %s | graphblas-opt --graphblas-lower-matrix-multiply | FileCheck %s
+// COM: // RUN: graphblas-opt %s | graphblas-opt --graphblas-lower | FileCheck %s
 // COM: TODO finish this
 // COM: 
 // COM: #CSR64 = #sparse_tensor.encoding<{
