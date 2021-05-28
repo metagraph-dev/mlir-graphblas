@@ -62,7 +62,7 @@ void addMatrixApplyFunc(mlir::ModuleOp mod, const std::string &operation)
 
     // Loop over values
     auto valueLoop = builder.create<scf::ParallelOp>(loc, c0.getResult(), nnz.getResult(), c1.getResult());
-    auto valueLoopIdx = valueLoop.getInductionVars();
+    auto valueLoopIdx = valueLoop.getInductionVars()[0];
 
     builder.setInsertionPointToStart(valueLoop.getBody());
     auto val = builder.create<memref::LoadOp>(loc, inputValues, valueLoopIdx);
