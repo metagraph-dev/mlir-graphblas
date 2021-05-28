@@ -18,7 +18,6 @@
 // COM: }>
 // COM: 
 // COM: module {
-// COM:     
 // COM:     // CHECK: func @matrix_multiply_plus_times(%[[ARGA:.*]]: [[CSR_TYPE_A:tensor<.*->.*>]], %[[ARGB:.*]]: [[CSR_TYPE_B:tensor<.*->.*>]]) -> [[RETURN_TYPE:tensor<.*->.*>]] {
 // COM:     func @matrix_multiply_plus_times(%argA: tensor<2x3xi64, #CSR64>, %argB: tensor<3x2xi64, #CSR64>) -> tensor<2x2xi64, #CSR64> {
 // COM:         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_multiply %[[ARGA]], %[[ARGB]] {semiring = "plus_times"} : ([[CSR_TYPE_A]], [[CSR_TYPE_B]]) to [[RETURN_TYPE]]
@@ -26,6 +25,5 @@
 // COM:         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
 // COM:         return %answer : tensor<2x2xi64, #CSR64>
 // COM:     }
-// COM:          
 // COM: }
 // COM: 
