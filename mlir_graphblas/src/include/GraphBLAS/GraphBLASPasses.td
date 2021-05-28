@@ -19,7 +19,8 @@ def GraphBLASLowering : Pass<"graphblas-lower", "ModuleOp"> {
   let dependentDialects = [
     "linalg::LinalgDialect",
     "AffineDialect",
-    "memref::MemRefDialect"
+    "memref::MemRefDialect",
+    "scf::SCFDialect"
   ];
 }
 
