@@ -42,10 +42,10 @@ void addTransposeFunc(mlir::ModuleOp mod, bool swap_sizes)
 
     // Initial constants
     auto int64Type = builder.getIntegerType(64);
-    auto c0 = builder.create<ConstantIndexOp>(loc, 0);
-    auto c1 = builder.create<ConstantIndexOp>(loc, 1);
-    auto c0_64 = builder.create<ConstantIntOp>(loc, 0, int64Type);
-    auto c1_64 = builder.create<ConstantIntOp>(loc, 1, int64Type);
+    Value c0 = builder.create<ConstantIndexOp>(loc, 0);
+    Value c1 = builder.create<ConstantIndexOp>(loc, 1);
+    Value c0_64 = builder.create<ConstantIntOp>(loc, 0, int64Type);
+    Value c1_64 = builder.create<ConstantIntOp>(loc, 1, int64Type);
 
     // Get sparse tensor info
     auto memref1DI64Type = MemRefType::get({-1}, int64Type);
@@ -54,13 +54,13 @@ void addTransposeFunc(mlir::ModuleOp mod, bool swap_sizes)
     auto inputPtrs = builder.create<ToPointersOp>(loc, memref1DI64Type, input, c1);
     auto inputIndices = builder.create<ToIndicesOp>(loc, memref1DI64Type, input, c1);
     auto inputValues = builder.create<ToValuesOp>(loc, memref1DValueType, input);
-    auto nrow = builder.create<memref::DimOp>(loc, input, c0.getResult());
-    auto ncol = builder.create<memref::DimOp>(loc, input, c1.getResult());
-    auto ncols_plus_one = builder.create<mlir::AddIOp>(loc, nrow, c1);
+    Value nrow = builder.create<memref::DimOp>(loc, input, c0);
+    Value ncol = builder.create<memref::DimOp>(loc, input, c1);
+    Value ncols_plus_one = builder.create<mlir::AddIOp>(loc, nrow, c1);
 
     auto indexType = builder.getIndexType();
-    auto nnz_64 = builder.create<memref::LoadOp>(loc, inputPtrs, nrow.getResult());
-    auto nnz = builder.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
+    Value nnz_64 = builder.create<memref::LoadOp>(loc, inputPtrs, nrow);
+    Value nnz = builder.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
 
     auto output = callEmptyLike(builder, mod, loc, input).getResult(0);
     if (swap_sizes) {
@@ -93,15 +93,77 @@ void addTransposeFunc(mlir::ModuleOp mod, bool swap_sizes)
     auto ptrLoopIdx = ptrLoop.getInductionVar();
 
     builder.setInsertionPointToStart(ptrLoop.getBody());
-    auto colA64 = builder.create<memref::LoadOp>(loc, inputIndices, ptrLoopIdx);
-    auto colA = builder.create<mlir::IndexCastOp>(loc, colA64, indexType).getResult();
-    auto colB = builder.create<memref::LoadOp>(loc, outputPtrs, colA);
-    auto colB1 = builder.create<mlir::AddIOp>(loc, colB, c1_64);
-    builder.create<memref::StoreOp>(loc, colB1.getResult(), outputPtrs, colA);
+    Value colA64 = builder.create<memref::LoadOp>(loc, inputIndices, ptrLoopIdx);
+    Value colA = builder.create<mlir::IndexCastOp>(loc, colA64, indexType);
+    Value colB = builder.create<memref::LoadOp>(loc, outputPtrs, colA);
+    Value colB1 = builder.create<mlir::AddIOp>(loc, colB, c1_64);
+    builder.create<memref::StoreOp>(loc, colB1, outputPtrs, colA);
 
     builder.setInsertionPointAfter(ptrLoop);
 
     // cumsum the nnz per column to get Bp
+    builder.create<memref::StoreOp>(loc, c0_64, outputPtrs, ncol);
+
+    auto colAccLoop = builder.create<scf::ForOp>(loc, c0, ncol, c1);
+    auto colAccLoopIdx = colAccLoop.getInductionVar();
+
+    builder.setInsertionPointToStart(colAccLoop.getBody());
+    Value temp = builder.create<memref::LoadOp>(loc, outputPtrs, colAccLoopIdx);
+    Value cumsum = builder.create<memref::LoadOp>(loc, outputPtrs, ncol);
+    builder.create<memref::StoreOp>(loc, cumsum, outputPtrs, colAccLoopIdx);
+    Value cumsum2 = builder.create<mlir::AddIOp>(loc, cumsum, temp);
+    builder.create<memref::StoreOp>(loc, cumsum2, outputPtrs, ncol);
+
+    builder.setInsertionPointAfter(colAccLoop);
+
+    // copy values
+    auto outerLoop = builder.create<scf::ForOp>(loc, c0, nrow, c1);
+    Value rowIdx = outerLoop.getInductionVar();
+
+    builder.setInsertionPointToStart(outerLoop.getBody());
+    Value row_64 = builder.create<mlir::IndexCastOp>(loc, rowIdx, indexType);
+    Value j_start_64 = builder.create<memref::LoadOp>(loc, inputPtrs, rowIdx);
+    Value j_start = builder.create<mlir::IndexCastOp>(loc, j_start_64, indexType);
+    Value row_plus1 = builder.create<mlir::AddIOp>(loc, rowIdx, c1);
+    Value j_end_64 = builder.create<memref::LoadOp>(loc, inputPtrs, row_plus1);
+    Value j_end = builder.create<mlir::IndexCastOp>(loc, j_end_64, indexType);
+
+    auto innerLoop = builder.create<scf::ForOp>(loc, j_start, j_end, c1);
+    Value jj = innerLoop.getInductionVar();
+
+    builder.setInsertionPointToStart(innerLoop.getBody());
+
+    Value col_64 = builder.create<memref::LoadOp>(loc, inputIndices, jj);
+    Value col = builder.create<mlir::IndexCastOp>(loc, col_64, indexType);
+    Value dest_64 = builder.create<memref::LoadOp>(loc, outputPtrs, col);
+    Value dest = builder.create<mlir::IndexCastOp>(loc, dest_64, indexType);
+    builder.create<memref::StoreOp>(loc, row_64, outputIndices, dest);
+    Value axjj = builder.create<memref::LoadOp>(loc, inputValues, jj);
+    builder.create<memref::StoreOp>(loc, axjj, outputValues, dest);
+
+    // Bp[col]++
+    Value bp_inc = builder.create<memref::LoadOp>(loc, outputPtrs, col);
+    Value bp_inc1 = builder.create<mlir::AddIOp>(loc, bp_inc, c1_64);
+    builder.create<memref::StoreOp>(loc, bp_inc1, outputPtrs, col);
+
+    builder.setInsertionPointAfter(outerLoop);
+
+    Value last_last = builder.create<memref::LoadOp>(loc, outputPtrs, ncol);
+    builder.create<memref::StoreOp>(loc, c0_64, outputPtrs, ncol);
+
+    auto finalLoop = builder.create<scf::ForOp>(loc, c0, ncol, c1);
+    Value iCol = finalLoop.getInductionVar();
+
+    builder.setInsertionPointToStart(finalLoop.getBody());
+
+    Value swapTemp = builder.create<memref::LoadOp>(loc, outputPtrs, iCol);
+    Value last = builder.create<memref::LoadOp>(loc, outputPtrs, ncol);
+    builder.create<memref::StoreOp>(loc, last, outputPtrs, iCol);
+    builder.create<memref::StoreOp>(loc, swapTemp, outputPtrs, ncol);
+
+    builder.setInsertionPointAfter(finalLoop);
+
+    builder.create<memref::StoreOp>(loc, last_last, outputPtrs, ncol);
 
     builder.create<ReturnOp>(loc, output);
 }
