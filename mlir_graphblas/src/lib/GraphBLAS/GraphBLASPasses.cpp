@@ -9,10 +9,12 @@
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/TypeSwitch.h"
+#include "llvm/ADT/Optional.h"
+#include "llvm/ADT/None.h"
 
 #include "GraphBLAS/GraphBLASPasses.h"
-
-#include <iostream> // TODO remove this
 
 using namespace ::mlir;
 
@@ -53,34 +55,31 @@ class LowerMatrixMultiplyRewrite : public OpRewritePattern<graphblas::MatrixMult
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
-    // TODO there should be a failure  case here
     
     MLIRContext *context = op->getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
     
-    // TODO get the types from the inputs during the "match" part of this func
     Type valueType = rewriter.getI64Type();
     RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
 
-    llvm::StringRef semi_ring = op.semiring();
-    std::string func_name = "matrix_multiply_" + semi_ring.str();
-    FuncOp func = module.lookupSymbol<FuncOp>(func_name);
+    std::string funcName = "matrix_multiply_" + op.semiring().str();
+    FuncOp func = module.lookupSymbol<FuncOp>(funcName);
     if (!func) {
       OpBuilder moduleBuilder(module.getBodyRegion());
-      FunctionType func_type = FunctionType::get(context, {csrTensorType, csrTensorType}, csrTensorType);
-      moduleBuilder.create<FuncOp>(op->getLoc(), func_name, func_type).setPrivate();
+      FunctionType funcType = FunctionType::get(context, {csrTensorType, csrTensorType}, csrTensorType);
+      moduleBuilder.create<FuncOp>(op->getLoc(), funcName, funcType).setPrivate();
     }
-    FlatSymbolRefAttr funcSymbol = SymbolRefAttr::get(context, func_name);
+    FlatSymbolRefAttr funcSymbol = SymbolRefAttr::get(context, funcName);
     
     Value a = op.a();
     Value b = op.b();
     Location loc = rewriter.getUnknownLoc();
     
     CallOp callOp = rewriter.create<CallOp>(loc,
-						funcSymbol,
-						csrTensorType,
-						llvm::ArrayRef<Value>({a, b})
-						);
+                                                funcSymbol,
+                                                csrTensorType,
+                                                llvm::ArrayRef<Value>({a, b})
+                                                );
     
     rewriter.replaceOp(op, callOp->getResults());
     
@@ -97,27 +96,42 @@ public:
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = rewriter.getUnknownLoc();
 
-    // TODO get the types from the inputs during the "match" part of this func
-    auto valueType = rewriter.getF64Type();
+    ValueTypeRange<OperandRange> operandTypes  = op->getOperandTypes();
+    Type valueType = operandTypes.front().dyn_cast<TensorType>().getElementType(); 
     Type int64Type = rewriter.getIntegerType(64);
     Type indexType = rewriter.getIndexType();
     RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
 
+    std::string funcName = "matrix_reduce_to_scalar_";
+    llvm::raw_string_ostream stream(funcName);
     std::string aggregator = op.aggregator().str();
-    std::string func_name = "matrix_reduce_to_scalar_" + aggregator;
-    FuncOp func = module.lookupSymbol<FuncOp>(func_name);
+    stream <<  aggregator << "_elem_";
+    valueType.print(stream);
+    stream.flush();
+    
+    FuncOp func = module.lookupSymbol<FuncOp>(funcName);
     if (!func) {
       OpBuilder moduleBuilder(module.getBodyRegion());
       
-      FunctionType func_type = FunctionType::get(context, {csrTensorType}, valueType);
-      moduleBuilder.create<FuncOp>(op->getLoc(), func_name, func_type).setPrivate();
-      func = module.lookupSymbol<FuncOp>(func_name);
+      FunctionType funcType = FunctionType::get(context, {csrTensorType}, valueType);
+      moduleBuilder.create<FuncOp>(op->getLoc(), funcName, funcType).setPrivate();
+      func = module.lookupSymbol<FuncOp>(funcName);
       Block &entry_block = *func.addEntryBlock();
       moduleBuilder.setInsertionPointToStart(&entry_block);
       BlockArgument input = entry_block.getArgument(0);
       
       // Initial constants
-      ConstantFloatOp cf0 = moduleBuilder.create<ConstantFloatOp>(loc, APFloat(0.0), valueType); // TODO this should change according to valueType
+      llvm::Optional<ConstantOp> c0Accumulator = llvm::TypeSwitch<Type, llvm::Optional<ConstantOp>>(valueType)
+        .Case<IntegerType>([&](IntegerType type) {
+                             return moduleBuilder.create<ConstantIntOp>(loc, 0, type.getWidth());
+                           })
+        .Case<FloatType>([&](FloatType type) {
+                           return moduleBuilder.create<ConstantFloatOp>(loc, APFloat(type.getFloatSemantics()), type);
+                         })
+        .Default([&](Type type) { return llvm::None; });
+      if (!c0Accumulator.hasValue()) {
+        return failure(); // TODO test this case
+      }
       ConstantIndexOp c0 = moduleBuilder.create<ConstantIndexOp>(loc, 0);
       ConstantIndexOp c1 = moduleBuilder.create<ConstantIndexOp>(loc, 1);
       
@@ -132,7 +146,7 @@ public:
       IndexCastOp nnz = moduleBuilder.create<IndexCastOp>(loc, nnz64, indexType);
 
       // begin loop
-      scf::ParallelOp valueLoop = moduleBuilder.create<scf::ParallelOp>(loc, c0.getResult(), nnz.getResult(), c1.getResult(), cf0.getResult());
+      scf::ParallelOp valueLoop = moduleBuilder.create<scf::ParallelOp>(loc, c0.getResult(), nnz.getResult(), c1.getResult(), c0Accumulator.getValue().getResult());
       ValueRange valueLoopIdx = valueLoop.getInductionVars();
 
       moduleBuilder.setInsertionPointToStart(valueLoop.getBody());
@@ -144,12 +158,19 @@ public:
 
       moduleBuilder.setInsertionPointToStart(&reducer.getRegion().front());
 
-      Value z;
+      llvm::Optional<Value> z;
       if (aggregator == "sum") {
-        AddFOp zOp = moduleBuilder.create<AddFOp>(loc, lhs, rhs);
-        z = zOp.getResult();
+         z = llvm::TypeSwitch<Type, llvm::Optional<Value>>(valueType)
+          .Case<IntegerType>([&](IntegerType type) { return moduleBuilder.create<AddIOp>(loc, lhs, rhs).getResult(); })
+          .Case<FloatType>([&](FloatType type) { return moduleBuilder.create<AddFOp>(loc, lhs, rhs).getResult(); })
+          .Default([&](Type type) { return llvm::None; });
+        if (!z.hasValue()) {
+          return failure();
+        }
+      } else {
+        return failure(); // TODO test this
       }
-      moduleBuilder.create<scf::ReduceReturnOp>(loc, z);
+      moduleBuilder.create<scf::ReduceReturnOp>(loc, z.getValue());
 
       moduleBuilder.setInsertionPointAfter(reducer);
 
@@ -159,14 +180,14 @@ public:
       // Add return op
       moduleBuilder.create<ReturnOp>(loc, valueLoop.getResult(0));
     }
-    FlatSymbolRefAttr funcSymbol = SymbolRefAttr::get(context, func_name);
+    FlatSymbolRefAttr funcSymbol = SymbolRefAttr::get(context, funcName);
     
     Value inputTensor = op.input();
     CallOp callOp = rewriter.create<CallOp>(loc,
-    						funcSymbol,
-    						valueType,
-    						llvm::ArrayRef<Value>({inputTensor})
-    						);    
+                                            funcSymbol,
+                                            valueType,
+                                            llvm::ArrayRef<Value>({inputTensor})
+                                            );    
     rewriter.replaceOp(op, callOp->getResults());
     
     return success();

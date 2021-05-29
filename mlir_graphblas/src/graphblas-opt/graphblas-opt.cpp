@@ -28,7 +28,6 @@ int main(int argc, char **argv) {
   registry.insert<mlir::graphblas::GraphBLASDialect>();
   registry.insert<mlir::StandardOpsDialect>();
   registry.insert<mlir::sparse_tensor::SparseTensorDialect>();
-  registry.insert<mlir::scf::SCFDialect>(); // TODO is this needed?
   
   // Add the following to include *all* MLIR Core dialects, or selectively
   // include what you need like above. You only need to register dialects that
