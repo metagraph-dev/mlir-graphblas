@@ -55,6 +55,7 @@ class LowerMatrixMultiplyRewrite : public OpRewritePattern<graphblas::MatrixMult
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
+    // TODO there should be a "return failure();" somewhere
     
     MLIRContext *context = op->getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
@@ -76,10 +77,10 @@ public:
     Location loc = rewriter.getUnknownLoc();
     
     CallOp callOp = rewriter.create<CallOp>(loc,
-                                                funcSymbol,
-                                                csrTensorType,
-                                                llvm::ArrayRef<Value>({a, b})
-                                                );
+                                            funcSymbol,
+                                            csrTensorType,
+                                            llvm::ArrayRef<Value>({a, b})
+                                            );
     
     rewriter.replaceOp(op, callOp->getResults());
     
@@ -91,7 +92,6 @@ class LowerMatrixReduceToScalarRewrite : public OpRewritePattern<graphblas::Matr
 public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const {
-    // TODO there should be a "return failure();" somewhere
     MLIRContext *context = op->getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = rewriter.getUnknownLoc();
@@ -102,6 +102,9 @@ public:
     Type indexType = rewriter.getIndexType();
     RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
 
+    // TODO sanity check that the input and output types are sane/consistent (call failure() if not)
+    
+    // TODO should this name also account for the dimensions of the input? Or should we fail upon certain dimensions/rank?
     std::string funcName = "matrix_reduce_to_scalar_";
     llvm::raw_string_ostream stream(funcName);
     std::string aggregator = op.aggregator().str();
@@ -207,6 +210,7 @@ struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPas
     RewritePatternSet patterns(ctx);
     ConversionTarget target(*ctx);
     populateGraphBLASLoweringPatterns(patterns);
+    // TODO how can we mark graphblas ops as illegal here?
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
   }
 };
