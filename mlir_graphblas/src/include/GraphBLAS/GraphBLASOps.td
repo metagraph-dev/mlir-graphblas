@@ -111,45 +111,25 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
 }
 
 def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]> {
-    let summary = "matrix multiply operation";
+    let summary = "matrix multiply operation with an optional structural mask";
     let description = [{
-        Performs a matrix multiply according to the given semiring.
+        Performs a matrix multiply according to the given semiring and optional structural mask.
         The semiring must be one of "plus_times", "plus_pair", or "plus_plus".
         The given sparse tensors must be a matrix, i.e. have rank 2.
         The given tensors must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
 
-        Example:
-        ```%answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSR64>) to tensor<2x2xi64, #CSR64>```
+        No Mask Example:
+        ```%answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_plus" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSR64>) to tensor<2x2xi64, #CSR64>```
+        
+        Mask Example:
+        ```%answer = graphblas.matrix_multiply %argA, %argB, %mask { semiring = "plus_times" } : (tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSC64>) to tensor<2x2xf64, #CSC64>```
     }];
 
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$semiring);
+    let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask, StrAttr:$semiring);
     let results = (outs AnyTensor:$output);
     
     let assemblyFormat = [{
-           $a `,` $b attr-dict `:` `(` type($a) `,` type($b) `)` `to` type($output)
-    }];
-
-    // TODO add custom verifier sanity checking the types of the inputs and outputs are sane ; sanity check the semiring
-    // let verifier = 
-}
-
-def GraphBLAS_MatrixMultiplyMaskOp : GraphBLAS_Op<"matrix_multiply_mask", [NoSideEffect]> {
-    let summary = "matrix multiply operation with a structural mask";
-    let description = [{
-        Performs a matrix multiply according to the given semiring and given structural mask.
-        The semiring must be one of "plus_times", "plus_pair", or "plus_plus".
-        The given sparse tensors must be a matrix, i.e. have rank 2.
-        The given tensors must have a CSR sparsity (i.e. a sparsity of [ "dense", "compressed" ]) or a CSC sparsity (i.e. a sparsity of [ "compressed", "dense" ]).
-
-        Example:
-        ```%answer = graphblas.matrix_multiply_mask %argA, %argB, %mask { semiring = "plus_plus" } : (tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSC64>) to tensor<2x2xf64, #CSC64>```
-    }];
-
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b, AnyTensor:$mask, StrAttr:$semiring);
-    let results = (outs AnyTensor:$output);
-    
-    let assemblyFormat = [{
-           $a `,` $b `,` $mask attr-dict `:` `(` type($a) `,` type($b)  `,` type($mask) `)` `to` type($output)
+           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output)
     }];
 
     // TODO add custom verifier sanity checking the types of the inputs and outputs and mask are sane ; sanity check the semiring
