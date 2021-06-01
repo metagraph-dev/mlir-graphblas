@@ -51,40 +51,20 @@ mlir::RankedTensorType getCSRTensorType(MLIRContext *context, Type valueType) {
 // Passes implementation.
 //===----------------------------------------------------------------------===//
 
-class LowerMatrixMultiplyRewrite : public OpRewritePattern<graphblas::MatrixMultiplyOp> {
+class LowerTransposeRewrite : public OpRewritePattern<graphblas::TransposeOp> {
 public:
-  using OpRewritePattern<graphblas::MatrixMultiplyOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
-    // TODO there should be a "return failure();" somewhere
-    
-    MLIRContext *context = op->getContext();
-    ModuleOp module = op->getParentOfType<ModuleOp>();
-    
-    Type valueType = rewriter.getI64Type();
-    RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
+  using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::TransposeOp op, PatternRewriter &rewriter) const {    
+    return failure();
+  };
+};
 
-    std::string funcName = "matrix_multiply_" + op.semiring().str();
-    FuncOp func = module.lookupSymbol<FuncOp>(funcName);
-    if (!func) {
-      OpBuilder moduleBuilder(module.getBodyRegion());
-      FunctionType funcType = FunctionType::get(context, {csrTensorType, csrTensorType}, csrTensorType);
-      moduleBuilder.create<FuncOp>(op->getLoc(), funcName, funcType).setPrivate();
-    }
-    FlatSymbolRefAttr funcSymbol = SymbolRefAttr::get(context, funcName);
-    
-    Value a = op.a();
-    Value b = op.b();
-    Location loc = rewriter.getUnknownLoc();
-    
-    CallOp callOp = rewriter.create<CallOp>(loc,
-                                            funcSymbol,
-                                            csrTensorType,
-                                            llvm::ArrayRef<Value>({a, b})
-                                            );
-    
-    rewriter.replaceOp(op, callOp->getResults());
-    
-    return success();
+class LowerMatrixSelectRewrite : public OpRewritePattern<graphblas::MatrixSelectOp> {
+public:
+  using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const {
+    // TODO sanity check that the sparse encoding is sane
+    return failure();
   };
 };
 
@@ -101,8 +81,6 @@ public:
     Type int64Type = rewriter.getIntegerType(64);
     Type indexType = rewriter.getIndexType();
     RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
-
-    // TODO sanity check that the input and output types are sane/consistent (call failure() if not)
     
     // TODO should this name also account for the dimensions of the input? Or should we fail upon certain dimensions/rank?
     std::string funcName = "matrix_reduce_to_scalar_";
@@ -197,6 +175,53 @@ public:
   };
 };
 
+class LowerMatrixApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyOp> {
+public:
+  using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const {    
+    return failure();
+  };
+};
+
+class LowerMatrixMultiplyRewrite : public OpRewritePattern<graphblas::MatrixMultiplyOp> {
+public:
+  using OpRewritePattern<graphblas::MatrixMultiplyOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
+    // TODO sanity check that the sparse encoding is sane
+    // TODO handle the mask
+    // TODO there should be a "return failure();" somewhere
+    
+    MLIRContext *context = op->getContext();
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    
+    Type valueType = rewriter.getI64Type();
+    RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
+
+    std::string funcName = "matrix_multiply_" + op.semiring().str();
+    FuncOp func = module.lookupSymbol<FuncOp>(funcName);
+    if (!func) {
+      OpBuilder moduleBuilder(module.getBodyRegion());
+      FunctionType funcType = FunctionType::get(context, {csrTensorType, csrTensorType}, csrTensorType);
+      moduleBuilder.create<FuncOp>(op->getLoc(), funcName, funcType).setPrivate();
+    }
+    FlatSymbolRefAttr funcSymbol = SymbolRefAttr::get(context, funcName);
+    
+    Value a = op.a();
+    Value b = op.b();
+    Location loc = rewriter.getUnknownLoc();
+    
+    CallOp callOp = rewriter.create<CallOp>(loc,
+                                            funcSymbol,
+                                            csrTensorType,
+                                            llvm::ArrayRef<Value>({a, b})
+                                            );
+    
+    rewriter.replaceOp(op, callOp->getResults());
+    
+    return success();
+  };
+};
+
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
     LowerMatrixReduceToScalarRewrite,
@@ -210,8 +235,8 @@ struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPas
     RewritePatternSet patterns(ctx);
     ConversionTarget target(*ctx);
     populateGraphBLASLoweringPatterns(patterns);
-    // TODO how can we mark graphblas ops as illegal here?
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+    // TODO how can we mark graphblas ops as illegal here?
   }
 };
 
