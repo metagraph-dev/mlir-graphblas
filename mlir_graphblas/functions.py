@@ -644,7 +644,7 @@ class MatrixMultiply(BaseFunction):
                     scf.yield %cmp_result0, %cmp_result1 : i1, i64
                   }
                   scf.condition(%continue_search) %val_to_send : i64
-                
+
                 } do {
                 ^bb0(%ii_prev: i64):
                   %ii_next = addi %ii_prev, %c1_64 : i64
@@ -652,7 +652,7 @@ class MatrixMultiply(BaseFunction):
                 }
                 scf.yield %res : i64
               }
-              
+
               scf.reduce(%overlap) : i64 {
                 ^bb0(%lhs : i64, %rhs: i64):
                   %z = addi %lhs, %rhs : i64
@@ -663,7 +663,7 @@ class MatrixMultiply(BaseFunction):
           }
           memref.store %row_total, %Cp[%row] : memref<?xi64>
         }
-        
+
         // 2nd pass
         //   Compute the cumsum of values in Cp to build the final Cp
         //   Then resize output indices and values
@@ -674,14 +674,14 @@ class MatrixMultiply(BaseFunction):
           %cumsum2 = addi %cumsum, %cs_temp : i64
           memref.store %cumsum2, %Cp[%nrow] : memref<?xi64>
         }
-        
+
         %nnz_64 = memref.load %Cp[%nrow] : memref<?xi64>
         %nnz = index_cast %nnz_64 : i64 to index
         call @resize_index(%output, %c1, %nnz) : (tensor<?x?xf64, #CSR64>, index, index) -> ()
         call @resize_values(%output, %nnz) : (tensor<?x?xf64, #CSR64>, index) -> ()
         %Cj = sparse_tensor.indices %output, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
         %Cx = sparse_tensor.values %output : tensor<?x?xf64, #CSR64> to memref<?xf64>
-        
+
         // 3rd pass
         //   In parallel over the rows,
         //   compute the nonzero columns and associated values.
@@ -695,7 +695,7 @@ class MatrixMultiply(BaseFunction):
           scf.if %cmp_cpDifferent {
             %base_index_64 = memref.load %Cp[%row] : memref<?xi64>
             %base_index = index_cast %base_index_64 : i64 to index
-            
+
             // Construct a dense array of row values
             %colStart_64 = memref.load %Ap[%row] : memref<?xi64>
             %colEnd_64 = memref.load %Ap[%row_plus1] : memref<?xi64>
@@ -775,8 +775,6 @@ class MatrixMultiply(BaseFunction):
               }
               scf.yield %new_offset : index
             }
-
-          } else {
           }
         }
 

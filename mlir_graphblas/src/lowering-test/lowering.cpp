@@ -6,6 +6,9 @@
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
+#include "mlir/Dialect/Linalg/IR/LinalgTypes.h"
+#include "mlir/Dialect/Linalg/IR/LinalgInterfaces.h"
+#include "mlir/Dialect/Linalg/IR/LinalgOps.h"
 
 #include "lowering.h"
 
@@ -20,6 +23,7 @@ int main()
     context->getOrLoadDialect<mlir::sparse_tensor::SparseTensorDialect>();
     context->getOrLoadDialect<mlir::StandardOpsDialect>();
     context->getOrLoadDialect<mlir::scf::SCFDialect>();
+    context->getOrLoadDialect<mlir::linalg::LinalgDialect>();
 
     cerr << "Building empty module..." << endl;
 
