@@ -603,7 +603,6 @@ class MatrixMultiply(BaseFunction):
               memref.store %ctrue, %kvec_i1[%col] : memref<?xi1>
             }
 
-            // Find whether there is at least one matching entry for every column
             // Loop thru all columns; count number of resulting nonzeros in the row
             {% if structural_mask %}
             %mcol_start_64 = memref.load %Mp[%row] : memref<?xi64>
@@ -619,8 +618,8 @@ class MatrixMultiply(BaseFunction):
             %total = scf.parallel (%col) = (%c0) to (%ncol) step (%c1) init (%c0_64) -> i64 {
             {% endif %}
 
-              %rowStart_64 = memref.load %Bp[%col] : memref<?xi64>
               %col_plus_one = addi %col, %c1 : index
+              %rowStart_64 = memref.load %Bp[%col] : memref<?xi64>
               %rowEnd_64 = memref.load %Bp[%col_plus_one] : memref<?xi64>
               %cmp_rowSame = cmpi eq, %rowStart_64, %rowEnd_64 : i64
 
