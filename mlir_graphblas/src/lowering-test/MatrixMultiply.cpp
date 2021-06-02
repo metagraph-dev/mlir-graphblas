@@ -33,7 +33,6 @@ void addMatrixMultiplyFunc(mlir::ModuleOp mod, const std::string &semiring, bool
     auto int64Type = builder.getI64Type();
     auto boolType = builder.getI1Type();
     auto indexType = builder.getIndexType();
-    auto noneType = builder.getNoneType();
     RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
     auto memref1DI64Type = MemRefType::get({-1}, int64Type);
     auto memref1DValueType = MemRefType::get({-1}, valueType);
@@ -93,7 +92,7 @@ void addMatrixMultiplyFunc(mlir::ModuleOp mod, const std::string &semiring, bool
         Mj = builder.create<ToIndicesOp>(loc, memref1DValueType, M, c1);
     }
 
-    Value C = callDupTensor(builder, mod, loc, A).getResult(0);
+    Value C = callEmptyLike(builder, mod, loc, A).getResult(0);
     callResizeDim(builder, mod, loc, C, c0, nrow);
     callResizeDim(builder, mod, loc, C, c1, ncol);
     callResizePointers(builder, mod, loc, C, c1, nrow_plus_one);
@@ -113,7 +112,7 @@ void addMatrixMultiplyFunc(mlir::ModuleOp mod, const std::string &semiring, bool
     Value colEnd64 = builder.create<memref::LoadOp>(loc, Ap, rowPlus1);
     Value cmpColSame = builder.create<CmpIOp>(loc, CmpIPredicate::eq, colStart64, colEnd64);
 
-    scf::IfOp ifBlock_rowTotal = builder.create<scf::IfOp>(loc, indexType, cmpColSame, true);
+    scf::IfOp ifBlock_rowTotal = builder.create<scf::IfOp>(loc, int64Type, cmpColSame, true);
     // if cmpColSame
     builder.setInsertionPointToStart(ifBlock_rowTotal.thenBlock());
     builder.create<scf::YieldOp>(loc, ci0);
@@ -237,7 +236,7 @@ void addMatrixMultiplyFunc(mlir::ModuleOp mod, const std::string &semiring, bool
     //   Then resize C's indices and values
     scf::ForOp rowLoop2 = builder.create<scf::ForOp>(loc, c0, nrow, c1);
     Value cs_i = rowLoop2.getInductionVar();
-    builder.setInsertionPointToStart(rowLoop1.getBody());
+    builder.setInsertionPointToStart(rowLoop2.getBody());
 
     Value csTemp = builder.create<memref::LoadOp>(loc, Cp, cs_i);
     Value cumsum = builder.create<memref::LoadOp>(loc, Cp, nrow);
@@ -286,7 +285,7 @@ void addMatrixMultiplyFunc(mlir::ModuleOp mod, const std::string &semiring, bool
     builder.setInsertionPointToStart(colLoop3p.getBody());
     col64 = builder.create<memref::LoadOp>(loc, Aj, jj);
     col = builder.create<IndexCastOp>(loc, col64, indexType);
-    builder.create<memref::StoreOp>(loc, ctrue, kvec_i1);
+    builder.create<memref::StoreOp>(loc, ctrue, kvec_i1, col);
     Value val = builder.create<memref::LoadOp>(loc, Ax, jj);
     builder.create<memref::StoreOp>(loc, val, kvec, col);
 
