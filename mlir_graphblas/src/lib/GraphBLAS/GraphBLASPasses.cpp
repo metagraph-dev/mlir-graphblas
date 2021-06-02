@@ -24,7 +24,7 @@ namespace {
 // Passes Implementation Helpers.
 //===----------------------------------------------------------------------===//
 
-mlir::RankedTensorType getCSRTensorType(MLIRContext *context, Type valueType) {
+static mlir::RankedTensorType getCSRTensorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType) {
     SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 2> dlt;
     dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense);
     dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
@@ -33,7 +33,7 @@ mlir::RankedTensorType getCSRTensorType(MLIRContext *context, Type valueType) {
     AffineMap map = AffineMap::getMultiDimIdentityMap(2, context);
 
     RankedTensorType csrTensor = RankedTensorType::get(
-        {-1, -1}, /* 2D, unknown size */
+        shape, 
         valueType,
         sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
 
@@ -76,11 +76,12 @@ public:
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = rewriter.getUnknownLoc();
 
-    ValueTypeRange<OperandRange> operandTypes  = op->getOperandTypes();
-    Type valueType = operandTypes.front().dyn_cast<TensorType>().getElementType(); 
-    Type int64Type = rewriter.getIntegerType(64);
+    RankedTensorType operandType = op.input().getType().dyn_cast<RankedTensorType>();
+    ArrayRef<int64_t> operandShape = operandType.getShape();
+    Type valueType = operandType.getElementType();
+    Type int64Type = rewriter.getIntegerType(64); // TODO should we get this from the sparse encoding?
     Type indexType = rewriter.getIndexType();
-    RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
+    RankedTensorType csrTensorType = getCSRTensorType(context, operandShape, valueType);
     
     // TODO should this name also account for the dimensions of the input? Or should we fail upon certain dimensions/rank?
     std::string funcName = "matrix_reduce_to_scalar_";
@@ -195,7 +196,8 @@ public:
     ModuleOp module = op->getParentOfType<ModuleOp>();
     
     Type valueType = rewriter.getI64Type();
-    RankedTensorType csrTensorType = getCSRTensorType(context, valueType);
+    ArrayRef<int64_t> shape = {-1, -1};
+    RankedTensorType csrTensorType = getCSRTensorType(context, shape, valueType);
 
     std::string funcName = "matrix_multiply_" + op.semiring().str();
     FuncOp func = module.lookupSymbol<FuncOp>(funcName);

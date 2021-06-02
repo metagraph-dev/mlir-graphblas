@@ -22,11 +22,4 @@ def GraphBLAS_Dialect : Dialect {
     let cppNamespace = "::mlir::graphblas";
 }
 
-//===--------------------------------------------------------------------===//
-// Base graphblas operation definition.
-//===--------------------------------------------------------------------===//
-
-class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> :
-        Op<GraphBLAS_Dialect, mnemonic, traits>;
-
 #endif // GRAPHBLAS_DIALECT
