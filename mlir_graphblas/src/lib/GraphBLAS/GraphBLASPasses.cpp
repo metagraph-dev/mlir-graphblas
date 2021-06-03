@@ -52,12 +52,12 @@ public:
     Value c1_64 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
 
     // Get sparse tensor info
-    auto memref1DI64Type = MemRefType::get({-1}, int64Type);
-    auto memref1DValueType = MemRefType::get({-1}, valueType);
+    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
+    Type memref1DValueType = MemRefType::get({-1}, valueType);
 
-    auto inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, inputTensor, c1);
-    auto inputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, inputTensor, c1);
-    auto inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, inputTensor);
+    Value inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, inputTensor, c1);
+    Value inputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, inputTensor, c1);
+    Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, inputTensor);
     Value nrow = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
     Value ncol = rewriter.create<memref::DimOp>(loc, inputTensor, c1);
     Value ncols_plus_one = rewriter.create<mlir::AddIOp>(loc, ncol, c1);
@@ -65,7 +65,7 @@ public:
     Value nnz_64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, nrow);
     Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
 
-    auto output = callEmptyLike(rewriter, module, loc, inputTensor).getResult(0);
+    Value output = callEmptyLike(rewriter, module, loc, inputTensor).getResult(0);
     bool swap_sizes = op->getAttr("swap_sizes").dyn_cast<BoolAttr>().getValue();
     if (swap_sizes)
     {
@@ -82,22 +82,22 @@ public:
     callResizeIndex(rewriter, module, loc, output, c1, nnz);
     callResizeValues(rewriter, module, loc, output, nnz);
 
-    auto outputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c1);
-    auto outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c1);
-    auto outputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
+    Value outputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c1);
+    Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c1);
+    Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
 
     // compute number of non-zero entries per column of A
 
     // init B.pointers to zero
-    auto initLoop = rewriter.create<scf::ForOp>(loc, c0, ncol, c1);
-    auto initLoopIdx = initLoop.getInductionVar();
+    scf::ForOp initLoop = rewriter.create<scf::ForOp>(loc, c0, ncol, c1);
+    Value initLoopIdx = initLoop.getInductionVar();
     rewriter.setInsertionPointToStart(initLoop.getBody());
     rewriter.create<memref::StoreOp>(loc, c0_64, outputPtrs, initLoopIdx);
     rewriter.setInsertionPointAfter(initLoop);
 
     // store pointers
-    auto ptrLoop = rewriter.create<scf::ForOp>(loc, c0, nnz, c1);
-    auto ptrLoopIdx = ptrLoop.getInductionVar();
+    scf::ForOp ptrLoop = rewriter.create<scf::ForOp>(loc, c0, nnz, c1);
+    Value ptrLoopIdx = ptrLoop.getInductionVar();
 
     rewriter.setInsertionPointToStart(ptrLoop.getBody());
     Value colA64 = rewriter.create<memref::LoadOp>(loc, inputIndices, ptrLoopIdx);
@@ -111,8 +111,8 @@ public:
     // cumsum the nnz per column to get Bp
     rewriter.create<memref::StoreOp>(loc, c0_64, outputPtrs, ncol);
 
-    auto colAccLoop = rewriter.create<scf::ForOp>(loc, c0, ncol, c1);
-    auto colAccLoopIdx = colAccLoop.getInductionVar();
+    scf::ForOp colAccLoop = rewriter.create<scf::ForOp>(loc, c0, ncol, c1);
+    Value colAccLoopIdx = colAccLoop.getInductionVar();
 
     rewriter.setInsertionPointToStart(colAccLoop.getBody());
     Value temp = rewriter.create<memref::LoadOp>(loc, outputPtrs, colAccLoopIdx);
@@ -124,7 +124,7 @@ public:
     rewriter.setInsertionPointAfter(colAccLoop);
 
     // copy values
-    auto outerLoop = rewriter.create<scf::ForOp>(loc, c0, nrow, c1);
+    scf::ForOp outerLoop = rewriter.create<scf::ForOp>(loc, c0, nrow, c1);
     Value rowIdx = outerLoop.getInductionVar();
 
     rewriter.setInsertionPointToStart(outerLoop.getBody());
@@ -135,7 +135,7 @@ public:
     Value j_end_64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, row_plus1);
     Value j_end = rewriter.create<mlir::IndexCastOp>(loc, j_end_64, indexType);
 
-    auto innerLoop = rewriter.create<scf::ForOp>(loc, j_start, j_end, c1);
+    scf::ForOp innerLoop = rewriter.create<scf::ForOp>(loc, j_start, j_end, c1);
     Value jj = innerLoop.getInductionVar();
 
     rewriter.setInsertionPointToStart(innerLoop.getBody());
@@ -158,7 +158,7 @@ public:
     Value last_last = rewriter.create<memref::LoadOp>(loc, outputPtrs, ncol);
     rewriter.create<memref::StoreOp>(loc, c0_64, outputPtrs, ncol);
 
-    auto finalLoop = rewriter.create<scf::ForOp>(loc, c0, ncol, c1);
+    scf::ForOp finalLoop = rewriter.create<scf::ForOp>(loc, c0, ncol, c1);
     Value iCol = finalLoop.getInductionVar();
 
     rewriter.setInsertionPointToStart(finalLoop.getBody());
