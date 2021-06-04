@@ -297,8 +297,59 @@ public:
 class LowerMatrixApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyOp> {
 public:
   using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const {    
-    return failure();
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    ValueTypeRange<OperandRange> operandTypes = op->getOperandTypes();
+    Type valueType = operandTypes.front().dyn_cast<TensorType>().getElementType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type indexType = rewriter.getIndexType();
+
+    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
+    Type memref1DValueType = MemRefType::get({-1}, valueType);
+
+    Value inputTensor = op.input();
+    Value thunk = op.thunk();
+    StringRef apply_operator = op.apply_operator();
+
+    // Initial constants
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+
+    // Get sparse tensor info
+    Value output = callDupTensor(rewriter, module, loc, inputTensor).getResult(0);
+    Value inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, inputTensor, c1);
+    Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, inputTensor);
+    Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
+
+    Value nrows = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
+    Value nnz64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, nrows);
+    Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz64, indexType);
+
+    // Loop over values
+    scf::ParallelOp valueLoop = rewriter.create<scf::ParallelOp>(loc, c0, nnz, c1);
+    ValueRange valueLoopIdx = valueLoop.getInductionVars();
+
+    rewriter.setInsertionPointToStart(valueLoop.getBody());
+    Value val = rewriter.create<memref::LoadOp>(loc, inputValues, valueLoopIdx);
+
+    Value result;
+    if (apply_operator == "min")
+    {
+      Value cmp = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OLT, val, thunk);
+      result = rewriter.create<mlir::SelectOp>(loc, cmp, val, thunk);
+    };
+
+    rewriter.create<memref::StoreOp>(loc, result, outputValues, valueLoopIdx);
+
+    // end value loop
+    rewriter.setInsertionPointAfter(valueLoop);
+
+    // Add return op
+    rewriter.replaceOp(op, output);
+
+    return success();
   };
 };
 
@@ -345,7 +396,8 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
     LowerMatrixReduceToScalarRewrite,
     LowerMatrixMultiplyRewrite,
-    LowerTransposeRewrite
+    LowerTransposeRewrite,
+    LowerMatrixApplyRewrite
     >(patterns.getContext());
 }
 
