@@ -10,6 +10,10 @@
 include "GraphBLASDialect.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
+class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Dialect, mnemonic, traits> {
+    let verifier = [{ return ::verify(*this); }];
+}
+
 def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
     let summary = "transpose operation";
     let description = [{
@@ -31,9 +35,6 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
-
-    // TODO add custom verifier sanity checking the input and output types are sane
-    // let verifier = 
 }
 
 def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, SameOperandsAndResultType]> {
@@ -55,9 +56,6 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, Same
     let assemblyFormat = [{
            $input attr-dict `:` type($input)
     }];
-
-    // TODO add custom verifier sanity checking the selector attribute is sane
-    // let verifier = 
 }
 
 def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [NoSideEffect]> {
@@ -78,9 +76,6 @@ def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
-
-    // TODO add custom verifier sanity checking the type of $output is sane ; sanity check the aggregator
-    // let verifier = 
 }
 
 def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
@@ -105,9 +100,6 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
     let assemblyFormat = [{
            $input `,` $thunk attr-dict `:` `(` type($input) `,` type($thunk) `)` `to` type($output)
     }];
-
-    // TODO add custom verifier sanity checking the types of $output and $thunk are sane ; sanity check the apply operator
-    // let verifier = 
 }
 
 def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]> {
@@ -131,9 +123,6 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
     let assemblyFormat = [{
            $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output)
     }];
-
-    // TODO add custom verifier sanity checking the types of the inputs and outputs and mask are sane ; sanity check the semiring
-    // let verifier = 
 }
 
 #endif // GRAPHBLAS_OPS

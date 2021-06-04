@@ -10,7 +10,7 @@ using namespace mlir;
 using namespace mlir::sparse_tensor;
 
 // make CSR tensor type
-RankedTensorType getCSRTensorType(MLIRContext *context, Type valueType)
+RankedTensorType getCSRTensorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
 {
     SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 2> dlt;
     dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense);
@@ -20,7 +20,7 @@ RankedTensorType getCSRTensorType(MLIRContext *context, Type valueType)
     AffineMap map = AffineMap::getMultiDimIdentityMap(2, context);
 
     RankedTensorType csrTensor = RankedTensorType::get(
-        {-1, -1}, /* 2D, unknown size */
+        shape,
         valueType,
         sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
 

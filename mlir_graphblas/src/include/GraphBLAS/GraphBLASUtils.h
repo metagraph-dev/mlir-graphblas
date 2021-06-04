@@ -5,9 +5,10 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "llvm/ADT/APInt.h"
 
 
-mlir::RankedTensorType getCSRTensorType(mlir::MLIRContext *context, mlir::Type valueType);
+mlir::RankedTensorType getCSRTensorType(mlir::MLIRContext *context, llvm::ArrayRef<int64_t> shape, mlir::Type valueType);
 mlir::CallOp callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
 mlir::CallOp callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
 
