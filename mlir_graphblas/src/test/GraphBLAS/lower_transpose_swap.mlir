@@ -85,3 +85,5 @@ func @transpose_swap(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64,
     %answer = graphblas.transpose %sparse_tensor { swap_sizes = true } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
     return %answer : tensor<?x?xf64, #CSR64>
 }
+
+// TODO: Check all type combinations
