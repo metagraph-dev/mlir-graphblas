@@ -35,9 +35,6 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
-
-    // TODO add custom verifier sanity checking the input and output types are sane
-    // let verifier = 
 }
 
 def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, SameOperandsAndResultType]> {
@@ -59,9 +56,6 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, Same
     let assemblyFormat = [{
            $input attr-dict `:` type($input)
     }];
-
-    // TODO add custom verifier sanity checking the selector attribute is sane
-    // let verifier = 
 }
 
 def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [NoSideEffect]> {
@@ -106,9 +100,6 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
     let assemblyFormat = [{
            $input `,` $thunk attr-dict `:` `(` type($input) `,` type($thunk) `)` `to` type($output)
     }];
-
-    // TODO add custom verifier sanity checking the types of $output and $thunk are sane ; sanity check the apply operator
-    // let verifier = 
 }
 
 def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]> {

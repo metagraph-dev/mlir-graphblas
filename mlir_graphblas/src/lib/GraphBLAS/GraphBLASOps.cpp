@@ -53,6 +53,41 @@ static llvm::Optional<std::string> checkCSROrCSCTensor(Type inputType, int input
 //===--------------------------------------------------------------------===//
 
 static LogicalResult verify(MatrixApplyOp op) {
+  Type inputType = op.input().getType();
+  Type thunkType = op.thunk().getType();
+  Type resultType = op.getResult().getType();
+
+  llvm::Optional<std::string> inputCompressionErrorMessage = checkCSROrCSCTensor(inputType, 0);
+  if (inputCompressionErrorMessage)
+    return op.emitError(inputCompressionErrorMessage.getValue());
+  
+  llvm::Optional<std::string> resultCompressionErrorMessage = checkCSROrCSCTensor(resultType, -1);
+  if (resultCompressionErrorMessage)
+    return op.emitError(resultCompressionErrorMessage.getValue());
+
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
+  
+  if (inputTensorType.getElementType() != thunkType)
+    return op.emitError("Element type of input tensor does not match type of thunk.");
+
+  if (resultTensorType.getElementType() != thunkType)
+    return op.emitError("Element type of result tensor does not match type of thunk.");
+  
+  ArrayRef<int64_t> inputShape = inputTensorType.getShape();
+  ArrayRef<int64_t> resultShape = resultTensorType.getShape();
+  
+  // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with shapes using "?"
+  if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
+    return op.emitError("Input shape does not match output shape.");
+  
+  static const std::vector<std::string> supportedOperators{"min"};
+  std::string applyOperator = op.apply_operator().str();
+  bool operatorSupported = std::find(supportedOperators.begin(), supportedOperators.end(), applyOperator)
+    != supportedOperators.end();
+  if (!operatorSupported)
+    return op.emitError("\""+applyOperator+"\" is not a supported semiring.");
+  
   return success();
 }
 
@@ -126,11 +161,88 @@ static LogicalResult verify(MatrixReduceToScalarOp op) {
   return success();
 }
 
-static LogicalResult verify(MatrixSelectOp op) {  
+static LogicalResult verify(MatrixSelectOp op) {
+  // input and result types are already guaranteed to be the same
+  Type resultType = op.getResult().getType();
+  
+  llvm::Optional<std::string> resultCompressionErrorMessage = checkCSROrCSCTensor(resultType, -1);
+  if (resultCompressionErrorMessage)
+    return op.emitError(resultCompressionErrorMessage.getValue());
+    
+  static const std::vector<std::string> supportedSelectors{"triu", "tril", "gt0"};
+  std::string selector = op.selector().str();
+  bool selectorSupported = std::find(supportedSelectors.begin(), supportedSelectors.end(), selector)
+    != supportedSelectors.end();
+  if (!selectorSupported)
+    return op.emitError("\""+selector+"\" is not a supported selector.");
+  
   return success();
 }
 
 static LogicalResult verify(TransposeOp op) {
+  Type inputType = op.input().getType();
+  Type resultType = op.getResult().getType();
+
+  llvm::Optional<std::string> inputCompressionErrorMessage = checkCSROrCSCTensor(inputType, 0);
+  if (inputCompressionErrorMessage)
+    return op.emitError(inputCompressionErrorMessage.getValue());
+
+  llvm::Optional<std::string> resultCompressionErrorMessage = checkCSROrCSCTensor(resultType, -1);
+  if (resultCompressionErrorMessage)
+    return op.emitError(resultCompressionErrorMessage.getValue());
+
+  // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with shapes using "?"
+  
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
+
+  if (inputTensorType.getElementType() != resultTensorType.getElementType())
+    return op.emitError("Input and output tensors have different element types.");
+    
+  ArrayRef<int64_t> inputShape = inputTensorType.getShape();
+  ArrayRef<int64_t> resultShape = resultTensorType.getShape();
+
+  mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
+    mlir::sparse_tensor::getSparseTensorEncoding(inputType);
+
+  mlir::sparse_tensor::SparseTensorEncodingAttr resultSparseEncoding =
+    mlir::sparse_tensor::getSparseTensorEncoding(resultType);
+  
+  bool swapSizes = op.swap_sizes();
+  if (swapSizes) {
+    if (inputShape[0] != resultShape[1] || inputShape[1] != resultShape[0])
+      return op.emitError("Input and output shapes are expected to be swapped.");
+    if (inputSparseEncoding != resultSparseEncoding)
+      return op.emitError("Input and output tensors are expected to have identical sparse encodings.");
+  } else {
+    if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
+      return op.emitError("Input and output shapes are expected to be the same.");
+
+    // TODO Check that the dim ordering is swapped.
+    AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
+    AffineMap resultDimOrdering = resultSparseEncoding.getDimOrdering();
+    unsigned inputDimOrdering0 = inputDimOrdering.getDimPosition(0); 
+    unsigned inputDimOrdering1 = inputDimOrdering.getDimPosition(1);
+    unsigned resultDimOrdering0 = resultDimOrdering.getDimPosition(0); 
+    unsigned resultDimOrdering1 = resultDimOrdering.getDimPosition(1);
+    if (inputDimOrdering0 != resultDimOrdering1 || inputDimOrdering1 != resultDimOrdering0)
+      return op.emitError("Sparse encoding dimension orderings of input and result tensors expected to be swapped.");
+    
+    // TODO should we be more lenient like the sparse tensor dialect is via isMatchingWidth?
+    // see llvm-project/mlir/lib/Dialect/SparseTensor/IR/SparseTensorDialect.cpp
+    unsigned inputPointerBitWidth = inputSparseEncoding.getPointerBitWidth();
+    unsigned resultPointerBitWidth = resultSparseEncoding.getPointerBitWidth();
+    if (inputPointerBitWidth != resultPointerBitWidth)
+      return op.emitError("Sparse encoding pointer bit widths of input and result tensors do not match.");
+    
+    unsigned inputIndexBitWidth = inputSparseEncoding.getIndexBitWidth();
+    unsigned resultIndexBitWidth = resultSparseEncoding.getIndexBitWidth();
+    if (inputIndexBitWidth != resultIndexBitWidth)
+      return op.emitError("Sparse encoding index bit widths of input and result tensors do not match.");
+    
+    // dimLevelType values guaranteed to be the same since we already checked earlier
+  }
+
   return success();
 }
 

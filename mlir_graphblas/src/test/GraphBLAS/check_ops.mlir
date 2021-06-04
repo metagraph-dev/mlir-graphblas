@@ -24,12 +24,12 @@ module {
         return %answer : tensor<2x3xf64, #CSC64>
     }
 
-    // CHECK: func @transpose_wrapper(%[[ARG0:.*]]: tensor<2x3xf64, [[CSR64:#sparse_tensor.encoding<{.*->.*}>]]>) -> tensor<3x2xf64, [[CSC64:#sparse_tensor.encoding<{.*->.*}>]]> {
-    func @transpose_wrapper(%sparse_tensor: tensor<2x3xf64, #CSR64>) -> tensor<3x2xf64, #CSC64> {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.transpose %[[ARG0]] {swap_sizes = true} : tensor<2x3xf64, [[CSR64]]> to tensor<3x2xf64, [[CSC64]]>
-        %answer = graphblas.transpose %sparse_tensor { swap_sizes = true } : tensor<2x3xf64, #CSR64> to tensor<3x2xf64, #CSC64>
-        // CHECK-NEXT: return %[[ANSWER]] : tensor<3x2xf64, [[CSC64]]>
-        return %answer : tensor<3x2xf64, #CSC64>
+    // CHECK: func @transpose_wrapper(%[[ARG0:.*]]: tensor<2x3xf64, [[CSR64:#sparse_tensor.encoding<{.*->.*}>]]>) -> tensor<3x2xf64, [[CSR64]]> {
+    func @transpose_wrapper(%sparse_tensor: tensor<2x3xf64, #CSR64>) -> tensor<3x2xf64, #CSR64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.transpose %[[ARG0]] {swap_sizes = true} : tensor<2x3xf64, [[CSR64]]> to tensor<3x2xf64, [[CSR64]]>
+        %answer = graphblas.transpose %sparse_tensor { swap_sizes = true } : tensor<2x3xf64, #CSR64> to tensor<3x2xf64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : tensor<3x2xf64, [[CSR64]]>
+        return %answer : tensor<3x2xf64, #CSR64>
     }
 
 }
