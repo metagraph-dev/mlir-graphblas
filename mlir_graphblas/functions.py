@@ -549,7 +549,6 @@ class MatrixMultiply(BaseFunction):
         %c1 = constant 1 : index
         %c0_64 = constant 0 : i64
         %c1_64 = constant 1 : i64
-        %c10 = constant 10 : index
         %cf0 = constant 0.0 : f64
         %cf1 = constant 1.0 : f64
         %ctrue = constant 1 : i1
@@ -565,145 +564,219 @@ class MatrixMultiply(BaseFunction):
         %Bx = sparse_tensor.values %B : tensor<?x?xf64, #CSR64> to memref<?xf64>
 
         %nrow = memref.dim %A, %c0 : tensor<?x?xf64, #CSR64>
-        %ncol = memref.dim %B, %c1 : tensor<?x?xf64, #CSR64>
+        %ncol = memref.dim %B, %c1 : tensor<?x?xf64, #CSR64> // TODO: this should be CSC64
+        %nk = memref.dim %A, %c1 : tensor<?x?xf64, #CSR64>
         %nrow_plus_one = addi %nrow, %c1 : index
-        
+
         {% if structural_mask %}
         %Mp = sparse_tensor.pointers %mask, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
         %Mj = sparse_tensor.indices %mask, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
-        %nnz_init_64 = memref.load %Mp[%nrow] : memref<?xi64>
-        %nnz_init = index_cast %nnz_init_64 : i64 to index
-        {% else %}
-        %nnz_64 = memref.load %Ap[%nrow] : memref<?xi64>
-        %nnz = index_cast %nnz_64 : i64 to index
-        %nnz_init = muli %nnz, %c10 : index
         {% endif %}
 
         %output = call @empty_like(%A) : (tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64>
         call @resize_dim(%output, %c0, %nrow) : (tensor<?x?xf64, #CSR64>, index, index) -> ()
         call @resize_dim(%output, %c1, %ncol) : (tensor<?x?xf64, #CSR64>, index, index) -> ()
         call @resize_pointers(%output, %c1, %nrow_plus_one) : (tensor<?x?xf64, #CSR64>, index, index) -> ()
-        call @resize_index(%output, %c1, %nnz_init) : (tensor<?x?xf64, #CSR64>, index, index) -> ()
-        call @resize_values(%output, %nnz_init) : (tensor<?x?xf64, #CSR64>, index) -> ()
 
         %Cp = sparse_tensor.pointers %output, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
+
+        // 1st pass
+        //   Using nested parallel loops for each row and column,
+        //   compute the number of nonzero entries per row.
+        //   Store results in Cp
+        scf.parallel (%row) = (%c0) to (%nrow) step (%c1) {
+          %colStart_64 = memref.load %Ap[%row] : memref<?xi64>
+          %row_plus1 = addi %row, %c1 : index
+          %colEnd_64 = memref.load %Ap[%row_plus1] : memref<?xi64>
+          %cmp_colSame = cmpi eq, %colStart_64, %colEnd_64 : i64
+          %row_total = scf.if %cmp_colSame -> i64 {
+            scf.yield %c0_64: i64
+          } else {
+            // Construct a dense array indicating valid row positions
+            %colStart = index_cast %colStart_64 : i64 to index
+            %colEnd = index_cast %colEnd_64 : i64 to index
+            %kvec_i1 = memref.alloc(%nk) : memref<?xi1>
+            linalg.fill(%kvec_i1, %cfalse) : memref<?xi1>, i1
+            scf.parallel (%jj) = (%colStart) to (%colEnd) step (%c1) {
+              %col_64 = memref.load %Aj[%jj] : memref<?xi64>
+              %col = index_cast %col_64 : i64 to index
+              memref.store %ctrue, %kvec_i1[%col] : memref<?xi1>
+            }
+
+            // Loop thru all columns; count number of resulting nonzeros in the row
+            {% if structural_mask %}
+            %mcol_start_64 = memref.load %Mp[%row] : memref<?xi64>
+            %mcol_end_64 = memref.load %Mp[%row_plus1] : memref<?xi64>
+            %mcol_start = index_cast %mcol_start_64: i64 to index
+            %mcol_end = index_cast %mcol_end_64: i64 to index
+
+            %total = scf.parallel (%mm) = (%mcol_start) to (%mcol_end) step (%c1) init (%c0_64) -> i64 {
+              %col_64 = memref.load %Mj[%mm] : memref<?xi64>
+              %col = index_cast %col_64 : i64 to index
+              // NOTE: for valued masks, we would need to check the value and yield if false
+            {% else %}
+            %total = scf.parallel (%col) = (%c0) to (%ncol) step (%c1) init (%c0_64) -> i64 {
+            {% endif %}
+
+              %col_plus_one = addi %col, %c1 : index
+              %rowStart_64 = memref.load %Bp[%col] : memref<?xi64>
+              %rowEnd_64 = memref.load %Bp[%col_plus_one] : memref<?xi64>
+              %cmp_rowSame = cmpi eq, %rowStart_64, %rowEnd_64 : i64
+
+              // Find overlap in column indices with %kvec
+              %overlap = scf.if %cmp_rowSame -> i64 {
+                scf.yield %c0_64 : i64
+              } else {
+                // Walk thru the indices; on a match yield 1, else yield 0
+                %res = scf.while (%ii_64 = %rowStart_64) : (i64) -> i64 {
+                  // Check if ii >= rowEnd
+                  %cmp_end_reached = cmpi uge, %ii_64, %rowEnd_64 : i64
+                  %continue_search, %val_to_send = scf.if %cmp_end_reached -> (i1, i64) {
+                    scf.yield %cfalse, %c0_64 : i1, i64
+                  } else {
+                    // Check if row has a match in kvec
+                    %ii = index_cast %ii_64 : i64 to index
+                    %kk_64 = memref.load %Bi[%ii] : memref<?xi64>
+                    %kk = index_cast %kk_64 : i64 to index
+                    %cmp_pair = memref.load %kvec_i1[%kk] : memref<?xi1>
+                    %cmp_result0 = select %cmp_pair, %cfalse, %ctrue : i1
+                    %cmp_result1 = select %cmp_pair, %c1_64, %ii_64 : i64
+                    scf.yield %cmp_result0, %cmp_result1 : i1, i64
+                  }
+                  scf.condition(%continue_search) %val_to_send : i64
+
+                } do {
+                ^bb0(%ii_prev: i64):
+                  %ii_next = addi %ii_prev, %c1_64 : i64
+                  scf.yield %ii_next : i64
+                }
+                scf.yield %res : i64
+              }
+
+              scf.reduce(%overlap) : i64 {
+                ^bb0(%lhs : i64, %rhs: i64):
+                  %z = addi %lhs, %rhs : i64
+                  scf.reduce.return %z : i64
+              }
+            }
+            scf.yield %total : i64
+          }
+          memref.store %row_total, %Cp[%row] : memref<?xi64>
+        }
+
+        // 2nd pass
+        //   Compute the cumsum of values in Cp to build the final Cp
+        //   Then resize output indices and values
+        scf.for %cs_i = %c0 to %nrow step %c1 {
+          %cs_temp = memref.load %Cp[%cs_i] : memref<?xi64>
+          %cumsum = memref.load %Cp[%nrow] : memref<?xi64>
+          memref.store %cumsum, %Cp[%cs_i] : memref<?xi64>
+          %cumsum2 = addi %cumsum, %cs_temp : i64
+          memref.store %cumsum2, %Cp[%nrow] : memref<?xi64>
+        }
+
+        %nnz_64 = memref.load %Cp[%nrow] : memref<?xi64>
+        %nnz = index_cast %nnz_64 : i64 to index
+        call @resize_index(%output, %c1, %nnz) : (tensor<?x?xf64, #CSR64>, index, index) -> ()
+        call @resize_values(%output, %nnz) : (tensor<?x?xf64, #CSR64>, index) -> ()
         %Cj = sparse_tensor.indices %output, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
         %Cx = sparse_tensor.values %output : tensor<?x?xf64, #CSR64> to memref<?xf64>
-        %accumulator = memref.alloc() : memref<f64>
-        %not_empty = memref.alloc() : memref<i1>
-        %cur_size = memref.alloc() : memref<index>
-        memref.store %nnz_init, %cur_size[]: memref<index>
 
-        // Method for constructing C in CSR format:
-        // 1. Cp[0] = 0
-        // 2. At the start of each row, copy Cp[row] into Cp[row+1]
-        // 3. When writing row X, col Y, val V
-        //    a. Cj[Cp[row+1]] = Y
-        //    b. Cx[Cp[row+1]] = V
-        //    c. Cp[row+1] += 1
+        // 3rd pass
+        //   In parallel over the rows,
+        //   compute the nonzero columns and associated values.
+        //   Store in Cj and Cx
 
-        // Cp[0] = 0
-        memref.store %c0_64, %Cp[%c0] : memref<?xi64>
-        scf.for %row = %c0 to %nrow step %c1 {
-          // Copy Cp[row] into Cp[row+1]
+        scf.parallel (%row) = (%c0) to (%nrow) step (%c1) {
           %row_plus1 = addi %row, %c1 : index
-          %cp_curr_count = memref.load %Cp[%row] : memref<?xi64>
-          memref.store %cp_curr_count, %Cp[%row_plus1] : memref<?xi64>
+          %cpStart_64 = memref.load %Cp[%row] : memref<?xi64>
+          %cpEnd_64 = memref.load %Cp[%row_plus1] : memref<?xi64>
+          %cmp_cpDifferent = cmpi ne, %cpStart_64, %cpEnd_64 : i64
+          scf.if %cmp_cpDifferent {
+            %base_index_64 = memref.load %Cp[%row] : memref<?xi64>
+            %base_index = index_cast %base_index_64 : i64 to index
 
-          {% if structural_mask %}
-          %mcol_start_64 = memref.load %Mp[%row] : memref<?xi64>
-          %mcol_end_64 = memref.load %Mp[%row_plus1] : memref<?xi64>
-          %mcol_start = index_cast %mcol_start_64: i64 to index
-          %mcol_end = index_cast %mcol_end_64: i64 to index
+            // Construct a dense array of row values
+            %colStart_64 = memref.load %Ap[%row] : memref<?xi64>
+            %colEnd_64 = memref.load %Ap[%row_plus1] : memref<?xi64>
+            %colStart = index_cast %colStart_64 : i64 to index
+            %colEnd = index_cast %colEnd_64 : i64 to index
+            %kvec = memref.alloc(%nk) : memref<?xf64>
+            %kvec_i1 = memref.alloc(%nk) : memref<?xi1>
+            linalg.fill(%kvec_i1, %cfalse) : memref<?xi1>, i1
+            scf.parallel (%jj) = (%colStart) to (%colEnd) step (%c1) {
+              %col_64 = memref.load %Aj[%jj] : memref<?xi64>
+              %col = index_cast %col_64 : i64 to index
+              memref.store %ctrue, %kvec_i1[%col] : memref<?xi1>
+              %val = memref.load %Ax[%jj] : memref<?xf64>
+              memref.store %val, %kvec[%col] : memref<?xf64>
+            }
 
-          scf.for %mm = %mcol_start to %mcol_end step %c1 {
-            %col_64 = memref.load %Mj[%mm] : memref<?xi64>
-            %col = index_cast %col_64 : i64 to index
-            // NOTE: for valued masks, we would need to check the value and yield if false
-          {% else %}
-          scf.for %col = %c0 to %ncol step %c1 {
-            %col_64 = index_cast %col : index to i64
-          {% endif %}
+            {% if structural_mask %}
+            %mcol_start_64 = memref.load %Mp[%row] : memref<?xi64>
+            %mcol_end_64 = memref.load %Mp[%row_plus1] : memref<?xi64>
+            %mcol_start = index_cast %mcol_start_64: i64 to index
+            %mcol_end = index_cast %mcol_end_64: i64 to index
 
-            // Iterate over row in A as ka, col in B as kb
-            // Find matches, ignore otherwise
-            %col_plus1 = addi %col, %c1 : index
-            %jstart_64 = memref.load %Ap[%row] : memref<?xi64>
-            %jend_64 = memref.load %Ap[%row_plus1] : memref<?xi64>
-            %istart_64 = memref.load %Bp[%col] : memref<?xi64>
-            %iend_64 = memref.load %Bp[%col_plus1] : memref<?xi64>
-            %jstart = index_cast %jstart_64 : i64 to index
-            %jend = index_cast %jend_64 : i64 to index
-            %istart = index_cast %istart_64 : i64 to index
-            %iend = index_cast %iend_64 : i64 to index
+            scf.for %mm = %mcol_start to %mcol_end step %c1 iter_args(%offset = %c0) -> index {
+              %col_64 = memref.load %Mj[%mm] : memref<?xi64>
+              %col = index_cast %col_64 : i64 to index
+              // NOTE: for valued masks, we would need to check the value and yield if false
+            {% else %}
+            scf.for %col = %c0 to %ncol step %c1 iter_args(%offset = %c0) -> index {
+              %col_64 = index_cast %col : index to i64
+            {% endif %}
 
-            memref.store %cf0, %accumulator[] : memref<f64>
-            memref.store %cfalse, %not_empty[] : memref<i1>
+              %col_plus1 = addi %col, %c1 : index
+              %istart_64 = memref.load %Bp[%col] : memref<?xi64>
+              %iend_64 = memref.load %Bp[%col_plus1] : memref<?xi64>
+              %istart = index_cast %istart_64 : i64 to index
+              %iend = index_cast %iend_64 : i64 to index
 
-            scf.while (%jj = %jstart, %ii = %istart) : (index, index) -> (index, index) {
-              %jj_not_done = cmpi ult, %jj, %jend : index
-              %ii_not_done = cmpi ult, %ii, %iend : index
-              %cond = and %jj_not_done, %ii_not_done : i1
-              scf.condition(%cond) %jj, %ii : index, index
-            } do {
-            ^bb0(%jj: index, %ii: index):  // no predecessors
-              %kj = memref.load %Aj[%jj] : memref<?xi64>
-              %ki = memref.load %Bi[%ii] : memref<?xi64>
-              %ks_match = cmpi eq, %kj, %ki : i64
-              scf.if %ks_match {
-                %existing = memref.load %accumulator[] : memref<f64>
+              %total, %not_empty = scf.for %ii = %istart to %iend step %c1 iter_args(%curr = %cf0, %alive = %cfalse) -> (f64, i1) {
+                // Figure out if there is a match
+                %kk_64 = memref.load %Bi[%ii] : memref<?xi64>
+                %kk = index_cast %kk_64 : i64 to index
+                %cmp_pair = memref.load %kvec_i1[%kk] : memref<?xi1>
+                %new_curr, %new_alive = scf.if %cmp_pair -> (f64, i1) {
 
                 {% if semiring == "plus_pair" -%}
-                  %new = addf %existing, %cf1 : f64
+                  %new = addf %curr, %cf1 : f64
                 {% else %}
-                  %a_val = memref.load %Ax[%jj]: memref <?xf64>
+                  %a_val = memref.load %kvec[%kk]: memref <?xf64>
                   %b_val = memref.load %Bx[%ii]: memref <?xf64>
                   {% if semiring == "plus_times" -%}
                     %val = mulf %a_val, %b_val : f64
-                    %new = addf %existing, %val : f64
+                    %new = addf %curr, %val : f64
                   {%- elif semiring == "plus_plus" -%}
                     %val = addf %a_val, %b_val : f64
-                    %new = addf %existing, %val : f64
+                    %new = addf %curr, %val : f64
                   {% endif %}
                 {%- endif %}
 
-                memref.store %new, %accumulator[] : memref<f64>
-                memref.store %ctrue, %not_empty[] : memref<i1>
-              } else {
-              }
-              // Increment lowest k index (or both if k indices match)
-              %jj_plus1 = addi %jj, %c1 : index
-              %ii_plus1 = addi %ii, %c1 : index
-              %16 = cmpi ult, %ki, %kj : i64
-              %k_lowest = select %16, %ki, %kj : i64
-              %21 = cmpi eq, %kj, %k_lowest : i64
-              %jj_choice = select %21, %jj_plus1, %jj : index
-              %24 = cmpi eq, %ki, %k_lowest : i64
-              %ii_choice = select %24, %ii_plus1, %ii : index
-              scf.yield %jj_choice, %ii_choice : index, index
-            }
+                  scf.yield %new, %ctrue : f64, i1
+                } else {
+                  scf.yield %curr, %alive : f64, i1
+                }
 
-            %is_not_empty = memref.load %not_empty[] : memref<i1>
-            scf.if %is_not_empty {
-              // Store accumulated value
-              %cj_pos_64 = memref.load %Cp[%row_plus1] : memref<?xi64>
-              %cj_pos = index_cast %cj_pos_64 : i64 to index
-              memref.store %col_64, %Cj[%cj_pos] : memref<?xi64>
-              %accumulated = memref.load %accumulator[] : memref<f64>
-              memref.store %accumulated, %Cx[%cj_pos] : memref<?xf64>
-              // Increment Cp[row+1] += 1
-              %cj_pos_plus1 = addi %cj_pos_64, %c1_64 : i64
-              memref.store %cj_pos_plus1, %Cp[%row_plus1] : memref<?xi64>
-            } else {
+                scf.yield %new_curr, %new_alive : f64, i1
+              }
+
+              %new_offset = scf.if %not_empty -> index {
+                // Store total in Cx
+                %cj_pos = addi %base_index, %offset : index
+                memref.store %col_64, %Cj[%cj_pos] : memref<?xi64>
+                memref.store %total, %Cx[%cj_pos] : memref<?xf64>
+                // Increment offset
+                %offset_plus_one = addi %offset, %c1 : index
+                scf.yield %offset_plus_one : index
+              } else {
+                scf.yield %offset : index
+              }
+              scf.yield %new_offset : index
             }
           }
         }
-
-        // Trim output
-        %nnz_final_64 = memref.load %Cp[%nrow] : memref<?xi64>
-        %nnz_final = index_cast %nnz_final_64 : i64 to index
-        call @resize_index(%output, %c1, %nnz_final) : (tensor<?x?xf64, #CSR64>, index, index) -> ()
-        call @resize_values(%output, %nnz_final) : (tensor<?x?xf64, #CSR64>, index) -> ()
 
         // pymlir-skip: end
 

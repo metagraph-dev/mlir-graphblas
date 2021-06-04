@@ -347,10 +347,14 @@ func @func_singleton_tuple_return_value_{mlir_type}() -> ({mlir_type}) {{
     assert engine.add(mlir_text, STANDARD_PASSES) == [
         f"func_singleton_tuple_return_value_{mlir_type}"
     ]
-    results = engine[f"func_singleton_tuple_return_value_{mlir_type}"]()
-    assert isinstance(results, tuple)
-    assert len(results) == 1
-    assert np.isclose(results[0], 12.34)
+    result = engine[f"func_singleton_tuple_return_value_{mlir_type}"]()
+    # Singleton tuple is removed during mlir-opt parsing normalization step
+    expected_type = {
+        "f32": np.float32,
+        "f64": float,
+    }[mlir_type]
+    assert isinstance(result, expected_type)
+    assert np.isclose(result, 12.34)
 
     return
 
