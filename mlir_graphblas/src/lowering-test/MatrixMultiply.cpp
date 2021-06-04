@@ -269,7 +269,7 @@ void addMatrixMultiplyFunc(mlir::ModuleOp mod, const std::string &semiring, bool
     scf::IfOp ifBlock_cmpDiff = builder.create<scf::IfOp>(loc, cmp_cpDifferent);
     builder.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
 
-    Value baseIndex64 = builder.create<memref::LoadOp>(loc, Ap, row);
+    Value baseIndex64 = builder.create<memref::LoadOp>(loc, Cp, row);
     Value baseIndex = builder.create<IndexCastOp>(loc, baseIndex64, indexType);
 
     // Construct a dense array of row values

@@ -136,9 +136,9 @@ def return_tensor_to_ctypes(
         # After lowering, this will become !llvm.ptr<i8>
         CtypesType = ctypes.POINTER(ctypes.c_int8)
 
-        if tensor_type.encoding.value.endswith("32"):
-            pointer_type = "uint32"
-            index_type = "uint32"
+        if isinstance(tensor_type.encoding, mlir.astnodes.SparseTensorEncoding):
+            pointer_type = f"uint{tensor_type.encoding.pointer_bit_width}"
+            index_type = f"uint{tensor_type.encoding.index_bit_width}"
         else:
             pointer_type = "uint64"
             index_type = "uint64"
@@ -255,6 +255,21 @@ LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE: Dict[str, "_ctypes._CData"] = {
 def input_pretty_dialect_type_to_ctypes(
     pretty_type: mlir.astnodes.PrettyDialectType,
 ) -> Tuple[list, Callable]:
+    # Special handling for !llvm.ptr<ptr<i8>>
+    if (
+        pretty_type.dialect == "llvm"
+        and pretty_type.type == "ptr"
+        and pretty_type.body[0].type == "ptr"
+        and pretty_type.body[0].body[0] == "i8"
+    ):
+        # Convert to an LLVMPtr<LLVMPtr<i8>>
+        LLVMPtr = _DIALECT_TYPES["llvm"]["LLVMPtr"]
+        inner_obj = object.__new__(LLVMPtr)
+        inner_obj.type = mlir.astnodes.IntegerType(width=8)
+        outer_obj = object.__new__(LLVMPtr)
+        outer_obj.type = inner_obj
+        return input_llvm_pointer_to_ctypes(outer_obj)
+
     # Pretty dialect types must be special-cased since they're arbitrarily structured.
     raise NotImplementedError(f"Converting {pretty_type} to ctypes not yet supported.")
 
@@ -500,6 +515,24 @@ def parse_mlir_string(mlir_text: Union[str, bytes]) -> mlir.astnodes.Module:
     mlir_text = _preprocess_mlir(mlir_text)
     mlir_ast = mlir.parse_string(mlir_text)
     resolve_type_aliases(mlir_ast)
+    return mlir_ast
+
+
+def parse_mlir_functions(
+    mlir_text: Union[str, bytes], cli: MlirOptCli
+) -> mlir.astnodes.Module:
+    if isinstance(mlir_text, str):
+        mlir_text = mlir_text.encode()
+    # Run text thru mlir-opt to apply aliases and flatten function signatures
+    mlir_text = cli.apply_passes(mlir_text, [])
+    # Remove everything except function signatures
+    func_lines = [
+        line.strip() for line in mlir_text.splitlines() if line.lstrip()[:5] == "func "
+    ]
+    # Add in trailing "}" to make defined functions valid
+    func_lines = [line + "}" if line[-1] == "{" else line for line in func_lines]
+
+    mlir_ast = mlir.parse_string("\n".join(func_lines))
     return mlir_ast
 
 
@@ -791,7 +824,7 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
             return optional_debug_result
 
         function_names: List[str] = []
-        mlir_ast = parse_mlir_string(mlir_text)
+        mlir_ast = parse_mlir_functions(mlir_text, self._cli)
         mlir_functions: List[mlir.astnodes.Function] = [
             obj
             for obj in self._walk_module(mlir_ast)

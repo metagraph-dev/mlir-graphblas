@@ -18,7 +18,7 @@ mlir::RankedTensorType getCSRTensorType(mlir::MLIRContext *context, mlir::FloatT
     dlt.push_back(SparseTensorEncodingAttr::DimLevelType::Compressed);
     unsigned ptr = 64;
     unsigned ind = 64;
-    AffineMap map = {};
+    AffineMap map = AffineMap::getMultiDimIdentityMap(2, context);
 
     RankedTensorType csrTensor = RankedTensorType::get(
         {-1, -1}, /* 2D, unknown size */
