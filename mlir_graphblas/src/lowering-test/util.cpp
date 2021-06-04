@@ -30,7 +30,7 @@ mlir::RankedTensorType getCSRTensorType(mlir::MLIRContext *context, mlir::FloatT
 
 /// Returns function reference (first hit also inserts into module).
 // from: llvm/llvm-project/mlir/lib/Dialect/SparseTensor/Transforms/SparseTensorConversion.cpp
-static FlatSymbolRefAttr getFunc(mlir::ModuleOp &mod, mlir::Location &loc, StringRef name, Type result,
+static FlatSymbolRefAttr getFunc(mlir::ModuleOp &mod, mlir::Location &loc, StringRef name, TypeRange result,
                                  TypeRange operands)
 {
     MLIRContext *context = mod.getContext();
@@ -41,22 +41,6 @@ static FlatSymbolRefAttr getFunc(mlir::ModuleOp &mod, mlir::Location &loc, Strin
         moduleBuilder
             .create<FuncOp>(loc, name,
                             FunctionType::get(context, operands, result))
-            .setPrivate();
-    }
-    return SymbolRefAttr::get(context, name);
-}
-
-static FlatSymbolRefAttr getVoidFunc(mlir::ModuleOp &mod, mlir::Location &loc, StringRef name,
-                                     TypeRange operands)
-{
-    MLIRContext *context = mod.getContext();
-    auto func = mod.lookupSymbol<FuncOp>(name);
-    if (!func)
-    {
-        OpBuilder moduleBuilder(mod.getBodyRegion());
-        moduleBuilder
-            .create<FuncOp>(loc, name,
-                            FunctionType::get(context, operands, {}))
             .setPrivate();
     }
     return SymbolRefAttr::get(context, name);
@@ -86,7 +70,7 @@ mlir::CallOp callResizeDim(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::
     auto tensorType = tensor.getType();
 
     auto indexType = builder.getIndexType();
-    auto func = getVoidFunc(mod, loc, "resize_dim", {tensorType, indexType, indexType});
+    auto func = getFunc(mod, loc, "resize_dim", TypeRange(), {tensorType, indexType, indexType});
     auto result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, d, size}));
 
     return result;
@@ -98,7 +82,7 @@ mlir::CallOp callResizePointers(mlir::OpBuilder &builder, mlir::ModuleOp &mod, m
     auto tensorType = tensor.getType();
 
     auto indexType = builder.getIndexType();
-    auto func = getVoidFunc(mod, loc, "resize_pointers", {tensorType, indexType, indexType});
+    auto func = getFunc(mod, loc, "resize_pointers", TypeRange(), {tensorType, indexType, indexType});
     auto result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, d, size}));
 
     return result;
@@ -110,7 +94,7 @@ mlir::CallOp callResizeIndex(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir
     auto tensorType = tensor.getType();
 
     auto indexType = builder.getIndexType();
-    auto func = getVoidFunc(mod, loc, "resize_index", {tensorType, indexType, indexType});
+    auto func = getFunc(mod, loc, "resize_index", TypeRange(), {tensorType, indexType, indexType});
     auto result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, d, size}));
 
     return result;
@@ -122,7 +106,7 @@ mlir::CallOp callResizeValues(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mli
     auto tensorType = tensor.getType();
 
     auto indexType = builder.getIndexType();
-    auto func = getVoidFunc(mod, loc, "resize_values", {tensorType, indexType});
+    auto func = getFunc(mod, loc, "resize_values", TypeRange(), {tensorType, indexType});
     auto result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, size}));
 
     return result;
