@@ -33,7 +33,7 @@ void addMatrixSelectFunc(mlir::ModuleOp mod, const std::string &selector)
         needs_col = false;
         needs_val = true;
     } else {
-        assert("invalid selector");
+        assert(!"invalid selector");
     }
 
     // Types
@@ -116,9 +116,37 @@ void addMatrixSelectFunc(mlir::ModuleOp mod, const std::string &selector)
         keep = builder.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OGT, val, cf0);
     }
     else {
-        assert("invalid selector");
+        assert(!"invalid selector");
     }
 
+    scf::IfOp ifKeep = builder.create<scf::IfOp>(loc, keep, false /* no else region */);
+
+    builder.setInsertionPointToStart(ifKeep.thenBlock());
+
+    Value bj_pos_64 = builder.create<memref::LoadOp>(loc, Bp, row_plus1);
+    Value bj_pos = builder.create<mlir::IndexCastOp>(loc, bj_pos_64, indexType);
+
+    if (!needs_col) {
+        col_64 = builder.create<memref::LoadOp>(loc, Aj, jj);
+    }
+    builder.create<memref::StoreOp>(loc, col_64, Bj, bj_pos);
+
+    if (!needs_val) {
+        val = builder.create<memref::LoadOp>(loc, Ax, jj);
+    }
+    builder.create<memref::StoreOp>(loc, val, Bx, bj_pos);
+
+    Value bj_pos_plus1 = builder.create<mlir::AddIOp>(loc, bj_pos_64, c1_64);
+    builder.create<memref::StoreOp>(loc, bj_pos_plus1, Bp, row_plus1);
+
+    builder.setInsertionPointAfter(outerLoop);
+
+    Value nnz_64 = builder.create<memref::LoadOp>(loc, Bp, nrow);
+    Value nnz = builder.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
+
+    callResizeIndex(builder, mod, loc, output, c1, nnz);
+    callResizeValues(builder, mod, loc, output, nnz);
+
     // Add return op
-    builder.create<ReturnOp>(builder.getUnknownLoc());
+    builder.create<ReturnOp>(builder.getUnknownLoc(), output);
 }
