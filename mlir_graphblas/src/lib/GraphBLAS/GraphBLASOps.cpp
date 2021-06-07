@@ -23,7 +23,7 @@ enum CompressionType { CSR, CSC, EITHER };
 static llvm::Optional<std::string> checkCompressedSparseTensor(
         Type inputType,
         int inputIndex,
-	CompressionType compressionType
+        CompressionType compressionType
     ) {
   /*
      Negative values for inputIndex indicate that the input type is the return type.
@@ -61,10 +61,10 @@ static llvm::Optional<std::string> checkCompressedSparseTensor(
     
     if (compressionType == CSR) {
       if (dimOrdering0 != 0 || dimOrdering1 != 1)
-	return inputName+" must have CSR compression.";
+        return inputName+" must have CSR compression.";
     } else if (compressionType == CSC) {
       if (dimOrdering0 != 1 || dimOrdering1 != 0)
-	return inputName+" must have CSC compression.";
+        return inputName+" must have CSC compression.";
     }
   }
 
@@ -260,7 +260,7 @@ static LogicalResult verify(TransposeOp op) {
     unsigned resultDimOrdering1 = resultDimOrdering.getDimPosition(1);
     if (inputDimOrdering0 != resultDimOrdering1 || inputDimOrdering1 != resultDimOrdering0)
       return op.emitError("Sparse encoding dimension orderings of input and result tensors "
-			  "expected to be swapped.");
+                          "expected to be swapped.");
 
     // TODO should we be more lenient like the sparse tensor dialect is via isMatchingWidth?
     // see llvm-project/mlir/lib/Dialect/SparseTensor/IR/SparseTensorDialect.cpp

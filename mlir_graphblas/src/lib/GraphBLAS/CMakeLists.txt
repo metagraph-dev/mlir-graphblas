@@ -10,6 +10,6 @@ add_mlir_dialect_library(MLIRGraphBLAS
         DEPENDS
         MLIRGraphBLASOpsIncGen
 
-	LINK_LIBS PUBLIC
-	MLIRIR
-	)
+        LINK_LIBS PUBLIC
+        MLIRIR
+        )
