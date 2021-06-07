@@ -379,6 +379,10 @@ public:
     MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
 
     // Initial constants
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
+    Value ci1 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
     Value cf0, cf1;
     cf0 = llvm::TypeSwitch<Type, Value>(valueType)
         .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
@@ -386,12 +390,8 @@ public:
     cf1 = llvm::TypeSwitch<Type, Value>(valueType)
         .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
         .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
-    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-    Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
-    Value ci1 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
-    Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
     Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
+    Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
 
     // Get sparse tensor info
     Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, A, c1);
