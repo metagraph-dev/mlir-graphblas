@@ -27,6 +27,23 @@ RankedTensorType getCSRTensorType(MLIRContext *context, ArrayRef<int64_t> shape,
     return csrTensor;
 }
 
+RankedTensorType getCSCTensorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
+{
+    SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 2> dlt;
+    dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense);
+    dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
+    unsigned ptr = 64;
+    unsigned ind = 64;
+    AffineMap map = AffineMap::getPermutationMap({1, 0}, context);
+
+    RankedTensorType cscTensor = RankedTensorType::get(
+        shape,
+        valueType,
+        sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
+
+    return cscTensor;
+}
+
 /// Returns function reference (first hit also inserts into module).
 // from: llvm/llvm-project/mlir/lib/Dialect/SparseTensor/Transforms/SparseTensorConversion.cpp
 static FlatSymbolRefAttr getFunc(ModuleOp &mod, Location &loc, StringRef name, TypeRange result,

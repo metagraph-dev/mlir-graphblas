@@ -213,7 +213,7 @@ static LogicalResult verify(MatrixSelectOp op) {
   return success();
 }
 
-static LogicalResult verify(TransposeOp op) {
+static LogicalResult verify(ConvertLayoutOp op) {
   Type inputType = op.input().getType();
   Type resultType = op.getResult().getType();
 
@@ -242,16 +242,10 @@ static LogicalResult verify(TransposeOp op) {
   mlir::sparse_tensor::SparseTensorEncodingAttr resultSparseEncoding =
     mlir::sparse_tensor::getSparseTensorEncoding(resultType);
 
-  bool swapSizes = op.swap_sizes();
-  if (swapSizes) {
-    if (inputShape[0] != resultShape[1] || inputShape[1] != resultShape[0])
-      return op.emitError("Input and output shapes are expected to be swapped.");
-    if (inputSparseEncoding != resultSparseEncoding)
-      return op.emitError("Input and output tensors are expected to have identical sparse encodings.");
-  } else {
-    if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
-      return op.emitError("Input and output shapes are expected to be the same.");
+  if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
+    return op.emitError("Input and output shapes are expected to be the same.");
 
+  if (inputSparseEncoding != resultSparseEncoding) {
     AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
     AffineMap resultDimOrdering = resultSparseEncoding.getDimOrdering();
     unsigned inputDimOrdering0 = inputDimOrdering.getDimPosition(0);
@@ -260,7 +254,7 @@ static LogicalResult verify(TransposeOp op) {
     unsigned resultDimOrdering1 = resultDimOrdering.getDimPosition(1);
     if (inputDimOrdering0 != resultDimOrdering1 || inputDimOrdering1 != resultDimOrdering0)
       return op.emitError("Sparse encoding dimension orderings of input and result tensors "
-			  "expected to be swapped.");
+        "expected to be swapped or encodings must be identical.");
 
     // TODO should we be more lenient like the sparse tensor dialect is via isMatchingWidth?
     // see llvm-project/mlir/lib/Dialect/SparseTensor/IR/SparseTensorDialect.cpp
@@ -273,7 +267,6 @@ static LogicalResult verify(TransposeOp op) {
     unsigned resultIndexBitWidth = resultSparseEncoding.getIndexBitWidth();
     if (inputIndexBitWidth != resultIndexBitWidth)
       return op.emitError("Sparse encoding index bit widths of input and result tensors do not match.");
-
     // dimLevelType values guaranteed to be the same since we already checked earlier
   }
 

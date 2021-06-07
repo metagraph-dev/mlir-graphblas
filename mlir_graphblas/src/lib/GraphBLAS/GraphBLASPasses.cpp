@@ -32,14 +32,23 @@ namespace {
 // Passes implementation.
 //===----------------------------------------------------------------------===//
 
-class LowerTransposeRewrite : public OpRewritePattern<graphblas::TransposeOp> {
+class LowerConvertLayoutRewrite : public OpRewritePattern<graphblas::ConvertLayoutOp> {
 public:
-  using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::TransposeOp op, PatternRewriter &rewriter) const {
+  using OpRewritePattern<graphblas::ConvertLayoutOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ConvertLayoutOp op, PatternRewriter &rewriter) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
+    MLIRContext *context = op->getContext();
     Location loc = op->getLoc();
-    
+
     Value inputTensor = op.input();
+
+    // Shortcut operation if no change
+    if (inputTensor.getType() == op->getResultTypes()[0]) {
+      rewriter.replaceOp(op, inputTensor);
+      return success();
+    }
+
+    // otherwise, the rest of this function changes the data layout
     Type valueType = inputTensor.getType().dyn_cast<RankedTensorType>().getElementType();
     Type int64Type = rewriter.getIntegerType(64);
     Type indexType = rewriter.getIndexType();
@@ -65,17 +74,8 @@ public:
     Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
 
     Value output = callEmptyLike(rewriter, module, loc, inputTensor).getResult(0);
-    bool swap_sizes = op->getAttr("swap_sizes").dyn_cast<BoolAttr>().getValue();
-    if (swap_sizes)
-    {
-      callResizeDim(rewriter, module, loc, output, c0, ncol);
-      callResizeDim(rewriter, module, loc, output, c1, nrow);
-    }
-    else
-    {
-      callResizeDim(rewriter, module, loc, output, c0, nrow);
-      callResizeDim(rewriter, module, loc, output, c1, ncol);
-    }
+    callResizeDim(rewriter, module, loc, output, c0, nrow);
+    callResizeDim(rewriter, module, loc, output, c1, ncol);
 
     callResizePointers(rewriter, module, loc, output, c1, ncols_plus_one);
     callResizeIndex(rewriter, module, loc, output, c1, nnz);
@@ -171,7 +171,9 @@ public:
 
     rewriter.create<memref::StoreOp>(loc, last_last, outputPtrs, ncol);
 
-    rewriter.replaceOp(op, output);
+    Type cscTensor = getCSCTensorType(context, {-1, -1}, valueType);
+    Value newOutput = rewriter.create<tensor::CastOp>(loc, cscTensor, output);
+    rewriter.replaceOp(op, newOutput);
 
     return success();
   };
@@ -494,15 +496,15 @@ public:
     MLIRContext *context = op->getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
     
-    Type valueType = rewriter.getI64Type();
-    ArrayRef<int64_t> shape = {-1, -1};
-    RankedTensorType csrTensorType = getCSRTensorType(context, shape, valueType);
+    Type valueType = op.a().getType().dyn_cast<RankedTensorType>().getElementType();
+    RankedTensorType csrTensorType = getCSRTensorType(context, {-1, -1}, valueType);
+    RankedTensorType cscTensorType = getCSCTensorType(context, {-1, -1}, valueType);
 
     std::string funcName = "matrix_multiply_" + op.semiring().str();
     FuncOp func = module.lookupSymbol<FuncOp>(funcName);
     if (!func) {
       OpBuilder moduleBuilder(module.getBodyRegion());
-      FunctionType funcType = FunctionType::get(context, {csrTensorType, csrTensorType}, csrTensorType);
+      FunctionType funcType = FunctionType::get(context, {csrTensorType, cscTensorType}, csrTensorType);
       moduleBuilder.create<FuncOp>(op->getLoc(), funcName, funcType).setPrivate();
     }
     FlatSymbolRefAttr funcSymbol = SymbolRefAttr::get(context, funcName);
@@ -510,13 +512,12 @@ public:
     Value a = op.a();
     Value b = op.b();
     Location loc = rewriter.getUnknownLoc();
-    
+
     CallOp callOp = rewriter.create<CallOp>(loc,
                                             funcSymbol,
                                             csrTensorType,
-                                            llvm::ArrayRef<Value>({a, b})
-                                            );
-    
+                                            llvm::ArrayRef<Value>({a, b}));
+
     rewriter.replaceOp(op, callOp->getResults());
     
     return success();
@@ -528,7 +529,7 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
     LowerMatrixSelectRewrite,
     LowerMatrixReduceToScalarRewrite,
     LowerMatrixMultiplyRewrite,
-    LowerTransposeRewrite,
+    LowerConvertLayoutRewrite,
     LowerMatrixApplyRewrite
     >(patterns.getContext());
 }
