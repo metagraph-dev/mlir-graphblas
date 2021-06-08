@@ -32,14 +32,24 @@ namespace {
 // Passes implementation.
 //===----------------------------------------------------------------------===//
 
-class LowerTransposeRewrite : public OpRewritePattern<graphblas::TransposeOp> {
+class LowerConvertLayoutRewrite : public OpRewritePattern<graphblas::ConvertLayoutOp> {
 public:
-  using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::TransposeOp op, PatternRewriter &rewriter) const {
+  using OpRewritePattern<graphblas::ConvertLayoutOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ConvertLayoutOp op, PatternRewriter &rewriter) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     Value inputTensor = op.input();
+    Type outputType = op->getResultTypes()[0];
+
+    // Shortcut operation if no change
+    if (inputTensor.getType() == outputType)
+    {
+      rewriter.replaceOp(op, inputTensor);
+      return success();
+    }
+
+    // otherwise, the rest of this function changes the data layout
     Type valueType = inputTensor.getType().dyn_cast<RankedTensorType>().getElementType();
     Type int64Type = rewriter.getIntegerType(64);
     Type indexType = rewriter.getIndexType();
@@ -64,18 +74,9 @@ public:
     Value nnz_64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, nrow);
     Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
 
-    Value output = callEmptyLike(rewriter, module, loc, inputTensor).getResult(0);
-    bool swap_sizes = op->getAttr("swap_sizes").dyn_cast<BoolAttr>().getValue();
-    if (swap_sizes)
-    {
-      callResizeDim(rewriter, module, loc, output, c0, ncol);
-      callResizeDim(rewriter, module, loc, output, c1, nrow);
-    }
-    else
-    {
-      callResizeDim(rewriter, module, loc, output, c0, nrow);
-      callResizeDim(rewriter, module, loc, output, c1, ncol);
-    }
+    Value output = callEmptyLike(rewriter, module, loc, inputTensor);
+    callResizeDim(rewriter, module, loc, output, c0, nrow);
+    callResizeDim(rewriter, module, loc, output, c1, ncol);
 
     callResizePointers(rewriter, module, loc, output, c1, ncols_plus_one);
     callResizeIndex(rewriter, module, loc, output, c1, nnz);
@@ -171,7 +172,9 @@ public:
 
     rewriter.create<memref::StoreOp>(loc, last_last, outputPtrs, ncol);
 
-    rewriter.replaceOp(op, output);
+    // verify function will ensure that this is CSR->CSC or CSC->CSR
+    Value newOutput = rewriter.create<tensor::CastOp>(loc, outputType, output);
+    rewriter.replaceOp(op, newOutput);
 
     return success();
   };
@@ -228,7 +231,7 @@ public:
     Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
 
-    Value output = callDupTensor(rewriter, module, loc, input).getResult(0);
+    Value output = callDupTensor(rewriter, module, loc, input);
     Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c1);
     Value Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c1);
     Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
@@ -413,7 +416,7 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
 
     // Get sparse tensor info
-    Value output = callDupTensor(rewriter, module, loc, inputTensor).getResult(0);
+    Value output = callDupTensor(rewriter, module, loc, inputTensor);
     Value inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, inputTensor, c1);
     Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, inputTensor);
     Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
@@ -452,7 +455,6 @@ class LowerMatrixMultiplyRewrite : public OpRewritePattern<graphblas::MatrixMult
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
-    MLIRContext *context = op->getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = rewriter.getUnknownLoc();
 
@@ -469,8 +471,7 @@ public:
     Type valueType = op.getResult().getType().dyn_cast<RankedTensorType>().getElementType();
 
     ArrayRef<int64_t> shape = {-1, -1};
-    RankedTensorType csrTensorType = getCSRTensorType(context, shape, valueType);
-    RankedTensorType cscTensorType = getCSCTensorType(context, shape, valueType);
+
     MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
     MemRefType memref1DBoolType = MemRefType::get({-1}, boolType);
     MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
@@ -509,7 +510,7 @@ public:
         Mj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, mask, c1);
     }
 
-    Value C = callEmptyLike(rewriter, module, loc, A).getResult(0);
+    Value C = callEmptyLike(rewriter, module, loc, A);
     callResizeDim(rewriter, module, loc, C, c0, nrow);
     callResizeDim(rewriter, module, loc, C, c1, ncol);
     callResizePointers(rewriter, module, loc, C, c1, nrow_plus_one);
@@ -821,7 +822,7 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
     LowerMatrixSelectRewrite,
     LowerMatrixReduceToScalarRewrite,
     LowerMatrixMultiplyRewrite,
-    LowerTransposeRewrite,
+    LowerConvertLayoutRewrite,
     LowerMatrixApplyRewrite
     >(patterns.getContext());
 }

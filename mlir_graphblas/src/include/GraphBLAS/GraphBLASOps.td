@@ -14,22 +14,19 @@ class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Di
     let verifier = [{ return ::verify(*this); }];
 }
 
-def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
-    let summary = "transpose operation";
+def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
+    let summary = "convert graph storage layout";
     let description = [{
-        Returns a new sparse tensor that's the transpose of the original sparse tensor.
+        Returns a new sparse tensor with identical values, but a different storage layout.
         The given sparse tensor must be a matrix, i.e. have rank 2.
         The given tensor must have a CSR sparsity or a CSC sparsity.
-        This operation is guaranteed to swap the sparsity of CSR -> CSC or CSC -> CSR.
+        The output type must be CSR or CSC.  This operation can convert tensors between these types.
 
-        Example 1:
-        ```%answer = graphblas.transpose %sparse_tensor { swap_sizes = false } : tensor<2x3xf64, #CSR64> to tensor<2x3xf64, #CSC64>```
-
-        Example 2:
-        ```%answer = graphblas.transpose %sparse_tensor { swap_sizes = true } : tensor<2x3xf64, #CSR64> to tensor<3x2xf64, #CSC64>```
+        Example:
+        ```%answer = graphblas.convert_layout %sparse_tensor : tensor<2x3xf64, #CSR64> to tensor<2x3xf64, #CSC64>```
     }];
 
-    let arguments = (ins AnyTensor:$input, BoolAttr:$swap_sizes);
+    let arguments = (ins AnyTensor:$input);
     let results = (outs AnyTensor:$output);
     
     let assemblyFormat = [{
