@@ -173,6 +173,65 @@ static LogicalResult verify(MatrixMultiplyOp op) {
   return success();
 }
 
+static LogicalResult verify(MatrixMultiplyReduceToScalarOp op) {
+  Type aType = op.a().getType();
+  Type bType = op.b().getType();
+  Type resultType = op.getResult().getType();
+
+  llvm::Optional<std::string> aCompressionErrorMessage = checkCompressedSparseTensor(aType, 0, CSR);
+  if (aCompressionErrorMessage)
+    return op.emitError(aCompressionErrorMessage.getValue());
+
+  llvm::Optional<std::string> bCompressionErrorMessage = checkCompressedSparseTensor(bType, 1, CSC);
+  if (bCompressionErrorMessage)
+    return op.emitError(bCompressionErrorMessage.getValue());
+
+  static const std::vector<std::string> supportedAggregators{"sum"};
+  std::string aggregator = op.aggregator().str();
+  bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
+    != supportedAggregators.end();
+  if (!aggregatorSupported)
+    return op.emitError("\""+aggregator+"\" is not a supported aggregator.");
+
+  RankedTensorType operandTensorType = aType.dyn_cast<RankedTensorType>();
+  if (resultType != operandTensorType.getElementType())
+    return op.emitError("Operand and output types are incompatible.");
+
+  static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus"};
+  std::string semiring = op.semiring().str();
+  bool semiringSupported = std::find(supportedSemirings.begin(), supportedSemirings.end(), semiring)
+    != supportedSemirings.end();
+  if (!semiringSupported)
+    return op.emitError("\""+semiring+"\" is not a supported semiring.");
+
+  RankedTensorType aTensorType = aType.dyn_cast<RankedTensorType>();
+  RankedTensorType bTensorType = bType.dyn_cast<RankedTensorType>();
+
+  ArrayRef<int64_t> aShape = aTensorType.getShape();
+  ArrayRef<int64_t> bShape = bTensorType.getShape();
+  // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with shapes using "?"
+  if (aShape[1] != bShape[0])
+    return op.emitError("Operand shapes are incompatible.");
+
+  if (aTensorType.getElementType() != bTensorType.getElementType())
+    return op.emitError("Operand element types must be identical.");
+
+  Value mask = op.mask();
+  if (mask) {
+    Type maskType = mask.getType();
+    llvm::Optional<std::string> maskCompressionErrorMessage = checkCompressedSparseTensor(maskType, 2, CSR);
+    if (maskCompressionErrorMessage)
+      return op.emitError(maskCompressionErrorMessage.getValue());
+
+    RankedTensorType maskTensorType = maskType.dyn_cast<RankedTensorType>();
+    ArrayRef<int64_t> maskShape = maskTensorType.getShape();
+    if (aShape[0] != maskShape[0] || bShape[1] != maskShape[1])
+      return op.emitError("Mask shape must match shape from result of matrix multiply.");
+  }
+
+  return success();
+}
+
 static LogicalResult verify(MatrixReduceToScalarOp op) {
   Type operandType = op.input().getType();
 
