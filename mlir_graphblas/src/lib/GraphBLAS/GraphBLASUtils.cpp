@@ -27,6 +27,7 @@ RankedTensorType getCSRTensorType(MLIRContext *context, ArrayRef<int64_t> shape,
     return csrTensor;
 }
 
+// make CSC tensor type
 RankedTensorType getCSCTensorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
 {
     SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 2> dlt;
@@ -34,7 +35,7 @@ RankedTensorType getCSCTensorType(MLIRContext *context, ArrayRef<int64_t> shape,
     dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
     unsigned ptr = 64;
     unsigned ind = 64;
-    AffineMap map = AffineMap::getPermutationMap({1, 0}, context);
+    AffineMap map = AffineMap::getPermutationMap(ArrayRef<unsigned>{1, 0}, context);
 
     RankedTensorType cscTensor = RankedTensorType::get(
         shape,

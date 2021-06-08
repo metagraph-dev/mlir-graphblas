@@ -23,7 +23,7 @@ enum CompressionType { CSR, CSC, EITHER };
 static llvm::Optional<std::string> checkCompressedSparseTensor(
         Type inputType,
         int inputIndex,
-	CompressionType compressionType
+        CompressionType compressionType
     ) {
   /*
      Negative values for inputIndex indicate that the input type is the return type.
@@ -61,10 +61,10 @@ static llvm::Optional<std::string> checkCompressedSparseTensor(
     
     if (compressionType == CSR) {
       if (dimOrdering0 != 0 || dimOrdering1 != 1)
-	return inputName+" must have CSR compression.";
+        return inputName+" must have CSR compression.";
     } else if (compressionType == CSC) {
       if (dimOrdering0 != 1 || dimOrdering1 != 0)
-	return inputName+" must have CSC compression.";
+        return inputName+" must have CSC compression.";
     }
   }
 
