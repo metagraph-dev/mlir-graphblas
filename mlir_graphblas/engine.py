@@ -9,7 +9,7 @@ import operator
 import llvmlite.binding as llvm
 import numpy as np
 from .sparse_utils import MLIRSparseTensor
-from functools import reduce
+from functools import reduce, partial
 from .cli import MlirOptCli, MlirOptError, DebugResult
 from typing import (
     Tuple,
@@ -615,7 +615,7 @@ class MlirJitEngine:
                 function_pointer
             )
 
-            def python_callable(*args):
+            def python_callable(mlir_function, encoders, c_callable, decoder, *args):
                 if len(args) != len(mlir_function.args):
                     raise ValueError(
                         f"{name} expected {len(mlir_function.args)} args but got {len(args)}."
@@ -627,7 +627,8 @@ class MlirJitEngine:
 
                 return result
 
-            name_to_callable[name] = python_callable
+            bound_func = partial(python_callable, mlir_function, encoders, c_callable, decoder)
+            name_to_callable[name] = bound_func
 
         return name_to_callable
 
@@ -773,7 +774,7 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                 None, *ctypes_result_arg_pointer_types, *ctypes_input_types
             )(function_pointer)
 
-            def python_callable(*args) -> tuple:
+            def python_callable(mlir_function, ctypes_result_arg_types, input_encoders, c_callable, decoders, *args) -> tuple:
                 if len(args) != len(mlir_function.args):
                     raise ValueError(
                         f"{mlir_function.name.value} expected {len(mlir_function.args)} args but got {len(args)}."
@@ -797,7 +798,8 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                     )
                 )
 
-            name_to_callable[mlir_function.name.value] = python_callable
+            bound_func = partial(python_callable, mlir_function, ctypes_result_arg_types, input_encoders, c_callable, decoders)
+            name_to_callable[mlir_function.name.value] = bound_func
 
         return name_to_callable
 
