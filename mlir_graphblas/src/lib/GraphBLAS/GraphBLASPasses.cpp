@@ -41,9 +41,11 @@ public:
     Location loc = op->getLoc();
 
     Value inputTensor = op.input();
+    Type outputType = op->getResultTypes()[0];
 
     // Shortcut operation if no change
-    if (inputTensor.getType() == op->getResultTypes()[0]) {
+    if (inputTensor.getType() == outputType)
+    {
       rewriter.replaceOp(op, inputTensor);
       return success();
     }
@@ -73,7 +75,7 @@ public:
     Value nnz_64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, nrow);
     Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
 
-    Value output = callEmptyLike(rewriter, module, loc, inputTensor).getResult(0);
+    Value output = callEmptyLike(rewriter, module, loc, inputTensor);
     callResizeDim(rewriter, module, loc, output, c0, nrow);
     callResizeDim(rewriter, module, loc, output, c1, ncol);
 
@@ -171,8 +173,8 @@ public:
 
     rewriter.create<memref::StoreOp>(loc, last_last, outputPtrs, ncol);
 
-    Type cscTensor = getCSCTensorType(context, {-1, -1}, valueType);
-    Value newOutput = rewriter.create<tensor::CastOp>(loc, cscTensor, output);
+    // verify function will ensure that this is CSR->CSC or CSC->CSR
+    Value newOutput = rewriter.create<tensor::CastOp>(loc, outputType, output);
     rewriter.replaceOp(op, newOutput);
 
     return success();
@@ -230,7 +232,7 @@ public:
     Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
 
-    Value output = callDupTensor(rewriter, module, loc, input).getResult(0);
+    Value output = callDupTensor(rewriter, module, loc, input);
     Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c1);
     Value Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c1);
     Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
@@ -450,7 +452,7 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
 
     // Get sparse tensor info
-    Value output = callDupTensor(rewriter, module, loc, inputTensor).getResult(0);
+    Value output = callDupTensor(rewriter, module, loc, inputTensor);
     Value inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, inputTensor, c1);
     Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, inputTensor);
     Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
