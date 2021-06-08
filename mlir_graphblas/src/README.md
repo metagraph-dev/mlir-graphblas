@@ -57,12 +57,7 @@ This command line overrides cmake to force it to use the system g++ (which is ac
 
 ## Build and Test Loop
 
-Next, you'll likely run the following command over and over when testing lowering:
+Next, you'll likely run the following command over and over when testing the GraphBLAS passes:
 ```
-cmake --build . -v && bin/lowering-test
-```
-
-If you have a crash, the backtrace is not very useful, so you'll want to run the `lowering-test` in lldb:
-```
-lldb bin/lowering-test
+cmake --build . --target check-graphblas
 ```
