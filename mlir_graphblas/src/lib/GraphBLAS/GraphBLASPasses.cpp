@@ -38,7 +38,7 @@ public:
   LogicalResult matchAndRewrite(graphblas::TransposeOp op, PatternRewriter &rewriter) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
-    
+
     Value inputTensor = op.input();
     Type valueType = inputTensor.getType().dyn_cast<RankedTensorType>().getElementType();
     Type int64Type = rewriter.getIntegerType(64);
@@ -321,106 +321,71 @@ class LowerMatrixReduceToScalarRewrite : public OpRewritePattern<graphblas::Matr
 public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const {
-    MLIRContext *context = op->getContext();
-    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Value input = op.input();
+    StringRef aggregator = op.aggregator();
     Location loc = rewriter.getUnknownLoc();
 
     RankedTensorType operandType = op.input().getType().dyn_cast<RankedTensorType>();
-    ArrayRef<int64_t> operandShape = operandType.getShape();
     Type valueType = operandType.getElementType();
     Type int64Type = rewriter.getIntegerType(64); // TODO should we get this from the sparse encoding?
     Type indexType = rewriter.getIndexType();
-    RankedTensorType csrTensorType = getCSRTensorType(context, operandShape, valueType);
-    
-    // TODO should this name also account for the dimensions of the input? Or should we fail upon certain dimensions/rank?
-    std::string funcName = "matrix_reduce_to_scalar_";
-    llvm::raw_string_ostream stream(funcName);
-    std::string aggregator = op.aggregator().str();
-    stream <<  aggregator << "_elem_";
-    valueType.print(stream);
-    stream.flush();
-    
-    FuncOp func = module.lookupSymbol<FuncOp>(funcName);
-    if (!func) {
-      OpBuilder moduleBuilder(module.getBodyRegion());
-      
-      FunctionType funcType = FunctionType::get(context, {csrTensorType}, valueType);
-      moduleBuilder.create<FuncOp>(op->getLoc(), funcName, funcType).setPrivate();
-      func = module.lookupSymbol<FuncOp>(funcName);
-      Block &entry_block = *func.addEntryBlock();
-      moduleBuilder.setInsertionPointToStart(&entry_block);
-      BlockArgument input = entry_block.getArgument(0);
-      
-      // Initial constants
-      llvm::Optional<ConstantOp> c0Accumulator = llvm::TypeSwitch<Type, llvm::Optional<ConstantOp>>(valueType)
-        .Case<IntegerType>([&](IntegerType type) {
-                             return moduleBuilder.create<ConstantIntOp>(loc, 0, type.getWidth());
-                           })
-        .Case<FloatType>([&](FloatType type) {
-                           return moduleBuilder.create<ConstantFloatOp>(loc, APFloat(type.getFloatSemantics()), type);
-                         })
-        .Default([&](Type type) { return llvm::None; });
-      if (!c0Accumulator.hasValue()) {
-        return failure(); // TODO test this case
-      }
-      ConstantIndexOp c0 = moduleBuilder.create<ConstantIndexOp>(loc, 0);
-      ConstantIndexOp c1 = moduleBuilder.create<ConstantIndexOp>(loc, 1);
-      
-      // Get sparse tensor info
-      MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
-      MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
 
-      memref::DimOp nrows = moduleBuilder.create<memref::DimOp>(loc, input, c0.getResult());
-      sparse_tensor::ToPointersOp inputPtrs = moduleBuilder.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c1);
-      sparse_tensor::ToValuesOp inputValues = moduleBuilder.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
-      memref::LoadOp nnz64 = moduleBuilder.create<memref::LoadOp>(loc, inputPtrs, nrows.getResult());
-      IndexCastOp nnz = moduleBuilder.create<IndexCastOp>(loc, nnz64, indexType);
-
-      // begin loop
-      scf::ParallelOp valueLoop = moduleBuilder.create<scf::ParallelOp>(loc, c0.getResult(), nnz.getResult(), c1.getResult(), c0Accumulator.getValue().getResult());
-      ValueRange valueLoopIdx = valueLoop.getInductionVars();
-
-      moduleBuilder.setInsertionPointToStart(valueLoop.getBody());
-      memref::LoadOp y = moduleBuilder.create<memref::LoadOp>(loc, inputValues, valueLoopIdx);
-
-      scf::ReduceOp reducer = moduleBuilder.create<scf::ReduceOp>(loc, y);
-      BlockArgument lhs = reducer.getRegion().getArgument(0);
-      BlockArgument rhs = reducer.getRegion().getArgument(1);
-
-      moduleBuilder.setInsertionPointToStart(&reducer.getRegion().front());
-
-      llvm::Optional<Value> z;
-      if (aggregator == "sum") {
-         z = llvm::TypeSwitch<Type, llvm::Optional<Value>>(valueType)
-          .Case<IntegerType>([&](IntegerType type) { return moduleBuilder.create<AddIOp>(loc, lhs, rhs).getResult(); })
-          .Case<FloatType>([&](FloatType type) { return moduleBuilder.create<AddFOp>(loc, lhs, rhs).getResult(); })
-          .Default([&](Type type) { return llvm::None; });
-        if (!z.hasValue()) {
-          return failure();
-        }
-      } else {
-        return failure(); // TODO test this
-      }
-      moduleBuilder.create<scf::ReduceReturnOp>(loc, z.getValue());
-
-      moduleBuilder.setInsertionPointAfter(reducer);
-
-      // end loop
-      moduleBuilder.setInsertionPointAfter(valueLoop);
-
-      // Add return op
-      moduleBuilder.create<ReturnOp>(loc, valueLoop.getResult(0));
+    // Initial constants
+    llvm::Optional<ConstantOp> c0Accumulator = llvm::TypeSwitch<Type, llvm::Optional<ConstantOp>>(valueType)
+      .Case<IntegerType>([&](IntegerType type) {
+			   return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth());
+			 })
+      .Case<FloatType>([&](FloatType type) {
+			 return rewriter.create<ConstantFloatOp>(loc, APFloat(type.getFloatSemantics()), type);
+		       })
+      .Default([&](Type type) { return llvm::None; });
+    if (!c0Accumulator.hasValue()) {
+      return failure(); // TODO test this case
     }
-    FlatSymbolRefAttr funcSymbol = SymbolRefAttr::get(context, funcName);
-    
-    Value inputTensor = op.input();
-    CallOp callOp = rewriter.create<CallOp>(loc,
-                                            funcSymbol,
-                                            valueType,
-                                            llvm::ArrayRef<Value>({inputTensor})
-                                            );    
-    rewriter.replaceOp(op, callOp->getResults());
-    
+    ConstantIndexOp c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    ConstantIndexOp c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+
+    // Get sparse tensor info
+    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
+
+    memref::DimOp nrows = rewriter.create<memref::DimOp>(loc, input, c0.getResult());
+    sparse_tensor::ToPointersOp inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c1);
+    sparse_tensor::ToValuesOp inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
+    memref::LoadOp nnz64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, nrows.getResult());
+    IndexCastOp nnz = rewriter.create<IndexCastOp>(loc, nnz64, indexType);
+
+    // begin loop
+    scf::ParallelOp valueLoop = rewriter.create<scf::ParallelOp>(loc, c0.getResult(), nnz.getResult(), c1.getResult(), c0Accumulator.getValue().getResult());
+    ValueRange valueLoopIdx = valueLoop.getInductionVars();
+
+    rewriter.setInsertionPointToStart(valueLoop.getBody());
+    memref::LoadOp y = rewriter.create<memref::LoadOp>(loc, inputValues, valueLoopIdx);
+
+    scf::ReduceOp reducer = rewriter.create<scf::ReduceOp>(loc, y);
+    BlockArgument lhs = reducer.getRegion().getArgument(0);
+    BlockArgument rhs = reducer.getRegion().getArgument(1);
+
+    rewriter.setInsertionPointToStart(&reducer.getRegion().front());
+
+    llvm::Optional<Value> z;
+    if (aggregator == "sum") {
+      z = llvm::TypeSwitch<Type, llvm::Optional<Value>>(valueType)
+	.Case<IntegerType>([&](IntegerType type) { return rewriter.create<AddIOp>(loc, lhs, rhs).getResult(); })
+	.Case<FloatType>([&](FloatType type) { return rewriter.create<AddFOp>(loc, lhs, rhs).getResult(); })
+	.Default([&](Type type) { return llvm::None; });
+      if (!z.hasValue()) {
+	return failure();
+      }
+    } else {
+      return failure(); // TODO test this
+    }
+    rewriter.create<scf::ReduceReturnOp>(loc, z.getValue());
+
+    rewriter.setInsertionPointAfter(reducer);
+
+    rewriter.replaceOp(op, valueLoop.getResult(0));
+
     return success();
   };
 };
@@ -502,6 +467,7 @@ public:
     Type int64Type = rewriter.getIntegerType(64);
     Type boolType = rewriter.getI1Type();
     Type valueType = op.getResult().getType().dyn_cast<RankedTensorType>().getElementType();
+
     ArrayRef<int64_t> shape = {-1, -1};
     RankedTensorType csrTensorType = getCSRTensorType(context, shape, valueType);
     RankedTensorType cscTensorType = getCSCTensorType(context, shape, valueType);
