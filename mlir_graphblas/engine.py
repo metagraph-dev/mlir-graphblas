@@ -780,7 +780,8 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                 mlir_function,
                 ctypes_result_arg_types,
                 input_encoders,
-                c_callable, decoders,
+                c_callable,
+                decoders,
                 *args,
             ) -> tuple:
                 if len(args) != len(mlir_function.args):
