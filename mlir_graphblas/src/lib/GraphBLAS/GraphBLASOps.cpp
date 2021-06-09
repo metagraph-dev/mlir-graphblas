@@ -262,19 +262,22 @@ static LogicalResult verify(MatrixReduceToScalarOp op) {
 
 static LogicalResult verify(MatrixSelectOp op) {
   // input and result types are already guaranteed to be the same
-  Type resultType = op.getResult().getType();
+  for (auto result : op.getResults()) {
+    Type resultType = result.getType();
 
-  llvm::Optional<std::string> resultCompressionErrorMessage = checkCompressedSparseTensor(resultType, -1, EITHER);
-  if (resultCompressionErrorMessage)
-    return op.emitError(resultCompressionErrorMessage.getValue());
+    llvm::Optional<std::string> resultCompressionErrorMessage = checkCompressedSparseTensor(resultType, -1, EITHER);
+    if (resultCompressionErrorMessage)
+      return op.emitError(resultCompressionErrorMessage.getValue());
+  }
 
   static const std::vector<std::string> supportedSelectors{"triu", "tril", "gt0"};
-  std::string selector = op.selector().str();
-  bool selectorSupported = std::find(supportedSelectors.begin(), supportedSelectors.end(), selector)
-    != supportedSelectors.end();
-  if (!selectorSupported)
-    return op.emitError("\""+selector+"\" is not a supported selector.");
-
+  for (auto selectorAttr : op.selectors()) {
+    std::string selector = selectorAttr.dyn_cast_or_null<StringAttr>().getValue().str();
+    bool selectorSupported = std::find(supportedSelectors.begin(), supportedSelectors.end(), selector)
+      != supportedSelectors.end();
+    if (!selectorSupported)
+      return op.emitError("\""+selector+"\" is not a supported selector.");
+  }
   return success();
 }
 

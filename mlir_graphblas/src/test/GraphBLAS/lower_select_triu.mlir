@@ -33,12 +33,12 @@
 // CHECK:             scf.for %[[VAL_22:.*]] = %[[VAL_20]] to %[[VAL_21]] step %[[VAL_2]] {
 // CHECK:               %[[VAL_23:.*]] = memref.load %[[VAL_9]]{{\[}}%[[VAL_22]]] : memref<?xi64>
 // CHECK:               %[[VAL_24:.*]] = index_cast %[[VAL_23]] : i64 to index
+// CHECK:               %[[VAL_28:.*]] = memref.load %[[VAL_10]]{{\[}}%[[VAL_22]]] : memref<?xf64>
 // CHECK:               %[[VAL_25:.*]] = cmpi ugt, %[[VAL_24]], %[[VAL_15]] : index
 // CHECK:               scf.if %[[VAL_25]] {
 // CHECK:                 %[[VAL_26:.*]] = memref.load %[[VAL_12]]{{\[}}%[[VAL_16]]] : memref<?xi64>
 // CHECK:                 %[[VAL_27:.*]] = index_cast %[[VAL_26]] : i64 to index
 // CHECK:                 memref.store %[[VAL_23]], %[[VAL_13]]{{\[}}%[[VAL_27]]] : memref<?xi64>
-// CHECK:                 %[[VAL_28:.*]] = memref.load %[[VAL_10]]{{\[}}%[[VAL_22]]] : memref<?xf64>
 // CHECK:                 memref.store %[[VAL_28]], %[[VAL_14]]{{\[}}%[[VAL_27]]] : memref<?xf64>
 // CHECK:                 %[[VAL_29:.*]] = addi %[[VAL_26]], %[[VAL_4]] : i64
 // CHECK:                 memref.store %[[VAL_29]], %[[VAL_12]]{{\[}}%[[VAL_16]]] : memref<?xi64>
@@ -53,7 +53,7 @@
 // CHECK:         }
 
 func @select_triu(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
-    %answer = graphblas.matrix_select %sparse_tensor { selector = "triu" } : tensor<?x?xf64, #CSR64>
+    %answer = graphblas.matrix_select %sparse_tensor { selectors = ["triu"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
     return %answer : tensor<?x?xf64, #CSR64>
 }
 

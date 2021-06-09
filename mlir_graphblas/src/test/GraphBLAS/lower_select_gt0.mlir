@@ -32,12 +32,12 @@
 // CHECK:             %[[VAL_20:.*]] = index_cast %[[VAL_18]] : i64 to index
 // CHECK:             %[[VAL_21:.*]] = index_cast %[[VAL_19]] : i64 to index
 // CHECK:             scf.for %[[VAL_22:.*]] = %[[VAL_20]] to %[[VAL_21]] step %[[VAL_2]] {
+// CHECK:               %[[VAL_27:.*]] = memref.load %[[VAL_9]]{{\[}}%[[VAL_22]]] : memref<?xi64>
 // CHECK:               %[[VAL_23:.*]] = memref.load %[[VAL_10]]{{\[}}%[[VAL_22]]] : memref<?xf64>
 // CHECK:               %[[VAL_24:.*]] = cmpf ogt, %[[VAL_23]], %[[VAL_5]] : f64
 // CHECK:               scf.if %[[VAL_24]] {
 // CHECK:                 %[[VAL_25:.*]] = memref.load %[[VAL_12]]{{\[}}%[[VAL_16]]] : memref<?xi64>
 // CHECK:                 %[[VAL_26:.*]] = index_cast %[[VAL_25]] : i64 to index
-// CHECK:                 %[[VAL_27:.*]] = memref.load %[[VAL_9]]{{\[}}%[[VAL_22]]] : memref<?xi64>
 // CHECK:                 memref.store %[[VAL_27]], %[[VAL_13]]{{\[}}%[[VAL_26]]] : memref<?xi64>
 // CHECK:                 memref.store %[[VAL_23]], %[[VAL_14]]{{\[}}%[[VAL_26]]] : memref<?xf64>
 // CHECK:                 %[[VAL_28:.*]] = addi %[[VAL_25]], %[[VAL_4]] : i64
@@ -53,6 +53,6 @@
 // CHECK:         }
 
 func @select_gt0(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
-    %answer = graphblas.matrix_select %sparse_tensor { selector = "gt0" } : tensor<?x?xf64, #CSR64>
+    %answer = graphblas.matrix_select %sparse_tensor { selectors = ["gt0"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
     return %answer : tensor<?x?xf64, #CSR64>
 }
