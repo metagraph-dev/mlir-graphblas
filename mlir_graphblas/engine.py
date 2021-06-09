@@ -627,7 +627,9 @@ class MlirJitEngine:
 
                 return result
 
-            bound_func = partial(python_callable, mlir_function, encoders, c_callable, decoder)
+            bound_func = partial(
+                python_callable, mlir_function, encoders, c_callable, decoder
+            )
             name_to_callable[name] = bound_func
 
         return name_to_callable
@@ -774,7 +776,13 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                 None, *ctypes_result_arg_pointer_types, *ctypes_input_types
             )(function_pointer)
 
-            def python_callable(mlir_function, ctypes_result_arg_types, input_encoders, c_callable, decoders, *args) -> tuple:
+            def python_callable(
+                mlir_function,
+                ctypes_result_arg_types,
+                input_encoders,
+                c_callable, decoders,
+                *args,
+            ) -> tuple:
                 if len(args) != len(mlir_function.args):
                     raise ValueError(
                         f"{mlir_function.name.value} expected {len(mlir_function.args)} args but got {len(args)}."
@@ -798,7 +806,14 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                     )
                 )
 
-            bound_func = partial(python_callable, mlir_function, ctypes_result_arg_types, input_encoders, c_callable, decoders)
+            bound_func = partial(
+                python_callable,
+                mlir_function,
+                ctypes_result_arg_types,
+                input_encoders,
+                c_callable,
+                decoders,
+            )
             name_to_callable[mlir_function.name.value] = bound_func
 
         return name_to_callable
