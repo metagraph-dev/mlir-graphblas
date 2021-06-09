@@ -72,25 +72,25 @@
 // CHECK:                   } else {
 // CHECK:                     scf.yield %[[VAL_40]] : f64
 // CHECK:                   }
-// CHECK:                   scf.yield %[[VAL_49:.*]] : f64
+// CHECK:                   scf.yield %[[VAL_44]] : f64
 // CHECK:                 }
-// CHECK:                 scf.reduce(%[[VAL_50:.*]])  : f64 {
+// CHECK:                 scf.reduce(%[[VAL_38]])  : f64 {
 // CHECK:                 ^bb0(%[[VAL_51:.*]]: f64, %[[VAL_52:.*]]: f64):
 // CHECK:                   %[[VAL_53:.*]] = addf %[[VAL_51]], %[[VAL_52]] : f64
 // CHECK:                   scf.reduce.return %[[VAL_53]] : f64
 // CHECK:                 }
 // CHECK:                 scf.yield
 // CHECK:               }
-// CHECK:               scf.yield %[[VAL_54:.*]] : f64
+// CHECK:               scf.yield %[[VAL_31]] : f64
 // CHECK:             }
-// CHECK:             scf.reduce(%[[VAL_55:.*]])  : f64 {
+// CHECK:             scf.reduce(%[[VAL_22]])  : f64 {
 // CHECK:             ^bb0(%[[VAL_56:.*]]: f64, %[[VAL_57:.*]]: f64):
 // CHECK:               %[[VAL_58:.*]] = addf %[[VAL_56]], %[[VAL_57]] : f64
 // CHECK:               scf.reduce.return %[[VAL_58]] : f64
 // CHECK:             }
 // CHECK:             scf.yield
 // CHECK:           }
-// CHECK:           return %[[VAL_59:.*]] : f64
+// CHECK:           return %[[VAL_16]] : f64
 // CHECK:         }
 
 

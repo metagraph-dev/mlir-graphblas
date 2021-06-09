@@ -834,7 +834,7 @@ public:
     Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
     Type boolType = rewriter.getI1Type();
-    Type valueType = op.getResult().getType().dyn_cast<RankedTensorType>().getElementType();
+    Type valueType = A.getType().dyn_cast<RankedTensorType>().getElementType();
 
     ArrayRef<int64_t> shape = {-1, -1};
 
