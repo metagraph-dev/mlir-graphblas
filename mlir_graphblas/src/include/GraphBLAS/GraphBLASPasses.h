@@ -13,7 +13,7 @@
 namespace mlir {
   
 std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASLoweringPass();
-
+std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASOptimizePass();
 }
 
 //===----------------------------------------------------------------------===//

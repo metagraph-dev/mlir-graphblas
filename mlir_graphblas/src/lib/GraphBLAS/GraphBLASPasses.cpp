@@ -1052,8 +1052,90 @@ struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPas
   }
 };
 
+// GraphBLASOptimizePass
+class MergeMatrixSelectRewrite : public OpRewritePattern<graphblas::MatrixSelectOp>
+{
+public:
+  using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const
+  {
+    Value input = op.input();
+    for (auto &usage : input.getUses()) {
+      //graphblas::MatrixSelectOp user = usage.getOwner()->dyn_cast_or_null<graphblas::MatrixSelectOp>();
+      //if (user != nullptr)
+      //  user->dump();
+      /*      if (selectOp != nullptr) {
+        std::cerr << "Found select usage!" << std::endl;
+        selectOp.getLoc().dump();
+      }*/
+
+    }
+
+    return failure();
+  };
+};
+
+class FuseMatrixMultiplyReduceRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarOp>
+{
+public:
+  using OpRewritePattern<graphblas::MatrixReduceToScalarOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const
+  {
+    Value input = op.input();
+    graphblas::MatrixMultiplyOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyOp>();
+    if (predecessor != nullptr && predecessor->hasOneUse()) {
+      Location loc = op->getLoc();
+
+      // Build new MatrixMultiplyReduce op
+      Value a = predecessor.a();
+      Value b = predecessor.b();
+      Value mask = predecessor.mask();
+      StringRef semiring = predecessor.semiring();
+      StringRef aggregator = op.aggregator();
+      Value result = rewriter.create<graphblas::MatrixMultiplyReduceToScalarOp>(loc, 
+        op->getResultTypes(), a, b, mask, semiring, aggregator);
+
+      rewriter.replaceOp(op, result);
+      
+      return success();
+    }
+    return failure();
+  };
+};
+
+class FuseMatrixMultiplyApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyOp>
+{
+public:
+  using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const
+  {
+    return failure();
+  };
+};
+
+void populateGraphBLASOptimizePatterns(RewritePatternSet &patterns){
+  patterns.add<
+      MergeMatrixSelectRewrite,
+      FuseMatrixMultiplyReduceRewrite,
+      FuseMatrixMultiplyApplyRewrite>(patterns.getContext());
+}
+
+struct GraphBLASOptimizePass : public GraphBLASOptimizeBase<GraphBLASOptimizePass> {
+  void runOnOperation() override {
+    MLIRContext *ctx = &getContext();
+    RewritePatternSet patterns(ctx);
+    ConversionTarget target(*ctx);
+    populateGraphBLASOptimizePatterns(patterns);
+    (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+  }
+};
+
 } // end anonymous namespace
 
 std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASLoweringPass() {
   return std::make_unique<GraphBLASLoweringPass>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASOptimizePass() {
+  return std::make_unique<GraphBLASOptimizePass>();
 }
