@@ -336,11 +336,11 @@ public:
     // Initial constants
     llvm::Optional<ConstantOp> c0Accumulator = llvm::TypeSwitch<Type, llvm::Optional<ConstantOp>>(valueType)
       .Case<IntegerType>([&](IntegerType type) {
-			   return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth());
-			 })
+                           return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth());
+                         })
       .Case<FloatType>([&](FloatType type) {
-			 return rewriter.create<ConstantFloatOp>(loc, APFloat(type.getFloatSemantics()), type);
-		       })
+                         return rewriter.create<ConstantFloatOp>(loc, APFloat(type.getFloatSemantics()), type);
+                       })
       .Default([&](Type type) { return llvm::None; });
     if (!c0Accumulator.hasValue()) {
       return failure(); // TODO test this case
@@ -374,11 +374,11 @@ public:
     llvm::Optional<Value> z;
     if (aggregator == "sum") {
       z = llvm::TypeSwitch<Type, llvm::Optional<Value>>(valueType)
-	.Case<IntegerType>([&](IntegerType type) { return rewriter.create<AddIOp>(loc, lhs, rhs).getResult(); })
-	.Case<FloatType>([&](FloatType type) { return rewriter.create<AddFOp>(loc, lhs, rhs).getResult(); })
-	.Default([&](Type type) { return llvm::None; });
+        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<AddIOp>(loc, lhs, rhs).getResult(); })
+        .Case<FloatType>([&](FloatType type) { return rewriter.create<AddFOp>(loc, lhs, rhs).getResult(); })
+        .Default([&](Type type) { return llvm::None; });
       if (!z.hasValue()) {
-	return failure();
+        return failure();
       }
     } else {
       return failure(); // TODO test this
@@ -629,7 +629,7 @@ public:
     rewriter.setInsertionPointAfter(ifBlock_overlap);
     Value overlap = ifBlock_overlap.getResult(0);
 
-    auto reducer = rewriter.create<scf::ReduceOp>(loc, overlap);
+    scf::ReduceOp reducer = rewriter.create<scf::ReduceOp>(loc, overlap);
     Value lhs = reducer.getRegion().getArgument(0);
     Value rhs = reducer.getRegion().getArgument(1);
     rewriter.setInsertionPointToStart(&reducer.getRegion().front());
@@ -817,13 +817,227 @@ public:
   };
 };
 
+class LowerMatrixMultiplyReduceToScalarRewrite : public OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarOp> {
+public:
+  using OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarOp op, PatternRewriter &rewriter) const {
+    Location loc = rewriter.getUnknownLoc();
+
+    // Inputs
+    Value A = op.a();
+    Value B = op.b();
+    Value mask = op.mask();
+    StringRef semiring = op.semiring();
+    StringRef aggregator = op.aggregator();
+
+    // Types
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type boolType = rewriter.getI1Type();
+    Type valueType = A.getType().dyn_cast<RankedTensorType>().getElementType();
+
+    ArrayRef<int64_t> shape = {-1, -1};
+
+    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memref1DBoolType = MemRefType::get({-1}, boolType);
+    MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
+
+    // Initial constants
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value cf0, cf1;
+    // TODO: make cf0 value dependent on the aggregator
+    cf0 = llvm::TypeSwitch<Type, Value>(valueType)
+        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
+        .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
+    cf1 = llvm::TypeSwitch<Type, Value>(valueType)
+        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
+        .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
+    Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
+    Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
+
+    // Get sparse tensor info
+    Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, A, c1);
+    Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, c1);
+    Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, A);
+    Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, B, c1);
+    Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c1);
+    Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
+
+    Value nrow = rewriter.create<memref::DimOp>(loc, A, c0);
+    Value ncol = rewriter.create<memref::DimOp>(loc, B, c1);
+    Value nk = rewriter.create<memref::DimOp>(loc, A, c1);
+
+    Value Mp, Mj;
+    if (mask) {
+        Mp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, mask, c1);
+        Mj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, mask, c1);
+    }
+
+    // In parallel over the rows and columns,
+    //   compute the nonzero values and accumulate
+    scf::ParallelOp rowLoop = rewriter.create<scf::ParallelOp>(loc, c0, nrow, c1, cf0);
+    Value row = rowLoop.getInductionVars()[0];
+    rewriter.setInsertionPointToStart(rowLoop.getBody());
+
+    Value rowPlus1 = rewriter.create<AddIOp>(loc, row, c1);
+    Value apStart64 = rewriter.create<memref::LoadOp>(loc, Ap, row);
+    Value apEnd64 = rewriter.create<memref::LoadOp>(loc, Ap, rowPlus1);
+    Value cmp_cpSame = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, apStart64, apEnd64);
+
+    scf::IfOp ifBlock_cmpSame = rewriter.create<scf::IfOp>(loc, valueType, cmp_cpSame, true);
+    // if cmpSame
+    rewriter.setInsertionPointToStart(ifBlock_cmpSame.thenBlock());
+    rewriter.create<scf::YieldOp>(loc, cf0);
+
+    // else
+    rewriter.setInsertionPointToStart(ifBlock_cmpSame.elseBlock());
+
+    // Construct a dense array of row values
+    Value colStart = rewriter.create<IndexCastOp>(loc, apStart64, indexType);
+    Value colEnd = rewriter.create<IndexCastOp>(loc, apEnd64, indexType);
+    Value kvec = rewriter.create<memref::AllocOp>(loc, memref1DValueType, nk);
+    Value kvec_i1 = rewriter.create<memref::AllocOp>(loc, memref1DBoolType, nk);
+    rewriter.create<linalg::FillOp>(loc, kvec_i1, cfalse);
+
+    scf::ParallelOp colLoop1 = rewriter.create<scf::ParallelOp>(loc, colStart, colEnd, c1);
+    Value jj = colLoop1.getInductionVars()[0];
+    rewriter.setInsertionPointToStart(colLoop1.getBody());
+    Value col64 = rewriter.create<memref::LoadOp>(loc, Aj, jj);
+    Value col = rewriter.create<IndexCastOp>(loc, col64, indexType);
+    rewriter.create<memref::StoreOp>(loc, ctrue, kvec_i1, col);
+    Value val = rewriter.create<memref::LoadOp>(loc, Ax, jj);
+    rewriter.create<memref::StoreOp>(loc, val, kvec, col);
+
+    // end col loop 1
+    rewriter.setInsertionPointAfter(colLoop1);
+
+    // Loop thru all columns of B; accumulate values
+    scf::ParallelOp colLoop2;
+    if (mask) {
+        Value mcolStart64 = rewriter.create<memref::LoadOp>(loc, Mp, row);
+        Value mcolEnd64 = rewriter.create<memref::LoadOp>(loc, Mp, rowPlus1);
+        Value mcolStart = rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
+        Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
+
+        colLoop2 = rewriter.create<scf::ParallelOp>(loc, mcolStart, mcolEnd, c1, cf0);
+        Value mm = colLoop2.getInductionVars()[0];
+        rewriter.setInsertionPointToStart(colLoop2.getBody());
+        col64 = rewriter.create<memref::LoadOp>(loc, Mj, mm);
+        col = rewriter.create<IndexCastOp>(loc, col64, indexType);
+    } else {
+        colLoop2 = rewriter.create<scf::ParallelOp>(loc, c0, ncol, c1, cf0);
+        col = colLoop2.getInductionVars()[0];
+        rewriter.setInsertionPointToStart(colLoop2.getBody());
+        col64 = rewriter.create<IndexCastOp>(loc, col, int64Type);
+    }
+
+    Value colPlus1 = rewriter.create<AddIOp>(loc, col, c1);
+    Value iStart64 = rewriter.create<memref::LoadOp>(loc, Bp, col);
+    Value iEnd64 = rewriter.create<memref::LoadOp>(loc, Bp, colPlus1);
+    Value iStart = rewriter.create<IndexCastOp>(loc, iStart64, indexType);
+    Value iEnd = rewriter.create<IndexCastOp>(loc, iEnd64, indexType);
+
+    scf::ForOp kLoop = rewriter.create<scf::ForOp>(loc, iStart, iEnd, c1, cf0);
+    Value ii = kLoop.getInductionVar();
+    Value curr = kLoop.getLoopBody().getArgument(1);
+    rewriter.setInsertionPointToStart(kLoop.getBody());
+
+    Value kk64 = rewriter.create<memref::LoadOp>(loc, Bi, ii);
+    Value kk = rewriter.create<IndexCastOp>(loc, kk64, indexType);
+    Value cmpPair = rewriter.create<memref::LoadOp>(loc, kvec_i1, kk);
+    scf::IfOp ifBlock_cmpPair = rewriter.create<scf::IfOp>(loc, valueType, cmpPair, true);
+    // if cmpPair
+    rewriter.setInsertionPointToStart(ifBlock_cmpPair.thenBlock());
+    Value newVal;
+    if (semiring == "plus_pair") {
+        newVal = rewriter.create<AddFOp>(loc, curr, cf1);
+    } else {
+        Value aVal = rewriter.create<memref::LoadOp>(loc, kvec, kk);
+        Value bVal = rewriter.create<memref::LoadOp>(loc, Bx, ii);
+        if (semiring == "plus_times") {
+            val = rewriter.create<MulFOp>(loc, aVal, bVal);
+            newVal = rewriter.create<AddFOp>(loc, curr, val);
+        } else if (semiring == "plus_plus") {
+            val = rewriter.create<AddFOp>(loc, aVal, bVal);
+            newVal = rewriter.create<AddFOp>(loc, curr, val);
+        }
+    }
+    rewriter.create<scf::YieldOp>(loc, newVal);
+
+    // else
+    rewriter.setInsertionPointToStart(ifBlock_cmpPair.elseBlock());
+    rewriter.create<scf::YieldOp>(loc, curr);
+
+    // end if cmpPair
+    rewriter.setInsertionPointAfter(ifBlock_cmpPair);
+    Value newCurr = ifBlock_cmpPair.getResult(0);
+    rewriter.create<scf::YieldOp>(loc, newCurr);
+
+    // end k loop
+    rewriter.setInsertionPointAfter(kLoop);
+
+    Value colVal = kLoop.getResult(0);
+
+    scf::ReduceOp colReducer = rewriter.create<scf::ReduceOp>(loc, colVal);
+    BlockArgument lhs = colReducer.getRegion().getArgument(0);
+    BlockArgument rhs = colReducer.getRegion().getArgument(1);
+
+    rewriter.setInsertionPointToStart(&colReducer.getRegion().front());
+
+    Value z;
+    if (aggregator == "sum") {
+      z = llvm::TypeSwitch<Type, Value>(valueType)
+        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<AddIOp>(loc, lhs, rhs); })
+        .Case<FloatType>([&](FloatType type) { return rewriter.create<AddFOp>(loc, lhs, rhs); });
+    }
+    rewriter.create<scf::ReduceReturnOp>(loc, z);
+
+    rewriter.setInsertionPointAfter(colReducer);
+
+    // end col loop 2
+    rewriter.setInsertionPointAfter(colLoop2);
+
+    Value subtotal = colLoop2.getResult(0);
+    rewriter.create<scf::YieldOp>(loc, subtotal);
+
+    // end if cmpSame
+    rewriter.setInsertionPointAfter(ifBlock_cmpSame);
+
+    Value rowTotal = ifBlock_cmpSame.getResult(0);
+
+    scf::ReduceOp rowReducer = rewriter.create<scf::ReduceOp>(loc, rowTotal);
+    lhs = rowReducer.getRegion().getArgument(0);
+    rhs = rowReducer.getRegion().getArgument(1);
+
+    rewriter.setInsertionPointToStart(&rowReducer.getRegion().front());
+
+    if (aggregator == "sum") {
+      z = llvm::TypeSwitch<Type, Value>(valueType)
+        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<AddIOp>(loc, lhs, rhs); })
+        .Case<FloatType>([&](FloatType type) { return rewriter.create<AddFOp>(loc, lhs, rhs); });
+    }
+    rewriter.create<scf::ReduceReturnOp>(loc, z);
+
+    // end row loop
+    rewriter.setInsertionPointAfter(rowLoop);
+
+    Value total = rowLoop.getResult(0);
+
+    rewriter.replaceOp(op, total);
+
+    return success();
+  };
+};
+
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
     LowerMatrixSelectRewrite,
     LowerMatrixReduceToScalarRewrite,
     LowerMatrixMultiplyRewrite,
     LowerConvertLayoutRewrite,
-    LowerMatrixApplyRewrite
+    LowerMatrixApplyRewrite,
+    LowerMatrixMultiplyReduceToScalarRewrite
     >(patterns.getContext());
 }
 
