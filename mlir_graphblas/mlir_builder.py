@@ -8,6 +8,7 @@ An IR builder for MLIR.
 
 import jinja2
 import mlir
+import functools
 from contextlib import contextmanager
 from collections import OrderedDict
 from .sparse_utils import MLIRSparseTensor
@@ -112,7 +113,16 @@ class MLIRVar:
         return (self, index)
 
 
+class Dialect:
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return f"{self.name} dialect"
+
+
 class MLIRFunctionBuilder(BaseFunction):
+    _ops = {}
 
     # TODO consider making this class have a method to return a BaseFunction
     # and not be a subclass of BaseFunction
@@ -153,7 +163,37 @@ class MLIRFunctionBuilder(BaseFunction):
         ] = OrderedDict()
 
         self.indentation_level = 1
+        self._initialize_ops()
         return
+
+    @classmethod
+    def register_op(cls, opclass):
+        subops = cls._ops.setdefault(opclass.dialect, {})
+        if opclass.name in subops:
+            fullname = opclass.name if opclass.dialect is None else f"{opclass.dialect}.{opclass.name}"
+            raise TypeError(f"{fullname} is already a registered op in {cls.__name__}")
+        subops[opclass.name] = opclass
+
+    def _initialize_ops(self):
+        for dialect, ops in self._ops.items():
+            if dialect is None:
+                attach_point = self
+            else:
+                attach_point = getattr(self, dialect, None)
+                if attach_point is None:
+                    attach_point = Dialect(dialect)
+                    setattr(self, dialect, attach_point)
+
+            for opclass in ops.values():
+
+                def op(opclass, *args, **kwargs):
+                    ret_val, mlir = opclass.call(self, *args, **kwargs)
+                    self.add_statement(mlir)
+                    return ret_val
+
+                func = functools.partial(op, opclass)
+                setattr(attach_point, opclass.name, func)
+
 
     #######################################
     # MLIR Generation/Compilation Methods #
@@ -210,12 +250,6 @@ class MLIRFunctionBuilder(BaseFunction):
     #########################
     # MLIR Building Methods #
     #########################
-
-    def constant(self, var_value: Union[str, int, float], var_type: str) -> MLIRVar:
-        # TODO consider taking in an MLIRVar as an input to be assigned to.
-        var = self.new_var(var_type)
-        self.add_statement(f"{var.assign_string()} = constant {var_value} : {var_type}")
-        return var
 
     def return_vars(
         self, *returned_values: Union[Tuple[MLIRVar, int], MLIRVar]
@@ -406,3 +440,8 @@ class MLIRFunctionBuilder(BaseFunction):
 
         self.add_statement(statement)
         return result_var
+
+
+# Force ops to register with the builder
+from . import ops
+del ops
