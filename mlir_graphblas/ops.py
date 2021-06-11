@@ -10,7 +10,9 @@ class BaseOp:
     name = None
 
     @classmethod
-    def call(cls, irbuilder: MLIRFunctionBuilder, *args, **kwargs) -> Tuple[MLIRVar, str]:
+    def call(
+        cls, irbuilder: MLIRFunctionBuilder, *args, **kwargs
+    ) -> Tuple[MLIRVar, str]:
         raise NotImplementedError()
 
     def __init_subclass__(cls):
@@ -49,7 +51,7 @@ class GraphBLAS_MatrixSelect(BaseOp):
     def call(cls, irbuilder, input, selector):
         ret_val = irbuilder.new_var(input.var_type)
         return ret_val, (
-            f'{ret_val.assign_string()} = graphblas.matrix_select {input.access_string()} '
+            f"{ret_val.assign_string()} = graphblas.matrix_select {input.access_string()} "
             f'{{ selector = "{selector}" }} : {input.var_type}'
         )
 
@@ -62,7 +64,7 @@ class GraphBLAS_MatrixReduceToScalar(BaseOp):
     def call(cls, irbuilder, input, aggregator, return_type):
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f'{ret_val.assign_string()} = graphblas.matrix_reduce_to_scalar {input.access_string()} '
+            f"{ret_val.assign_string()} = graphblas.matrix_reduce_to_scalar {input.access_string()} "
             f'{{ aggregator = "{aggregator}" }} : {input.var_type} to {return_type}'
         )
 
@@ -76,8 +78,8 @@ class GraphBLAS_MatrixApply(BaseOp):
         thunk_val = irbuilder.new_var(thunk_type)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f'{thunk_val.assign_string()} = constant {thunk}: {thunk_type}\n'
-            f'{ret_val.assign_string()} = graphblas.matrix_apply {input.access_string()}, {thunk_val.access_string()} '
+            f"{thunk_val.assign_string()} = constant {thunk}: {thunk_type}\n"
+            f"{ret_val.assign_string()} = graphblas.matrix_apply {input.access_string()}, {thunk_val.access_string()} "
             f'{{ apply_operator = "{apply_op}" }} : ({input.var_type}, {thunk_type}) to {return_type}'
         )
 
@@ -91,13 +93,13 @@ class GraphBLAS_MatrixMultiply(BaseOp):
         ret_val = irbuilder.new_var(return_type)
         if mask:
             mlir = (
-                f'{ret_val.assign_string()} = graphblas.matrix_multiply {a.access_string()}, {b.access_string()}, '
-                f'{mask.access_string()} '
+                f"{ret_val.assign_string()} = graphblas.matrix_multiply {a.access_string()}, {b.access_string()}, "
+                f"{mask.access_string()} "
                 f'{{ semiring = "{semiring}" }} : ({a.var_type}, {b.var_type}, {mask.var_type}) to {return_type}'
             )
         else:
             mlir = (
-                f'{ret_val.assign_string()} = graphblas.matrix_multiply {a.access_string()}, {b.access_string()} '
+                f"{ret_val.assign_string()} = graphblas.matrix_multiply {a.access_string()}, {b.access_string()} "
                 f'{{ semiring = "{semiring}" }} : ({a.var_type}, {b.var_type}) to {return_type}'
             )
         return ret_val, mlir

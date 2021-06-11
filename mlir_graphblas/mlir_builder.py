@@ -170,7 +170,11 @@ class MLIRFunctionBuilder(BaseFunction):
     def register_op(cls, opclass):
         subops = cls._ops.setdefault(opclass.dialect, {})
         if opclass.name in subops:
-            fullname = opclass.name if opclass.dialect is None else f"{opclass.dialect}.{opclass.name}"
+            fullname = (
+                opclass.name
+                if opclass.dialect is None
+                else f"{opclass.dialect}.{opclass.name}"
+            )
             raise TypeError(f"{fullname} is already a registered op in {cls.__name__}")
         subops[opclass.name] = opclass
 
@@ -193,7 +197,6 @@ class MLIRFunctionBuilder(BaseFunction):
 
                 func = functools.partial(op, opclass)
                 setattr(attach_point, opclass.name, func)
-
 
     #######################################
     # MLIR Generation/Compilation Methods #
@@ -444,4 +447,5 @@ class MLIRFunctionBuilder(BaseFunction):
 
 # Force ops to register with the builder
 from . import ops
+
 del ops
