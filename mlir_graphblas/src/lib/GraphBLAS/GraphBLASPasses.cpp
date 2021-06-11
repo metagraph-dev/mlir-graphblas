@@ -1052,8 +1052,59 @@ struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPas
   }
 };
 
+// GraphBLASOptimizePass
+
+class FuseMatrixMultiplyReduceRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarOp>
+{
+public:
+  using OpRewritePattern<graphblas::MatrixReduceToScalarOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const
+  {
+    Value input = op.input();
+    graphblas::MatrixMultiplyOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyOp>();
+    if (predecessor != nullptr && predecessor->hasOneUse()) {
+      Location loc = op->getLoc();
+
+      // Build new MatrixMultiplyReduce op with the operands and arguments of the multiply,
+      // then add in the aggregator from the reduce
+      ValueRange operands = predecessor.getOperands();
+      NamedAttrList attributes = predecessor->getAttrs();
+
+      StringAttr aggregator = rewriter.getStringAttr(op.aggregator());
+      attributes.push_back(rewriter.getNamedAttr("aggregator", aggregator));
+
+      Value result = rewriter.create<graphblas::MatrixMultiplyReduceToScalarOp>(loc, 
+        op->getResultTypes(), operands, attributes.getAttrs());
+
+      rewriter.replaceOp(op, result);
+      
+      return success();
+    }
+    return failure();
+  };
+};
+
+void populateGraphBLASOptimizePatterns(RewritePatternSet &patterns){
+  patterns.add<
+      FuseMatrixMultiplyReduceRewrite>(patterns.getContext());
+}
+
+struct GraphBLASOptimizePass : public GraphBLASOptimizeBase<GraphBLASOptimizePass> {
+  void runOnOperation() override {
+    MLIRContext *ctx = &getContext();
+    RewritePatternSet patterns(ctx);
+    ConversionTarget target(*ctx);
+    populateGraphBLASOptimizePatterns(patterns);
+    (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+  }
+};
+
 } // end anonymous namespace
 
 std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASLoweringPass() {
   return std::make_unique<GraphBLASLoweringPass>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASOptimizePass() {
+  return std::make_unique<GraphBLASOptimizePass>();
 }
