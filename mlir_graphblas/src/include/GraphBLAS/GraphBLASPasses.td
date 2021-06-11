@@ -24,4 +24,15 @@ def GraphBLASLowering : Pass<"graphblas-lower", "ModuleOp"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// GraphBLASOptimize
+//===----------------------------------------------------------------------===//
+
+def GraphBLASOptimize : Pass<"graphblas-optimize", "ModuleOp"> {
+  let summary = "TODO add documentation";
+  let constructor = "mlir::createGraphBLASOptimizePass()";
+  let dependentDialects = [
+  ];
+}
+
 #endif // MLIR_CONVERSION_PASSES
