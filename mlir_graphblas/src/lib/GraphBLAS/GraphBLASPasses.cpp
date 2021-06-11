@@ -1053,27 +1053,6 @@ struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPas
 };
 
 // GraphBLASOptimizePass
-class MergeMatrixSelectRewrite : public OpRewritePattern<graphblas::MatrixSelectOp>
-{
-public:
-  using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const
-  {
-    Value input = op.input();
-    for (auto &usage : input.getUses()) {
-      //graphblas::MatrixSelectOp user = usage.getOwner()->dyn_cast_or_null<graphblas::MatrixSelectOp>();
-      //if (user != nullptr)
-      //  user->dump();
-      /*      if (selectOp != nullptr) {
-        std::cerr << "Found select usage!" << std::endl;
-        selectOp.getLoc().dump();
-      }*/
-
-    }
-
-    return failure();
-  };
-};
 
 class FuseMatrixMultiplyReduceRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarOp>
 {
@@ -1086,14 +1065,16 @@ public:
     if (predecessor != nullptr && predecessor->hasOneUse()) {
       Location loc = op->getLoc();
 
-      // Build new MatrixMultiplyReduce op
-      Value a = predecessor.a();
-      Value b = predecessor.b();
-      Value mask = predecessor.mask();
-      StringRef semiring = predecessor.semiring();
-      StringRef aggregator = op.aggregator();
+      // Build new MatrixMultiplyReduce op with the operands and arguments of the multiply,
+      // then add in the aggregator from the reduce
+      ValueRange operands = predecessor.getOperands();
+      NamedAttrList attributes = predecessor->getAttrs();
+
+      StringAttr aggregator = rewriter.getStringAttr(op.aggregator());
+      attributes.push_back(rewriter.getNamedAttr("aggregator", aggregator));
+
       Value result = rewriter.create<graphblas::MatrixMultiplyReduceToScalarOp>(loc, 
-        op->getResultTypes(), a, b, mask, semiring, aggregator);
+        op->getResultTypes(), operands, attributes.getAttrs());
 
       rewriter.replaceOp(op, result);
       
@@ -1103,21 +1084,9 @@ public:
   };
 };
 
-class FuseMatrixMultiplyApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyOp>
-{
-public:
-  using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const
-  {
-    return failure();
-  };
-};
-
 void populateGraphBLASOptimizePatterns(RewritePatternSet &patterns){
   patterns.add<
-      MergeMatrixSelectRewrite,
-      FuseMatrixMultiplyReduceRewrite,
-      FuseMatrixMultiplyApplyRewrite>(patterns.getContext());
+      FuseMatrixMultiplyReduceRewrite>(patterns.getContext());
 }
 
 struct GraphBLASOptimizePass : public GraphBLASOptimizeBase<GraphBLASOptimizePass> {
