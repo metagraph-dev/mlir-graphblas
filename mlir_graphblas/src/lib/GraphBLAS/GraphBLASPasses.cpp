@@ -1110,8 +1110,55 @@ public:
   };
 };
 
+class FuseMatrixMultiplyApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyOp>
+{
+public:
+  using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const
+  {
+    Value input = op.input();
+    graphblas::MatrixMultiplyOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyOp>();
+
+    if (predecessor != nullptr && predecessor->hasOneUse())
+    {
+      Location loc = op->getLoc();
+
+      // Build new MatrixMultiplyApply op with the operands and arguments of the multiply,
+      // then add in the aggregator from the Apply
+      ValueRange operands = predecessor.getOperands();
+      NamedAttrList attributes = predecessor->getAttrs();
+      Value thunk = op.thunk();
+      StringRef apply_operator = op.apply_operator();
+
+      RankedTensorType tensorType = predecessor.a().getType().dyn_cast<RankedTensorType>();
+      Type valueType = tensorType.getElementType();
+
+      graphblas::MatrixMultiplyOp newMultOp = rewriter.create<graphblas::MatrixMultiplyOp>(loc,
+                                op->getResultTypes(), operands, attributes.getAttrs());
+
+      Region &region = newMultOp.getRegion();
+      Block *transformBlock = rewriter.createBlock(&region, region.begin(), valueType);
+      Value blockInput = transformBlock->getArgument(0);
+
+      if (apply_operator == "min") {
+        Value cmp = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OLT, blockInput, thunk);
+        Value result = rewriter.create<mlir::SelectOp>(loc, cmp, blockInput, thunk);
+        rewriter.create<graphblas::YieldOp>(loc, result);
+      } else {
+        return op.emitError("invalid apply_operator: " + apply_operator);
+      }
+
+      rewriter.replaceOp(op, newMultOp.getResult());
+
+      return success();
+    }
+    return failure();
+  };
+};
+
 void populateGraphBLASOptimizePatterns(RewritePatternSet &patterns){
   patterns.add<
+      FuseMatrixMultiplyApplyRewrite,
       FuseMatrixMultiplyReduceRewrite>(patterns.getContext());
 }
 
