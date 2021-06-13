@@ -170,6 +170,12 @@ static LogicalResult verify(MatrixMultiplyOp op) {
       return op.emitError("Mask shape must match output shape.");
   }
 
+  Region &body = op.body();
+  auto numBlocks = body.getBlocks().size();
+  if (numBlocks > 1) {
+    return op.emitError("Region must have at most one block.");
+  }
+
   return success();
 }
 
@@ -329,6 +335,12 @@ static LogicalResult verify(ConvertLayoutOp op) {
     // dimLevelType values guaranteed to be the same since we already checked earlier
   }
 
+  return success();
+}
+
+static LogicalResult verify(YieldOp op)
+{
+  // no additional verification needed yet
   return success();
 }
 

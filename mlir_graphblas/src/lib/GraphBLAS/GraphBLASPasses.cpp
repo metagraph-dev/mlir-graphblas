@@ -13,6 +13,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/None.h"
+#include "mlir/IR/Region.h"
 
 #include "GraphBLAS/GraphBLASPasses.h"
 #include "GraphBLAS/GraphBLASUtils.h"
@@ -787,7 +788,32 @@ public:
     // Store total in Cx
     Value cjPos = rewriter.create<AddIOp>(loc, baseIndex, offset);
     rewriter.create<memref::StoreOp>(loc, col64, Cj, cjPos);
-    rewriter.create<memref::StoreOp>(loc, total, Cx, cjPos);
+
+    // Does total need to be transformed?
+    Region &body = op.body();
+    if (!body.empty()) {
+      Region::BlockListType &blocks = body.getBlocks();
+
+      // if body is not empty, there can only be one block because of validation check
+      Block &transform_block = blocks.front();
+      graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(transform_block.getTerminator());
+      if (yield == nullptr)
+      {
+        // must have graphblas.yield as terminator
+        return op.emitError("graphblas.matrix_multiply block must have graphblas.yield terminator");
+      }
+      Value result = yield.values().front();
+
+      rewriter.mergeBlocks(&transform_block, ifBlock_newOffset.thenBlock(), {total});
+
+      // write transformed total
+      rewriter.create<memref::StoreOp>(loc, result, Cx, cjPos);
+      rewriter.eraseOp(yield);
+    } else {
+      // write total as-is
+      rewriter.create<memref::StoreOp>(loc, total, Cx, cjPos);
+    }
+
     // Increment offset
     Value offsetPlus1 = rewriter.create<AddIOp>(loc, offset, c1);
     rewriter.create<scf::YieldOp>(loc, offsetPlus1);
