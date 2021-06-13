@@ -339,3 +339,36 @@ module {
     }
 
 }
+
+// -----
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+#CSC64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (j,i)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @matrix_multiply_too_many_blocks(%argA: tensor<2x2xf64, #CSR64>, %argB: tensor<2x2xf64, #CSC64>, %mask: tensor<2x2xf64, #CSR64>) -> tensor<2x2xf64, #CSR64> {
+        %cf0 = constant 0.0 : f64
+        %answer = graphblas.matrix_multiply %argA, %argB, %mask { semiring = "plus_plus" } : (tensor<2x2xf64, #CSR64>, tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSR64>) to tensor<2x2xf64, #CSR64> { // expected-error {{Region must have at most one block.}}
+          ^bb0(%x : f64):
+            %result1 = addf %x, %cf0 : f64
+            graphblas.yield %result1 : f64
+
+          ^bb1(%y : f64):
+            %result2 = addf %y, %cf0 : f64
+            graphblas.yield %result2 : f64
+        }
+        return %answer : tensor<2x2xf64, #CSR64>
+    }
+
+}
