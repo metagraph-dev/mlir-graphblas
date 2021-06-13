@@ -9,6 +9,36 @@ using namespace std;
 using namespace mlir;
 using namespace mlir::sparse_tensor;
 
+bool typeIsCSR(Type inputType) {
+  sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
+    sparse_tensor::getSparseTensorEncoding(inputType);
+  if (inputSparseEncoding) {
+    AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
+    if (inputDimOrdering.getNumDims() == 2) {
+      unsigned inputDimOrdering0 = inputDimOrdering.getDimPosition(0);
+      unsigned inputDimOrdering1 = inputDimOrdering.getDimPosition(1);
+      bool inputTypeIsCSR = (inputDimOrdering0 == 0 &&  inputDimOrdering1 == 1);
+      return inputTypeIsCSR;
+    }
+  }
+  return false;
+}
+
+bool typeIsCSC(Type inputType) {
+  sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
+    sparse_tensor::getSparseTensorEncoding(inputType);
+  if (inputSparseEncoding) {
+    AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
+    if (inputDimOrdering.getNumDims() == 2) {
+      unsigned inputDimOrdering0 = inputDimOrdering.getDimPosition(0);
+      unsigned inputDimOrdering1 = inputDimOrdering.getDimPosition(1);
+      bool inputTypeIsCSC = (inputDimOrdering0 == 1 &&  inputDimOrdering1 == 0);
+      return inputTypeIsCSC;
+    }
+  }
+  return false;
+}
+
 // make CSR tensor type
 RankedTensorType getCSRTensorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
 {
@@ -45,25 +75,6 @@ RankedTensorType getCSCTensorType(MLIRContext *context, ArrayRef<int64_t> shape,
     return cscTensor;
 }
 
-Value convertToExternalCSR(OpBuilder &builder, ModuleOp &mod, Location loc, Value input)
-{
-    // Cast the tensor to the CSR type that our external functions expect
-    // since these are passed via opaque pointer (ultimately) to these functions
-    // this is OK.
-    MLIRContext *context = mod.getContext();
-
-    RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
-    // all external calls are currently for unknown size float64 tensors
-    RankedTensorType csrType = getCSRTensorType(context, {-1, -1}, builder.getF64Type());
-
-    if (inputType == csrType) {
-        return input;
-    } else {
-        Value result = builder.create<tensor::CastOp>(loc, csrType, input);
-        return result;
-    }
-}
-
 /// Returns function reference (first hit also inserts into module).
 // from: llvm/llvm-project/mlir/lib/Dialect/SparseTensor/Transforms/SparseTensorConversion.cpp
 static FlatSymbolRefAttr getFunc(ModuleOp &mod, Location &loc, StringRef name, TypeRange result,
@@ -82,26 +93,85 @@ static FlatSymbolRefAttr getFunc(ModuleOp &mod, Location &loc, StringRef name, T
     return SymbolRefAttr::get(context, name);
 }
 
+Value convertToExternalCSR(OpBuilder &builder, ModuleOp &mod, Location loc, Value input)
+{
+  // Cast the tensor to the CSR type that our external functions expect
+  // since these are passed via opaque pointer (ultimately) to these functions
+  // this is OK.
+  MLIRContext *context = mod.getContext();
+  RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
+  if (typeIsCSR(inputType)) {
+    return input;
+  }
+  
+  // all external calls are currently for unknown size float64 tensors
+  RankedTensorType csrType = getCSRTensorType(context, {-1, -1}, builder.getF64Type());
+  FlatSymbolRefAttr castFuncSymbol = getFunc(mod, loc, "cast_csc_to_csr", csrType, inputType);
+  CallOp castCallOp = builder.create<CallOp>(loc,
+					     castFuncSymbol,
+					     csrType,
+					     llvm::ArrayRef<Value>({input})
+					     );
+
+  Value result = castCallOp->getResult(0);
+  return result;
+}
+
+Value convertToExternalCSC(OpBuilder &builder, ModuleOp &mod, Location loc, Value input)
+{
+  MLIRContext *context = mod.getContext();
+  RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
+  if (typeIsCSC(inputType)) {
+    return input;
+  }
+  
+  // all external calls are currently for unknown size float64 tensors
+  RankedTensorType csrType = getCSCTensorType(context, {-1, -1}, builder.getF64Type());
+  FlatSymbolRefAttr castFuncSymbol = getFunc(mod, loc, "cast_csr_to_csc", csrType, inputType);
+  CallOp castCallOp = builder.create<CallOp>(loc,
+					     castFuncSymbol,
+					     csrType,
+					     llvm::ArrayRef<Value>({input})
+					     );
+
+  Value result = castCallOp->getResult(0);
+  return result;
+}
+
 mlir::Value callEmptyLike(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
+    Type tensorType = tensor.getType();
     Value csrTensor = convertToExternalCSR(builder, mod, loc, tensor);
-    Type tensorType = csrTensor.getType();
+    Type csrTensorType = csrTensor.getType();
 
-    FlatSymbolRefAttr func = getFunc(mod, loc, "empty_like", tensorType, tensorType);
-    mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, tensorType, csrTensor);
-    Value castResult = builder.create<tensor::CastOp>(loc, tensor.getType(), result.getResult(0));
-
-    return castResult;
+    FlatSymbolRefAttr func = getFunc(mod, loc, "empty_like", csrTensorType, csrTensorType);
+    mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, csrTensorType, csrTensor);
+    if (typeIsCSR(tensorType)) {
+      Value castResult = convertToExternalCSR(builder, mod, loc, result.getResult(0));
+      return castResult;
+    } else if (typeIsCSC(tensorType)) {
+      Value castResult = convertToExternalCSC(builder, mod, loc, result.getResult(0));
+      return castResult;
+    } else {
+      assert(false && "Unexpected tensor type.");
+    }
 }
 
 mlir::Value callDupTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
-    Value csrTensor = convertToExternalCSR(builder, mod, loc, tensor);
-    Type tensorType = csrTensor.getType();
+  Type tensorType = tensor.getType();
+  Value csrTensor = convertToExternalCSR(builder, mod, loc, tensor);
+  Type csrTensorType = csrTensor.getType();
 
-    FlatSymbolRefAttr func = getFunc(mod, loc, "dup_tensor", tensorType, tensorType);
-    mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, tensorType, csrTensor);
-    Value castResult = builder.create<tensor::CastOp>(loc, tensor.getType(), result.getResult(0));
-
+  FlatSymbolRefAttr func = getFunc(mod, loc, "dup_tensor", csrTensorType, csrTensorType);
+  mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, csrTensorType, csrTensor);
+  if (typeIsCSR(tensorType)) {
+    Value castResult = convertToExternalCSR(builder, mod, loc, result.getResult(0));
     return castResult;
+  } else if (typeIsCSC(tensorType)) {
+    Value castResult = convertToExternalCSC(builder, mod, loc, result.getResult(0));
+    return castResult;
+  } else {
+    assert(false && "Unexpected tensor type.");
+  }
 }
 
 mlir::CallOp callResizeDim(OpBuilder &builder, ModuleOp &mod, Location loc,

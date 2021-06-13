@@ -187,6 +187,8 @@ cdef extern from "SparseUtils.cpp" nogil:
     void *dup_tensor(void *tensor)
     void *ptr8_to_tensor(void *tensor)
     void *tensor_to_ptr8(void *tensor)
+    void *cast_csr_to_csc(void *tensor)
+    void *cast_csc_to_csr(void *tensor)
     void *empty_like(void *tensor)
     void *empty(void *tensor, uint64_t ndims)
 

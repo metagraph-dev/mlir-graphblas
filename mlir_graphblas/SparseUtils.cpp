@@ -754,6 +754,12 @@ void *ptr8_to_tensor(void *tensor) {
 void *tensor_to_ptr8(void *tensor) {
     return tensor;
 }
+void *cast_csr_to_csc(void *tensor) {
+    return tensor;
+}
+void *cast_csc_to_csr(void *tensor) {
+    return tensor;
+}
 void *empty_like(void *tensor) {
     return static_cast<SparseTensorStorageBase *>(tensor)->empty_like();
 }

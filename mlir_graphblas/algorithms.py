@@ -1,6 +1,6 @@
 from typing import List
 from .functions import (
-    Transpose,
+    ConvertLayout,
     MatrixSelect,
     MatrixReduceToScalar,
     MatrixApply,
@@ -8,10 +8,25 @@ from .functions import (
 )
 from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
 from .sparse_utils import MLIRSparseTensor
+from .engine import MlirJitEngine
 import time
 
+graphblas_opt_passes = (
+    "--graphblas-lower",
+    "--sparsification",
+    "--sparse-tensor-conversion",
+    "--linalg-bufferize",
+    "--convert-scf-to-std",
+    "--func-bufferize",
+    "--tensor-bufferize",
+    "--tensor-constant-bufferize",
+    "--finalizing-bufferize",
+    "--convert-linalg-to-loops",
+    "--convert-scf-to-std",
+    "--convert-std-to-llvm",
+)
 
-csr_to_csc = Transpose(swap_sizes=False)
+csr_to_csc = ConvertLayout()
 matrix_select_triu = MatrixSelect("TRIU")
 matrix_select_tril = MatrixSelect("TRIL")
 matrix_select_gt0 = MatrixSelect("gt0")
@@ -149,7 +164,10 @@ def dense_neural_network_combined(
             )
             bias_matrix = MLIRVar("bias_matrix", "tensor<?x?xf64, #CSR64")
             irb.add_statement(
-                f"{bias_matrix.assign_string()} = call @ptr8_to_tensor(%bias_matrix_ptr) : (!llvm.ptr<i8>) -> tensor<?x?xf64, #CSR64>"
+                f"%bias_matrix_csr = call @ptr8_to_tensor(%bias_matrix_ptr) : (!llvm.ptr<i8>) -> tensor<?x?xf64, #CSR64>"
+            )
+            irb.add_statement(
+                f"{bias_matrix.assign_string()} = call @cast_csr_to_csc(%bias_matrix_csr) : (tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSC64>"
             )
 
             # Cast Y from pointer to tensor

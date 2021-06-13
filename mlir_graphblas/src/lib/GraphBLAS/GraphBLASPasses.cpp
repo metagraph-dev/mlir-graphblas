@@ -40,17 +40,18 @@ public:
     Location loc = op->getLoc();
 
     Value inputTensor = op.input();
+    Type inputType = inputTensor.getType();
     Type outputType = op->getResultTypes()[0];
 
     // Shortcut operation if no change
-    if (inputTensor.getType() == outputType)
+    if (inputType == outputType)
     {
       rewriter.replaceOp(op, inputTensor);
       return success();
     }
 
     // otherwise, the rest of this function changes the data layout
-    Type valueType = inputTensor.getType().dyn_cast<RankedTensorType>().getElementType();
+    Type valueType = inputType.dyn_cast<RankedTensorType>().getElementType();
     Type int64Type = rewriter.getIntegerType(64);
     Type indexType = rewriter.getIndexType();
 
@@ -173,9 +174,16 @@ public:
     rewriter.create<memref::StoreOp>(loc, last_last, outputPtrs, ncol);
 
     // verify function will ensure that this is CSR->CSC or CSC->CSR
-    Value newOutput = rewriter.create<tensor::CastOp>(loc, outputType, output);
-    rewriter.replaceOp(op, newOutput);
-
+    if (typeIsCSR(outputType)) {
+      Value result = convertToExternalCSR(rewriter, module, loc, output); 
+      rewriter.replaceOp(op, result);
+    } else if (typeIsCSC(outputType)) {
+      Value result = convertToExternalCSC(rewriter, module, loc, output); 
+      rewriter.replaceOp(op, result);
+    } else {
+      assert(false && "Output type must be CSC or CSR.");
+    }
+    
     return success();
   };
 };

@@ -3,6 +3,20 @@ from mlir_graphblas.sparse_utils import MLIRSparseTensor
 
 from typing import Sequence
 
+GRAPHBLAS_PASSES = [
+    "--graphblas-lower",
+    "--sparsification",
+    "--sparse-tensor-conversion",
+    "--linalg-bufferize",
+    "--func-bufferize",
+    "--tensor-bufferize",
+    "--tensor-constant-bufferize",
+    "--finalizing-bufferize",
+    "--convert-linalg-to-loops",
+    "--convert-scf-to-std",
+    "--convert-std-to-llvm",
+]
+
 STANDARD_PASSES = [
     "--sparsification",
     "--sparse-tensor-conversion",
