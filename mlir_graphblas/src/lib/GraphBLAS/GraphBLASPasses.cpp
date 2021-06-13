@@ -181,36 +181,30 @@ public:
   };
 };
 
-struct MatrixSelectOutput {
-  ModuleOp module;
-  Value tensor;
-  Value Bp;
-  Value Bj;
-  Value Bx;
-  StringRef selector;
-
-  // helper values
-  Value c0;
-  Value c1;
-  Value cf0;
-  Value c0_64;
-  Value c1_64;
-
-  Type valueType;
-  Type memref1DI64Type;
-  Type memref1DValueType;
-
-  MatrixSelectOutput(ModuleOp _module, StringRef _selector, Type _valueType, Value _c0, Value _c1, Value _cf0, Value _c0_64, Value _c1_64) : 
-     module(_module), selector(_selector), c0(_c0), c1(_c1), cf0(_cf0), c0_64(_c0_64), c1_64(_c1_64), valueType(_valueType)
+struct MatrixSelectOutputWriter {
+  MatrixSelectOutputWriter(StringRef _selector) : selector(_selector)
   {
-    MLIRContext *context = _module.getContext();
-    Type int64Type = IntegerType::get(context, 64);
-
-    memref1DI64Type = MemRefType::get({-1}, int64Type);
-    memref1DValueType = MemRefType::get({-1}, _valueType);
   };
 
-  void createTensor(PatternRewriter &rewriter, Location loc, Value input) {
+  void createConstants(PatternRewriter &rewriter, Location loc) {
+    Type int64Type = rewriter.getIntegerType(64);
+    FloatType float64Type = rewriter.getF64Type();
+
+    c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    c0_64 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
+    c1_64 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
+    cf0 = rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), float64Type);
+  }
+
+  void createTensor(PatternRewriter &rewriter, Location loc, ModuleOp module, Value input)
+  {
+    Type valueType = input.getType().dyn_cast<TensorType>().getElementType();
+    Type int64Type = rewriter.getIntegerType(64);
+
+    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
+    Type memref1DValueType = MemRefType::get({-1}, valueType);
+
     tensor = callDupTensor(rewriter, module, loc, input);
     Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, tensor, c1);
     Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, tensor, c1);
@@ -265,7 +259,7 @@ struct MatrixSelectOutput {
     rewriter.setInsertionPointAfter(ifKeep);
   };
 
-  void createTrimValues(PatternRewriter &rewriter, Location loc, Value nrow)
+  void createTrimValues(PatternRewriter &rewriter, Location loc, ModuleOp module, Value nrow)
   {
     Type indexType = rewriter.getIndexType();
 
@@ -275,6 +269,21 @@ struct MatrixSelectOutput {
     callResizeIndex(rewriter, module, loc, tensor, c1, nnz);
     callResizeValues(rewriter, module, loc, tensor, nnz);
   };
+
+  StringRef selector;
+
+  // frequently used values
+  Value tensor;
+  Value Bp;
+  Value Bj;
+  Value Bx;
+
+  // frequently used constants
+  Value c0;
+  Value c1;
+  Value cf0;
+  Value c0_64;
+  Value c1_64;
 };
 
 class LowerMatrixSelectRewrite : public OpRewritePattern<graphblas::MatrixSelectOp> {
@@ -287,7 +296,6 @@ public:
     Value input = op.input();
     Type valueType = input.getType().dyn_cast<TensorType>().getElementType();
     Type int64Type = rewriter.getIntegerType(64);
-    FloatType float64Type = rewriter.getF64Type();
     Type indexType = rewriter.getIndexType();
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
@@ -297,9 +305,6 @@ public:
     // Initial constants
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-    Value c0_64 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
-    Value c1_64 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
-    Value cf0 = rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), float64Type);
 
     // Get sparse tensor info
     Value nrow = rewriter.create<memref::DimOp>(loc, input, c0);
@@ -307,14 +312,15 @@ public:
     Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
 
-    SmallVector<MatrixSelectOutput*, 3> outputs;
+    SmallVector<MatrixSelectOutputWriter*, 3> outputs;
     for (auto selectorAttr : selectors)
     {
       StringRef selector = selectorAttr.dyn_cast_or_null<StringAttr>().getValue();
-      MatrixSelectOutput *output = new MatrixSelectOutput(module, selector, valueType, c0, c1, cf0, c0_64, c1_64);
+      MatrixSelectOutputWriter *output = new MatrixSelectOutputWriter(selector);
       outputs.push_back(output);
 
-      output->createTensor(rewriter, loc, input);
+      output->createConstants(rewriter, loc);
+      output->createTensor(rewriter, loc, module, input);
     }
 
     // Loop
@@ -355,7 +361,7 @@ public:
     SmallVector<Value, 3> outputTensors;
     for (auto output : outputs)
     {
-      output->createTrimValues(rewriter, loc, nrow);
+      output->createTrimValues(rewriter, loc, module, nrow);
       outputTensors.push_back(output->tensor);
     }
     rewriter.replaceOp(op, outputTensors);
