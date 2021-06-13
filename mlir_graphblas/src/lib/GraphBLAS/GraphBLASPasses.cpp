@@ -793,16 +793,14 @@ public:
     Region &body = op.body();
     if (!body.empty()) {
       Region::BlockListType &blocks = body.getBlocks();
-      if (blocks.size() != 1) {
-        // must have exactly one block
-        return failure();
-      }
+
+      // if body is not empty, there can only be one block because of validation check
       Block &transform_block = blocks.front();
       graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(transform_block.getTerminator());
       if (yield == nullptr)
       {
         // must have graphblas.yield as terminator
-        return failure();
+        return op.emitError("graphblas.matrix_multiply block must have graphblas.yield terminator");
       }
       Value result = yield.values().front();
 
