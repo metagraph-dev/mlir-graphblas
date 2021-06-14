@@ -18,6 +18,9 @@ class BaseOp:
     def __init_subclass__(cls):
         MLIRFunctionBuilder.register_op(cls)
 
+###########################################
+# std ops
+###########################################
 
 class ConstantOp(BaseOp):
     name = "constant"
@@ -27,8 +30,56 @@ class ConstantOp(BaseOp):
         if type in {"f128", "f64", "f32", "f16", "f8"}:
             value = float(value)
         ret_val = irbuilder.new_var(type)
-        return ret_val, f"{ret_val.assign_string()} = constant {value} : {type}"
+        return ret_val, (
+            f"{ret_val.assign_string()} = constant {value} : {type}"
+        )
 
+
+class AddIOp(BaseOp):
+    name = "addi"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        if lhs.var_type != rhs.var_type:
+            raise TypeError(f"Type mismatch: {lhs.var_type} != {rhs.var_type}")
+        ret_val = irbuilder.new_var(lhs.var_type)
+        return ret_val, (
+            f"{ret_val.assign_string()} = addi {lhs.access_string()}, {rhs.access_string()} : {lhs.var_type}"
+        )
+
+
+###########################################
+# llvm ops
+###########################################
+
+class LLVMGetElementPtrOp(BaseOp):
+    dialect = "llvm"
+    name = "getelementptr"
+
+    @classmethod
+    def call(cls, irbuilder, list, index):
+        ret_val = irbuilder.new_var(list.var_type)
+        return ret_val, (
+            f"{ret_val.assign_string()} = llvm.getelementptr {list.access_string()}[{index.access_string()}] : "
+            f"({list.var_type}, {index.var_type}) -> {list.var_type}"
+        )
+
+
+class LLVMLoadOp(BaseOp):
+    dialect = "llvm"
+    name = "load"
+
+    @classmethod
+    def call(cls, irbuilder, pointer, return_type):
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign_string()} = llvm.load {pointer.access_string()} : {pointer.var_type}"
+        )
+
+
+###########################################
+# graphblas ops
+###########################################
 
 class GraphBLAS_ConvertLayout(BaseOp):
     dialect = "graphblas"
@@ -39,7 +90,7 @@ class GraphBLAS_ConvertLayout(BaseOp):
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign_string()} = graphblas.convert_layout {input.access_string()} : "
-            f"{input.type} to {return_type}"
+            f"{input.var_type} to {return_type}"
         )
 
 
@@ -74,13 +125,12 @@ class GraphBLAS_MatrixApply(BaseOp):
     name = "matrix_apply"
 
     @classmethod
-    def call(cls, irbuilder, input, apply_op, thunk, thunk_type, return_type):
-        thunk_val = irbuilder.new_var(thunk_type)
+    def call(cls, irbuilder, input, apply_op, thunk, return_type):
+        assert isinstance(thunk, MLIRVar), "thunk must be an MLIRVar"
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{thunk_val.assign_string()} = constant {thunk}: {thunk_type}\n"
-            f"{ret_val.assign_string()} = graphblas.matrix_apply {input.access_string()}, {thunk_val.access_string()} "
-            f'{{ apply_operator = "{apply_op}" }} : ({input.var_type}, {thunk_type}) to {return_type}'
+            f"{ret_val.assign_string()} = graphblas.matrix_apply {input.access_string()}, {thunk.access_string()} "
+            f'{{ apply_operator = "{apply_op}" }} : ({input.var_type}, {thunk.var_type}) to {return_type}'
         )
 
 
@@ -103,3 +153,32 @@ class GraphBLAS_MatrixMultiply(BaseOp):
                 f'{{ semiring = "{semiring}" }} : ({a.var_type}, {b.var_type}) to {return_type}'
             )
         return ret_val, mlir
+
+
+###########################################
+# util ops
+###########################################
+
+class PtrToTensorOp(BaseOp):
+    dialect = "util"
+    name = "ptr8_to_tensor"
+
+    @classmethod
+    def call(cls, irbuilder, input, return_type):
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign_string()} = call @ptr8_to_tensor({input.access_string()}) : "
+            f"(!llvm.ptr<i8>) -> {return_type}"
+        )
+
+class TensorToPtrOp(BaseOp):
+    dialect = "util"
+    name = "tensor_to_ptr8"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        ret_val = irbuilder.new_var("!llvm.ptr<i8>")
+        return ret_val, (
+            f"{ret_val.assign_string()} = call @tensor_to_ptr8_to_tensor({input.access_string()}) : "
+            f"({input.var_type}) -> !llvm.ptr<i8>"
+        )

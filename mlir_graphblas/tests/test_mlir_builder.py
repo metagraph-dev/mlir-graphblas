@@ -56,6 +56,7 @@ func @densify(%argA: tensor<8x8xf64, #sparseTensor>) -> tensor<8x8xf64> {
 }
 """,
         [
+            "--graphblas-lower",
             "--sparsification",
             "--sparse-tensor-conversion",
             "--linalg-bufferize",
