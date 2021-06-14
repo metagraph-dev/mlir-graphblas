@@ -13,6 +13,19 @@ def logged_subprocess_run(*args, **kwargs):
     return subprocess.run(*args, **kwargs)
 
 
+try:
+    # when running in developer mode
+    from . import src
+
+    _SCRIPT_DIR = os.path.dirname(__file__)
+    _BUILD_DIR = os.path.join(_SCRIPT_DIR, "src", "build")
+    GRAPHBLAS_OPT_EXE = os.path.join(_BUILD_DIR, "bin", "graphblas-opt")
+except ImportError:
+    # ImportError assumes a normal install without a src directory, so graphblas-opt should
+    # be available in the /bin folder of the environment
+    GRAPHBLAS_OPT_EXE = "graphblas-opt"
+
+
 class MlirOptError(Exception):
     pass
 
@@ -24,7 +37,7 @@ class MlirOptCli:
         if executable is None:
             from . import config
 
-            executable = config.get("cli.executable", "mlir-opt")
+            executable = config.get("cli.executable", GRAPHBLAS_OPT_EXE)
         self._executable = executable
         if options is None:
             options = []

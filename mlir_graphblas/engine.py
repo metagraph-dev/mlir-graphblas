@@ -542,7 +542,7 @@ def parse_mlir_functions(
 
 
 class MlirJitEngine:
-    def __init__(self, llvmlite_engine=None):
+    def __init__(self, cli_executable=None, cli_options=None, llvmlite_engine=None):
         if llvmlite_engine is None:
             # Create a target machine representing the host
             target = llvm.Target.from_default_triple()
@@ -551,7 +551,7 @@ class MlirJitEngine:
             backing_mod = llvm.parse_assembly("")
             llvmlite_engine = llvm.create_mcjit_compiler(backing_mod, target_machine)
         self._engine = llvmlite_engine
-        self._cli = MlirOptCli()
+        self._cli = MlirOptCli(cli_executable, cli_options)
         self.name_to_callable: Dict[str, Callable] = {}
 
     def _add_mlir_module(
@@ -571,6 +571,10 @@ class MlirJitEngine:
             input=llvm_dialect_text.encode(),
             capture_output=True,
         )
+        if mlir_translate_run.returncode != 0:
+            raise RuntimeError(
+                f"mlir-translate failed on the following input: \n{llvm_dialect_text}"
+            )
 
         llvm_ir_text = mlir_translate_run.stdout.decode()
 

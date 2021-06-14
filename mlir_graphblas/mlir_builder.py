@@ -9,6 +9,7 @@ An IR builder for MLIR.
 import jinja2
 import mlir
 import functools
+import itertools
 from contextlib import contextmanager
 from collections import OrderedDict
 from .sparse_utils import MLIRSparseTensor
@@ -154,7 +155,7 @@ class MLIRFunctionBuilder(BaseFunction):
         self.input_vars = input_vars
         self.return_types = return_types
 
-        self.var_name_counter = 0
+        self.var_name_counter = itertools.count()
         self.function_body_statements: List[str] = []
 
         # function_name -> (function_mlir_definition, input_mlir_types, return_mlir_type)
@@ -237,6 +238,7 @@ class MLIRFunctionBuilder(BaseFunction):
         return
 
     def add_statement(self, statement: str) -> None:
+        """In an ideal world, no human would ever call this method."""
         for line in map(str.strip, statement.split("\n")):
             self.function_body_statements.append(
                 " " * self.default_indentation_size
@@ -246,8 +248,7 @@ class MLIRFunctionBuilder(BaseFunction):
         return
 
     def new_var(self, *var_types: str) -> MLIRVar:
-        var_name = f"var_{self.var_name_counter}"
-        self.var_name_counter += 1
+        var_name = f"var_{next(self.var_name_counter)}"
         return MLIRVar(var_name, *var_types)
 
     #########################

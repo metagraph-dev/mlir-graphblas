@@ -13,6 +13,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/None.h"
+#include "mlir/IR/Region.h"
 
 #include "GraphBLAS/GraphBLASPasses.h"
 #include "GraphBLAS/GraphBLASUtils.h"
@@ -40,17 +41,18 @@ public:
     Location loc = op->getLoc();
 
     Value inputTensor = op.input();
+    Type inputType = inputTensor.getType();
     Type outputType = op->getResultTypes()[0];
 
     // Shortcut operation if no change
-    if (inputTensor.getType() == outputType)
+    if (inputType == outputType)
     {
       rewriter.replaceOp(op, inputTensor);
       return success();
     }
 
     // otherwise, the rest of this function changes the data layout
-    Type valueType = inputTensor.getType().dyn_cast<RankedTensorType>().getElementType();
+    Type valueType = inputType.dyn_cast<RankedTensorType>().getElementType();
     Type int64Type = rewriter.getIntegerType(64);
     Type indexType = rewriter.getIndexType();
 
@@ -173,9 +175,16 @@ public:
     rewriter.create<memref::StoreOp>(loc, last_last, outputPtrs, ncol);
 
     // verify function will ensure that this is CSR->CSC or CSC->CSR
-    Value newOutput = rewriter.create<tensor::CastOp>(loc, outputType, output);
-    rewriter.replaceOp(op, newOutput);
-
+    if (typeIsCSR(outputType)) {
+      Value result = convertToExternalCSR(rewriter, module, loc, output); 
+      rewriter.replaceOp(op, result);
+    } else if (typeIsCSC(outputType)) {
+      Value result = convertToExternalCSC(rewriter, module, loc, output); 
+      rewriter.replaceOp(op, result);
+    } else {
+      assert(false && "Output type must be CSC or CSR.");
+    }
+    
     return success();
   };
 };
@@ -787,7 +796,32 @@ public:
     // Store total in Cx
     Value cjPos = rewriter.create<AddIOp>(loc, baseIndex, offset);
     rewriter.create<memref::StoreOp>(loc, col64, Cj, cjPos);
-    rewriter.create<memref::StoreOp>(loc, total, Cx, cjPos);
+
+    // Does total need to be transformed?
+    Region &body = op.body();
+    if (!body.empty()) {
+      Region::BlockListType &blocks = body.getBlocks();
+
+      // if body is not empty, there can only be one block because of validation check
+      Block &transform_block = blocks.front();
+      graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(transform_block.getTerminator());
+      if (yield == nullptr)
+      {
+        // must have graphblas.yield as terminator
+        return op.emitError("graphblas.matrix_multiply block must have graphblas.yield terminator");
+      }
+      Value result = yield.values().front();
+
+      rewriter.mergeBlocks(&transform_block, ifBlock_newOffset.thenBlock(), {total});
+
+      // write transformed total
+      rewriter.create<memref::StoreOp>(loc, result, Cx, cjPos);
+      rewriter.eraseOp(yield);
+    } else {
+      // write total as-is
+      rewriter.create<memref::StoreOp>(loc, total, Cx, cjPos);
+    }
+
     // Increment offset
     Value offsetPlus1 = rewriter.create<AddIOp>(loc, offset, c1);
     rewriter.create<scf::YieldOp>(loc, offsetPlus1);
@@ -1084,8 +1118,55 @@ public:
   };
 };
 
+class FuseMatrixMultiplyApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyOp>
+{
+public:
+  using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const
+  {
+    Value input = op.input();
+    graphblas::MatrixMultiplyOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyOp>();
+
+    if (predecessor != nullptr && predecessor->hasOneUse())
+    {
+      Location loc = op->getLoc();
+
+      // Build new MatrixMultiplyApply op with the operands and arguments of the multiply,
+      // then add in the aggregator from the Apply
+      ValueRange operands = predecessor.getOperands();
+      NamedAttrList attributes = predecessor->getAttrs();
+      Value thunk = op.thunk();
+      StringRef apply_operator = op.apply_operator();
+
+      RankedTensorType tensorType = predecessor.a().getType().dyn_cast<RankedTensorType>();
+      Type valueType = tensorType.getElementType();
+
+      graphblas::MatrixMultiplyOp newMultOp = rewriter.create<graphblas::MatrixMultiplyOp>(loc,
+                                op->getResultTypes(), operands, attributes.getAttrs());
+
+      Region &region = newMultOp.getRegion();
+      Block *transformBlock = rewriter.createBlock(&region, region.begin(), valueType);
+      Value blockInput = transformBlock->getArgument(0);
+
+      if (apply_operator == "min") {
+        Value cmp = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OLT, blockInput, thunk);
+        Value result = rewriter.create<mlir::SelectOp>(loc, cmp, blockInput, thunk);
+        rewriter.create<graphblas::YieldOp>(loc, result);
+      } else {
+        return op.emitError("invalid apply_operator: " + apply_operator);
+      }
+
+      rewriter.replaceOp(op, newMultOp.getResult());
+
+      return success();
+    }
+    return failure();
+  };
+};
+
 void populateGraphBLASOptimizePatterns(RewritePatternSet &patterns){
   patterns.add<
+      FuseMatrixMultiplyApplyRewrite,
       FuseMatrixMultiplyReduceRewrite>(patterns.getContext());
 }
 

@@ -9,6 +9,7 @@
 
 include "GraphBLASDialect.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
 
 class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Dialect, mnemonic, traits> {
     let verifier = [{ return ::verify(*this); }];
@@ -117,9 +118,10 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
 
     let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask, StrAttr:$semiring);
     let results = (outs AnyTensor:$output);
+    let regions = (region AnyRegion:$body);
     
     let assemblyFormat = [{
-           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output)
+           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) ($body^)?
     }];
 }
 
@@ -149,6 +151,26 @@ def GraphBLAS_MatrixMultiplyReduceToScalarOp : GraphBLAS_Op<"matrix_multiply_red
     let assemblyFormat = [{
            $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output)
     }];
+}
+
+def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Terminator]>, 
+    Arguments<(ins Variadic<AnyType>:$values)> {
+    let summary = "graphblas yield operation";
+    let description = [{
+        `graphblas.yield` is a special terminator operation for blocks inside regions in
+        several `graphblas` operations.  It returns a value to the enclosing op, with
+        a meaning that depends on the op.
+
+        ```mlir
+        graphblas.yield %f0 : f64
+        ```
+    }];
+
+    let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
+    let assemblyFormat = [{
+           $values attr-dict `:` type($values)
+    }];
+
 }
 
 #endif // GRAPHBLAS_OPS
