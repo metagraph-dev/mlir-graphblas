@@ -424,7 +424,6 @@ def test_jit_engine_sequence_of_scalars_input(engine, mlir_type):
     mlir_template, args, expected_result = (  # sequence of scalars -> scalar
         """
 func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
-  // pymlir-skip: begin
 
   %sum_memref = memref.alloc() : memref<{mlir_type}>
   %sum_garbage = memref.load %sum_memref[] : memref<{mlir_type}>
@@ -458,7 +457,6 @@ func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
   
   %sum = memref.load %sum_memref[] : memref<{mlir_type}>
   
-  // pymlir-skip: end
 
   return %sum : {mlir_type}
 }}
@@ -528,7 +526,6 @@ func private @ptr8_to_tensor(!llvm.ptr<i8>) -> tensor<2x3xf64, #sparseTensor>
 func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_length: index) -> f64 {
   // Take an array of sparse 2x3 matrices
 
-  // pymlir-skip: begin
 
   %output_storage = constant dense<0.0> : tensor<f64>
 
@@ -567,7 +564,6 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
 
   %sum = memref.load %sum_memref[] : memref<f64>
 
-  // pymlir-skip: end
 
   return %sum : f64
 }
@@ -620,7 +616,6 @@ def test_jit_engine_zero_values(engine):
         %c0 = constant 0 : index
         %c1 = constant 1 : index
 
-        // pymlir-skip: begin
 
         %n_row = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
         %n_col = call @sparseDimSize(%input, %c1) : (!llvm.ptr<i8>, index) -> index
@@ -683,7 +678,6 @@ def test_jit_engine_zero_values(engine):
         }
         memref.store %last_last, %Bp[%n_col] : memref<?xindex>
 
-        // pymlir-skip: end
         return
       }
     }
@@ -716,7 +710,6 @@ def test_jit_engine_zero_values(engine):
 def test_jit_engine_skip(engine):
     # scf.if cannot be parsed by pymlir currently
     mlir_code = r"""
-// pymlir-skip: begin
 func private @relu_scalar(%arg0: f32) -> f32 {
   %cst = constant 0.000000e+00 : f32
   %0 = cmpf uge, %arg0, %cst : f32
@@ -727,7 +720,6 @@ func private @relu_scalar(%arg0: f32) -> f32 {
   }
   return %1 : f32
 }
-// pymlir-skip: end
 
 func @test_func(%arg0: f32) -> f32 {
   return %arg0 : f32
