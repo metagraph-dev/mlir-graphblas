@@ -50,3 +50,5 @@ def test_triangle_count():
 
     num_triangles = mlalgo.triangle_count_combined(a)
     assert num_triangles == 5, num_triangles
+
+    return
