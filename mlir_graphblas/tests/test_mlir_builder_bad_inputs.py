@@ -59,7 +59,9 @@ def test_ir_builder_bad_input_multi_value_mlir_variable():
         ir_builder.return_vars(for_vars.returned_variable[:])
 
     # Raise when returning a non-MLIRVar
-    with pytest.raises(TypeError, match="10 is not a valid return value, expected MLIRVar."):
+    with pytest.raises(
+        TypeError, match="10 is not a valid return value, expected MLIRVar."
+    ):
         ir_builder.return_vars(10)
 
     # Raise when returning value incompatible with return type.

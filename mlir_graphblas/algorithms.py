@@ -65,7 +65,9 @@ def triangle_count_combined(A: MLIRSparseTensor) -> int:
         U = irb.graphblas.matrix_select(inp, "triu")
         L = irb.graphblas.matrix_select(inp, "tril")
         U_csc = irb.graphblas.convert_layout(U, "tensor<?x?xf64, #CSC64>")
-        C = irb.graphblas.matrix_multiply(L, U_csc, L, "plus_pair", "tensor<?x?xf64, #CSR64>")
+        C = irb.graphblas.matrix_multiply(
+            L, U_csc, L, "plus_pair", "tensor<?x?xf64, #CSR64>"
+        )
 
         reduce_result = irb.graphblas.matrix_reduce_to_scalar(C, "sum", "f64")
         irb.return_vars(reduce_result)
@@ -142,23 +144,35 @@ def dense_neural_network_combined(
             # Get weight matrix
             weight_matrix_ptr_ptr = irb.llvm.getelementptr(weight_list, layer_idx)
             weight_matrix_ptr = irb.llvm.load(weight_matrix_ptr_ptr, "!llvm.ptr<i8>")
-            weight_matrix = irb.util.ptr8_to_tensor(weight_matrix_ptr, "tensor<?x?xf64, #CSR64>")
+            weight_matrix = irb.util.ptr8_to_tensor(
+                weight_matrix_ptr, "tensor<?x?xf64, #CSR64>"
+            )
 
             # Get bias matrix
             bias_matrix_ptr_ptr = irb.llvm.getelementptr(bias_list, layer_idx)
             bias_matrix_ptr = irb.llvm.load(bias_matrix_ptr_ptr, "!llvm.ptr<i8>")
-            bias_matrix_csr = irb.util.ptr8_to_tensor(bias_matrix_ptr, "tensor<?x?xf64, #CSR64>")
+            bias_matrix_csr = irb.util.ptr8_to_tensor(
+                bias_matrix_ptr, "tensor<?x?xf64, #CSR64>"
+            )
             bias_matrix = irb.util.cast_csr_to_csc(bias_matrix_csr)
 
             # Cast Y from pointer to tensor
             Y = irb.util.ptr8_to_tensor(Y_ptr8, "tensor<?x?xf64, #CSR64>")
 
             # Perform inference
-            W_csc = irb.graphblas.convert_layout(weight_matrix, "tensor<?x?xf64, #CSC64>")
-            matmul_result = irb.graphblas.matrix_multiply(Y, W_csc, None, "plus_times", "tensor<?x?xf64, #CSR64>")
-            add_bias_result = irb.graphblas.matrix_multiply(matmul_result, bias_matrix, None, "plus_plus", "tensor<?x?xf64, #CSR64>")
+            W_csc = irb.graphblas.convert_layout(
+                weight_matrix, "tensor<?x?xf64, #CSC64>"
+            )
+            matmul_result = irb.graphblas.matrix_multiply(
+                Y, W_csc, None, "plus_times", "tensor<?x?xf64, #CSR64>"
+            )
+            add_bias_result = irb.graphblas.matrix_multiply(
+                matmul_result, bias_matrix, None, "plus_plus", "tensor<?x?xf64, #CSR64>"
+            )
             relu_result = irb.graphblas.matrix_select(add_bias_result, "gt0")
-            clamp_result = irb.graphblas.matrix_apply(relu_result, "min", clamp_threshold, "tensor<?x?xf64, #CSR64>")
+            clamp_result = irb.graphblas.matrix_apply(
+                relu_result, "min", clamp_threshold, "tensor<?x?xf64, #CSR64>"
+            )
 
             # Cast clamp_result to a pointer
             result_ptr8 = irb.util.tensor_to_ptr8(clamp_result)
@@ -168,7 +182,9 @@ def dense_neural_network_combined(
             for_vars.yield_vars(result_ptr8, incremented_layer_index_i64)
 
         # One final cast from ptr8 to tensor
-        Y_final = irb.util.ptr8_to_tensor(for_vars.returned_variable[0], "tensor<?x?xf64, #CSR64>")
+        Y_final = irb.util.ptr8_to_tensor(
+            for_vars.returned_variable[0], "tensor<?x?xf64, #CSR64>"
+        )
 
         irb.return_vars(Y_final)
 

@@ -50,6 +50,7 @@ class MLIRVar:
     bar = MLIRVar('bar', 'f64')
     add_statement(f"{bar.assign} = addf {foo}, {baz} : {bar.type}")
     """
+
     def __init__(self, name: str, type: str):
         self.name = name
         self.type = type
@@ -102,7 +103,9 @@ class MLIRTuple:
         return f"MLIRTuple<name={self.name}, types={self.types}>"
 
     def __str__(self):
-        raise TypeError(f"Cannot access MLIRTuple {self.name} directly. Use index notation to access an element.")
+        raise TypeError(
+            f"Cannot access MLIRTuple {self.name} directly. Use index notation to access an element."
+        )
 
     def __getitem__(self, index):
         # Create an initialized SSA which points to the element at `index`
@@ -226,9 +229,7 @@ class MLIRFunctionBuilder(BaseFunction):
         if len(self.return_types) != 1:
             return_type = f"({return_type})"
 
-        signature = ", ".join(
-            f"{var}: {var.type}" for var in self.input_vars
-        )
+        signature = ", ".join(f"{var}: {var.type}" for var in self.input_vars)
 
         return needed_function_definitions + self.function_wrapper_text.render(
             private_func=make_private,
@@ -271,12 +272,12 @@ class MLIRFunctionBuilder(BaseFunction):
     # MLIR Building Methods #
     #########################
 
-    def return_vars(
-        self, *returned_values: MLIRVar
-    ) -> None:
+    def return_vars(self, *returned_values: MLIRVar) -> None:
         for expected, var in zip(self.return_types, returned_values):
             if not isinstance(var, MLIRVar):
-                raise TypeError(f"{var!r} is not a valid return value, expected MLIRVar.")
+                raise TypeError(
+                    f"{var!r} is not a valid return value, expected MLIRVar."
+                )
             if not mlir_type_strings_equal(expected, var.type):
                 raise TypeError(f"Return type of {var!r} does not match {expected}")
         ret_vals = ", ".join(str(var) for var in returned_values)
@@ -313,9 +314,7 @@ class MLIRFunctionBuilder(BaseFunction):
                     raise TypeError(f"{var!r} and {iter_var!r} have different types.")
             yield_vals = ", ".join(str(var) for var in yielded_vars)
             yield_types = ", ".join(var.type for var in yielded_vars)
-            self.builder.add_statement(
-                f"scf.yield {yield_vals} : {yield_types}"
-            )
+            self.builder.add_statement(f"scf.yield {yield_vals} : {yield_types}")
 
     @contextmanager
     def for_loop(
@@ -346,11 +345,11 @@ class MLIRFunctionBuilder(BaseFunction):
             iter_var_types = []
             for iter_var, init_var in iter_vars:
                 if not mlir_type_strings_equal(iter_var.type, init_var.type):
-                    raise TypeError(f"{iter_var!r} and {init_var!r} have different types.")
+                    raise TypeError(
+                        f"{iter_var!r} and {init_var!r} have different types."
+                    )
                 _iter_vars.append(iter_var)
-                iter_var_init_strings.append(
-                    f"{iter_var.assign}={init_var}"
-                )
+                iter_var_init_strings.append(f"{iter_var.assign}={init_var}")
                 iter_var_types.append(iter_var.type)
             for_loop_open_statment += (
                 f" iter_args("
@@ -362,9 +361,7 @@ class MLIRFunctionBuilder(BaseFunction):
         for_loop_open_statment += " {"
         if len(_iter_vars) > 0:
             returned_var = self.new_tuple(*(var.type for var in _iter_vars))
-            for_loop_open_statment = (
-                f"{returned_var.assign} = {for_loop_open_statment}"
-            )
+            for_loop_open_statment = f"{returned_var.assign} = {for_loop_open_statment}"
         else:
             returned_var = None
         self.add_statement(for_loop_open_statment)

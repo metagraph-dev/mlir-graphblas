@@ -18,9 +18,11 @@ class BaseOp:
     def __init_subclass__(cls):
         MLIRFunctionBuilder.register_op(cls)
 
+
 ###########################################
 # std ops
 ###########################################
+
 
 class ConstantOp(BaseOp):
     name = "constant"
@@ -30,9 +32,7 @@ class ConstantOp(BaseOp):
         if type in {"f128", "f64", "f32", "f16", "f8"}:
             value = float(value)
         ret_val = irbuilder.new_var(type)
-        return ret_val, (
-            f"{ret_val.assign} = constant {value} : {type}"
-        )
+        return ret_val, (f"{ret_val.assign} = constant {value} : {type}")
 
 
 class AddIOp(BaseOp):
@@ -43,14 +43,13 @@ class AddIOp(BaseOp):
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
-        return ret_val, (
-            f"{ret_val.assign} = addi {lhs}, {rhs} : {lhs.type}"
-        )
+        return ret_val, (f"{ret_val.assign} = addi {lhs}, {rhs} : {lhs.type}")
 
 
 ###########################################
 # llvm ops
 ###########################################
+
 
 class LLVMGetElementPtrOp(BaseOp):
     dialect = "llvm"
@@ -72,14 +71,13 @@ class LLVMLoadOp(BaseOp):
     @classmethod
     def call(cls, irbuilder, pointer, return_type):
         ret_val = irbuilder.new_var(return_type)
-        return ret_val, (
-            f"{ret_val.assign} = llvm.load {pointer} : {pointer.type}"
-        )
+        return ret_val, (f"{ret_val.assign} = llvm.load {pointer} : {pointer.type}")
 
 
 ###########################################
 # graphblas ops
 ###########################################
+
 
 class GraphBLAS_ConvertLayout(BaseOp):
     dialect = "graphblas"
@@ -158,6 +156,7 @@ class GraphBLAS_MatrixMultiply(BaseOp):
 ###########################################
 # util ops
 ###########################################
+
 
 class PtrToTensorOp(BaseOp):
     dialect = "util"

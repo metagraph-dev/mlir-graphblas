@@ -8,22 +8,6 @@ import logging
 log = logging.getLogger("mlir_graphblas")
 
 
-
-try:
-    # When running in developer mode
-    from . import src
-
-    _SCRIPT_DIR = os.path.dirname(__file__)
-    GRAPHBLAS_OPT_EXE = os.path.join(_SCRIPT_DIR, "src", "build", "bin", "graphblas-opt")
-except ImportError:
-    # ImportError assumes a normal install without a src directory, so graphblas-opt should
-    # be available in the /bin folder of the environment
-    GRAPHBLAS_OPT_EXE = "graphblas-opt"
-
-
-
-
-
 def logged_subprocess_run(*args, **kwargs):
     log.debug("RUN: %s", args[0])
     return subprocess.run(*args, **kwargs)
