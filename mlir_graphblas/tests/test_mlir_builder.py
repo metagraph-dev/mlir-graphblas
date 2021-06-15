@@ -8,13 +8,13 @@ from mlir_graphblas import MlirJitEngine
 from mlir_graphblas.engine import parse_mlir_string
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
-from mlir_graphblas.functions import Transpose
+from mlir_graphblas.functions import ConvertLayout
 from mlir_graphblas.algorithms import (
     triangle_count_combined,
     dense_neural_network_combined,
 )
 
-from .jit_engine_test_utils import sparsify_array
+from .jit_engine_test_utils import sparsify_array, GRAPHBLAS_PASSES
 
 from typing import List, Callable
 
@@ -29,7 +29,7 @@ def engine():
 
     jit_engine.add(
         """
-#trait_densify = {
+#trait_densify_csr = {
   indexing_maps = [
     affine_map<(i,j) -> (i,j)>,
     affine_map<(i,j) -> (i,j)>
@@ -37,17 +37,43 @@ def engine():
   iterator_types = ["parallel", "parallel"]
 }
 
-#sparseTensor = #sparse_tensor.encoding<{
+#CSR64 = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],
   dimOrdering = affine_map<(i,j) -> (i,j)>,
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
-func @densify(%argA: tensor<8x8xf64, #sparseTensor>) -> tensor<8x8xf64> {
+func @csr_densify8x8(%argA: tensor<8x8xf64, #CSR64>) -> tensor<8x8xf64> {
   %output_storage = constant dense<0.0> : tensor<8x8xf64>
-  %0 = linalg.generic #trait_densify
-    ins(%argA: tensor<8x8xf64, #sparseTensor>)
+  %0 = linalg.generic #trait_densify_csr
+    ins(%argA: tensor<8x8xf64, #CSR64>)
+    outs(%output_storage: tensor<8x8xf64>) {
+      ^bb(%A: f64, %x: f64):
+        linalg.yield %A : f64
+    } -> tensor<8x8xf64>
+  return %0 : tensor<8x8xf64>
+}
+
+#trait_densify_csc = {
+  indexing_maps = [
+    affine_map<(i,j) -> (j,i)>,
+    affine_map<(i,j) -> (i,j)>
+  ],
+  iterator_types = ["parallel", "parallel"]
+}
+
+#CSC64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (j,i)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+func @csc_densify8x8(%argA: tensor<8x8xf64, #CSC64>) -> tensor<8x8xf64> {
+  %output_storage = constant dense<0.0> : tensor<8x8xf64>
+  %0 = linalg.generic #trait_densify_csc
+    ins(%argA: tensor<8x8xf64, #CSC64>)
     outs(%output_storage: tensor<8x8xf64>) {
       ^bb(%A: f64, %x: f64):
         linalg.yield %A : f64
@@ -55,41 +81,31 @@ func @densify(%argA: tensor<8x8xf64, #sparseTensor>) -> tensor<8x8xf64> {
   return %0 : tensor<8x8xf64>
 }
 """,
-        [
-            "--sparsification",
-            "--sparse-tensor-conversion",
-            "--linalg-bufferize",
-            "--convert-scf-to-std",
-            "--func-bufferize",
-            "--tensor-bufferize",
-            "--tensor-constant-bufferize",
-            "--finalizing-bufferize",
-            "--convert-linalg-to-loops",
-            "--convert-scf-to-std",
-            "--convert-std-to-llvm",
-        ],
+        GRAPHBLAS_PASSES,
     )
     return jit_engine
 
 
-def test_ir_builder_transpose_wrapper(engine: MlirJitEngine):
+def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine):
     # Build Function
-    transpose_function = Transpose()
+    convert_layout_function = ConvertLayout()
 
     input_var = MLIRVar("input_tensor", "tensor<?x?xf64, #CSR64>")
 
     ir_builder = MLIRFunctionBuilder(
-        "transpose_wrapper",
+        "convert_layout_wrapper",
         input_vars=[input_var],
-        return_types=("tensor<?x?xf64, #CSR64>",),
+        return_types=("tensor<?x?xf64, #CSC64>",),
     )
-    transpose_result = ir_builder.call(transpose_function, input_var)
-    ir_builder.return_vars(transpose_result)
+    convert_layout_result = ir_builder.call(convert_layout_function, input_var)
+    ir_builder.return_vars(convert_layout_result)
 
     assert ir_builder.get_mlir()
 
     # Test Compiled Function
-    transpose_wrapper_callable = ir_builder.compile(engine=engine)
+    convert_layout_wrapper_callable = ir_builder.compile(
+        engine=engine, passes=GRAPHBLAS_PASSES
+    )
 
     indices = np.array(
         [
@@ -107,62 +123,59 @@ def test_ir_builder_transpose_wrapper(engine: MlirJitEngine):
     dense_input_tensor = np.zeros([8, 8], dtype=np.float64)
     dense_input_tensor[1, 2] = 1.2
     dense_input_tensor[4, 3] = 4.3
-    assert np.isclose(dense_input_tensor, engine.densify(input_tensor)).all()
+    assert np.isclose(dense_input_tensor, engine.csr_densify8x8(input_tensor)).all()
 
-    output_tensor = transpose_wrapper_callable(input_tensor)
+    output_tensor = convert_layout_wrapper_callable(input_tensor)
 
-    assert np.isclose(
-        dense_input_tensor, engine.densify(input_tensor)
-    ).all(), f"{input_tensor} values unexpectedly changed."
-    assert np.isclose(dense_input_tensor.T, engine.densify(output_tensor)).all()
+    assert np.isclose(dense_input_tensor, engine.csc_densify8x8(output_tensor)).all()
 
     return
 
 
-def test_ir_builder_triple_transpose(engine: MlirJitEngine):
+def test_ir_builder_triple_convert_layout(engine: MlirJitEngine):
     # Build Function
 
     input_var = MLIRVar("input_tensor", "tensor<?x?xf64, #CSR64>")
 
     ir_builder = MLIRFunctionBuilder(
-        "triple_transpose",
+        "triple_convert_layout",
         input_vars=(input_var,),
-        return_types=["tensor<?x?xf64, #CSR64>"],
+        return_types=["tensor<?x?xf64, #CSC64>"],
     )
-    # Use different instances of Tranpose to ideally get exactly one transpose helper in the final MLIR text
-    inter1 = ir_builder.call(Transpose(), input_var)
-    inter2 = ir_builder.call(Transpose(), inter1)
-    return_var = ir_builder.call(Transpose(), inter2)
+    # Use different instances of Tranpose to ideally get exactly one convert_layout helper in the final MLIR text
+    inter1 = ir_builder.call(ConvertLayout("csc"), input_var)
+    inter2 = ir_builder.call(ConvertLayout("csr"), inter1)
+    return_var = ir_builder.call(ConvertLayout("csc"), inter2)
     ir_builder.return_vars(return_var)
 
     mlir_text = ir_builder.get_mlir(make_private=False)
     ast = parse_mlir_string(mlir_text)
     # verify there are exactly two functions
-    private_func, public_func = [
-        node for node in ast.body if isinstance(node, mlir.astnodes.Function)
-    ]
-    assert private_func.name.value == "transpose"
-    assert private_func.visibility == "private"
-    assert public_func.name.value == "triple_transpose"
-    assert public_func.visibility == "public"
+    functions = [node for node in ast.body if isinstance(node, mlir.astnodes.Function)]
+    triple_convert_func = functions.pop(-1)
+    assert triple_convert_func.visibility == "public"
+    assert all(
+        func.name.value.startswith("convert_layout_cs") and func.visibility == "private"
+        for func in functions
+        if func.name.value == "triple_convert_layout"
+    )
 
-    # verify in_place_triple_transpose has three transpose calls
-    region = public_func.body
+    # verify in_place_triple_convert_layout has three convert_layout calls
+    region = triple_convert_func.body
     (block,) = region.body
     call_op_1, call_op_2, call_op_3, return_op = block.body
-    assert (
-        call_op_1.op.func.value
-        == call_op_2.op.func.value
-        == call_op_3.op.func.value
-        == "transpose"
-    )
+    assert call_op_1.op.func.value == "convert_layout_to_csc"
+    assert call_op_2.op.func.value == "convert_layout_to_csr"
+    assert call_op_3.op.func.value == "convert_layout_to_csc"
     (return_op_type,) = [
         t for t in mlir.dialects.standard.ops if t.__name__ == "ReturnOperation"
     ]
     assert isinstance(return_op.op, return_op_type)
 
     # Test Compiled Function
-    triple_transpose_callable = ir_builder.compile(engine=engine)
+    triple_convert_layout_callable = ir_builder.compile(
+        engine=engine, passes=GRAPHBLAS_PASSES
+    )
 
     indices = np.array(
         [
@@ -180,14 +193,11 @@ def test_ir_builder_triple_transpose(engine: MlirJitEngine):
     dense_input_tensor = np.zeros([8, 8], dtype=np.float64)
     dense_input_tensor[1, 2] = 1.2
     dense_input_tensor[4, 3] = 4.3
-    assert np.isclose(dense_input_tensor, engine.densify(input_tensor)).all()
+    assert np.isclose(dense_input_tensor, engine.csr_densify8x8(input_tensor)).all()
 
-    transposed_tensor = triple_transpose_callable(input_tensor)
+    output_tensor = triple_convert_layout_callable(input_tensor)
 
-    assert np.isclose(
-        dense_input_tensor, engine.densify(input_tensor)
-    ).all(), f"{input_tensor} values unexpectedly changed."
-    assert np.isclose(dense_input_tensor.T, engine.densify(transposed_tensor)).all()
+    assert np.isclose(dense_input_tensor, engine.csc_densify8x8(output_tensor)).all()
 
     return
 
@@ -250,16 +260,15 @@ def test_ir_builder_for_loop_simple(engine: MlirJitEngine):
     zero_f64 = ir_builder.constant(0.0, "f64")
     ir_builder.add_statement(
         f"""
-// pymlir-skip: begin
 %sum_memref = memref.alloc() : memref<f64>
-memref.store {zero_f64.access_string()}, %sum_memref[] : memref<f64>
+memref.store {zero_f64}, %sum_memref[] : memref<f64>
 """
     )
     with ir_builder.for_loop(0, 3) as for_vars:
         ir_builder.add_statement(
             f"""
 %current_sum = memref.load %sum_memref[] : memref<f64>
-%updated_sum = addf {input_var.access_string()}, %current_sum : f64
+%updated_sum = addf {input_var}, %current_sum : f64
 memref.store %updated_sum, %sum_memref[] : memref<f64>
 """
         )
@@ -267,8 +276,7 @@ memref.store %updated_sum, %sum_memref[] : memref<f64>
     result_var = MLIRVar("sum", "f64")
     ir_builder.add_statement(
         f"""
-{result_var.assign_string()} = memref.load %sum_memref[] : memref<f64>
-// pymlir-skip: end
+{result_var.assign} = memref.load %sum_memref[] : memref<f64>
 """
     )
     ir_builder.return_vars(result_var)
@@ -298,9 +306,8 @@ def test_ir_builder_for_loop_float_iter(engine: MlirJitEngine):
     )
     ir_builder.add_statement(
         f"""
-// pymlir-skip: begin
 %sum_memref = memref.alloc() : memref<f64>
-memref.store {input_var.access_string()}, %sum_memref[] : memref<f64>
+memref.store {input_var}, %sum_memref[] : memref<f64>
 """
     )
 
@@ -315,17 +322,16 @@ memref.store {input_var.access_string()}, %sum_memref[] : memref<f64>
         ir_builder.add_statement(
             f"""
 %current_sum = memref.load %sum_memref[] : memref<f64>
-%updated_sum = addf {float_iter_var.access_string()}, %current_sum : f64
+%updated_sum = addf {float_iter_var}, %current_sum : f64
 memref.store %updated_sum, %sum_memref[] : memref<f64>
-{incremented_float_var.assign_string()} = addf {float_iter_var.access_string()}, {float_delta_var.access_string()} : f64
+{incremented_float_var.assign} = addf {float_iter_var}, {float_delta_var} : f64
 """
         )
         for_vars.yield_vars(incremented_float_var)
     result_var = MLIRVar("sum", "f64")
     ir_builder.add_statement(
         f"""
-{result_var.assign_string()} = memref.load %sum_memref[] : memref<f64>
-// pymlir-skip: end
+{result_var.assign} = memref.load %sum_memref[] : memref<f64>
 """
     )
     ir_builder.return_vars(result_var)
@@ -366,9 +372,8 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
     )
     ir_builder.add_statement(
         f"""
-// pymlir-skip: begin
 %sum_memref = memref.alloc() : memref<i64>
-memref.store {input_var.access_string()}, %sum_memref[] : memref<i64>
+memref.store {input_var}, %sum_memref[] : memref<i64>
 """
     )
     lower_index_var = ir_builder.constant(lower_index, "index")
@@ -392,25 +397,24 @@ memref.store {input_var.access_string()}, %sum_memref[] : memref<i64>
         ir_builder.add_statement(
             f"""
 %current_sum = memref.load %sum_memref[] : memref<i64>
-%prod_of_index_vars_0 = muli {for_vars.lower_var_index.access_string()}, {for_vars.upper_var_index.access_string()} : index
-%prod_of_index_vars_1 = muli %prod_of_index_vars_0, {for_vars.step_var_index.access_string()} : index
+%prod_of_index_vars_0 = muli {for_vars.lower_var_index}, {for_vars.upper_var_index} : index
+%prod_of_index_vars_1 = muli %prod_of_index_vars_0, {for_vars.step_var_index} : index
 %prod_of_index_vars = std.index_cast %prod_of_index_vars_1 : index to i64
-%prod_of_i64_vars = muli {lower_i64_var.access_string()}, {delta_i64_var.access_string()} : i64
-%iter_index_i64 = std.index_cast {for_vars.iter_var_index.access_string()} : index to i64
-%prod_of_iter_vars = muli %iter_index_i64, {iter_i64_var.access_string()} : i64
+%prod_of_i64_vars = muli {lower_i64_var}, {delta_i64_var} : i64
+%iter_index_i64 = std.index_cast {for_vars.iter_var_index} : index to i64
+%prod_of_iter_vars = muli %iter_index_i64, {iter_i64_var} : i64
 %updated_sum_0 = addi %current_sum, %prod_of_index_vars : i64
 %updated_sum_1 = addi %updated_sum_0, %prod_of_i64_vars : i64
 %updated_sum = addi %updated_sum_1, %prod_of_iter_vars : i64
 memref.store %updated_sum, %sum_memref[] : memref<i64>
-{incremented_iter_i64_var.assign_string()} = addi {iter_i64_var.access_string()}, {delta_i64_var.access_string()} : i64
+{incremented_iter_i64_var.assign} = addi {iter_i64_var}, {delta_i64_var} : i64
 """
         )
         for_vars.yield_vars(incremented_iter_i64_var)
     result_var = MLIRVar("sum", "i64")
     ir_builder.add_statement(
         f"""
-{result_var.assign_string()} = memref.load %sum_memref[] : memref<i64>
-// pymlir-skip: end
+{result_var.assign} = memref.load %sum_memref[] : memref<i64>
 """
     )
     ir_builder.return_vars(result_var)
@@ -496,7 +500,7 @@ def test_ir_builder_dnn(
             sparse_input_tensor,
             clamp_threshold,
         )
-        dense_result = engine.densify(sparse_result)
+        dense_result = engine.csr_densify8x8(sparse_result)
 
         with np.printoptions(suppress=True):
             assert np.isclose(

@@ -7,6 +7,10 @@ import argparse
 
 from typing import Iterable, Tuple
 
+_SCRIPT_DIR = os.path.dirname(__file__)
+_BUILD_DIR = os.path.join(_SCRIPT_DIR, "build")
+GRAPHBLAS_OPT_LOCATION = os.path.join(_BUILD_DIR, "bin", "graphblas-opt")
+
 
 def run_shell_commands(
     directory: str, *commands: Iterable[str], **environment_variables
@@ -49,25 +53,12 @@ def run_shell_commands(
     return command, stdout_string, stderr_string
 
 
-if __name__ == "__main__":
-    script_dir = os.path.dirname(__file__)
-    build_dir = os.path.join(script_dir, "build")
+def build_graphblas_opt(build_clean: bool) -> None:
+    if build_clean and os.path.isdir(_BUILD_DIR):
+        shutil.rmtree(_BUILD_DIR)
 
-    parser = argparse.ArgumentParser(
-        prog="tool",
-        formatter_class=lambda prog: argparse.HelpFormatter(
-            prog, max_help_position=9999
-        ),
-    )
-    parser.add_argument(
-        "-build-clean", action="store_true", help="Rebuild from scratch."
-    )
-    args = parser.parse_args()
-    if args.build_clean and os.path.isdir(build_dir):
-        shutil.rmtree(build_dir)
-
-    if not os.path.isdir(build_dir):
-        os.makedirs(build_dir)
+    if not os.path.isdir(_BUILD_DIR):
+        os.makedirs(_BUILD_DIR)
 
     env_lib_path = os.path.join(sys.exec_prefix, "lib")
     LD_LIBRARY_PATH = os.environ.get("LD_LIBRARY_PATH", env_lib_path)
@@ -77,14 +68,15 @@ if __name__ == "__main__":
     (PYTHONPATH,) = site.getsitepackages()
 
     command, stdout_string, stderr_string = run_shell_commands(
-        build_dir,
-        "cmake -G Ninja .. -DMLIR_DIR=$PREFIX/lib/cmake/mlir -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit",  # creates ./build/graphblas-opt
-        "cmake --build . --target check-graphblas --verbose",  # creates ./build/bin/graphblas-opt and runs tests
+        _BUILD_DIR,
+        "cmake -G Ninja .. -DMLIR_DIR=$PREFIX/lib/cmake/mlir -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit",  # creates the directory ./build/graphblas-opt/
+        "cmake --build . --target check-graphblas --verbose",  # creates the executable ./build/bin/graphblas-opt and runs tests
         PREFIX=sys.exec_prefix,
         BUILD_DIR=sys.exec_prefix,
         LD_LIBRARY_PATH=LD_LIBRARY_PATH,
         PYTHONPATH=PYTHONPATH,
     )
+    assert os.path.isfile(GRAPHBLAS_OPT_LOCATION)
 
     print(
         f"""
@@ -103,3 +95,20 @@ Command:
 {command}
 """
     )
+
+    return
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog="tool",
+        formatter_class=lambda prog: argparse.HelpFormatter(
+            prog, max_help_position=9999
+        ),
+    )
+    parser.add_argument(
+        "-build-clean", action="store_true", help="Rebuild from scratch."
+    )
+    args = parser.parse_args()
+
+    build_graphblas_opt(args.build_clean)

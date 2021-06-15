@@ -22,3 +22,7 @@ dependencies:
   - pygments
   - cython
   - jinja2
+# temp restrictions until graphblas-opt is built in setup.py
+  - cmake>=3.13.4
+  - ninja
+  - lit
