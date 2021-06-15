@@ -8,6 +8,7 @@ An IR builder for MLIR.
 
 import jinja2
 import mlir
+import functools
 import itertools
 from contextlib import contextmanager
 from collections import OrderedDict
@@ -40,80 +41,100 @@ def mlir_type_strings_equal(type_1: str, type_2: str) -> bool:
 
 
 class MLIRVar:
+    """
+    Represents an MLIR SSA variable.
+    Upon initialization, must be assigned to exactly once, and can then be accessed many times.
 
-    """Input variables to be used by MLIRFunctionBuilder."""
+    foo = MLIRVar('foo', 'f64')
+    add_statement(f"{foo.assign} = constant 1.0 : {foo.type}")
+    bar = MLIRVar('bar', 'f64')
+    add_statement(f"{bar.assign} = addf {foo}, {baz} : {bar.type}")
+    """
 
-    # TODO consider making a separate class for single type MLIR variables
-    # and multi-type MLIR variables.
+    def __init__(self, name: str, type: str):
+        self.name = name
+        self.type = type
+        self._initialized = False
 
-    def __init__(self, var_name: str, *var_types: str) -> None:
-        """Elements of var_types are types as represented in MLIR code."""
-        assert len(var_types) > 0
-        self.var_name = var_name
-        self.var_types = var_types
-        return
+    def __eq__(self, other):
+        if not isinstance(other, MLIRVar):
+            return NotImplemented
+        return self.name == other.name and self.type == other.type
 
-    def __eq__(self, other: "MLIRVar") -> bool:
+    def __repr__(self):
+        return f"MLIRVar<name={self.name}, type={self.type}>"
+
+    def __str__(self):
+        if not self._initialized:
+            raise TypeError(f"Attempt to access {self.name} prior to assign")
+        return f"%{self.name}"
+
+    @property
+    def assign(self):
+        """Must be called exactly once before being accessed for reading"""
+        if self._initialized:
+            raise TypeError(f"Attempt to assign to {self.name} twice")
+        self._initialized = True
+        return f"%{self.name}"
+
+
+class MLIRTuple:
+    def __init__(self, name: str, types: Tuple[str]):
+        self.name = name
+        self.types = types
+        self._initialized = False
+
+    def __eq__(self, other):
+        if not isinstance(other, MLIRTuple):
+            return NotImplemented
         return (
-            isinstance(other, MLIRVar)
-            and self.var_name == other.var_name
+            self.name == other.name
+            and len(self.types) == len(other.types)
             and all(
                 mlir_type_strings_equal(*type_pair)
-                for type_pair in zip(self.var_types, other.var_types)
+                for type_pair in zip(self.types, other.types)
             )
         )
 
-    @property
-    def num_values(self) -> int:
-        return len(self.var_types)
+    def __len__(self):
+        return len(self.types)
 
-    @property
-    def var_type(self) -> str:
-        if not len(self.var_types) == 1:
-            raise TypeError(f"{self} has multiple types.")
-        (var_type,) = self.var_types
-        return var_type
+    def __repr__(self):
+        return f"MLIRTuple<name={self.name}, types={self.types}>"
 
-    def __repr__(self) -> str:
-        attributes_string = ", ".join(
-            f"{k}={repr(self.__dict__[k])}" for k in sorted(self.__dict__.keys())
+    def __str__(self):
+        raise TypeError(
+            f"Cannot access MLIRTuple {self.name} directly. Use index notation to access an element."
         )
-        return f"{self.__class__.__name__}({attributes_string})"
 
-    def assign_string(self) -> str:
-        # TODO specify number of expected returned values as arg and sanity check
-        answer = f"%{self.var_name}"
-        if self.num_values != 1:
-            answer += f":{self.num_values}"
-        return answer
-
-    def access_string(self, index: Optional[int] = None) -> str:
-        answer = f"%{self.var_name}"
-        if index is None:
-            if self.num_values != 1:
-                raise ValueError(
-                    "Attempting to use variable containing multiple values as a singleton variable."
-                )
-        elif not isinstance(index, int):
-            raise TypeError(f"{self.__class__} only supports integer indexing.")
-        elif index < 0 or self.num_values <= index:
-            raise IndexError(
-                f"Index must be an integer in the range [0, {self.num_values})."
-            )
-        else:
-            answer += f"#{index}"
-        return answer
-
-    def __getitem__(self, index: int) -> Tuple["MLIRVar", int]:
-        # Convenience function for use with methods like MLIRFunctionBuilder.return_vars
+    def __getitem__(self, index):
+        # Create an initialized SSA which points to the element at `index`
         if not isinstance(index, int):
-            raise TypeError(
-                f"{self.__class__.__name__} indices must be integers, not {type(index)}."
-            )
-        return (self, index)
+            raise TypeError(f"Expects int, not {type(index)}")
+        type_ = self.types[index]
+        element = MLIRVar(f"{self.name}#{index}", type_)
+        element._initialized = True
+        return element
+
+    @property
+    def assign(self):
+        """Must be called exactly once before being accessed for reading"""
+        if self._initialized:
+            raise TypeError(f"Attempt to assign to {self.name} twice")
+        self._initialized = True
+        return f"%{self.name}:{len(self)}"
+
+
+class Dialect:
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return f"{self.name} dialect"
 
 
 class MLIRFunctionBuilder(BaseFunction):
+    _ops = {}
 
     # TODO consider making this class have a method to return a BaseFunction
     # and not be a subclass of BaseFunction
@@ -145,6 +166,10 @@ class MLIRFunctionBuilder(BaseFunction):
         self.input_vars = input_vars
         self.return_types = return_types
 
+        # Initialize all input_vars so they can't be assigned to
+        for input_var in input_vars:
+            input_var._initialized = True
+
         self.var_name_counter = itertools.count()
         self.function_body_statements: List[str] = []
 
@@ -154,7 +179,40 @@ class MLIRFunctionBuilder(BaseFunction):
         ] = OrderedDict()
 
         self.indentation_level = 1
+        self._initialize_ops()
         return
+
+    @classmethod
+    def register_op(cls, opclass):
+        subops = cls._ops.setdefault(opclass.dialect, {})
+        if opclass.name in subops:
+            fullname = (
+                opclass.name
+                if opclass.dialect is None
+                else f"{opclass.dialect}.{opclass.name}"
+            )
+            raise TypeError(f"{fullname} is already a registered op in {cls.__name__}")
+        subops[opclass.name] = opclass
+
+    def _initialize_ops(self):
+        for dialect, ops in self._ops.items():
+            if dialect is None:
+                attach_point = self
+            else:
+                attach_point = getattr(self, dialect, None)
+                if attach_point is None:
+                    attach_point = Dialect(dialect)
+                    setattr(self, dialect, attach_point)
+
+            for opclass in ops.values():
+
+                def op(opclass, *args, **kwargs):
+                    ret_val, mlir = opclass.call(self, *args, **kwargs)
+                    self.add_statement(mlir)
+                    return ret_val
+
+                func = functools.partial(op, opclass)
+                setattr(attach_point, opclass.name, func)
 
     #######################################
     # MLIR Generation/Compilation Methods #
@@ -171,9 +229,7 @@ class MLIRFunctionBuilder(BaseFunction):
         if len(self.return_types) != 1:
             return_type = f"({return_type})"
 
-        signature = ", ".join(
-            f"{var.access_string()}: {var.var_type}" for var in self.input_vars
-        )
+        signature = ", ".join(f"{var}: {var.type}" for var in self.input_vars)
 
         return needed_function_definitions + self.function_wrapper_text.render(
             private_func=make_private,
@@ -204,60 +260,30 @@ class MLIRFunctionBuilder(BaseFunction):
             )
         return
 
-    def new_var(self, *var_types: str) -> MLIRVar:
+    def new_var(self, var_type: str) -> MLIRVar:
         var_name = f"var_{next(self.var_name_counter)}"
-        return MLIRVar(var_name, *var_types)
+        return MLIRVar(var_name, var_type)
+
+    def new_tuple(self, *var_types: str) -> MLIRTuple:
+        var_name = f"var_{next(self.var_name_counter)}"
+        return MLIRTuple(var_name, var_types)
 
     #########################
     # MLIR Building Methods #
     #########################
 
-    def constant(self, var_value: Union[str, int, float], var_type: str) -> MLIRVar:
-        # TODO consider taking in an MLIRVar as an input to be assigned to.
-        var = self.new_var(var_type)
-        self.add_statement(f"{var.assign_string()} = constant {var_value} : {var_type}")
-        return var
-
-    def return_vars(
-        self, *returned_values: Union[Tuple[MLIRVar, int], MLIRVar]
-    ) -> None:
-        # TODO instead of accepting Tuple[MLIRVar, int], consider having
-        # MLIRVar.__getitem__ return a new MLIRVar instance with an "index"
-        # attribute (default to None) set the desired index.
-        var_index_pairs = []
-        for value in returned_values:
-            if isinstance(value, MLIRVar):
-                var_index_pair = value, None
-            elif (
-                isinstance(value, tuple)
-                and len(value) == 2
-                and isinstance(value[0], MLIRVar)
-                and isinstance(value[1], int)
-            ):
-                var_index_pair = value
-            else:
-                raise TypeError(f"{value} does not denote a valid return value.")
-            var_index_pairs.append(var_index_pair)
-        if not all(
-            mlir_type_strings_equal(
-                expected, var.var_type if index is None else var.var_types[index]
-            )
-            for expected, (var, index) in zip(self.return_types, var_index_pairs)
-        ):
-            returned_types = tuple(var.var_type for var, _ in var_index_pairs)
-            raise TypeError(
-                f"Types for {returned_types} do not match function "
-                f"return types of {tuple(self.return_types)}."
-            )
-        returned_values_string = ", ".join(
-            var.access_string(index) for var, index in var_index_pairs
-        )
-        returned_types_string = ", ".join(
-            return_types for return_types in self.return_types
-        )
-        statement = f"return {returned_values_string} : {returned_types_string}"
+    def return_vars(self, *returned_values: MLIRVar) -> None:
+        for expected, var in zip(self.return_types, returned_values):
+            if not isinstance(var, MLIRVar):
+                raise TypeError(
+                    f"{var!r} is not a valid return value, expected MLIRVar."
+                )
+            if not mlir_type_strings_equal(expected, var.type):
+                raise TypeError(f"Return type of {var!r} does not match {expected}")
+        ret_vals = ", ".join(str(var) for var in returned_values)
+        ret_types = ", ".join(self.return_types)
+        statement = f"return {ret_vals} : {ret_types}"
         self.add_statement(statement)
-        return
 
     class ForLoopVars:
         def __init__(
@@ -269,7 +295,7 @@ class MLIRFunctionBuilder(BaseFunction):
             iter_vars: Sequence[MLIRVar],
             returned_variable: Optional[MLIRVar],
             builder: "MLIRFunctionBuilder",
-        ) -> None:
+        ):
             self.iter_var_index = iter_var_index
             self.lower_var_index = lower_var_index
             self.upper_var_index = upper_var_index
@@ -277,24 +303,18 @@ class MLIRFunctionBuilder(BaseFunction):
             self.iter_vars = iter_vars
             self.returned_variable = returned_variable
             self.builder = builder
-            return
 
-        def yield_vars(self, *yielded_vars: MLIRVar) -> None:
-            var_strings = []
-            var_types = []
+        def yield_vars(self, *yielded_vars: MLIRVar):
             if len(yielded_vars) != len(self.iter_vars):
                 raise ValueError(
                     f"Expected {len(self.iter_vars)} yielded values, but got {len(yielded_vars)}."
                 )
             for var, iter_var in zip(yielded_vars, self.iter_vars):
-                if not mlir_type_strings_equal(var.var_type, iter_var.var_type):
-                    raise TypeError(f"{var} and {iter_var} have different types.")
-                var_strings.append(var.access_string())
-                var_types.append(var.var_type)
-            self.builder.add_statement(
-                f"scf.yield {', '.join(var_strings)} : {', '.join(var_types)}"
-            )
-            return
+                if not mlir_type_strings_equal(var.type, iter_var.type):
+                    raise TypeError(f"{var!r} and {iter_var!r} have different types.")
+            yield_vals = ", ".join(str(var) for var in yielded_vars)
+            yield_types = ", ".join(var.type for var in yielded_vars)
+            self.builder.add_statement(f"scf.yield {yield_vals} : {yield_types}")
 
     @contextmanager
     def for_loop(
@@ -316,21 +336,21 @@ class MLIRFunctionBuilder(BaseFunction):
             step if isinstance(step, MLIRVar) else self.constant(step, "index")
         )
         for_loop_open_statment = (
-            f"scf.for {iter_var_index.assign_string()} = {lower_var_index.access_string()} "
-            f"to {upper_var_index.access_string()} step {step_var_index.access_string()}"
+            f"scf.for {iter_var_index.assign} = {lower_var_index} "
+            f"to {upper_var_index} step {step_var_index}"
         )
         _iter_vars = []
         if iter_vars is not None:
             iter_var_init_strings = []
             iter_var_types = []
             for iter_var, init_var in iter_vars:
-                if not mlir_type_strings_equal(iter_var.var_type, init_var.var_type):
-                    raise TypeError(f"{iter_var} and {init_var} have different types.")
+                if not mlir_type_strings_equal(iter_var.type, init_var.type):
+                    raise TypeError(
+                        f"{iter_var!r} and {init_var!r} have different types."
+                    )
                 _iter_vars.append(iter_var)
-                iter_var_init_strings.append(
-                    f"{iter_var.assign_string()}={init_var.access_string()}"
-                )
-                iter_var_types.append(iter_var.var_type)
+                iter_var_init_strings.append(f"{iter_var.assign}={init_var}")
+                iter_var_types.append(iter_var.type)
             for_loop_open_statment += (
                 f" iter_args("
                 + ", ".join(iter_var_init_strings)
@@ -340,10 +360,8 @@ class MLIRFunctionBuilder(BaseFunction):
             )
         for_loop_open_statment += " {"
         if len(_iter_vars) > 0:
-            returned_var = self.new_var(*(var.var_type for var in _iter_vars))
-            for_loop_open_statment = (
-                f"{returned_var.assign_string()} = {for_loop_open_statment}"
-            )
+            returned_var = self.new_tuple(*(var.type for var in _iter_vars))
+            for_loop_open_statment = f"{returned_var.assign} = {for_loop_open_statment}"
         else:
             returned_var = None
         self.add_statement(for_loop_open_statment)
@@ -358,7 +376,6 @@ class MLIRFunctionBuilder(BaseFunction):
                 self,
             )
         self.add_statement("}")
-        return
 
     def call(
         self,
@@ -391,13 +408,8 @@ class MLIRFunctionBuilder(BaseFunction):
         result_var = self.new_var(return_type)  # TODO handle non-singleton returns here
         statement = "".join(
             [
-                f"{result_var.assign_string()} = call @{function.func_name}(",  # TODO handle non-singleton returns here
-                ", ".join(
-                    f"{input_val.access_string()}"
-                    if isinstance(input_val, MLIRVar)
-                    else str(input_val)  # TODO add test for this else case
-                    for input_val in inputs
-                ),
+                f"{result_var.assign} = call @{function.func_name}(",  # TODO handle non-singleton returns here
+                ", ".join(str(input_val) for input_val in inputs),
                 ") : (",
                 ", ".join(input_types),
                 ") -> ",
@@ -407,3 +419,9 @@ class MLIRFunctionBuilder(BaseFunction):
 
         self.add_statement(statement)
         return result_var
+
+
+# Force ops to register with the builder
+from . import ops
+
+del ops

@@ -150,9 +150,7 @@ class ConvertLayout(BaseFunction):
 
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSR64> {
 
-        // pymlir-skip: begin
         %output = graphblas.convert_layout %input : tensor<?x?xf64, #CSC64> to tensor<?x?xf64, #CSR64>
-        // pymlir-skip: end
 
         return %output : tensor<?x?xf64, #CSR64>
 
@@ -160,9 +158,7 @@ class ConvertLayout(BaseFunction):
 
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSC64> {
 
-        // pymlir-skip: begin
         %output = graphblas.convert_layout %input : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSC64>
-        // pymlir-skip: end
 
         return %output : tensor<?x?xf64, #CSC64>
 
@@ -186,7 +182,7 @@ class MatrixSelect(BaseFunction):
         sel = selector.lower()
         if sel not in self._valid_selectors:
             raise TypeError(
-                f"Invalid selector: {selector}, must be one of {list(self._valid_selectors.keys())}"
+                f"Invalid selector: {selector}, must be one of {list(self._valid_selectors)}"
             )
 
         # TODO we need to account for other properties to avoid
@@ -204,9 +200,7 @@ class MatrixSelect(BaseFunction):
     mlir_template = jinja2.Template(
         """
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
-        // pymlir-skip: begin
         %output = graphblas.matrix_select %input { selector = "{{ selector }}" } : tensor<?x?xf64, #CSR64>
-        // pymlir-skip: end
         return %output : tensor<?x?xf64, #CSR64>
       }
     """
@@ -247,9 +241,7 @@ class MatrixReduceToScalar(BaseFunction):
     mlir_template = jinja2.Template(
         """
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>) -> f64 {
-        // pymlir-skip: begin
         %total = graphblas.matrix_reduce_to_scalar %input { aggregator = "{{ agg }}" } : tensor<?x?xf64, #CSR64> to f64
-        // pymlir-skip: end
 
         return %total : f64
       }
@@ -287,9 +279,7 @@ class MatrixApply(BaseFunction):
     mlir_template = jinja2.Template(
         """
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>, %thunk: f64) -> tensor<?x?xf64, #CSR64> {
-        // pymlir-skip: begin
         %output = graphblas.matrix_apply %input, %thunk { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
-        // pymlir-skip: end
 
         return %output : tensor<?x?xf64, #CSR64>
       }
@@ -345,13 +335,11 @@ class MatrixMultiply(BaseFunction):
           , %mask: tensor<?x?xf64, #CSR64>
           {%- endif -%}
       ) -> tensor<?x?xf64, #CSR64> {
-        // pymlir-skip: begin
         {% if structural_mask %}
         %c1 = constant 1 : index
         %Mp = sparse_tensor.pointers %mask, %c1 : tensor<?x?xf64, #CSR64> to memref<?xi64>
         {% endif %}
         %output = graphblas.matrix_multiply %A, %B{% if structural_mask %}, %mask{% endif %} { semiring = "{{ semiring }}" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>{% if structural_mask %}, tensor<?x?xf64, #CSR64>{% endif %}) to tensor<?x?xf64, #CSR64>
-        // pymlir-skip: end
 
         return %output : tensor<?x?xf64, #CSR64>
       }
