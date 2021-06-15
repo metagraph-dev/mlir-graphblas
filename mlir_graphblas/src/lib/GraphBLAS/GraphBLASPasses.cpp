@@ -1165,9 +1165,8 @@ public:
           selectors.push_back(selectorStr.dyn_cast<StringAttr>().getValue());
         }
 
-        for (auto resultType : selectOp.getResultTypes()) {
-          resultTypes.push_back(resultType);
-        }
+        auto opResultTypes = selectOp.getResultTypes();
+        resultTypes.insert(resultTypes.end(), opResultTypes.begin(), opResultTypes.end());
       }
 
       NamedAttrList attrs;
