@@ -24,23 +24,6 @@ from typing import Dict, List, Tuple, Sequence, Generator, Optional, Union
 #############
 
 
-def _canonicalize_mlir_type_string(type_string: str) -> str:
-    """Canonicalize by round-tripping through PyMLIR."""
-    return mlir.parse_string(f"!dummy_alias = type {type_string}").body[0].value.dump()
-
-
-def mlir_type_strings_equal(type_1: str, type_2: str) -> bool:
-    # The type strings can vacuously differ (e.g. in white space).
-    # Thus, we must deterministically canonicalize the type strings.
-    if type_1 == type_2:
-        return True
-    elif _canonicalize_mlir_type_string(type_1) == _canonicalize_mlir_type_string(
-        type_2
-    ):
-        return True
-    return False
-
-
 class MLIRVar:
     """
     Represents an MLIR SSA variable.
@@ -92,14 +75,7 @@ class MLIRTuple:
     def __eq__(self, other):
         if not isinstance(other, MLIRTuple):
             return NotImplemented
-        return (
-            self.name == other.name
-            and len(self.types) == len(other.types)
-            and all(
-                mlir_type_strings_equal(*type_pair)
-                for type_pair in zip(self.types, other.types)
-            )
-        )
+        return self.name == other.name and self.types == other.types
 
     def __len__(self):
         return len(self.types)
@@ -297,7 +273,7 @@ class MLIRFunctionBuilder(BaseFunction):
                 raise TypeError(
                     f"{var!r} is not a valid return value, expected MLIRVar."
                 )
-            if not mlir_type_strings_equal(expected, var.type):
+            if var.type != expected:
                 raise TypeError(f"Return type of {var!r} does not match {expected}")
         ret_vals = ", ".join(str(var) for var in returned_values)
         ret_types = ", ".join(str(rt) for rt in self.return_types)
@@ -329,7 +305,7 @@ class MLIRFunctionBuilder(BaseFunction):
                     f"Expected {len(self.iter_vars)} yielded values, but got {len(yielded_vars)}."
                 )
             for var, iter_var in zip(yielded_vars, self.iter_vars):
-                if not mlir_type_strings_equal(var.type, iter_var.type):
+                if iter_var.type != var.type:
                     raise TypeError(f"{var!r} and {iter_var!r} have different types.")
             yield_vals = ", ".join(str(var) for var in yielded_vars)
             yield_types = ", ".join(str(var.type) for var in yielded_vars)
@@ -363,7 +339,7 @@ class MLIRFunctionBuilder(BaseFunction):
             iter_var_init_strings = []
             iter_var_types = []
             for iter_var, init_var in iter_vars:
-                if not mlir_type_strings_equal(iter_var.type, init_var.type):
+                if init_var.type != iter_var.type:
                     raise TypeError(
                         f"{iter_var!r} and {init_var!r} have different types."
                     )
