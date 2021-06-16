@@ -7,7 +7,8 @@ import numpy as np
 from mlir_graphblas import MlirJitEngine
 from mlir_graphblas.engine import parse_mlir_string
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
-from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
+from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
+from mlir_graphblas.types import AliasMap, SparseEncodingType
 from mlir_graphblas.functions import ConvertLayout
 from mlir_graphblas.algorithms import (
     triangle_count_combined,
@@ -86,17 +87,27 @@ func @csc_densify8x8(%argA: tensor<8x8xf64, #CSC64>) -> tensor<8x8xf64> {
     return jit_engine
 
 
-def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine):
+@pytest.fixture(scope="module")
+def aliases() -> AliasMap:
+    csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
+    csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+    aliases = AliasMap()
+    aliases["CSR64"] = csr64
+    aliases["CSC64"] = csc64
+    return aliases
+
+
+def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine, aliases: AliasMap):
     # Build Function
     convert_layout_function = ConvertLayout()
 
-    input_var = MLIRVar("input_tensor", "tensor<?x?xf64, #CSR64>")
-
     ir_builder = MLIRFunctionBuilder(
         "convert_layout_wrapper",
-        input_vars=[input_var],
+        input_types=["tensor<?x?xf64, #CSR64>"],
         return_types=("tensor<?x?xf64, #CSC64>",),
+        aliases=aliases,
     )
+    (input_var,) = ir_builder.inputs
     convert_layout_result = ir_builder.call(convert_layout_function, input_var)
     ir_builder.return_vars(convert_layout_result)
 
@@ -129,19 +140,17 @@ def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine):
 
     assert np.isclose(dense_input_tensor, engine.csc_densify8x8(output_tensor)).all()
 
-    return
 
-
-def test_ir_builder_triple_convert_layout(engine: MlirJitEngine):
+def test_ir_builder_triple_convert_layout(engine: MlirJitEngine, aliases: AliasMap):
     # Build Function
-
-    input_var = MLIRVar("input_tensor", "tensor<?x?xf64, #CSR64>")
 
     ir_builder = MLIRFunctionBuilder(
         "triple_convert_layout",
-        input_vars=(input_var,),
+        input_types=["tensor<?x?xf64, #CSR64>"],
         return_types=["tensor<?x?xf64, #CSC64>"],
+        aliases=aliases,
     )
+    (input_var,) = ir_builder.inputs
     # Use different instances of Tranpose to ideally get exactly one convert_layout helper in the final MLIR text
     inter1 = ir_builder.call(ConvertLayout("csc"), input_var)
     inter2 = ir_builder.call(ConvertLayout("csr"), inter1)
@@ -202,7 +211,7 @@ def test_ir_builder_triple_convert_layout(engine: MlirJitEngine):
     return
 
 
-def test_ir_builder_triangle_count(engine: MlirJitEngine):
+def test_ir_builder_triangle_count():
     # 0 - 1    5 - 6
     # | X |    | /
     # 3 - 4 -- 2 - 7
@@ -249,16 +258,15 @@ def test_ir_builder_triangle_count(engine: MlirJitEngine):
     return
 
 
-def test_ir_builder_for_loop_simple(engine: MlirJitEngine):
+def test_ir_builder_for_loop_simple(engine: MlirJitEngine, aliases: AliasMap):
     # Build Function
 
-    input_var = MLIRVar("input_value", "f64")
-
     ir_builder = MLIRFunctionBuilder(
-        "times_three", input_vars=[input_var], return_types=["f64"]
+        "times_three", input_types=["f64"], return_types=["f64"], aliases=aliases
     )
+    (input_var,) = ir_builder.inputs
     zero_f64 = ir_builder.constant(0.0, "f64")
-    sum_memref = ir_builder.memref.alloc([], "f64")
+    sum_memref = ir_builder.memref.alloc("memref<f64>")
     ir_builder.memref.store(zero_f64, sum_memref, [])
 
     with ir_builder.for_loop(0, 3) as for_vars:
@@ -279,7 +287,7 @@ def test_ir_builder_for_loop_simple(engine: MlirJitEngine):
     return
 
 
-def test_ir_builder_for_loop_float_iter(engine: MlirJitEngine):
+def test_ir_builder_for_loop_float_iter(engine: MlirJitEngine, aliases: AliasMap):
     # Build Function
 
     lower_i = 0
@@ -288,16 +296,15 @@ def test_ir_builder_for_loop_float_iter(engine: MlirJitEngine):
     lower_float = 0.0
     delta_float = 7.8
 
-    input_var = MLIRVar("input_value", "f64")
-
     ir_builder = MLIRFunctionBuilder(
-        "plus_6x7_8", input_vars=[input_var], return_types=["f64"]
+        "plus_6x7_8", input_types=["f64"], return_types=["f64"], aliases=aliases
     )
-    sum_memref = ir_builder.memref.alloc([], "f64")
+    (input_var,) = ir_builder.inputs
+    sum_memref = ir_builder.memref.alloc("memref<f64>")
     ir_builder.memref.store(input_var, sum_memref, [])
 
     float_lower_var = ir_builder.constant(lower_float, "f64")
-    float_iter_var = MLIRVar("float_iter", "f64")
+    float_iter_var = ir_builder.new_var("f64")
     float_delta_var = ir_builder.constant(delta_float, "f64")
     with ir_builder.for_loop(
         lower_i, upper_i, delta_i, iter_vars=[(float_iter_var, float_lower_var)]
@@ -325,8 +332,6 @@ def test_ir_builder_for_loop_float_iter(engine: MlirJitEngine):
 def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
     # Build Function
 
-    input_var = MLIRVar("input_value", "i64")
-
     lower_index = 3
     upper_index = 9
     delta_index = 2
@@ -344,9 +349,10 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
 
     # Build IR
     ir_builder = MLIRFunctionBuilder(
-        "add_user_specified_vars", input_vars=[input_var], return_types=["i64"]
+        "add_user_specified_vars", input_types=["i64"], return_types=["i64"]
     )
-    sum_memref = ir_builder.memref.alloc([], "i64")
+    (input_var,) = ir_builder.inputs
+    sum_memref = ir_builder.memref.alloc("memref<i64>")
     ir_builder.memref.store(input_var, sum_memref, [])
 
     lower_index_var = ir_builder.constant(lower_index, "index")
@@ -354,7 +360,7 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
     delta_index_var = ir_builder.constant(delta_index, "index")
     lower_i64_var = ir_builder.constant(lower_i64, "i64")
     delta_i64_var = ir_builder.constant(delta_i64, "i64")
-    iter_i64_var = MLIRVar("iter_i64", "i64")
+    iter_i64_var = ir_builder.new_var("i64")
 
     with ir_builder.for_loop(
         lower_index_var,
