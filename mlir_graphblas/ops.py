@@ -3,7 +3,7 @@ Various ops written in MLIR which implement dialects or other utilities
 """
 from typing import Tuple, Sequence, Optional, Union
 from .mlir_builder import MLIRFunctionBuilder, MLIRVar
-from .types import MemrefType
+from .types import MemrefType, TensorType
 
 
 class BaseOp:
@@ -17,11 +17,18 @@ class BaseOp:
         raise NotImplementedError()
 
     @classmethod
-    def ensure_mlirvar(cls, obj):
+    def ensure_mlirvar(cls, obj, type_=None):
+        """
+        Raises a TypeError is obj is not an MLIRVar
+        If type_ is specified, raises a TypeError if obj.type is not of type type_
+        """
         if not isinstance(obj, MLIRVar):
-            raise TypeError(
-                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {obj}."
-            )
+            raise TypeError(f"{cls.name} expects an MLIRVar, but got {obj}.")
+        if type_ is not None:
+            if not isinstance(obj.type, type_):
+                raise TypeError(
+                    f"{cls.name} expects an MLIRVar with type {type_}, but got {obj!r}"
+                )
 
     def __init_subclass__(cls):
         MLIRFunctionBuilder.register_op(cls)
@@ -119,9 +126,7 @@ class MemrefAllocOp(BaseOp):
     @classmethod
     def call(cls, irbuilder, type: str):
         ret_val = irbuilder.new_var(type)
-        return ret_val, (
-            f"{ret_val.assign} = memref.alloc() : {ret_val.type}"
-        )
+        return ret_val, (f"{ret_val.assign} = memref.alloc() : {ret_val.type}")
 
 
 class MemrefStoreOp(BaseOp):
@@ -151,10 +156,8 @@ class MemrefLoadOp(BaseOp):
     def call(
         cls, irbuilder, input_memref: MLIRVar, indices: Sequence[Union[MLIRVar, int]]
     ):
-        cls.ensure_mlirvar(input_memref)
+        cls.ensure_mlirvar(input_memref, MemrefType)
         indices_string = ", ".join(map(str, indices))
-        if not isinstance(input_memref, MLIRVar) or not isinstance(input_memref.type, MemrefType):
-            raise TypeError(f"input_memref must be an MLIRVar(type=MemrefType)")
         ret_val = irbuilder.new_var(input_memref.type.value_type)
         return ret_val, (
             f"{ret_val.assign} = memref.load {input_memref}[{indices_string}] : {input_memref.type}"
@@ -202,7 +205,7 @@ class GraphBLAS_ConvertLayout(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input, return_type):
-        cls.ensure_mlirvar(input)
+        cls.ensure_mlirvar(input, TensorType)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.convert_layout {input} : "
@@ -216,7 +219,7 @@ class GraphBLAS_MatrixSelect(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input, selector):
-        cls.ensure_mlirvar(input)
+        cls.ensure_mlirvar(input, TensorType)
         ret_val = irbuilder.new_var(input.type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_select {input} "
@@ -227,10 +230,17 @@ class GraphBLAS_MatrixSelect(BaseOp):
 class GraphBLAS_MatrixReduceToScalar(BaseOp):
     dialect = "graphblas"
     name = "matrix_reduce_to_scalar"
+    allowed_aggregators = {"sum"}
 
     @classmethod
-    def call(cls, irbuilder, input, aggregator, return_type):
-        cls.ensure_mlirvar(input)
+    def call(cls, irbuilder, input, aggregator):
+        cls.ensure_mlirvar(input, TensorType)
+        if aggregator not in cls.allowed_aggregators:
+            raise TypeError(
+                f"Illegal aggregator: {aggregator}, must be one of {cls.allowed_aggregators}"
+            )
+        return_type = input.type.value_type
+        # TODO: return_type might be influenced by future allowable aggregators
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_reduce_to_scalar {input} "
@@ -241,11 +251,18 @@ class GraphBLAS_MatrixReduceToScalar(BaseOp):
 class GraphBLAS_MatrixApply(BaseOp):
     dialect = "graphblas"
     name = "matrix_apply"
+    allowed_ops = {"min"}
 
     @classmethod
-    def call(cls, irbuilder, input, apply_op, thunk, return_type):
-        cls.ensure_mlirvar(input)
+    def call(cls, irbuilder, input, apply_op, thunk):
+        cls.ensure_mlirvar(input, TensorType)
         cls.ensure_mlirvar(thunk)
+        if apply_op not in cls.allowed_ops:
+            raise TypeError(
+                f"Illegal apply_op: {apply_op}, must be one of {cls.allowed_ops}"
+            )
+        return_type = input.type
+        # TODO: return_type might be influenced by future allowable ops
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_apply {input}, {thunk} "
@@ -256,11 +273,18 @@ class GraphBLAS_MatrixApply(BaseOp):
 class GraphBLAS_MatrixMultiply(BaseOp):
     dialect = "graphblas"
     name = "matrix_multiply"
+    allowed_semirings = {"plus_plus", "plus_times", "plus_pair"}
 
     @classmethod
-    def call(cls, irbuilder, a, b, mask, semiring, return_type):
-        cls.ensure_mlirvar(a)
-        cls.ensure_mlirvar(b)
+    def call(cls, irbuilder, a, b, semiring, *, mask=None):
+        cls.ensure_mlirvar(a, TensorType)
+        cls.ensure_mlirvar(b, TensorType)
+        if semiring not in cls.allowed_semirings:
+            raise TypeError(
+                f"Illegal semiring: {semiring}, must be one of {cls.allowed_semirings}"
+            )
+        return_type = a.type
+        # TODO: make the return type more robust; may depend on a, b, and/or semiring
         ret_val = irbuilder.new_var(return_type)
         if mask:
             cls.ensure_mlirvar(mask)

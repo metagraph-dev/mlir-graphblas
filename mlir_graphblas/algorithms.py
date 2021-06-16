@@ -74,11 +74,9 @@ def triangle_count_combined(A: MLIRSparseTensor) -> int:
         U = irb.graphblas.matrix_select(inp, "triu")
         L = irb.graphblas.matrix_select(inp, "tril")
         U_csc = irb.graphblas.convert_layout(U, "tensor<?x?xf64, #CSC64>")
-        C = irb.graphblas.matrix_multiply(
-            L, U_csc, L, "plus_pair", "tensor<?x?xf64, #CSR64>"
-        )
+        C = irb.graphblas.matrix_multiply(L, U_csc, "plus_pair", mask=L)
 
-        reduce_result = irb.graphblas.matrix_reduce_to_scalar(C, "sum", "f64")
+        reduce_result = irb.graphblas.matrix_reduce_to_scalar(C, "sum")
         irb.return_vars(reduce_result)
 
         _triangle_count_compiled = irb.compile()
@@ -179,15 +177,13 @@ def dense_neural_network_combined(
             W_csc = irb.graphblas.convert_layout(
                 weight_matrix, "tensor<?x?xf64, #CSC64>"
             )
-            matmul_result = irb.graphblas.matrix_multiply(
-                Y, W_csc, None, "plus_times", "tensor<?x?xf64, #CSR64>"
-            )
+            matmul_result = irb.graphblas.matrix_multiply(Y, W_csc, "plus_times")
             add_bias_result = irb.graphblas.matrix_multiply(
-                matmul_result, bias_matrix, None, "plus_plus", "tensor<?x?xf64, #CSR64>"
+                matmul_result, bias_matrix, "plus_plus"
             )
             relu_result = irb.graphblas.matrix_select(add_bias_result, "gt0")
             clamp_result = irb.graphblas.matrix_apply(
-                relu_result, "min", clamp_threshold, "tensor<?x?xf64, #CSR64>"
+                relu_result, "min", clamp_threshold
             )
 
             # Cast clamp_result to a pointer
