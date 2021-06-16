@@ -249,7 +249,7 @@ class MLIRFunctionBuilder(BaseFunction):
 
         signature = ", ".join(f"{var}: {var.type}" for var in self.inputs)
 
-        # TODO: add top-level aliases based on self.aliases
+        # TODO: add top-level aliases based on self.aliases (instead of hardcoding CSR64 and CSC64)
         return needed_function_definitions + self.function_wrapper_text.render(
             private_func=make_private,
             func_name=self.func_name,

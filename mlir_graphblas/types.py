@@ -8,6 +8,8 @@ class AliasMap(dict):
 
 
 class Type:
+    _subtypes = []
+
     def __repr__(self):
         return f"{self.__class__.__name__}({self})"
 
@@ -16,22 +18,18 @@ class Type:
             return NotImplemented
         return self.__class__ is other.__class__ and str(self) == str(other)
 
-    @classmethod
-    def find(cls, text: str, aliases: AliasMap = None):
+    def __init_subclass__(cls):
+        Type._subtypes.append(cls)
+
+    @staticmethod
+    def find(text: str, aliases: AliasMap = None):
         if isinstance(text, Type):
             return text
         if aliases is not None and text[:1] == "#":
             if alias := aliases.get(text[1:]):
                 return alias
 
-        for klass in (
-            IndexType,
-            FloatType,
-            IntType,
-            TensorType,
-            SparseEncodingType,
-            LlvmPtrType,
-        ):
+        for klass in Type._subtypes:
             result = klass.parse(text, aliases=aliases)
             if result is not None:
                 return result
@@ -82,28 +80,50 @@ class IntType(Type):
             return IntType(int(m.group(1)))
 
 
-class TensorType(Type):
-    _patt = re.compile(r"^tensor<\?x\?x(.+), (#.+)>$")
+class MemrefType(Type):
+    _patt = re.compile(r"^memref<\s*((?:\?x)*)(.+)\s*>$")
 
-    def __init__(self, value_type: Type, encoding: "SparseEncodingType"):
+    def __init__(self, rank: int, value_type: Type):
+        if not isinstance(value_type, Type):
+            raise TypeError(f"value_type must be a Type, not {type(value_type)}")
+        self.rank = rank
+        self.value_type = value_type
+
+    def __str__(self):
+        return f"memref<{'?x'*self.rank}{self.value_type}>"
+
+    @classmethod
+    def parse(cls, text: str, aliases: AliasMap = None):
+        if m := cls._patt.match(text):
+            rank = m.group(1).count("?x")
+            value_type = Type.find(m.group(2), aliases=aliases)
+            return MemrefType(rank, value_type)
+
+
+class TensorType(Type):
+    _patt = re.compile(r"^tensor<\s*((?:\?x)*)(.+),\s*(#.+)\s*>$")
+
+    def __init__(self, rank: int, value_type: Type, encoding: "SparseEncodingType"):
         if not isinstance(value_type, Type):
             raise TypeError(f"value_type must be a Type, not {type(value_type)}")
         if not isinstance(encoding, SparseEncodingType):
             raise TypeError(
                 f"encoding must be a SparseEncodingType, not {type(encoding)}"
             )
+        self.rank = rank
         self.value_type = value_type
         self.encoding = encoding
 
     def __str__(self):
-        return f"tensor<?x?x{self.value_type}, {self.encoding}>"
+        return f"tensor<{'?x'*self.rank}{self.value_type}, {self.encoding}>"
 
     @classmethod
     def parse(cls, text: str, aliases: AliasMap = None):
         if m := cls._patt.match(text):
-            value_type = Type.find(m.group(1), aliases=aliases)
-            encoding = Type.find(m.group(2), aliases=aliases)
-            return TensorType(value_type, encoding)
+            rank = m.group(1).count("?x")
+            value_type = Type.find(m.group(2), aliases=aliases)
+            encoding = Type.find(m.group(3), aliases=aliases)
+            return TensorType(rank, value_type, encoding)
 
 
 class SparseEncodingType(Type):

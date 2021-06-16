@@ -266,7 +266,7 @@ def test_ir_builder_for_loop_simple(engine: MlirJitEngine, aliases: AliasMap):
     )
     (input_var,) = ir_builder.inputs
     zero_f64 = ir_builder.constant(0.0, "f64")
-    sum_memref = ir_builder.memref.alloc([], "f64")
+    sum_memref = ir_builder.memref.alloc("memref<f64>")
     ir_builder.memref.store(zero_f64, sum_memref, [])
 
     with ir_builder.for_loop(0, 3) as for_vars:
@@ -300,7 +300,7 @@ def test_ir_builder_for_loop_float_iter(engine: MlirJitEngine, aliases: AliasMap
         "plus_6x7_8", input_types=["f64"], return_types=["f64"], aliases=aliases
     )
     (input_var,) = ir_builder.inputs
-    sum_memref = ir_builder.memref.alloc([], "f64")
+    sum_memref = ir_builder.memref.alloc("memref<f64>")
     ir_builder.memref.store(input_var, sum_memref, [])
 
     float_lower_var = ir_builder.constant(lower_float, "f64")
@@ -352,7 +352,7 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
         "add_user_specified_vars", input_types=["i64"], return_types=["i64"]
     )
     (input_var,) = ir_builder.inputs
-    sum_memref = ir_builder.memref.alloc([], "i64")
+    sum_memref = ir_builder.memref.alloc("memref<i64>")
     ir_builder.memref.store(input_var, sum_memref, [])
 
     lower_index_var = ir_builder.constant(lower_index, "index")

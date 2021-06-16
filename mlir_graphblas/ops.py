@@ -3,6 +3,7 @@ Various ops written in MLIR which implement dialects or other utilities
 """
 from typing import Tuple, Sequence, Optional, Union
 from .mlir_builder import MLIRFunctionBuilder, MLIRVar
+from .types import MemrefType
 
 
 class BaseOp:
@@ -14,6 +15,13 @@ class BaseOp:
         cls, irbuilder: MLIRFunctionBuilder, *args, **kwargs
     ) -> Tuple[MLIRVar, str]:
         raise NotImplementedError()
+
+    @classmethod
+    def ensure_mlirvar(cls, obj):
+        if not isinstance(obj, MLIRVar):
+            raise TypeError(
+                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {obj}."
+            )
 
     def __init_subclass__(cls):
         MLIRFunctionBuilder.register_op(cls)
@@ -29,7 +37,7 @@ class ConstantOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, value, type):
-        if type in {"bf16", "f16", "f32", "f64", "f80", "f128"}:
+        if str(type) in {"bf16", "f16", "f32", "f64", "f80", "f128"}:
             value = float(value)
         ret_val = irbuilder.new_var(type)
         return ret_val, (f"{ret_val.assign} = constant {value} : {type}")
@@ -40,10 +48,7 @@ class IndexCastOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, value: MLIRVar, result_type):
-        if not isinstance(value, MLIRVar):
-            raise TypeError(
-                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {lhs}."
-            )
+        cls.ensure_mlirvar(value)
         ret_val = irbuilder.new_var(result_type)
         return ret_val, (
             f"{ret_val.assign} = std.index_cast {value} : {value.type} to {result_type}"
@@ -55,14 +60,8 @@ class AddIOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, lhs, rhs):
-        if not isinstance(lhs, MLIRVar):
-            raise TypeError(
-                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {lhs}."
-            )
-        if not isinstance(rhs, MLIRVar):
-            raise TypeError(
-                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {rhs}."
-            )
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
@@ -74,14 +73,8 @@ class MulIOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, lhs, rhs):
-        if not isinstance(lhs, MLIRVar):
-            raise TypeError(
-                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {lhs}."
-            )
-        if not isinstance(rhs, MLIRVar):
-            raise TypeError(
-                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {rhs}."
-            )
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
@@ -93,14 +86,8 @@ class AddFOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, lhs, rhs):
-        if not isinstance(lhs, MLIRVar):
-            raise TypeError(
-                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {lhs}."
-            )
-        if not isinstance(rhs, MLIRVar):
-            raise TypeError(
-                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {rhs}."
-            )
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
@@ -112,14 +99,8 @@ class MulFOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, lhs, rhs):
-        if not isinstance(lhs, MLIRVar):
-            raise TypeError(
-                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {lhs}."
-            )
-        if not isinstance(rhs, MLIRVar):
-            raise TypeError(
-                f"{cls.name} expected an {MLIRVar.__qualname__}, but got {rhs}."
-            )
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
@@ -136,20 +117,11 @@ class MemrefAllocOp(BaseOp):
     name = "alloc"
 
     @classmethod
-    def call(cls, irbuilder, shape: Optional[Sequence[Optional[int]]], type: str):
-        """
-        If shape is None, then the memref is unranked.
-        If shape is a sequence, NoneType elements indicate an arbitrarily shaped dimension.
-        """
-        shape = (
-            ["*"]
-            if shape is None
-            else ["?" if dim is None else str(dim) for dim in shape]
+    def call(cls, irbuilder, type: str):
+        ret_val = irbuilder.new_var(type)
+        return ret_val, (
+            f"{ret_val.assign} = memref.alloc() : {ret_val.type}"
         )
-        shape_and_dtype = "x".join(shape + [type])
-        memref_type = f"memref<{shape_and_dtype}>"
-        ret_val = irbuilder.new_var(memref_type)
-        return ret_val, (f"{ret_val.assign} = memref.alloc() : {memref_type}")
 
 
 class MemrefStoreOp(BaseOp):
@@ -164,6 +136,7 @@ class MemrefStoreOp(BaseOp):
         destination: MLIRVar,
         indices: Sequence[Union[MLIRVar, int]],
     ):
+        cls.ensure_mlirvar(destination)
         indices_string = ", ".join(map(str, indices))
         return None, (
             f"memref.store {value}, {destination}[{indices_string}] : {destination.type}"
@@ -178,15 +151,11 @@ class MemrefLoadOp(BaseOp):
     def call(
         cls, irbuilder, input_memref: MLIRVar, indices: Sequence[Union[MLIRVar, int]]
     ):
+        cls.ensure_mlirvar(input_memref)
         indices_string = ", ".join(map(str, indices))
-        # TODO can we do this parsing in PyMLIR?
-        _, ret_type = input_memref.type.split("memref<")
-        ret_type = ret_type[:-1]  # before this, it endsx with ">"
-        ret_type = ret_type.split(",")[
-            0
-        ].strip()  # Grab the dimensions+dtype string, e.g. ?x?xf32
-        ret_type = ret_type.split("x")[-1]
-        ret_val = irbuilder.new_var(ret_type)
+        if not isinstance(input_memref, MLIRVar) or not isinstance(input_memref.type, MemrefType):
+            raise TypeError(f"input_memref must be an MLIRVar(type=MemrefType)")
+        ret_val = irbuilder.new_var(input_memref.type.value_type)
         return ret_val, (
             f"{ret_val.assign} = memref.load {input_memref}[{indices_string}] : {input_memref.type}"
         )
@@ -202,11 +171,12 @@ class LLVMGetElementPtrOp(BaseOp):
     name = "getelementptr"
 
     @classmethod
-    def call(cls, irbuilder, list, index):
-        ret_val = irbuilder.new_var(list.type)
+    def call(cls, irbuilder, list_, index):
+        cls.ensure_mlirvar(list_)
+        ret_val = irbuilder.new_var(list_.type)
         return ret_val, (
-            f"{ret_val.assign} = llvm.getelementptr {list}[{index}] : "
-            f"({list.type}, {index.type}) -> {list.type}"
+            f"{ret_val.assign} = llvm.getelementptr {list_}[{index}] : "
+            f"({list_.type}, {index.type}) -> {list_.type}"
         )
 
 
@@ -216,6 +186,7 @@ class LLVMLoadOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, pointer, return_type):
+        cls.ensure_mlirvar(pointer)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (f"{ret_val.assign} = llvm.load {pointer} : {pointer.type}")
 
@@ -231,6 +202,7 @@ class GraphBLAS_ConvertLayout(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input, return_type):
+        cls.ensure_mlirvar(input)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.convert_layout {input} : "
@@ -244,6 +216,7 @@ class GraphBLAS_MatrixSelect(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input, selector):
+        cls.ensure_mlirvar(input)
         ret_val = irbuilder.new_var(input.type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_select {input} "
@@ -257,6 +230,7 @@ class GraphBLAS_MatrixReduceToScalar(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input, aggregator, return_type):
+        cls.ensure_mlirvar(input)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_reduce_to_scalar {input} "
@@ -270,7 +244,8 @@ class GraphBLAS_MatrixApply(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input, apply_op, thunk, return_type):
-        assert isinstance(thunk, MLIRVar), "thunk must be an MLIRVar"
+        cls.ensure_mlirvar(input)
+        cls.ensure_mlirvar(thunk)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_apply {input}, {thunk} "
@@ -284,8 +259,11 @@ class GraphBLAS_MatrixMultiply(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, a, b, mask, semiring, return_type):
+        cls.ensure_mlirvar(a)
+        cls.ensure_mlirvar(b)
         ret_val = irbuilder.new_var(return_type)
         if mask:
+            cls.ensure_mlirvar(mask)
             mlir = (
                 f"{ret_val.assign} = graphblas.matrix_multiply {a}, {b}, "
                 f"{mask} "
@@ -310,6 +288,7 @@ class PtrToTensorOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input, return_type):
+        cls.ensure_mlirvar(input)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = call @ptr8_to_tensor({input}) : "
@@ -323,6 +302,7 @@ class TensorToPtrOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input)
         ret_val = irbuilder.new_var("!llvm.ptr<i8>")
         return ret_val, (
             f"{ret_val.assign} = call @tensor_to_ptr8({input}) : "
@@ -336,6 +316,7 @@ class CastCsrToCscOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input)
         ret_val = irbuilder.new_var("tensor<?x?xf64, #CSC64>")
         return ret_val, (
             f"{ret_val.assign} = call @cast_csr_to_csc({input}) : "
@@ -349,6 +330,7 @@ class CastCscToCsrOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input)
         ret_val = irbuilder.new_var("tensor<?x?xf64, #CSR64>")
         return ret_val, (
             f"{ret_val.assign} = call @cast_csc_to_csr({input}) : "
