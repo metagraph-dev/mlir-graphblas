@@ -9,11 +9,11 @@ def engine():
 
 
 def test_ir_builder_bad_input_multi_value_mlir_variable():
-    ir_builder = MLIRFunctionBuilder("some_func", input_vars=[], return_types=("i8",))
+    ir_builder = MLIRFunctionBuilder("some_func", input_types=[], return_types=("i8",))
 
-    iter_i8_var = MLIRVar("iter_i8", "i8")
+    iter_i8_var = ir_builder.new_var("i8")
     lower_i8_var = ir_builder.constant(1, "i8")
-    iter_i64_var = MLIRVar("iter_64", "i64")
+    iter_i64_var = ir_builder.new_var("i64")
     lower_i64_var = ir_builder.constant(1, "i64")
     with ir_builder.for_loop(
         0, 1, 1, iter_vars=[(iter_i8_var, lower_i8_var), (iter_i64_var, lower_i64_var)]
@@ -40,7 +40,7 @@ def test_ir_builder_bad_input_multi_value_mlir_variable():
         ir_builder.return_vars(for_vars.returned_variable)
 
     # Raise when using multiple valued variable as operand
-    assigned_to_i8_var = MLIRVar("assigned_to_i8", "i8")
+    assigned_to_i8_var = ir_builder.new_var("i8")
     c1_i8_var = ir_builder.constant(1, "i8")
     with pytest.raises(
         TypeError,
@@ -67,7 +67,7 @@ def test_ir_builder_bad_input_multi_value_mlir_variable():
     # Raise when returning value incompatible with return type.
     c1_i64_var = ir_builder.constant(1, "i64")
     with pytest.raises(
-        TypeError, match="Return type of MLIRVar<name=.+, type=i64> does not match i8"
+        TypeError, match="Return type of MLIRVar\(name=.+, type=i64\) does not match i8"
     ):
         ir_builder.return_vars(c1_i64_var)
 

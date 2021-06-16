@@ -15,6 +15,7 @@ from collections import OrderedDict
 from .sparse_utils import MLIRSparseTensor
 from .functions import BaseFunction
 from .engine import parse_mlir_string
+from .types import Type, AliasMap
 
 from typing import Dict, List, Tuple, Sequence, Generator, Optional, Union
 
@@ -51,9 +52,13 @@ class MLIRVar:
     add_statement(f"{bar.assign} = addf {foo}, {baz} : {bar.type}")
     """
 
-    def __init__(self, name: str, type: str):
+    def __init__(self, name: str, type_: Type):
+        if not isinstance(type_, Type):
+            raise TypeError(
+                f"type_ must be a Type instance, not {type(type_)}; use Type.find(str) to convert"
+            )
         self.name = name
-        self.type = type
+        self.type = type_
         self._initialized = False
 
     def __eq__(self, other):
@@ -62,7 +67,7 @@ class MLIRVar:
         return self.name == other.name and self.type == other.type
 
     def __repr__(self):
-        return f"MLIRVar<name={self.name}, type={self.type}>"
+        return f"MLIRVar(name={self.name}, type={self.type})"
 
     def __str__(self):
         if not self._initialized:
@@ -79,7 +84,7 @@ class MLIRVar:
 
 
 class MLIRTuple:
-    def __init__(self, name: str, types: Tuple[str]):
+    def __init__(self, name: str, types: Tuple[Type]):
         self.name = name
         self.types = types
         self._initialized = False
@@ -100,7 +105,7 @@ class MLIRTuple:
         return len(self.types)
 
     def __repr__(self):
-        return f"MLIRTuple<name={self.name}, types={self.types}>"
+        return f"MLIRTuple(name={self.name}, types={self.types})"
 
     def __str__(self):
         raise TypeError(
@@ -158,17 +163,31 @@ class MLIRFunctionBuilder(BaseFunction):
     )
 
     def __init__(
-        self, func_name: str, input_vars: Sequence[MLIRVar], return_types: Sequence[str]
+        self,
+        func_name: str,
+        input_types: Sequence[Union[str, Type]],
+        return_types: Sequence[Union[str, Type]],
+        aliases: AliasMap = None,
     ) -> None:
         # TODO mlir functions can return zero or more results https://mlir.llvm.org/docs/LangRef/#operations
         # handle the cases where the number of return types is not 1
-        self.func_name = func_name
-        self.input_vars = input_vars
-        self.return_types = return_types
+        if aliases is None:
+            aliases = AliasMap()
+        self.aliases = aliases
 
-        # Initialize all input_vars so they can't be assigned to
-        for input_var in input_vars:
-            input_var._initialized = True
+        # Build input vars and ensure all types are proper Types
+        inputs = []
+        for i, it in enumerate(input_types):
+            it = Type.find(it, aliases)
+            # Create initialized MLIRVar
+            iv = MLIRVar(f"arg{i}", it)
+            iv._initialized = True
+            inputs.append(iv)
+        return_types = [Type.find(rt, aliases) for rt in return_types]
+
+        self.func_name = func_name
+        self.inputs = inputs
+        self.return_types = return_types
 
         self.var_name_counter = itertools.count()
         self.function_body_statements: List[str] = []
@@ -180,7 +199,6 @@ class MLIRFunctionBuilder(BaseFunction):
 
         self.indentation_level = 1
         self._initialize_ops()
-        return
 
     @classmethod
     def register_op(cls, opclass):
@@ -225,12 +243,13 @@ class MLIRFunctionBuilder(BaseFunction):
 
         joined_statements = "\n".join(self.function_body_statements)
 
-        return_type = ", ".join(self.return_types)
+        return_type = ", ".join(str(rt) for rt in self.return_types)
         if len(self.return_types) != 1:
             return_type = f"({return_type})"
 
-        signature = ", ".join(f"{var}: {var.type}" for var in self.input_vars)
+        signature = ", ".join(f"{var}: {var.type}" for var in self.inputs)
 
+        # TODO: add top-level aliases based on self.aliases
         return needed_function_definitions + self.function_wrapper_text.render(
             private_func=make_private,
             func_name=self.func_name,
@@ -248,7 +267,6 @@ class MLIRFunctionBuilder(BaseFunction):
         self.indentation_level += num_levels
         yield
         self.indentation_level -= num_levels
-        return
 
     def add_statement(self, statement: str) -> None:
         """In an ideal world, no human would ever call this method."""
@@ -258,14 +276,15 @@ class MLIRFunctionBuilder(BaseFunction):
                 + " " * self.indentation_delta_size * self.indentation_level
                 + line
             )
-        return
 
     def new_var(self, var_type: str) -> MLIRVar:
         var_name = f"var_{next(self.var_name_counter)}"
+        var_type = Type.find(var_type, self.aliases)
         return MLIRVar(var_name, var_type)
 
     def new_tuple(self, *var_types: str) -> MLIRTuple:
         var_name = f"var_{next(self.var_name_counter)}"
+        var_types = [Type.find(vt, self.aliases) for vt in var_types]
         return MLIRTuple(var_name, var_types)
 
     #########################
@@ -281,7 +300,7 @@ class MLIRFunctionBuilder(BaseFunction):
             if not mlir_type_strings_equal(expected, var.type):
                 raise TypeError(f"Return type of {var!r} does not match {expected}")
         ret_vals = ", ".join(str(var) for var in returned_values)
-        ret_types = ", ".join(self.return_types)
+        ret_types = ", ".join(str(rt) for rt in self.return_types)
         statement = f"return {ret_vals} : {ret_types}"
         self.add_statement(statement)
 
@@ -313,7 +332,7 @@ class MLIRFunctionBuilder(BaseFunction):
                 if not mlir_type_strings_equal(var.type, iter_var.type):
                     raise TypeError(f"{var!r} and {iter_var!r} have different types.")
             yield_vals = ", ".join(str(var) for var in yielded_vars)
-            yield_types = ", ".join(var.type for var in yielded_vars)
+            yield_types = ", ".join(str(var.type) for var in yielded_vars)
             self.builder.add_statement(f"scf.yield {yield_vals} : {yield_types}")
 
     @contextmanager
@@ -355,7 +374,7 @@ class MLIRFunctionBuilder(BaseFunction):
                 f" iter_args("
                 + ", ".join(iter_var_init_strings)
                 + ") -> ("
-                + ", ".join(iter_var_types)
+                + ", ".join(str(ivt) for ivt in iter_var_types)
                 + ")"
             )
         for_loop_open_statment += " {"

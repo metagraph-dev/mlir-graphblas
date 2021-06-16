@@ -7,6 +7,7 @@ from .functions import (
     MatrixMultiply,
 )
 from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
+from mlir_graphblas.types import AliasMap, SparseEncodingType, Type
 from .sparse_utils import MLIRSparseTensor
 from .engine import MlirJitEngine
 import time
@@ -57,11 +58,19 @@ _triangle_count_compiled = None
 def triangle_count_combined(A: MLIRSparseTensor) -> int:
     global _triangle_count_compiled
     if _triangle_count_compiled is None:
-        inp = MLIRVar("A", "tensor<?x?xf64, #CSR64>")
+        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
+        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+        aliases = AliasMap()
+        aliases["CSR64"] = csr64
+        aliases["CSC64"] = csc64
 
         irb = MLIRFunctionBuilder(
-            "triangle_count", input_vars=[inp], return_types=["f64"]
+            "triangle_count",
+            input_types=["tensor<?x?xf64, #CSR64>"],
+            return_types=["f64"],
+            aliases=aliases,
         )
+        (inp,) = irb.inputs
         U = irb.graphblas.matrix_select(inp, "triu")
         L = irb.graphblas.matrix_select(inp, "tril")
         U_csc = irb.graphblas.convert_layout(U, "tensor<?x?xf64, #CSC64>")
@@ -117,26 +126,33 @@ def dense_neural_network_combined(
 ) -> MLIRSparseTensor:
     global _dense_neural_network_compiled
     if _dense_neural_network_compiled is None:
-        # Input Vars
-        weight_list = MLIRVar("weight_list", "!llvm.ptr<!llvm.ptr<i8>>")
-        bias_list = MLIRVar("bias_list", "!llvm.ptr<!llvm.ptr<i8>>")
-        num_layers = MLIRVar("num_layers", "index")
-        Y_init = MLIRVar("Y0", "tensor<?x?xf64, #CSR64>")
-        clamp_threshold = MLIRVar("ymax", "f64")
+        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
+        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+        aliases = AliasMap()
+        aliases["CSR64"] = csr64
+        aliases["CSC64"] = csc64
 
         # Build Function
         irb = MLIRFunctionBuilder(
             "dense_neural_network",
-            input_vars=[weight_list, bias_list, num_layers, Y_init, clamp_threshold],
+            input_types=[
+                "!llvm.ptr<!llvm.ptr<i8>>",
+                "!llvm.ptr<!llvm.ptr<i8>>",
+                "index",
+                "tensor<?x?xf64, #CSR64>",
+                "f64",
+            ],
             return_types=["tensor<?x?xf64, #CSR64>"],
+            aliases=aliases,
         )
+        weight_list, bias_list, num_layers, Y_init, clamp_threshold = irb.inputs
         c0 = irb.constant(0, "i64")
         c1 = irb.constant(1, "i64")
 
         Y_init_ptr8 = irb.util.tensor_to_ptr8(Y_init)
 
-        Y_ptr8 = MLIRVar("Y_ptr8", "!llvm.ptr<i8>")
-        layer_idx = MLIRVar("layer_index", "i64")
+        Y_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        layer_idx = irb.new_var("i64")
 
         with irb.for_loop(
             0, num_layers, iter_vars=[(Y_ptr8, Y_init_ptr8), (layer_idx, c0)]
