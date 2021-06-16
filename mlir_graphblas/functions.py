@@ -200,7 +200,7 @@ class MatrixSelect(BaseFunction):
     mlir_template = jinja2.Template(
         """
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
-        %output = graphblas.matrix_select %input { selector = "{{ selector }}" } : tensor<?x?xf64, #CSR64>
+        %output = graphblas.matrix_select %input { selectors = ["{{ selector }}"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
         return %output : tensor<?x?xf64, #CSR64>
       }
     """

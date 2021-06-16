@@ -189,92 +189,50 @@ public:
   };
 };
 
-class LowerMatrixSelectRewrite : public OpRewritePattern<graphblas::MatrixSelectOp> {
-public:
-  using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const {
-    ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = op->getLoc();
+struct MatrixSelectOutputWriter {
+  MatrixSelectOutputWriter(StringRef _selector) : selector(_selector)
+  {
+  };
 
-    Value input = op.input();
-    Type valueType = input.getType().dyn_cast<TensorType>().getElementType();
+  void createConstants(PatternRewriter &rewriter, Location loc) {
     Type int64Type = rewriter.getIntegerType(64);
     FloatType float64Type = rewriter.getF64Type();
-    Type indexType = rewriter.getIndexType();
+
+    c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    c0_64 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
+    c1_64 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
+    cf0 = rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), float64Type);
+  }
+
+  void createTensor(PatternRewriter &rewriter, Location loc, ModuleOp module, Value input)
+  {
+    Type valueType = input.getType().dyn_cast<TensorType>().getElementType();
+    Type int64Type = rewriter.getIntegerType(64);
+
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
-    StringRef selector = op.selector();
-
-    bool needs_col = false, needs_val = false;
-    if (selector == "triu")
-    {
-      needs_col = true;
-      needs_val = false;
-    }
-    else if (selector == "tril")
-    {
-      needs_col = true;
-      needs_val = false;
-    }
-    else if (selector == "gt0")
-    {
-      needs_col = false;
-      needs_val = true;
-    }
-    else
-    {
-      return failure();
-    }
-
-    // Initial constants
-    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-    Value c0_64 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
-    Value c1_64 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
-    Value cf0 = rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), float64Type);
-
-    // Get sparse tensor info
-    Value nrow = rewriter.create<memref::DimOp>(loc, input, c0);
-    Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c1);
-    Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
-    Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
-
-    Value output = callDupTensor(rewriter, module, loc, input);
-    Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c1);
-    Value Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c1);
-    Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
-
+    tensor = callDupTensor(rewriter, module, loc, input);
+    Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, tensor, c1);
+    Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, tensor, c1);
+    Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, tensor);
     rewriter.create<memref::StoreOp>(loc, c0_64, Bp, c0);
-    // Loop
-    scf::ForOp outerLoop = rewriter.create<scf::ForOp>(loc, c0, nrow, c1);
-    Value row = outerLoop.getInductionVar();
+  };
 
-    rewriter.setInsertionPointToStart(outerLoop.getBody());
-    Value row_plus1 = rewriter.create<mlir::AddIOp>(loc, row, c1);
+  void createUpdateCurrCount(PatternRewriter &rewriter, Location loc, Value row, Value row_plus1)
+  {
     Value bp_curr_count = rewriter.create<memref::LoadOp>(loc, Bp, row);
     rewriter.create<memref::StoreOp>(loc, bp_curr_count, Bp, row_plus1);
+  };
 
-    Value j_start_64 = rewriter.create<memref::LoadOp>(loc, Ap, row);
-    Value j_end_64 = rewriter.create<memref::LoadOp>(loc, Ap, row_plus1);
-    Value j_start = rewriter.create<mlir::IndexCastOp>(loc, j_start_64, indexType);
-    Value j_end = rewriter.create<mlir::IndexCastOp>(loc, j_end_64, indexType);
+  void createTestAndStore(PatternRewriter &rewriter, Location loc,
+             Value row,
+             Value col, Value val, Value row_plus1, Value col_64)
+  {
+    Type indexType = rewriter.getIndexType();
 
-    scf::ForOp innerLoop = rewriter.create<scf::ForOp>(loc, j_start, j_end, c1);
-
-    Value jj = innerLoop.getInductionVar();
-
-    rewriter.setInsertionPointToStart(innerLoop.getBody());
-    Value col_64, col, val, keep;
-    if (needs_col)
-    {
-      col_64 = rewriter.create<memref::LoadOp>(loc, Aj, jj);
-      col = rewriter.create<mlir::IndexCastOp>(loc, col_64, indexType);
-    }
-    if (needs_val)
-    {
-      val = rewriter.create<memref::LoadOp>(loc, Ax, jj);
-    }
+    Value keep;
     if (selector == "triu")
     {
       keep = rewriter.create<mlir::CmpIOp>(loc, mlir::CmpIPredicate::ugt, col, row);
@@ -289,7 +247,8 @@ public:
     }
     else
     {
-      return failure();
+      // this should be impossible becasue of validation
+      assert(0);
     }
 
     scf::IfOp ifKeep = rewriter.create<scf::IfOp>(loc, keep, false /* no else region */);
@@ -299,31 +258,121 @@ public:
     Value bj_pos_64 = rewriter.create<memref::LoadOp>(loc, Bp, row_plus1);
     Value bj_pos = rewriter.create<mlir::IndexCastOp>(loc, bj_pos_64, indexType);
 
-    if (!needs_col)
-    {
-      col_64 = rewriter.create<memref::LoadOp>(loc, Aj, jj);
-    }
     rewriter.create<memref::StoreOp>(loc, col_64, Bj, bj_pos);
-
-    if (!needs_val)
-    {
-      val = rewriter.create<memref::LoadOp>(loc, Ax, jj);
-    }
     rewriter.create<memref::StoreOp>(loc, val, Bx, bj_pos);
 
     Value bj_pos_plus1 = rewriter.create<mlir::AddIOp>(loc, bj_pos_64, c1_64);
     rewriter.create<memref::StoreOp>(loc, bj_pos_plus1, Bp, row_plus1);
 
-    rewriter.setInsertionPointAfter(outerLoop);
+    rewriter.setInsertionPointAfter(ifKeep);
+  };
 
-    // trim excess values
+  void createTrimValues(PatternRewriter &rewriter, Location loc, ModuleOp module, Value nrow)
+  {
+    Type indexType = rewriter.getIndexType();
+
     Value nnz_64 = rewriter.create<memref::LoadOp>(loc, Bp, nrow);
     Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
 
-    callResizeIndex(rewriter, module, loc, output, c1, nnz);
-    callResizeValues(rewriter, module, loc, output, nnz);
+    callResizeIndex(rewriter, module, loc, tensor, c1, nnz);
+    callResizeValues(rewriter, module, loc, tensor, nnz);
+  };
 
-    rewriter.replaceOp(op, output);
+  StringRef selector;
+
+  // frequently used values
+  Value tensor;
+  Value Bp;
+  Value Bj;
+  Value Bx;
+
+  // frequently used constants
+  Value c0;
+  Value c1;
+  Value cf0;
+  Value c0_64;
+  Value c1_64;
+};
+
+class LowerMatrixSelectRewrite : public OpRewritePattern<graphblas::MatrixSelectOp> {
+public:
+  using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Value input = op.input();
+    Type valueType = input.getType().dyn_cast<TensorType>().getElementType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type indexType = rewriter.getIndexType();
+    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
+    Type memref1DValueType = MemRefType::get({-1}, valueType);
+
+    ArrayAttr selectors = op.selectors();
+
+    // Initial constants
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+
+    // Get sparse tensor info
+    Value nrow = rewriter.create<memref::DimOp>(loc, input, c0);
+    Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c1);
+    Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
+    Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
+
+    SmallVector<MatrixSelectOutputWriter*, 3> outputs;
+    for (auto selectorAttr : selectors)
+    {
+      StringRef selector = selectorAttr.dyn_cast_or_null<StringAttr>().getValue();
+      MatrixSelectOutputWriter *output = new MatrixSelectOutputWriter(selector);
+      outputs.push_back(output);
+
+      output->createConstants(rewriter, loc);
+      output->createTensor(rewriter, loc, module, input);
+    }
+
+    // Loop
+    scf::ForOp outerLoop = rewriter.create<scf::ForOp>(loc, c0, nrow, c1);
+    Value row = outerLoop.getInductionVar();
+
+    rewriter.setInsertionPointToStart(outerLoop.getBody());
+    Value row_plus1 = rewriter.create<mlir::AddIOp>(loc, row, c1);
+
+    for (auto output : outputs)
+    {
+      output->createUpdateCurrCount(rewriter, loc, row, row_plus1);
+    }
+
+    Value j_start_64 = rewriter.create<memref::LoadOp>(loc, Ap, row);
+    Value j_end_64 = rewriter.create<memref::LoadOp>(loc, Ap, row_plus1);
+    Value j_start = rewriter.create<mlir::IndexCastOp>(loc, j_start_64, indexType);
+    Value j_end = rewriter.create<mlir::IndexCastOp>(loc, j_end_64, indexType);
+
+    scf::ForOp innerLoop = rewriter.create<scf::ForOp>(loc, j_start, j_end, c1);
+
+    Value jj = innerLoop.getInductionVar();
+
+    rewriter.setInsertionPointToStart(innerLoop.getBody());
+    Value col_64 = rewriter.create<memref::LoadOp>(loc, Aj, jj);
+    Value col = rewriter.create<mlir::IndexCastOp>(loc, col_64, indexType);
+    Value val = rewriter.create<memref::LoadOp>(loc, Ax, jj);
+
+    for (auto output : outputs)
+    {
+      output->createTestAndStore(rewriter, loc, row, col, val, row_plus1, col_64);
+    }
+  
+
+    rewriter.setInsertionPointAfter(outerLoop);
+
+    // trim excess values
+    SmallVector<Value, 3> outputTensors;
+    for (auto output : outputs)
+    {
+      output->createTrimValues(rewriter, loc, module, nrow);
+      outputTensors.push_back(output->tensor);
+    }
+    rewriter.replaceOp(op, outputTensors);
 
     return success();
   };

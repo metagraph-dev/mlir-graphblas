@@ -38,21 +38,22 @@ def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
 def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, SameOperandsAndResultType]> {
     let summary = "matrix select operation";
     let description = [{
-        Returns a new sparse tensor with a subset of element from the given matrix.
-        The elements included in the resulting sparse tensor vary depending on the selector given (one of "triu", "tril", or "gt0").
+        Returns new sparse tensor(s) with a subset of element from the given matrix.
+        The elements included in the resulting sparse tensor vary depending on the selectors given (one of "triu", "tril", or "gt0").
+        Multiple selectors may be given, in which case multiple results will be returned
         The given sparse tensor must be a matrix, i.e. have rank 2.
         The given tensor must have a CSR sparsity or a CSC sparsity.
-        The resulting sparse tensor will have the same sparsity as the given sparse tensor.
+        The resulting sparse tensors will have the same sparsity as the given sparse tensor.
 
         Example:
-        ```%answer = graphblas.matrix_select %sparse_tensor { selector = "triu" } : tensor<100x100xf64, #CSR64>```
+        ```%answer = graphblas.matrix_select %sparse_tensor { selectors = ["triu"] } : tensor<100x100xf64, #CSR64> to tensor<100x100xf64, #CSR64>```
     }];
 
-    let arguments = (ins AnyTensor:$input, StrAttr:$selector);
-    let results = (outs AnyTensor:$output);
+    let arguments = (ins AnyTensor:$input, StrArrayAttr:$selectors);
+    let results = (outs Variadic<AnyTensor>:$outputs);
     
     let assemblyFormat = [{
-           $input attr-dict `:` type($input)
+           $input attr-dict `:` type($input) `to` type($outputs)
     }];
 }
 

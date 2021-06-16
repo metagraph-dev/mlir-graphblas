@@ -247,7 +247,7 @@ class GraphBLAS_MatrixSelect(BaseOp):
         ret_val = irbuilder.new_var(input.type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_select {input} "
-            f'{{ selector = "{selector}" }} : {input.type}'
+            f'{{ selectors = ["{selector}"] }} : {input.type} to {input.type}'
         )
 
 

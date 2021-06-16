@@ -11,7 +11,7 @@
 
 module {
     func @matrix_select_wrapper(%sparse_tensor: tensor<2x3xbf16>) -> tensor<2x3xbf16> {
-        %answer = graphblas.matrix_select %sparse_tensor { selector = "min" } : tensor<2x3xbf16> // expected-error {{Return value must be a sparse tensor.}}
+        %answer = graphblas.matrix_select %sparse_tensor { selectors = ["min"] } : tensor<2x3xbf16> to tensor<2x3xbf16> // expected-error {{Return value must be a sparse tensor.}}
         return %answer : tensor<2x3xbf16>
     }
 }
@@ -27,7 +27,7 @@ module {
 
 module {
     func @matrix_select_wrapper(%sparse_tensor: tensor<2x3xi8, #CSR64>) -> tensor<2x3xi8, #CSR64> {
-        %answer = graphblas.matrix_select %sparse_tensor { selector = "BADSELECTOR" } : tensor<2x3xi8, #CSR64> // expected-error {{"BADSELECTOR" is not a supported selector.}}
+        %answer = graphblas.matrix_select %sparse_tensor { selectors = ["BADSELECTOR"] } : tensor<2x3xi8, #CSR64> to tensor<2x3xi8, #CSR64> // expected-error {{"BADSELECTOR" is not a supported selector.}}
         return %answer : tensor<2x3xi8, #CSR64>
     }
 }
