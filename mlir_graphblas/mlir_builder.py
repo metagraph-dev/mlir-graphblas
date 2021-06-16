@@ -206,7 +206,7 @@ class MLIRFunctionBuilder(BaseFunction):
 
             for opclass in ops.values():
 
-                def op(opclass, *args, **kwargs):
+                def op(opclass, *args, **kwargs) -> Optional[MLIRVar]:
                     ret_val, mlir = opclass.call(self, *args, **kwargs)
                     self.add_statement(mlir)
                     return ret_val
