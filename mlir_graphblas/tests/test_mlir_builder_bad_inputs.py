@@ -50,6 +50,18 @@ def test_ir_builder_bad_input_multi_value_mlir_variable():
             f"{assigned_to_i8_var.assign} = addi {c1_i8_var}, {for_vars.returned_variable} : i8"
         )
 
+    with pytest.raises(
+        TypeError,
+        match="Cannot access MLIRTuple .+ directly. Use index notation to access an element.",
+    ):
+        ir_builder.addi(c1_i8_var, for_vars.returned_variable)
+
+    with pytest.raises(
+        TypeError,
+        match="Cannot access MLIRTuple .+ directly. Use index notation to access an element.",
+    ):
+        ir_builder.addi(for_vars.returned_variable, c1_i8_var)
+
     # Raise when using multiple valued variable indexed via out-of-bound int index as operand
     with pytest.raises(IndexError):
         for_vars.returned_variable[999]

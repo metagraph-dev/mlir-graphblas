@@ -266,27 +266,16 @@ def test_ir_builder_for_loop_simple(engine: MlirJitEngine, aliases: AliasMap):
     )
     (input_var,) = ir_builder.inputs
     zero_f64 = ir_builder.constant(0.0, "f64")
-    ir_builder.add_statement(
-        f"""
-%sum_memref = memref.alloc() : memref<f64>
-memref.store {zero_f64}, %sum_memref[] : memref<f64>
-"""
-    )
+    sum_memref = ir_builder.memref.alloc([], "f64")
+    ir_builder.memref.store(zero_f64, sum_memref, [])
+
     with ir_builder.for_loop(0, 3) as for_vars:
-        ir_builder.add_statement(
-            f"""
-%current_sum = memref.load %sum_memref[] : memref<f64>
-%updated_sum = addf {input_var}, %current_sum : f64
-memref.store %updated_sum, %sum_memref[] : memref<f64>
-"""
-        )
+        current_sum = ir_builder.memref.load(sum_memref, [])
+        updated_sum = ir_builder.addf(input_var, current_sum)
+        ir_builder.memref.store(updated_sum, sum_memref, [])
     assert for_vars.returned_variable is None
-    result_var = ir_builder.new_var("f64")
-    ir_builder.add_statement(
-        f"""
-{result_var.assign} = memref.load %sum_memref[] : memref<f64>
-"""
-    )
+
+    result_var = ir_builder.memref.load(sum_memref, [])
     ir_builder.return_vars(result_var)
 
     assert ir_builder.get_mlir()
@@ -311,12 +300,8 @@ def test_ir_builder_for_loop_float_iter(engine: MlirJitEngine, aliases: AliasMap
         "plus_6x7_8", input_types=["f64"], return_types=["f64"], aliases=aliases
     )
     (input_var,) = ir_builder.inputs
-    ir_builder.add_statement(
-        f"""
-%sum_memref = memref.alloc() : memref<f64>
-memref.store {input_var}, %sum_memref[] : memref<f64>
-"""
-    )
+    sum_memref = ir_builder.memref.alloc([], "f64")
+    ir_builder.memref.store(input_var, sum_memref, [])
 
     float_lower_var = ir_builder.constant(lower_float, "f64")
     float_iter_var = ir_builder.new_var("f64")
@@ -325,22 +310,13 @@ memref.store {input_var}, %sum_memref[] : memref<f64>
         lower_i, upper_i, delta_i, iter_vars=[(float_iter_var, float_lower_var)]
     ) as for_vars:
         assert [float_iter_var] == for_vars.iter_vars
-        incremented_float_var = ir_builder.new_var("f64")
-        ir_builder.add_statement(
-            f"""
-%current_sum = memref.load %sum_memref[] : memref<f64>
-%updated_sum = addf {float_iter_var}, %current_sum : f64
-memref.store %updated_sum, %sum_memref[] : memref<f64>
-{incremented_float_var.assign} = addf {float_iter_var}, {float_delta_var} : f64
-"""
-        )
+        current_sum = ir_builder.memref.load(sum_memref, [])
+        updated_sum = ir_builder.addf(float_iter_var, current_sum)
+        ir_builder.memref.store(updated_sum, sum_memref, [])
+        incremented_float_var = ir_builder.addf(float_iter_var, float_delta_var)
         for_vars.yield_vars(incremented_float_var)
-    result_var = ir_builder.new_var("f64")
-    ir_builder.add_statement(
-        f"""
-{result_var.assign} = memref.load %sum_memref[] : memref<f64>
-"""
-    )
+
+    result_var = ir_builder.memref.load(sum_memref, [])
     ir_builder.return_vars(result_var)
 
     assert ir_builder.get_mlir()
@@ -376,12 +352,9 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
         "add_user_specified_vars", input_types=["i64"], return_types=["i64"]
     )
     (input_var,) = ir_builder.inputs
-    ir_builder.add_statement(
-        f"""
-%sum_memref = memref.alloc() : memref<i64>
-memref.store {input_var}, %sum_memref[] : memref<i64>
-"""
-    )
+    sum_memref = ir_builder.memref.alloc([], "i64")
+    ir_builder.memref.store(input_var, sum_memref, [])
+
     lower_index_var = ir_builder.constant(lower_index, "index")
     upper_index_var = ir_builder.constant(upper_index, "index")
     delta_index_var = ir_builder.constant(delta_index, "index")
@@ -399,30 +372,26 @@ memref.store {input_var}, %sum_memref[] : memref<i64>
         assert upper_index_var == for_vars.upper_var_index
         assert delta_index_var == for_vars.step_var_index
         assert [iter_i64_var] == for_vars.iter_vars
-        incremented_iter_i64_var = ir_builder.new_var("i64")
-        ir_builder.add_statement(
-            f"""
-%current_sum = memref.load %sum_memref[] : memref<i64>
-%prod_of_index_vars_0 = muli {for_vars.lower_var_index}, {for_vars.upper_var_index} : index
-%prod_of_index_vars_1 = muli %prod_of_index_vars_0, {for_vars.step_var_index} : index
-%prod_of_index_vars = std.index_cast %prod_of_index_vars_1 : index to i64
-%prod_of_i64_vars = muli {lower_i64_var}, {delta_i64_var} : i64
-%iter_index_i64 = std.index_cast {for_vars.iter_var_index} : index to i64
-%prod_of_iter_vars = muli %iter_index_i64, {iter_i64_var} : i64
-%updated_sum_0 = addi %current_sum, %prod_of_index_vars : i64
-%updated_sum_1 = addi %updated_sum_0, %prod_of_i64_vars : i64
-%updated_sum = addi %updated_sum_1, %prod_of_iter_vars : i64
-memref.store %updated_sum, %sum_memref[] : memref<i64>
-{incremented_iter_i64_var.assign} = addi {iter_i64_var}, {delta_i64_var} : i64
-"""
+        current_sum = ir_builder.memref.load(sum_memref, [])
+        prod_of_index_vars_0 = ir_builder.muli(
+            for_vars.lower_var_index, for_vars.upper_var_index
         )
+        prod_of_index_vars_1 = ir_builder.muli(
+            prod_of_index_vars_0, for_vars.step_var_index
+        )
+        prod_of_index_vars = ir_builder.index_cast(prod_of_index_vars_1, "i64")
+        prod_of_i64_vars = ir_builder.muli(lower_i64_var, delta_i64_var)
+        iter_index_i64 = ir_builder.index_cast(for_vars.iter_var_index, "i64")
+        prod_of_iter_vars = ir_builder.muli(iter_index_i64, iter_i64_var)
+        updated_sum_0 = ir_builder.addi(current_sum, prod_of_index_vars)
+        updated_sum_1 = ir_builder.addi(updated_sum_0, prod_of_i64_vars)
+        updated_sum = ir_builder.addi(updated_sum_1, prod_of_iter_vars)
+        ir_builder.memref.store(updated_sum, sum_memref, [])
+
+        incremented_iter_i64_var = ir_builder.addi(iter_i64_var, delta_i64_var)
         for_vars.yield_vars(incremented_iter_i64_var)
-    result_var = ir_builder.new_var("i64")
-    ir_builder.add_statement(
-        f"""
-{result_var.assign} = memref.load %sum_memref[] : memref<i64>
-"""
-    )
+
+    result_var = ir_builder.memref.load(sum_memref, [])
     ir_builder.return_vars(result_var)
 
     assert (
