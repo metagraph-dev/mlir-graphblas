@@ -76,13 +76,23 @@ public:
     Value nnz_64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, nrow);
     Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
 
-    Value output = callEmptyLike(rewriter, module, loc, inputTensor);
-    callResizeDim(rewriter, module, loc, output, c0, nrow);
-    callResizeDim(rewriter, module, loc, output, c1, ncol);
+    Value duplicate = callEmptyLike(rewriter, module, loc, inputTensor);
+    callResizeDim(rewriter, module, loc, duplicate, c0, nrow);
+    callResizeDim(rewriter, module, loc, duplicate, c1, ncol);
 
-    callResizePointers(rewriter, module, loc, output, c1, ncols_plus_one);
-    callResizeIndex(rewriter, module, loc, output, c1, nnz);
-    callResizeValues(rewriter, module, loc, output, nnz);
+    callResizePointers(rewriter, module, loc, duplicate, c1, ncols_plus_one);
+    callResizeIndex(rewriter, module, loc, duplicate, c1, nnz);
+    callResizeValues(rewriter, module, loc, duplicate, nnz);
+    
+    // verify function will ensure that this is CSR->CSC or CSC->CSR
+    Value output;
+    if (typeIsCSR(outputType)) {
+      output = convertToExternalCSR(rewriter, module, loc, duplicate);
+    } else if (typeIsCSC(outputType)) {
+      output = convertToExternalCSC(rewriter, module, loc, duplicate); 
+    } else {
+      assert(false && "Output type must be CSC or CSR.");
+    }
 
     Value outputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c1);
     Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c1);
@@ -174,16 +184,7 @@ public:
 
     rewriter.create<memref::StoreOp>(loc, last_last, outputPtrs, ncol);
 
-    // verify function will ensure that this is CSR->CSC or CSC->CSR
-    if (typeIsCSR(outputType)) {
-      Value result = convertToExternalCSR(rewriter, module, loc, output); 
-      rewriter.replaceOp(op, result);
-    } else if (typeIsCSC(outputType)) {
-      Value result = convertToExternalCSC(rewriter, module, loc, output); 
-      rewriter.replaceOp(op, result);
-    } else {
-      assert(false && "Output type must be CSC or CSR.");
-    }
+    rewriter.replaceOp(op, output);
     
     return success();
   };
@@ -213,7 +214,8 @@ struct MatrixSelectOutputWriter {
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
-    tensor = callDupTensor(rewriter, module, loc, input);
+    Value duplicate = callDupTensor(rewriter, module, loc, input);
+    tensor = convertToExternalCSR(rewriter, module, loc, duplicate);
     Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, tensor, c1);
     Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, tensor, c1);
     Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, tensor);
@@ -276,6 +278,9 @@ struct MatrixSelectOutputWriter {
 
     callResizeIndex(rewriter, module, loc, tensor, c1, nnz);
     callResizeValues(rewriter, module, loc, tensor, nnz);
+
+    assert(typeIsCSR(tensor.getType()) &&
+	   "tensor expected to be CSR since createTensor is expected to have been called first.");
   };
 
   StringRef selector;
@@ -321,7 +326,7 @@ public:
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
 
     SmallVector<MatrixSelectOutputWriter*, 3> outputs;
-    for (auto selectorAttr : selectors)
+    for (Attribute selectorAttr : selectors)
     {
       StringRef selector = selectorAttr.dyn_cast_or_null<StringAttr>().getValue();
       MatrixSelectOutputWriter *output = new MatrixSelectOutputWriter(selector);
@@ -338,7 +343,7 @@ public:
     rewriter.setInsertionPointToStart(outerLoop.getBody());
     Value row_plus1 = rewriter.create<mlir::AddIOp>(loc, row, c1);
 
-    for (auto output : outputs)
+    for (MatrixSelectOutputWriter* output : outputs)
     {
       output->createUpdateCurrCount(rewriter, loc, row, row_plus1);
     }
@@ -357,7 +362,7 @@ public:
     Value col = rewriter.create<mlir::IndexCastOp>(loc, col_64, indexType);
     Value val = rewriter.create<memref::LoadOp>(loc, Ax, jj);
 
-    for (auto output : outputs)
+    for (MatrixSelectOutputWriter* output : outputs)
     {
       output->createTestAndStore(rewriter, loc, row, col, val, row_plus1, col_64);
     }
@@ -367,8 +372,7 @@ public:
 
     // trim excess values
     SmallVector<Value, 3> outputTensors;
-    for (auto output : outputs)
-    {
+    for (MatrixSelectOutputWriter* output : outputs) {
       output->createTrimValues(rewriter, loc, module, nrow);
       outputTensors.push_back(output->tensor);
     }
@@ -474,7 +478,8 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
 
     // Get sparse tensor info
-    Value output = callDupTensor(rewriter, module, loc, inputTensor);
+    Value duplicate = callDupTensor(rewriter, module, loc, inputTensor);
+    Value output = convertToExternalCSR(rewriter, module, loc, duplicate);
     Value inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, inputTensor, c1);
     Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, inputTensor);
     Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
@@ -572,6 +577,7 @@ public:
     callResizeDim(rewriter, module, loc, C, c0, nrow);
     callResizeDim(rewriter, module, loc, C, c1, ncol);
     callResizePointers(rewriter, module, loc, C, c1, nrow_plus_one);
+    C = convertToExternalCSR(rewriter, module, loc, C);
 
     Value Cp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, C, c1);
 
@@ -727,6 +733,7 @@ public:
     Value nnz = rewriter.create<IndexCastOp>(loc, nnz64, indexType);
     callResizeIndex(rewriter, module, loc, C, c1, nnz);
     callResizeValues(rewriter, module, loc, C, nnz);
+    C = convertToExternalCSR(rewriter, module, loc, C);
     Value Cj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, C, c1);
     Value Cx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, C);
 
@@ -1161,11 +1168,11 @@ public:
       SmallVector<Type, 3> resultTypes;
 
       for (graphblas::MatrixSelectOp selectOp : selectOps) {
-        for (auto selectorStr : selectOp.selectors()) {
+        for (Attribute selectorStr : selectOp.selectors()) {
           selectors.push_back(selectorStr.dyn_cast<StringAttr>().getValue());
         }
 
-        auto opResultTypes = selectOp.getResultTypes();
+        ValueTypeRange<ResultRange> opResultTypes = selectOp.getResultTypes();
         resultTypes.insert(resultTypes.end(), opResultTypes.begin(), opResultTypes.end());
       }
 

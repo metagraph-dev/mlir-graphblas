@@ -3,7 +3,7 @@ Various ops written in MLIR which implement dialects or other utilities
 """
 from typing import Tuple, Sequence, Optional, Union
 from .mlir_builder import MLIRFunctionBuilder, MLIRVar
-from .types import MemrefType, TensorType
+from .types import MemrefType, TensorType, SparseEncodingType
 
 
 class BaseOp:
@@ -305,6 +305,68 @@ class GraphBLAS_MatrixMultiply(BaseOp):
 # util ops
 ###########################################
 
+# TODO these are used by the ops below ; should we inspect the
+# inputs to get the bitwidths instead of assuming 64?
+CSR64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
+CSC64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+CSX64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
+
+
+class CastCsrToCsxOp(BaseOp):
+    dialect = "util"
+    name = "cast_csr_to_csx"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input)
+        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
+        return ret_val, (
+            f"{ret_val.assign} = call @cast_csr_to_csx({input}) : "
+            f"({input.type}) -> tensor<?x?xf64, {CSX64}>"
+        )
+
+
+class CastCscToCsxOp(BaseOp):
+    dialect = "util"
+    name = "cast_csc_to_csx"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input)
+        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
+        return ret_val, (
+            f"{ret_val.assign} = call @cast_csc_to_csx({input}) : "
+            f"({input.type}) -> tensor<?x?xf64, {CSX64}>"
+        )
+
+
+class CastCsxToCsrOp(BaseOp):
+    dialect = "util"
+    name = "cast_csx_to_csr"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input)
+        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSR64}>")
+        return ret_val, (
+            f"{ret_val.assign} = call @cast_csx_to_csr({input}) : "
+            f"({input.type}) -> tensor<?x?xf64, {CSR64}>"
+        )
+
+
+class CastCsxToCscOp(BaseOp):
+    dialect = "util"
+    name = "cast_csx_to_csc"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input)
+        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSC64}>")
+        return ret_val, (
+            f"{ret_val.assign} = call @cast_csx_to_csc({input}) : "
+            f"({input.type}) -> tensor<?x?xf64, {CSC64}>"
+        )
+
 
 class PtrToTensorOp(BaseOp):
     dialect = "util"
@@ -313,11 +375,30 @@ class PtrToTensorOp(BaseOp):
     @classmethod
     def call(cls, irbuilder, input, return_type):
         cls.ensure_mlirvar(input)
-        ret_val = irbuilder.new_var(return_type)
-        return ret_val, (
+        tensor_type = TensorType.parse(return_type, irbuilder.aliases)
+        encoding = tensor_type.encoding
+        if encoding.levels != ["dense", "compressed"]:
+            raise TypeError(
+                f"Return type must denote a CSR or CSC tensor (got {return_type})."
+            )
+        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
+        ret_string = (
             f"{ret_val.assign} = call @ptr8_to_tensor({input}) : "
-            f"(!llvm.ptr<i8>) -> {return_type}"
+            f"(!llvm.ptr<i8>) -> tensor<?x?xf64, {CSX64}>"
         )
+        if encoding.ordering is None:
+            pass
+        elif encoding.ordering == [0, 1]:
+            ret_val, cast_string = CastCsxToCsrOp.call(irbuilder, ret_val)
+            ret_string = ret_string + "\n" + cast_string
+        elif encoding.ordering == [1, 0]:
+            ret_val, cast_string = CastCsxToCscOp.call(irbuilder, ret_val)
+            ret_string = ret_string + "\n" + cast_string
+        else:
+            raise TypeError(
+                f"Return type must denote a CSR or CSC tensor (got {return_type})."
+            )
+        return ret_val, ret_string
 
 
 class TensorToPtrOp(BaseOp):
@@ -326,37 +407,29 @@ class TensorToPtrOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input)
+        cls.ensure_mlirvar(input, TensorType)
+
+        encoding = input.type.encoding
+        if encoding.levels != ["dense", "compressed"]:
+            raise TypeError(
+                f"Input type must denote a CSR or CSC tensor (got {input.type})."
+            )
+
+        if encoding.ordering is None:
+            cast_string = ""
+        elif encoding.ordering == [0, 1]:
+            input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
+            cast_string += "\n"
+        elif encoding.ordering == [1, 0]:
+            input, cast_string = CastCscToCsxOp.call(irbuilder, input)
+            cast_string += "\n"
+        else:
+            raise TypeError(
+                f"Return type must denote a CSR or CSC tensor (got {input.type})."
+            )
+
         ret_val = irbuilder.new_var("!llvm.ptr<i8>")
-        return ret_val, (
+        return ret_val, cast_string + (
             f"{ret_val.assign} = call @tensor_to_ptr8({input}) : "
             f"({input.type}) -> !llvm.ptr<i8>"
-        )
-
-
-class CastCsrToCscOp(BaseOp):
-    dialect = "util"
-    name = "cast_csr_to_csc"
-
-    @classmethod
-    def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input)
-        ret_val = irbuilder.new_var("tensor<?x?xf64, #CSC64>")
-        return ret_val, (
-            f"{ret_val.assign} = call @cast_csr_to_csc({input}) : "
-            f"({input.type}) -> tensor<?x?xf64, #CSC64>"
-        )
-
-
-class CastCscToCsrOp(BaseOp):
-    dialect = "util"
-    name = "cast_csc_to_csr"
-
-    @classmethod
-    def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input)
-        ret_val = irbuilder.new_var("tensor<?x?xf64, #CSR64>")
-        return ret_val, (
-            f"{ret_val.assign} = call @cast_csc_to_csr({input}) : "
-            f"({input.type}) -> tensor<?x?xf64, #CSR64>"
         )
