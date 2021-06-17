@@ -58,19 +58,21 @@ class BaseFunction:
   indexBitWidth = 64
 }>
 
+#CSX64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
 module  {
-    func private @cast_csr_to_csc(tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSC64>
+    func private @cast_csr_to_csx(tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSX64>
+    func private @cast_csc_to_csx(tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSX64>
+    func private @cast_csx_to_csr(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSR64>
+    func private @cast_csx_to_csc(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSC64>
     
-    func private @empty(tensor<?x?xf64, #CSR64>, index) -> tensor<?x?xf64, #CSR64>
-    func private @dup_tensor(tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64>
-    func private @ptr8_to_tensor(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSR64>
-    func private @tensor_to_ptr8(tensor<?x?xf64, #CSR64>) -> !llvm.ptr<i8>
-
-    func private @resize_pointers(tensor<?x?xf64, #CSR64>, index, index) -> ()
-    func private @resize_index(tensor<?x?xf64, #CSR64>, index, index) -> ()
-    func private @resize_values(tensor<?x?xf64, #CSR64>, index) -> ()
-    func private @resize_dim(tensor<?x?xf64, #CSR64>, index, index) -> ()
-
+    func private @ptr8_to_tensor(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSX64>
+    func private @tensor_to_ptr8(tensor<?x?xf64, #CSX64>) -> !llvm.ptr<i8>
+    
     {{ body }}
 
 }

@@ -126,9 +126,11 @@ def dense_neural_network_combined(
     if _dense_neural_network_compiled is None:
         csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
         csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+        csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
         aliases = AliasMap()
         aliases["CSR64"] = csr64
         aliases["CSC64"] = csc64
+        aliases["CSX64"] = csx64
 
         # Build Function
         irb = MLIRFunctionBuilder(
@@ -165,10 +167,9 @@ def dense_neural_network_combined(
             # Get bias matrix
             bias_matrix_ptr_ptr = irb.llvm.getelementptr(bias_list, layer_idx)
             bias_matrix_ptr = irb.llvm.load(bias_matrix_ptr_ptr, "!llvm.ptr<i8>")
-            bias_matrix_csr = irb.util.ptr8_to_tensor(
-                bias_matrix_ptr, "tensor<?x?xf64, #CSR64>"
+            bias_matrix_csc = irb.util.ptr8_to_tensor(
+                bias_matrix_ptr, "tensor<?x?xf64, #CSC64>"
             )
-            bias_matrix = irb.util.cast_csr_to_csc(bias_matrix_csr)
 
             # Cast Y from pointer to tensor
             Y = irb.util.ptr8_to_tensor(Y_ptr8, "tensor<?x?xf64, #CSR64>")
@@ -179,7 +180,7 @@ def dense_neural_network_combined(
             )
             matmul_result = irb.graphblas.matrix_multiply(Y, W_csc, "plus_times")
             add_bias_result = irb.graphblas.matrix_multiply(
-                matmul_result, bias_matrix, "plus_plus"
+                matmul_result, bias_matrix_csc, "plus_plus"
             )
             relu_result = irb.graphblas.matrix_select(add_bias_result, "gt0")
             clamp_result = irb.graphblas.matrix_apply(

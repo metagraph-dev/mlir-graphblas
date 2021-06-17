@@ -754,10 +754,16 @@ void *ptr8_to_tensor(void *tensor) {
 void *tensor_to_ptr8(void *tensor) {
     return tensor;
 }
-void *cast_csr_to_csc(void *tensor) {
+void *cast_csr_to_csx(void *tensor) {
     return tensor;
 }
-void *cast_csc_to_csr(void *tensor) {
+void *cast_csc_to_csx(void *tensor) {
+    return tensor;
+}
+void *cast_csx_to_csc(void *tensor) {
+    return tensor;
+}
+void *cast_csx_to_csr(void *tensor) {
     return tensor;
 }
 void *empty_like(void *tensor) {
