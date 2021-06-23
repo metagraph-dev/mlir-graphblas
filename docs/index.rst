@@ -14,4 +14,5 @@ mlir-graphblas is licensed under the `Apache 2.0 license <https://www.apache.org
    :maxdepth: 2
 
    installation/index
+   dialect/index
    tools/index
