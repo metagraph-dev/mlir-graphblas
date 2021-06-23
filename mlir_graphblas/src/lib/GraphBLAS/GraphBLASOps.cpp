@@ -115,6 +115,8 @@ static LogicalResult verify(MatrixApplyOp op) {
   return success();
 }
 
+static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus"};
+
 static LogicalResult verify(MatrixMultiplyOp op) {
   Type aType = op.a().getType();
   Type bType = op.b().getType();
@@ -132,7 +134,6 @@ static LogicalResult verify(MatrixMultiplyOp op) {
   if (resultCompressionErrorMessage)
     return op.emitError(resultCompressionErrorMessage.getValue());
 
-  static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus"};
   std::string semiring = op.semiring().str();
   bool semiringSupported = std::find(supportedSemirings.begin(), supportedSemirings.end(), semiring)
     != supportedSemirings.end();
@@ -203,7 +204,6 @@ static LogicalResult verify(MatrixMultiplyReduceToScalarOp op) {
   if (resultType != operandTensorType.getElementType())
     return op.emitError("Operand and output types are incompatible.");
 
-  static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus"};
   std::string semiring = op.semiring().str();
   bool semiringSupported = std::find(supportedSemirings.begin(), supportedSemirings.end(), semiring)
     != supportedSemirings.end();
