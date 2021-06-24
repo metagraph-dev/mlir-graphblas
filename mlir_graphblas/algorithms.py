@@ -10,7 +10,6 @@ from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, Type
 from .sparse_utils import MLIRSparseTensor
 from .engine import MlirJitEngine
-import time
 
 graphblas_opt_passes = (
     "--graphblas-lower",
@@ -94,7 +93,6 @@ def dense_neural_network(
     nlayers = len(W)
 
     Y = Y0.dup()
-    start = now = time.time()
     for layer in range(nlayers):
         W_csc = csr_to_csc.compile()(W[layer])
         Y = mxm_plus_times.compile()(Y, W_csc)
@@ -105,11 +103,6 @@ def dense_neural_network(
         Y = matrix_select_gt0.compile()(Y)
         Y = matrix_apply_min.compile()(Y, ymax)
 
-        curr = time.time()
-        diff, now = curr - now, curr
-        print(f"Layer {layer+1} of {nlayers} took {diff:.2f} sec")
-
-    print(f"\nTotal time = {(now - start):.2f} sec")
     return Y
 
 
@@ -132,15 +125,47 @@ def dense_neural_network_combined(
         aliases["CSC64"] = csc64
         aliases["CSX64"] = csx64
 
-        # Build Function
+        ##############################################
+        # Define inner function for a single iteration
+        ##############################################
+        irb_inner = MLIRFunctionBuilder(
+            "dnn_step",
+            input_types=[
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?x?xf64, #CSC64>",
+                "tensor<?x?xf64, #CSR64>",
+                "f64",
+            ],
+            return_types=["tensor<?x?xf64, #CSR64>"],
+            aliases=aliases,
+        )
+        weights, biases, Y, threshold = irb_inner.inputs
+        # Perform inference
+        W_csc = irb_inner.graphblas.convert_layout(weights, "tensor<?x?xf64, #CSC64>")
+        matmul_result = irb_inner.graphblas.matrix_multiply(Y, W_csc, "plus_times")
+        add_bias_result = irb_inner.graphblas.matrix_multiply(
+            matmul_result, biases, "plus_plus"
+        )
+        clamp_result = irb_inner.graphblas.matrix_apply(
+            add_bias_result, "min", threshold
+        )
+        relu_result = irb_inner.graphblas.matrix_select(clamp_result, "gt0")
+
+        irb_inner.util.del_sparse_tensor(Y)
+
+        irb_inner.return_vars(relu_result)
+
+        ##############################################
+        # Build outer loop (overly complicated due to pointer casting necessity
+        ##############################################
         irb = MLIRFunctionBuilder(
             "dense_neural_network",
             input_types=[
-                "!llvm.ptr<!llvm.ptr<i8>>",
-                "!llvm.ptr<!llvm.ptr<i8>>",
-                "index",
-                "tensor<?x?xf64, #CSR64>",
-                "f64",
+                "!llvm.ptr<!llvm.ptr<i8>>",  # weight list
+                "!llvm.ptr<!llvm.ptr<i8>>",  # bias list
+                "index",  # number of layers
+                "tensor<?x?xf64, #CSR64>",  # Y init
+                "f64",  # clamp theshold
             ],
             return_types=["tensor<?x?xf64, #CSR64>"],
             aliases=aliases,
@@ -149,7 +174,10 @@ def dense_neural_network_combined(
         c0 = irb.constant(0, "i64")
         c1 = irb.constant(1, "i64")
 
-        Y_init_ptr8 = irb.util.tensor_to_ptr8(Y_init)
+        # Make a copy of Y_init for consistency of memory cleanup in the loop
+        Y_init_dup = irb.util.dup_tensor(Y_init)
+
+        Y_init_ptr8 = irb.util.tensor_to_ptr8(Y_init_dup)
 
         Y_ptr8 = irb.new_var("!llvm.ptr<i8>")
         layer_idx = irb.new_var("i64")
@@ -172,23 +200,14 @@ def dense_neural_network_combined(
             )
 
             # Cast Y from pointer to tensor
-            Y = irb.util.ptr8_to_tensor(Y_ptr8, "tensor<?x?xf64, #CSR64>")
+            Y_loop = irb.util.ptr8_to_tensor(Y_ptr8, "tensor<?x?xf64, #CSR64>")
 
-            # Perform inference
-            W_csc = irb.graphblas.convert_layout(
-                weight_matrix, "tensor<?x?xf64, #CSC64>"
-            )
-            matmul_result = irb.graphblas.matrix_multiply(Y, W_csc, "plus_times")
-            add_bias_result = irb.graphblas.matrix_multiply(
-                matmul_result, bias_matrix_csc, "plus_plus"
-            )
-            relu_result = irb.graphblas.matrix_select(add_bias_result, "gt0")
-            clamp_result = irb.graphblas.matrix_apply(
-                relu_result, "min", clamp_threshold
+            loop_result = irb.call(
+                irb_inner, weight_matrix, bias_matrix_csc, Y_loop, clamp_threshold
             )
 
-            # Cast clamp_result to a pointer
-            result_ptr8 = irb.util.tensor_to_ptr8(clamp_result)
+            # Cast loop_result to a pointer
+            result_ptr8 = irb.util.tensor_to_ptr8(loop_result)
 
             # increment iterator vars
             incremented_layer_index_i64 = irb.addi(layer_idx, c1)
@@ -207,7 +226,5 @@ def dense_neural_network_combined(
     if len(W) != len(Bias):
         raise TypeError(f"num_layers mismatch: {len(W)} != {len(Bias)}")
 
-    start = time.time()
     Y = _dense_neural_network_compiled(W, Bias, len(W), Y0, ymax)
-    print(f"\nTotal time = {(time.time() - start):.2f} sec")
     return Y

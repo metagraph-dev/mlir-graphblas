@@ -58,7 +58,7 @@ class IndexCastOp(BaseOp):
         cls.ensure_mlirvar(value)
         ret_val = irbuilder.new_var(result_type)
         return ret_val, (
-            f"{ret_val.assign} = std.index_cast {value} : {value.type} to {result_type}"
+            f"{ret_val.assign} = std.index_cast {value} : {value.type} to {ret_val.type}"
         )
 
 
@@ -209,7 +209,7 @@ class GraphBLAS_ConvertLayout(BaseOp):
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.convert_layout {input} : "
-            f"{input.type} to {return_type}"
+            f"{input.type} to {ret_val.type}"
         )
 
 
@@ -244,7 +244,7 @@ class GraphBLAS_MatrixReduceToScalar(BaseOp):
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_reduce_to_scalar {input} "
-            f'{{ aggregator = "{aggregator}" }} : {input.type} to {return_type}'
+            f'{{ aggregator = "{aggregator}" }} : {input.type} to {ret_val.type}'
         )
 
 
@@ -266,7 +266,7 @@ class GraphBLAS_MatrixApply(BaseOp):
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_apply {input}, {thunk} "
-            f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {thunk.type}) to {return_type}'
+            f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {thunk.type}) to {ret_val.type}'
         )
 
 
@@ -291,12 +291,12 @@ class GraphBLAS_MatrixMultiply(BaseOp):
             mlir = (
                 f"{ret_val.assign} = graphblas.matrix_multiply {a}, {b}, "
                 f"{mask} "
-                f'{{ semiring = "{semiring}" }} : ({a.type}, {b.type}, {mask.type}) to {return_type}'
+                f'{{ semiring = "{semiring}" }} : ({a.type}, {b.type}, {mask.type}) to {ret_val.type}'
             )
         else:
             mlir = (
                 f"{ret_val.assign} = graphblas.matrix_multiply {a}, {b} "
-                f'{{ semiring = "{semiring}" }} : ({a.type}, {b.type}) to {return_type}'
+                f'{{ semiring = "{semiring}" }} : ({a.type}, {b.type}) to {ret_val.type}'
             )
         return ret_val, mlir
 
@@ -432,4 +432,49 @@ class TensorToPtrOp(BaseOp):
         return ret_val, cast_string + (
             f"{ret_val.assign} = call @tensor_to_ptr8({input}) : "
             f"({input.type}) -> !llvm.ptr<i8>"
+        )
+
+
+class DelSparseTensor(BaseOp):
+    dialect = "util"
+    name = "del_sparse_tensor"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input, TensorType)
+        encoding = input.type.encoding
+        if encoding.ordering is None:
+            cast_string = ""
+        elif encoding.ordering == [0, 1]:
+            input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
+            cast_string += "\n"
+        elif encoding.ordering == [1, 0]:
+            input, cast_string = CastCscToCsxOp.call(irbuilder, input)
+            cast_string += "\n"
+
+        return None, cast_string + (
+            f"call @delSparseTensor({input}) : ({input.type}) -> ()"
+        )
+
+
+class DupTensor(BaseOp):
+    dialect = "util"
+    name = "dup_tensor"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input, TensorType)
+        encoding = input.type.encoding
+        if encoding.ordering is None:
+            cast_string = ""
+        elif encoding.ordering == [0, 1]:
+            input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
+            cast_string += "\n"
+        elif encoding.ordering == [1, 0]:
+            input, cast_string = CastCscToCsxOp.call(irbuilder, input)
+            cast_string += "\n"
+
+        ret_val = irbuilder.new_var(input.type)
+        return ret_val, cast_string + (
+            f"{ret_val.assign} = call @dup_tensor({input}) : ({input.type}) -> {input.type}"
         )

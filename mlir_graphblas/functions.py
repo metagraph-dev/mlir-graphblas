@@ -73,17 +73,20 @@ module  {
     func private @ptr8_to_tensor(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSX64>
     func private @tensor_to_ptr8(tensor<?x?xf64, #CSX64>) -> !llvm.ptr<i8>
     
+    func private @delSparseTensor(tensor<?x?xf64, #CSX64>) -> ()
+    func private @dup_tensor(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSX64>
+
     {{ body }}
 
 }
         """
     )
 
-    def get_mlir_module(self):
+    def get_mlir_module(self, make_private=False):
         """Get the MLIR text for this function wrapped in a MLIR module with
         declarations of external helper functions."""
         return self.MODULE_WRAPPER_TEXT.render(
-            body=self.get_mlir(make_private=False),
+            body=self.get_mlir(make_private=make_private),
         )
 
     def compile(self, engine=None, passes=None):

@@ -500,24 +500,6 @@ def resolve_type_aliases(module: mlir.astnodes.Module) -> None:
     return
 
 
-def _preprocess_mlir(mlir_text: str):
-    START_MARKER = "// pymlir-skip: begin"
-    END_MARKER = "// pymlir-skip: end"
-    PATTERN = START_MARKER + r".*?" + END_MARKER
-    regex = re.compile(PATTERN, flags=re.DOTALL)
-    preprocessed_mlir_text = regex.sub("", mlir_text)
-    return preprocessed_mlir_text
-
-
-def parse_mlir_string(mlir_text: Union[str, bytes]) -> mlir.astnodes.Module:
-    if isinstance(mlir_text, bytes):
-        mlir_text = mlir_text.decode()
-    mlir_text = _preprocess_mlir(mlir_text)
-    mlir_ast = mlir.parse_string(mlir_text)
-    resolve_type_aliases(mlir_ast)
-    return mlir_ast
-
-
 def parse_mlir_functions(
     mlir_text: Union[str, bytes], cli: MlirOptCli
 ) -> mlir.astnodes.Module:

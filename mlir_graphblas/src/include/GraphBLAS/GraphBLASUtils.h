@@ -17,6 +17,7 @@ mlir::Value convertToExternalCSR(mlir::OpBuilder &builder, mlir::ModuleOp &mod, 
 mlir::Value convertToExternalCSC(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value input);
 mlir::Value callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
 mlir::Value callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
+void callDelSparseTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
 
 mlir::CallOp callResizeDim(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc,
                            mlir::Value tensor, mlir::Value d, mlir::Value size);
@@ -26,5 +27,7 @@ mlir::CallOp callResizeIndex(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir
                              mlir::Value tensor, mlir::Value d, mlir::Value size);
 mlir::CallOp callResizeValues(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc,
                               mlir::Value tensor, mlir::Value size);
+
+void cleanupIntermediateTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
 
 #endif // GRAPHBLAS_GRAPHBLASUTILS_H

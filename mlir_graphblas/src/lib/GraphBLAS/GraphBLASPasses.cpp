@@ -185,7 +185,9 @@ public:
     rewriter.create<memref::StoreOp>(loc, last_last, outputPtrs, ncol);
 
     rewriter.replaceOp(op, output);
-    
+
+    cleanupIntermediateTensor(rewriter, module, loc, output);
+
     return success();
   };
 };
@@ -280,7 +282,7 @@ struct MatrixSelectOutputWriter {
     callResizeValues(rewriter, module, loc, tensor, nnz);
 
     assert(typeIsCSR(tensor.getType()) &&
-	   "tensor expected to be CSR since createTensor is expected to have been called first.");
+           "tensor expected to be CSR since createTensor is expected to have been called first.");
   };
 
   StringRef selector;
@@ -366,7 +368,6 @@ public:
     {
       output->createTestAndStore(rewriter, loc, row, col, val, row_plus1, col_64);
     }
-  
 
     rewriter.setInsertionPointAfter(outerLoop);
 
@@ -377,6 +378,10 @@ public:
       outputTensors.push_back(output->tensor);
     }
     rewriter.replaceOp(op, outputTensors);
+
+    for (Value output : outputTensors) {
+      cleanupIntermediateTensor(rewriter, module, loc, output);
+    }
 
     return success();
   };
@@ -509,6 +514,8 @@ public:
 
     // Add return op
     rewriter.replaceOp(op, output);
+
+    cleanupIntermediateTensor(rewriter, module, loc, output);
 
     return success();
   };
@@ -703,6 +710,7 @@ public:
     // end col loop
     rewriter.setInsertionPointAfter(colLoop1);
     Value total = colLoop1.getResult(0);
+    rewriter.create<memref::DeallocOp>(loc, kvec_i1);
     rewriter.create<scf::YieldOp>(loc, total);
 
     // end if cmpColSame
@@ -894,6 +902,8 @@ public:
 
     // end col loop 3f
     rewriter.setInsertionPointAfter(colLoop3f);
+    rewriter.create<memref::DeallocOp>(loc, kvec);
+    rewriter.create<memref::DeallocOp>(loc, kvec_i1);
 
     // end if cmpDiff
     rewriter.setInsertionPointAfter(ifBlock_cmpDiff);
@@ -902,6 +912,8 @@ public:
     rewriter.setInsertionPointAfter(rowLoop3);
 
     rewriter.replaceOp(op, C);
+
+    cleanupIntermediateTensor(rewriter, module, loc, C);
 
     return success();
   };
@@ -1089,6 +1101,8 @@ public:
     rewriter.setInsertionPointAfter(colLoop2);
 
     Value subtotal = colLoop2.getResult(0);
+    rewriter.create<memref::DeallocOp>(loc, kvec);
+    rewriter.create<memref::DeallocOp>(loc, kvec_i1);
     rewriter.create<scf::YieldOp>(loc, subtotal);
 
     // end if cmpSame
