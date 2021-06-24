@@ -5,7 +5,7 @@ import pytest
 import numpy as np
 
 from mlir_graphblas import MlirJitEngine
-from mlir_graphblas.engine import parse_mlir_string
+from mlir_graphblas.engine import parse_mlir_functions
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType
@@ -157,29 +157,20 @@ def test_ir_builder_triple_convert_layout(engine: MlirJitEngine, aliases: AliasM
     return_var = ir_builder.call(ConvertLayout("csc"), inter2)
     ir_builder.return_vars(return_var)
 
-    mlir_text = ir_builder.get_mlir(make_private=False)
-    ast = parse_mlir_string(mlir_text)
+    mlir_text = ir_builder.get_mlir_module()
+    ast = parse_mlir_functions(mlir_text, engine._cli)
     # verify there are exactly two functions
-    functions = [node for node in ast.body if isinstance(node, mlir.astnodes.Function)]
+    functions = [
+        node
+        for node in engine._walk_module(ast)
+        if isinstance(node, mlir.astnodes.Function)
+    ]
     triple_convert_func = functions.pop(-1)
     assert triple_convert_func.visibility == "public"
-    assert all(
-        func.name.value.startswith("convert_layout_cs") and func.visibility == "private"
-        for func in functions
-        if func.name.value == "triple_convert_layout"
-    )
-
-    # verify in_place_triple_convert_layout has three convert_layout calls
-    region = triple_convert_func.body
-    (block,) = region.body
-    call_op_1, call_op_2, call_op_3, return_op = block.body
-    assert call_op_1.op.func.value == "convert_layout_to_csc"
-    assert call_op_2.op.func.value == "convert_layout_to_csr"
-    assert call_op_3.op.func.value == "convert_layout_to_csc"
-    (return_op_type,) = [
-        t for t in mlir.dialects.standard.ops if t.__name__ == "ReturnOperation"
+    convert_layout_funcs = [
+        func for func in functions if func.name.value.startswith("convert_layout_to_cs")
     ]
-    assert isinstance(return_op.op, return_op_type)
+    assert len(convert_layout_funcs) == 2
 
     # Test Compiled Function
     triple_convert_layout_callable = ir_builder.compile(

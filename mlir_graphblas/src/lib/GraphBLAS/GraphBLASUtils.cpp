@@ -51,7 +51,7 @@ bool typeIsCSR(Type inputType) {
     return false;
   } else {
     if (dlt[0] != sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense
-	|| dlt[1] != sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
+        || dlt[1] != sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
       return false;
   }
 
@@ -82,7 +82,7 @@ bool typeIsCSC(Type inputType) {
     return false;
   } else {
     if (dlt[0] != sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense
-	|| dlt[1] != sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
+        || dlt[1] != sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
       return false;
   }
   
@@ -177,10 +177,10 @@ Value convertToExternalCSX(OpBuilder &builder, ModuleOp &mod, Location loc, Valu
   else 
     assert(false && "Unexpected tensor type.");
   CallOp castCallOp = builder.create<CallOp>(loc,
-					     castFuncSymbol,
-					     csxType,
-					     llvm::ArrayRef<Value>({input})
-					     );
+                                             castFuncSymbol,
+                                             csxType,
+                                             llvm::ArrayRef<Value>({input})
+                                             );
 
   Value result = castCallOp->getResult(0);
   return result;
@@ -205,10 +205,10 @@ Value convertToExternalCSR(OpBuilder &builder, ModuleOp &mod, Location loc, Valu
   RankedTensorType csrType = getCSRTensorType(context, {-1, -1}, builder.getF64Type()); 
   FlatSymbolRefAttr castFuncSymbol = getFunc(mod, loc, "cast_csx_to_csr", csrType, inputType);
   CallOp castCallOp = builder.create<CallOp>(loc,
-					     castFuncSymbol,
-					     csrType,
-					     llvm::ArrayRef<Value>({input})
-					     );
+                                             castFuncSymbol,
+                                             csrType,
+                                             llvm::ArrayRef<Value>({input})
+                                             );
 
   Value result = castCallOp->getResult(0);
   return result;
@@ -229,13 +229,22 @@ Value convertToExternalCSC(OpBuilder &builder, ModuleOp &mod, Location loc, Valu
   RankedTensorType cscType = getCSCTensorType(context, {-1, -1}, builder.getF64Type()); 
   FlatSymbolRefAttr castFuncSymbol = getFunc(mod, loc, "cast_csx_to_csc", cscType, inputType);
   CallOp castCallOp = builder.create<CallOp>(loc,
-					     castFuncSymbol,
-					     cscType,
-					     llvm::ArrayRef<Value>({input})
-					     );
+                                             castFuncSymbol,
+                                             cscType,
+                                             llvm::ArrayRef<Value>({input})
+                                             );
 
   Value result = castCallOp->getResult(0);
   return result;
+}
+
+void callDelSparseTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
+    Value csxTensor = convertToExternalCSX(builder, mod, loc, tensor);
+    Type csxTensorType = csxTensor.getType();
+
+    FlatSymbolRefAttr func = getFunc(mod, loc, "delSparseTensor", ArrayRef<Type>({}), csxTensorType);
+    builder.create<mlir::CallOp>(loc, func, ValueRange(), csxTensor);
+    return;
 }
 
 mlir::Value callEmptyLike(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
@@ -309,4 +318,23 @@ mlir::CallOp callResizeValues(OpBuilder &builder, ModuleOp &mod, Location loc,
     mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({csxTensor, size}));
 
     return result;
+}
+
+void cleanupIntermediateTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
+  // Clean up sparse tensor unless it is returned by the function
+  Block * outputBlock = tensor.getParentBlock();
+  ReturnOp lastStatement = llvm::dyn_cast_or_null<ReturnOp>(outputBlock->getTerminator());
+  bool toDelete = true;
+  if (lastStatement != nullptr) {
+    for (Value result : lastStatement->getOperands()) {
+      if (result == tensor) {
+        toDelete = false;
+        break;
+      }
+    }
+    if (toDelete) {
+      builder.setInsertionPoint(lastStatement);
+      callDelSparseTensor(builder, mod, loc, tensor);
+    }
+  }
 }

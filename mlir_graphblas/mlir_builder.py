@@ -13,8 +13,8 @@ import itertools
 from contextlib import contextmanager
 from collections import OrderedDict
 from .sparse_utils import MLIRSparseTensor
-from .functions import BaseFunction
-from .engine import parse_mlir_string
+from .functions import BaseFunction, _default_engine
+from .engine import parse_mlir_functions, MlirJitEngine
 from .types import Type, AliasMap
 
 from typing import Dict, List, Tuple, Sequence, Generator, Optional, Union
@@ -130,7 +130,7 @@ class MLIRFunctionBuilder(BaseFunction):
     function_wrapper_text = jinja2.Template(
         "\n"
         + (" " * default_indentation_size)
-        + "func {% if private_func %}private{% endif %}@{{func_name}}({{signature}}) -> {{return_type}} {"
+        + "func {% if private_func %}private {% endif %}@{{func_name}}({{signature}}) -> {{return_type}} {"
         + "\n"
         + "{{statements}}"
         + "\n"
@@ -144,12 +144,17 @@ class MLIRFunctionBuilder(BaseFunction):
         input_types: Sequence[Union[str, Type]],
         return_types: Sequence[Union[str, Type]],
         aliases: AliasMap = None,
+        engine: MlirJitEngine = None,
     ) -> None:
         # TODO mlir functions can return zero or more results https://mlir.llvm.org/docs/LangRef/#operations
         # handle the cases where the number of return types is not 1
         if aliases is None:
             aliases = AliasMap()
         self.aliases = aliases
+        # TODO: unify this with the engine passed into `.compile()`
+        if engine is None:
+            engine = _default_engine
+        self.engine = engine
 
         # Build input vars and ensure all types are proper Types
         inputs = []
@@ -254,12 +259,12 @@ class MLIRFunctionBuilder(BaseFunction):
             )
 
     def new_var(self, var_type: str) -> MLIRVar:
-        var_name = f"var_{next(self.var_name_counter)}"
+        var_name = f"var{next(self.var_name_counter)}"
         var_type = Type.find(var_type, self.aliases)
         return MLIRVar(var_name, var_type)
 
     def new_tuple(self, *var_types: str) -> MLIRTuple:
-        var_name = f"var_{next(self.var_name_counter)}"
+        var_name = f"var{next(self.var_name_counter)}"
         var_types = [Type.find(vt, self.aliases) for vt in var_types]
         return MLIRTuple(var_name, var_types)
 
@@ -389,7 +394,15 @@ class MLIRFunctionBuilder(BaseFunction):
             assert function.get_mlir(make_private=True) == function_mlir_text
         else:
             function_mlir_text = function.get_mlir(make_private=True)
-            (function_ast,) = parse_mlir_string(function_mlir_text).body
+            full_function_mlir_text = function.get_mlir_module(make_private=True)
+            mlir_ast = parse_mlir_functions(full_function_mlir_text, self.engine._cli)
+            mlir_functions: List[mlir.astnodes.Function] = [
+                obj
+                for obj in self.engine._walk_module(mlir_ast)
+                if isinstance(obj, mlir.astnodes.Function)
+                and obj.name.value == function.func_name
+            ]
+            function_ast = mlir_functions[0]
             input_types = [arg.type.dump() for arg in function_ast.args]
             return_type = (
                 function_ast.result_types.dump()
