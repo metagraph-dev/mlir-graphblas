@@ -243,7 +243,7 @@ void callDelSparseTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value 
     Type csxTensorType = csxTensor.getType();
 
     FlatSymbolRefAttr func = getFunc(mod, loc, "delSparseTensor", ArrayRef<Type>({}), csxTensorType);
-    builder.create<mlir::CallOp>(loc, func, ValueRange(), csxTensor);
+    builder.create<mlir::CallOp>(loc, func, TypeRange(), csxTensor);
     return;
 }
 
