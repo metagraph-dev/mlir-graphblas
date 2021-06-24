@@ -34,9 +34,6 @@ The optimization pass performs three transformations:
   sparse multiply and accumulate in a single pass (rather than two passes for
   ``graphblas.matrix_multiply``).
 
-.. warning:: show examples of fusion transforms, taken from unit tests.
-
-
 .. _graphblas-lower: 
 
 ``--graphblas-lower`` Pass

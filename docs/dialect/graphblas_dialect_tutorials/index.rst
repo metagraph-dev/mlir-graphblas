@@ -13,3 +13,4 @@ The content of the tutorials are somewhat sequentially dependent as some later t
    :maxdepth: 1
 
    graphblas_lower/index
+   graphblas_optimize/index

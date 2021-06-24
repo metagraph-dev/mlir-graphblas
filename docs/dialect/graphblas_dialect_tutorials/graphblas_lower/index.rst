@@ -3,7 +3,7 @@
 GraphBLAS Lowering Pass
 =======================
 
-These tutorials and examples wil cover how to use the GraphBLAS dialect's ``--graphblas-lower`` pass by using the :ref:`engine` to lower several ops from the GraphBLAS dialect.
+These tutorials and examples will cover how to use the GraphBLAS dialect's ``--graphblas-lower`` pass by using the :ref:`engine` to lower several ops from the GraphBLAS dialect.
 
 The content of the tutorials are somewhat sequentially dependent as some later tutorials assume completion of previous tutorials.
 
