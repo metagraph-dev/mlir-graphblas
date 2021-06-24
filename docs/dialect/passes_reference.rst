@@ -5,7 +5,11 @@ The mlir-graphblas package includes an drop-in replacement for ``mlir-opt``
 called ``graphblas-opt`` which includes the custom ``graphblas`` dialect along
 with all the other dialects that ship with MLIR.
 
-The two custom passes are:
+This document is not intended to be a complete tutorial on ``graphblas-opt`` and acts more
+as a reference manual for the passes exclusively available for ``graphblas-opt``. For tutorials
+on these passes specific to ``graphblas-opt``, see our :ref:`graphblas_dialect_tutorials`.
+
+The two passes specific to ``graphblas-opt`` are:
 
 * ``--graphblas-optimize``: Fuses ``graphblas`` ops together to eliminate
   temporary tensors and redundant loops.

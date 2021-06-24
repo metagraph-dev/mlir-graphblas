@@ -1,9 +1,9 @@
-.. _graphblas_dialect:
+.. _graphblas_lowering_pass:
 
-GraphBLAS Dialect
-=================
+GraphBLAS Lowering Pass
+=======================
 
-This is a series of tutorials and examples for using the GraphBLAS dialect with the JIT engine. Be sure to read the tutorials on the :ref:`engine` before going through these.
+These tutorials and examples wil cover how to use the GraphBLAS dialect's ``--graphblas-lower`` pass by using the :ref:`engine` to lower several ops from the GraphBLAS dialect.
 
 The content of the tutorials are somewhat sequentially dependent as some later tutorials assume completion of previous tutorials.
 

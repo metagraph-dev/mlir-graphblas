@@ -109,12 +109,24 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
         The given sparse tensors must be a matrix, i.e. have rank 2.
         The first input tensors must be CSR format, while the second input tensor must be CSC format.
         The mask (if provided) must be CSR format.
+        This operation also accepts an optional region that specifies element-wise postprocessing to be done on the result of the matrix multiplication.
+        The region must use `graphblas.yield` to indicate the result of the element-wise postprocessing.
 
         No Mask Example:
         ```%answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_plus" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>) to tensor<2x2xi64, #CSR64>```
         
         Mask Example:
         ```%answer = graphblas.matrix_multiply %argA, %argB, %mask { semiring = "plus_times" } : (tensor<2x2xf64, #CSR64>, tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSR64>) to tensor<2x2xf64, #CSR64>```
+
+        Body Example:
+        ```
+        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_times" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
+            ^bb0(%value: f64):
+                %result = std.mulf %value, %value: f64
+                graphblas.yield %result : f64
+        }
+        ```
+
     }];
 
     let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask, StrAttr:$semiring);

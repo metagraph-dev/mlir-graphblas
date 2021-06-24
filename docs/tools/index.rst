@@ -14,4 +14,4 @@ We created several tools for use in Python to assist with writing MLIR code, val
    cli/index
    explorer
    engine/index
-   graphblas_dialect/index
+
