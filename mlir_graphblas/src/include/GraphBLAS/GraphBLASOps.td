@@ -45,8 +45,11 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, Same
         The given tensor must have a CSR sparsity or a CSC sparsity.
         The resulting sparse tensors will have the same sparsity as the given sparse tensor.
 
-        Example:
+        Single Selector Example:
         ```%answer = graphblas.matrix_select %sparse_tensor { selectors = ["triu"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>```
+
+        Multiple Selector Example:
+        ```%answers = graphblas.matrix_select %sparse_tensor { selectors = ["triu", "tril"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>```
     }];
 
     let arguments = (ins AnyTensor:$input, StrArrayAttr:$selectors);
