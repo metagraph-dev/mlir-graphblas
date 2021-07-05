@@ -15,5 +15,6 @@ define any new types, but rather operates on `MLIR sparse tensors`_.
    :maxdepth: 2
    :caption: Contents:
 
-   ops
-   passes
+   ops_reference
+   passes_reference
+   graphblas_dialect_tutorials/index
