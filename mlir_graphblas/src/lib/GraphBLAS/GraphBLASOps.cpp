@@ -75,6 +75,51 @@ static llvm::Optional<std::string> checkCompressedSparseTensor(
 // GraphBLAS Ops Methods
 //===--------------------------------------------------------------------===//
 
+static LogicalResult verify(SizeOp op) {
+  Type inputType = op.input().getType();
+
+  mlir::sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+    mlir::sparse_tensor::getSparseTensorEncoding(inputType);
+  if (!sparseEncoding)
+    op.emitError("Input must be a sparse tensor.");
+
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
+
+  if (rank != 1)
+    return op.emitError("Input must be a vector (rank 1 tensor).");
+
+  return success();
+}
+
+void SizeOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
+  Location loc = result.location;
+  Type indexType = builder.getIndexType();
+  build(builder, result, indexType, tensor);
+}
+
+static LogicalResult verify(NumRowsOp op) {
+  Type inputType = op.input().getType();
+
+  llvm::Optional<std::string> inputCompressionErrorMessage = checkCompressedSparseTensor(inputType, 0, EITHER);
+  if (inputCompressionErrorMessage)
+    return op.emitError(inputCompressionErrorMessage.getValue());
+
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
+
+  if (rank != 2)
+    return op.emitError("Input must be a matrix (rank 2 tensor).");
+
+  return success();
+}
+
+void NumRowsOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
+  Location loc = result.location;
+  Type indexType = builder.getIndexType();
+  build(builder, result, indexType, tensor);
+}
+
 static LogicalResult verify(MatrixApplyOp op) {
   Type inputType = op.input().getType();
   Type thunkType = op.thunk().getType();

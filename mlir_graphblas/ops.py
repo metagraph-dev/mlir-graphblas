@@ -199,6 +199,19 @@ class LLVMLoadOp(BaseOp):
 ###########################################
 
 
+class GraphBLAS_NumRows(BaseOp):
+    dialect = "graphblas"
+    name = "num_rows"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input, TensorType)
+        ret_val = irbuilder.new_var("index")
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.num_rows {input} : {input.type}"
+        )
+
+
 class GraphBLAS_ConvertLayout(BaseOp):
     dialect = "graphblas"
     name = "convert_layout"

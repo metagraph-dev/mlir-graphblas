@@ -33,6 +33,36 @@ namespace {
 // Passes implementation.
 //===----------------------------------------------------------------------===//
 
+class LowerSizeRewrite : public OpRewritePattern<graphblas::SizeOp> {
+public:
+  using OpRewritePattern<graphblas::SizeOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::SizeOp op, PatternRewriter &rewriter) const {
+    Location loc = op->getLoc();
+
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value inputTensor = op.input();
+    Value size = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
+
+    rewriter.replaceOp(op, size);
+    return success();
+  };
+};
+
+class LowerNumRowsRewrite : public OpRewritePattern<graphblas::NumRowsOp> {
+public:
+  using OpRewritePattern<graphblas::NumRowsOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::NumRowsOp op, PatternRewriter &rewriter) const {
+    Location loc = op->getLoc();
+
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value inputTensor = op.input();
+    Value nrows = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
+
+    rewriter.replaceOp(op, nrows);
+    return success();
+  };
+};
+
 class LowerConvertLayoutRewrite : public OpRewritePattern<graphblas::ConvertLayoutOp> {
 public:
   using OpRewritePattern<graphblas::ConvertLayoutOp>::OpRewritePattern;
@@ -69,7 +99,7 @@ public:
     Value inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, inputTensor, c1);
     Value inputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, inputTensor, c1);
     Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, inputTensor);
-    Value nrow = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
     Value ncol = rewriter.create<memref::DimOp>(loc, inputTensor, c1);
     Value ncols_plus_one = rewriter.create<mlir::AddIOp>(loc, ncol, c1);
 
@@ -322,7 +352,7 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
 
     // Get sparse tensor info
-    Value nrow = rewriter.create<memref::DimOp>(loc, input, c0);
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, input);
     Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c1);
     Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
@@ -569,7 +599,7 @@ public:
     Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c1);
     Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
 
-    Value nrow = rewriter.create<memref::DimOp>(loc, A, c0);
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, A);
     Value ncol = rewriter.create<memref::DimOp>(loc, B, c1);
     Value nk = rewriter.create<memref::DimOp>(loc, A, c1);
     Value nrow_plus_one = rewriter.create<AddIOp>(loc, nrow, c1);
@@ -966,7 +996,7 @@ public:
     Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c1);
     Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
 
-    Value nrow = rewriter.create<memref::DimOp>(loc, A, c0);
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, A);
     Value ncol = rewriter.create<memref::DimOp>(loc, B, c1);
     Value nk = rewriter.create<memref::DimOp>(loc, A, c1);
 
@@ -1141,7 +1171,9 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
     LowerMatrixMultiplyRewrite,
     LowerConvertLayoutRewrite,
     LowerMatrixApplyRewrite,
-    LowerMatrixMultiplyReduceToScalarRewrite
+    LowerMatrixMultiplyReduceToScalarRewrite,
+    LowerSizeRewrite,
+    LowerNumRowsRewrite
     >(patterns.getContext());
 }
 

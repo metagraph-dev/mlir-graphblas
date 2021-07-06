@@ -15,6 +15,48 @@ class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Di
     let verifier = [{ return ::verify(*this); }];
 }
 
+def GraphBLAS_SizeOp : GraphBLAS_Op<"size", [NoSideEffect]> {
+    let summary = "return the size of a vector";
+    let description = [{
+        Returns the size of a vector
+
+        Example:
+        ```%size = graphblas.size %sparse_vector : tensor<?xf64, #CV64>```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs Index:$result);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input)
+    }];
+
+    let builders = [
+      OpBuilder<(ins "Value":$tensor)>
+    ];
+}
+
+def GraphBLAS_NumRowsOp : GraphBLAS_Op<"num_rows", [NoSideEffect]> {
+    let summary = "return the number of rows in a matrix";
+    let description = [{
+        Returns the number of rows in a matrix
+
+        Example:
+        ```%nrows = graphblas.num_rows %sparse_matrix : tensor<?x?xf64, #CSR64>```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs Index:$result);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input)
+    }];
+
+    let builders = [
+      OpBuilder<(ins "Value":$tensor)>
+    ];
+}
+
 def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
     let summary = "convert graph storage layout";
     let description = [{
