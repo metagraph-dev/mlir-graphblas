@@ -57,6 +57,48 @@ def GraphBLAS_NumRowsOp : GraphBLAS_Op<"num_rows", [NoSideEffect]> {
     ];
 }
 
+def GraphBLAS_NumColsOp : GraphBLAS_Op<"num_cols", [NoSideEffect]> {
+    let summary = "return the number of columns in a matrix";
+    let description = [{
+        Returns the number of columns in a matrix
+
+        Example:
+        ```%ncols = graphblas.num_cols %sparse_matrix : tensor<?x?xf64, #CSR64>```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs Index:$result);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input)
+    }];
+
+    let builders = [
+      OpBuilder<(ins "Value":$tensor)>
+    ];
+}
+
+def GraphBLAS_NumValsOp : GraphBLAS_Op<"num_vals", [NoSideEffect]> {
+    let summary = "return the number of values in a sparse tensor";
+    let description = [{
+        Returns the number of values in a sparse tensor
+
+        Example:
+        ```%nnz = graphblas.num_vals %sparse_matrix : tensor<?x?xf64, #CSR64>```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs Index:$result);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input)
+    }];
+
+    let builders = [
+      OpBuilder<(ins "Value":$tensor)>
+    ];
+}
+
 def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
     let summary = "convert graph storage layout";
     let description = [{
