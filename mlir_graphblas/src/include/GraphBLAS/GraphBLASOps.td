@@ -99,6 +99,27 @@ def GraphBLAS_NumValsOp : GraphBLAS_Op<"num_vals", [NoSideEffect]> {
     ];
 }
 
+def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input", "output"]>]> {
+    let summary = "return a duplicate of the input sparse tensor";
+    let description = [{
+        Returns a duplicate copy of the input sparse tensor
+
+        Example:
+        ```%B = graphblas.dup %A : tensor<?x?xf64, #CSR64>```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs AnyTensor:$output);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input)
+    }];
+
+    let builders = [
+      OpBuilder<(ins "Value":$tensor)>
+    ];
+}
+
 def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
     let summary = "convert graph storage layout";
     let description = [{

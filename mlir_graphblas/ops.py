@@ -249,6 +249,17 @@ class GraphBLAS_NumVals(BaseOp):
         )
 
 
+class GraphBLAS_Dup(BaseOp):
+    dialect = "graphblas"
+    name = "dup"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input, TensorType)
+        ret_val = irbuilder.new_var(input.type)
+        return ret_val, (f"{ret_val.assign} = graphblas.dup {input} : {input.type}")
+
+
 class GraphBLAS_ConvertLayout(BaseOp):
     dialect = "graphblas"
     name = "convert_layout"

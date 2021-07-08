@@ -93,7 +93,6 @@ static LogicalResult verify(SizeOp op) {
 }
 
 void SizeOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
-  Location loc = result.location;
   Type indexType = builder.getIndexType();
   build(builder, result, indexType, tensor);
 }
@@ -115,7 +114,6 @@ static LogicalResult verify(NumRowsOp op) {
 }
 
 void NumRowsOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
-  Location loc = result.location;
   Type indexType = builder.getIndexType();
   build(builder, result, indexType, tensor);
 }
@@ -137,7 +135,6 @@ static LogicalResult verify(NumColsOp op) {
 }
 
 void NumColsOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
-  Location loc = result.location;
   Type indexType = builder.getIndexType();
   build(builder, result, indexType, tensor);
 }
@@ -164,9 +161,34 @@ static LogicalResult verify(NumValsOp op) {
 }
 
 void NumValsOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
-  Location loc = result.location;
   Type indexType = builder.getIndexType();
   build(builder, result, indexType, tensor);
+}
+
+static LogicalResult verify(DupOp op) {
+  Type inputType = op.input().getType();
+
+  mlir::sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+    mlir::sparse_tensor::getSparseTensorEncoding(inputType);
+  if (!sparseEncoding)
+    op.emitError("Input must be a sparse tensor.");
+
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
+
+  // Require sparse matrices to be either CSR or CSC
+  if (rank == 2) {
+    llvm::Optional<std::string> inputCompressionErrorMessage = checkCompressedSparseTensor(inputType, 0, EITHER);
+    if (inputCompressionErrorMessage)
+      return op.emitError(inputCompressionErrorMessage.getValue());
+  }
+
+  return success();
+}
+
+void DupOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
+  Type inputType = tensor.getType();
+  build(builder, result, inputType, tensor);
 }
 
 static LogicalResult verify(MatrixApplyOp op) {
