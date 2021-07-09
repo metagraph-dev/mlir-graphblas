@@ -33,6 +33,112 @@ namespace {
 // Passes implementation.
 //===----------------------------------------------------------------------===//
 
+class LowerSizeRewrite : public OpRewritePattern<graphblas::SizeOp> {
+public:
+  using OpRewritePattern<graphblas::SizeOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::SizeOp op, PatternRewriter &rewriter) const {
+    Location loc = op->getLoc();
+
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value inputTensor = op.input();
+    Value size = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
+
+    rewriter.replaceOp(op, size);
+    return success();
+  };
+};
+
+class LowerNumRowsRewrite : public OpRewritePattern<graphblas::NumRowsOp> {
+public:
+  using OpRewritePattern<graphblas::NumRowsOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::NumRowsOp op, PatternRewriter &rewriter) const {
+    Location loc = op->getLoc();
+
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value inputTensor = op.input();
+    Value nrows = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
+
+    rewriter.replaceOp(op, nrows);
+    return success();
+  };
+};
+
+class LowerNumColsRewrite : public OpRewritePattern<graphblas::NumColsOp> {
+public:
+  using OpRewritePattern<graphblas::NumColsOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::NumColsOp op, PatternRewriter &rewriter) const {
+    Location loc = op->getLoc();
+
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value inputTensor = op.input();
+    Value ncols = rewriter.create<memref::DimOp>(loc, inputTensor, c1);
+
+    rewriter.replaceOp(op, ncols);
+    return success();
+  };
+};
+
+class LowerNumValsRewrite : public OpRewritePattern<graphblas::NumValsOp> {
+public:
+  using OpRewritePattern<graphblas::NumValsOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::NumValsOp op, PatternRewriter &rewriter) const {
+    Location loc = op->getLoc();
+    Value inputTensor = op.input();
+    Type inputType = inputTensor.getType();
+
+    sparse_tensor::SparseTensorEncodingAttr sparseEncoding = sparse_tensor::getSparseTensorEncoding(inputType);
+    unsigned pointerBitWidth = sparseEncoding.getPointerBitWidth();
+    Type pointerType = rewriter.getIntegerType(pointerBitWidth);
+    Type indexType = rewriter.getIndexType();
+
+    // Access the pointers
+    Type memref1DPointerType = MemRefType::get({-1}, pointerType);
+    unsigned rank = inputType.dyn_cast<RankedTensorType>().getRank();
+    Value c_rank_minus_1 = rewriter.create<ConstantIndexOp>(loc, rank - 1);
+    Value ptrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DPointerType, inputTensor, c_rank_minus_1);
+
+    // Find length of pointer array
+    Value dimForPointers;
+    if (rank == 1 || typeIsCSR(inputType)) {
+      dimForPointers = rewriter.create<ConstantIndexOp>(loc, 0);
+    } else {
+      dimForPointers = rewriter.create<ConstantIndexOp>(loc, 1);
+    }
+    Value npointers = rewriter.create<memref::DimOp>(loc, inputTensor, dimForPointers);
+
+    // The last value from the pointers is the number of nonzero values
+    Value nnz_ptype = rewriter.create<memref::LoadOp>(loc, ptrs, npointers);
+    Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz_ptype, indexType);
+
+    rewriter.replaceOp(op, nnz);
+    return success();
+  };
+};
+
+class LowerDupRewrite : public OpRewritePattern<graphblas::DupOp> {
+public:
+  using OpRewritePattern<graphblas::DupOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::DupOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+    Value inputTensor = op.input();
+    Type inputType = inputTensor.getType();
+    unsigned rank = inputType.dyn_cast<RankedTensorType>().getRank();
+
+    Value duplicate = callDupTensor(rewriter, module, loc, inputTensor);
+    if (rank == 2) {
+      if (typeIsCSC(inputType)) {
+        duplicate = convertToExternalCSC(rewriter, module, loc, duplicate);
+      } else {
+        duplicate = convertToExternalCSR(rewriter, module, loc, duplicate);
+      }
+    }
+
+    rewriter.replaceOp(op, duplicate);
+    return success();
+  };
+};
+
 class LowerConvertLayoutRewrite : public OpRewritePattern<graphblas::ConvertLayoutOp> {
 public:
   using OpRewritePattern<graphblas::ConvertLayoutOp>::OpRewritePattern;
@@ -69,12 +175,10 @@ public:
     Value inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, inputTensor, c1);
     Value inputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, inputTensor, c1);
     Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, inputTensor);
-    Value nrow = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
-    Value ncol = rewriter.create<memref::DimOp>(loc, inputTensor, c1);
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
+    Value ncol = rewriter.create<graphblas::NumColsOp>(loc, inputTensor);
     Value ncols_plus_one = rewriter.create<mlir::AddIOp>(loc, ncol, c1);
-
-    Value nnz_64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, nrow);
-    Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
+    Value nnz = rewriter.create<graphblas::NumValsOp>(loc, inputTensor);
 
     Value duplicate = callEmptyLike(rewriter, module, loc, inputTensor);
     callResizeDim(rewriter, module, loc, duplicate, c0, nrow);
@@ -216,8 +320,7 @@ struct MatrixSelectOutputWriter {
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
-    Value duplicate = callDupTensor(rewriter, module, loc, input);
-    tensor = convertToExternalCSR(rewriter, module, loc, duplicate);
+    tensor = rewriter.create<graphblas::DupOp>(loc, input);
     Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, tensor, c1);
     Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, tensor, c1);
     Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, tensor);
@@ -271,12 +374,9 @@ struct MatrixSelectOutputWriter {
     rewriter.setInsertionPointAfter(ifKeep);
   };
 
-  void createTrimValues(PatternRewriter &rewriter, Location loc, ModuleOp module, Value nrow)
+  void createTrimValues(PatternRewriter &rewriter, Location loc, ModuleOp module)
   {
-    Type indexType = rewriter.getIndexType();
-
-    Value nnz_64 = rewriter.create<memref::LoadOp>(loc, Bp, nrow);
-    Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz_64, indexType);
+    Value nnz = rewriter.create<graphblas::NumValsOp>(loc, tensor);
 
     callResizeIndex(rewriter, module, loc, tensor, c1, nnz);
     callResizeValues(rewriter, module, loc, tensor, nnz);
@@ -322,7 +422,7 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
 
     // Get sparse tensor info
-    Value nrow = rewriter.create<memref::DimOp>(loc, input, c0);
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, input);
     Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c1);
     Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
@@ -374,7 +474,7 @@ public:
     // trim excess values
     SmallVector<Value, 3> outputTensors;
     for (MatrixSelectOutputWriter* output : outputs) {
-      output->createTrimValues(rewriter, loc, module, nrow);
+      output->createTrimValues(rewriter, loc, module);
       outputTensors.push_back(output->tensor);
     }
     rewriter.replaceOp(op, outputTensors);
@@ -412,21 +512,21 @@ public:
     if (!c0Accumulator.hasValue()) {
       return failure(); // TODO test this case
     }
-    ConstantIndexOp c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-    ConstantIndexOp c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
 
     // Get sparse tensor info
     MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
     MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
 
-    memref::DimOp nrows = rewriter.create<memref::DimOp>(loc, input, c0.getResult());
+    Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, input);
     sparse_tensor::ToPointersOp inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c1);
     sparse_tensor::ToValuesOp inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
-    memref::LoadOp nnz64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, nrows.getResult());
+    memref::LoadOp nnz64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, nrows);
     IndexCastOp nnz = rewriter.create<IndexCastOp>(loc, nnz64, indexType);
 
     // begin loop
-    scf::ParallelOp valueLoop = rewriter.create<scf::ParallelOp>(loc, c0.getResult(), nnz.getResult(), c1.getResult(), c0Accumulator.getValue().getResult());
+    scf::ParallelOp valueLoop = rewriter.create<scf::ParallelOp>(loc, c0, nnz.getResult(), c1, c0Accumulator.getValue().getResult());
     ValueRange valueLoopIdx = valueLoop.getInductionVars();
 
     rewriter.setInsertionPointToStart(valueLoop.getBody());
@@ -468,10 +568,6 @@ public:
     Location loc = op->getLoc();
 
     Type valueType = op.input().getType().dyn_cast<RankedTensorType>().getElementType();
-    Type int64Type = rewriter.getIntegerType(64);
-    Type indexType = rewriter.getIndexType();
-
-    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
     Value inputTensor = op.input();
@@ -483,15 +579,11 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
 
     // Get sparse tensor info
-    Value duplicate = callDupTensor(rewriter, module, loc, inputTensor);
-    Value output = convertToExternalCSR(rewriter, module, loc, duplicate);
-    Value inputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, inputTensor, c1);
+    Value output = rewriter.create<graphblas::DupOp>(loc, inputTensor);
     Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, inputTensor);
     Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
 
-    Value nrows = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
-    Value nnz64 = rewriter.create<memref::LoadOp>(loc, inputPtrs, nrows);
-    Value nnz = rewriter.create<mlir::IndexCastOp>(loc, nnz64, indexType);
+    Value nnz = rewriter.create<graphblas::NumValsOp>(loc, inputTensor);
 
     // Loop over values
     scf::ParallelOp valueLoop = rewriter.create<scf::ParallelOp>(loc, c0, nnz, c1);
@@ -569,9 +661,9 @@ public:
     Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c1);
     Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
 
-    Value nrow = rewriter.create<memref::DimOp>(loc, A, c0);
-    Value ncol = rewriter.create<memref::DimOp>(loc, B, c1);
-    Value nk = rewriter.create<memref::DimOp>(loc, A, c1);
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, A);
+    Value ncol = rewriter.create<graphblas::NumColsOp>(loc, B);
+    Value nk = rewriter.create<graphblas::NumColsOp>(loc, A); // guaranteed equal to B.rows
     Value nrow_plus_one = rewriter.create<AddIOp>(loc, nrow, c1);
 
     Value Mp, Mj;
@@ -737,8 +829,7 @@ public:
     // end row loop
     rewriter.setInsertionPointAfter(rowLoop2);
 
-    Value nnz64 = rewriter.create<memref::LoadOp>(loc, Cp, nrow);
-    Value nnz = rewriter.create<IndexCastOp>(loc, nnz64, indexType);
+    Value nnz = rewriter.create<graphblas::NumValsOp>(loc, C);
     callResizeIndex(rewriter, module, loc, C, c1, nnz);
     callResizeValues(rewriter, module, loc, C, nnz);
     C = convertToExternalCSR(rewriter, module, loc, C);
@@ -966,9 +1057,9 @@ public:
     Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c1);
     Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
 
-    Value nrow = rewriter.create<memref::DimOp>(loc, A, c0);
-    Value ncol = rewriter.create<memref::DimOp>(loc, B, c1);
-    Value nk = rewriter.create<memref::DimOp>(loc, A, c1);
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, A);
+    Value ncol = rewriter.create<graphblas::NumColsOp>(loc, B);
+    Value nk = rewriter.create<graphblas::NumColsOp>(loc, A); // guaranteed equal to B.rows
 
     Value Mp, Mj;
     if (mask) {
@@ -1141,7 +1232,12 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
     LowerMatrixMultiplyRewrite,
     LowerConvertLayoutRewrite,
     LowerMatrixApplyRewrite,
-    LowerMatrixMultiplyReduceToScalarRewrite
+    LowerMatrixMultiplyReduceToScalarRewrite,
+    LowerSizeRewrite,
+    LowerNumRowsRewrite,
+    LowerNumColsRewrite,
+    LowerNumValsRewrite,
+    LowerDupRewrite
     >(patterns.getContext());
 }
 

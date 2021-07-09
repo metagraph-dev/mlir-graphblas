@@ -15,6 +15,111 @@ class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Di
     let verifier = [{ return ::verify(*this); }];
 }
 
+def GraphBLAS_SizeOp : GraphBLAS_Op<"size", [NoSideEffect]> {
+    let summary = "return the size of a vector";
+    let description = [{
+        Returns the size of a vector
+
+        Example:
+        ```%size = graphblas.size %sparse_vector : tensor<?xf64, #CV64>```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs Index:$result);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input)
+    }];
+
+    let builders = [
+      OpBuilder<(ins "Value":$tensor)>
+    ];
+}
+
+def GraphBLAS_NumRowsOp : GraphBLAS_Op<"num_rows", [NoSideEffect]> {
+    let summary = "return the number of rows in a matrix";
+    let description = [{
+        Returns the number of rows in a matrix
+
+        Example:
+        ```%nrows = graphblas.num_rows %sparse_matrix : tensor<?x?xf64, #CSR64>```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs Index:$result);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input)
+    }];
+
+    let builders = [
+      OpBuilder<(ins "Value":$tensor)>
+    ];
+}
+
+def GraphBLAS_NumColsOp : GraphBLAS_Op<"num_cols", [NoSideEffect]> {
+    let summary = "return the number of columns in a matrix";
+    let description = [{
+        Returns the number of columns in a matrix
+
+        Example:
+        ```%ncols = graphblas.num_cols %sparse_matrix : tensor<?x?xf64, #CSR64>```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs Index:$result);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input)
+    }];
+
+    let builders = [
+      OpBuilder<(ins "Value":$tensor)>
+    ];
+}
+
+def GraphBLAS_NumValsOp : GraphBLAS_Op<"num_vals", [NoSideEffect]> {
+    let summary = "return the number of values in a sparse tensor";
+    let description = [{
+        Returns the number of values in a sparse tensor
+
+        Example:
+        ```%nnz = graphblas.num_vals %sparse_matrix : tensor<?x?xf64, #CSR64>```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs Index:$result);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input)
+    }];
+
+    let builders = [
+      OpBuilder<(ins "Value":$tensor)>
+    ];
+}
+
+def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input", "output"]>]> {
+    let summary = "return a duplicate of the input sparse tensor";
+    let description = [{
+        Returns a duplicate copy of the input sparse tensor
+
+        Example:
+        ```%B = graphblas.dup %A : tensor<?x?xf64, #CSR64>```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs AnyTensor:$output);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input)
+    }];
+
+    let builders = [
+      OpBuilder<(ins "Value":$tensor)>
+    ];
+}
+
 def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
     let summary = "convert graph storage layout";
     let description = [{
