@@ -1,7 +1,8 @@
 add_mlir_dialect_library(MLIRGraphBLAS
         GraphBLASDialect.cpp
         GraphBLASOps.cpp
-        GraphBLASPasses.cpp
+        GraphBLASLowerPass.cpp
+        GraphBLASOptimizePass.cpp
         GraphBLASUtils.cpp
 
         ADDITIONAL_HEADER_DIRS
