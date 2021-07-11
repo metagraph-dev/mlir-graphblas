@@ -13,6 +13,8 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 
+#include "GraphBLAS/GraphBLASOpsEnums.h.inc"
+
 #define GET_OP_CLASSES
 #include "GraphBLAS/GraphBLASOps.h.inc"
 

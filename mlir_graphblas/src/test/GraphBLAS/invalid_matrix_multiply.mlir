@@ -362,11 +362,11 @@ module {
         %answer = graphblas.matrix_multiply %argA, %argB, %mask { semiring = "plus_plus" } : (tensor<2x2xf64, #CSR64>, tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSR64>) to tensor<2x2xf64, #CSR64> { // expected-error {{Region must have at most one block.}}
           ^bb0(%x : f64):
             %result1 = addf %x, %cf0 : f64
-            graphblas.yield %result1 : f64
+            graphblas.yield transform_out %result1 : f64
 
           ^bb1(%y : f64):
             %result2 = addf %y, %cf0 : f64
-            graphblas.yield %result2 : f64
+            graphblas.yield transform_out %result2 : f64
         }
         return %answer : tensor<2x2xf64, #CSR64>
     }

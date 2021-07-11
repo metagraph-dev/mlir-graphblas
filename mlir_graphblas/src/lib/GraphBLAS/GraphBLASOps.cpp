@@ -11,6 +11,8 @@
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/None.h"
 
+#include "GraphBLAS/GraphBLASOpsEnums.cpp.inc"
+
 using namespace mlir;
 using namespace mlir::graphblas;
 

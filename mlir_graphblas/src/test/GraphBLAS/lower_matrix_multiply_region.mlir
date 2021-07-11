@@ -30,7 +30,7 @@ func @matrix_multiply_plus_times(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64
     %answer = graphblas.matrix_multiply %a, %b { semiring = "plus_times" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
         ^bb0(%value: f64):
             %result = std.addf %value, %cf4: f64
-            graphblas.yield %result : f64
+            graphblas.yield transform_out %result : f64
     }
     return %answer : tensor<?x?xf64, #CSR64>
 }

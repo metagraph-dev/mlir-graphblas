@@ -149,7 +149,7 @@ public:
       if (apply_operator == "min") {
         Value cmp = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OLT, blockInput, thunk);
         Value result = rewriter.create<mlir::SelectOp>(loc, cmp, blockInput, thunk);
-        rewriter.create<graphblas::YieldOp>(loc, result);
+        rewriter.create<graphblas::YieldOp>(loc, mlir::graphblas::YieldKind::TRANSFORM_OUT, result);
       } else {
         return op.emitError("invalid apply_operator: " + apply_operator);
       }

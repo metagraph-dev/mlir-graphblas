@@ -19,6 +19,7 @@ std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASOptimizePass();
 //===----------------------------------------------------------------------===//
 // Ops declaration.
 //===----------------------------------------------------------------------===//
+#include "GraphBLAS/GraphBLASOpsEnums.h.inc"
 
 #define GET_OP_CLASSES
 #include "GraphBLAS/GraphBLASOps.h.inc"

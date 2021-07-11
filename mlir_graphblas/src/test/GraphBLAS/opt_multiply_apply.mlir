@@ -23,7 +23,7 @@
 // CHECK:           ^bb0(%[[VAL_4:.*]]: f64):
 // CHECK:             %[[VAL_5:.*]] = cmpf olt, %[[VAL_4]], %[[VAL_2]] : f64
 // CHECK:             %[[VAL_6:.*]] = select %[[VAL_5]], %[[VAL_4]], %[[VAL_2]] : f64
-// CHECK:             graphblas.yield %[[VAL_6]] : f64
+// CHECK:             graphblas.yield transform_out %[[VAL_6]] : f64
 // CHECK:           }
 // CHECK:           return %[[VAL_7:.*]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
@@ -41,7 +41,7 @@ func @fuse_adjacent(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #CSC64>, %t
 // CHECK:           ^bb0(%[[VAL_4:.*]]: f64):
 // CHECK:             %[[VAL_5:.*]] = cmpf olt, %[[VAL_4]], %[[VAL_2]] : f64
 // CHECK:             %[[VAL_6:.*]] = select %[[VAL_5]], %[[VAL_4]], %[[VAL_2]] : f64
-// CHECK:             graphblas.yield %[[VAL_6]] : f64
+// CHECK:             graphblas.yield transform_out %[[VAL_6]] : f64
 // CHECK:           }
 // CHECK:           return %[[VAL_7:.*]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
