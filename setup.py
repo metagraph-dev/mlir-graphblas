@@ -56,5 +56,10 @@ setup(
     ext_modules=ext_modules,
     package_data={"mlir_graphblas": ["*.pyx"]},
     include_package_data=True,
+    entry_points={
+        "console_scripts": [
+            "tersify_mlir=mlir_graphblas.tools:tersify_mlir_cli",
+        ]
+    },
     install_requires=["pymlir", "pygments"],
 )
