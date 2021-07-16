@@ -246,6 +246,25 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
     }];
 }
 
+def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", [NoSideEffect]> {
+    let summary = "generic matrix multiply operation with an optional structural mask";
+    let description = [{
+        Performs a matrix multiply according to the given semiring and optional structural mask.
+        The given sparse tensors must be a matrix, i.e. have rank 2.
+        The first input tensors must be CSR format, while the second input tensor must be CSC format.
+        The mask (if provided) must be CSR format.
+
+    }];
+
+    let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask);
+    let results = (outs AnyTensor:$output);
+    let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
+    
+    let assemblyFormat = [{
+           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) $extensions
+    }];
+}
+
 def GraphBLAS_MatrixMultiplyReduceToScalarOp : GraphBLAS_Op<"matrix_multiply_reduce_to_scalar", [NoSideEffect]> {
     let summary = "matrix multiply followed by reduction to a scalar with an optional structural mask";
     let description = [{

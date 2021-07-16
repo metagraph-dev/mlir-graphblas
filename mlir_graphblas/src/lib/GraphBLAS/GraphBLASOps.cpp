@@ -233,9 +233,9 @@ static LogicalResult verify(MatrixApplyOp op) {
   return success();
 }
 
-static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus"};
-
-static LogicalResult verify(MatrixMultiplyOp op) {
+template <class T>
+static LogicalResult verifyMatrixMultiplyArgs(T op)
+{
   Type aType = op.a().getType();
   Type bType = op.b().getType();
   Type resultType = op.getResult().getType();
@@ -251,12 +251,6 @@ static LogicalResult verify(MatrixMultiplyOp op) {
   llvm::Optional<std::string> resultCompressionErrorMessage = checkCompressedSparseTensor(resultType, -1, CSR);
   if (resultCompressionErrorMessage)
     return op.emitError(resultCompressionErrorMessage.getValue());
-
-  std::string semiring = op.semiring().str();
-  bool semiringSupported = std::find(supportedSemirings.begin(), supportedSemirings.end(), semiring)
-    != supportedSemirings.end();
-  if (!semiringSupported)
-    return op.emitError("\""+semiring+"\" is not a supported semiring.");
 
   RankedTensorType aTensorType = aType.dyn_cast<RankedTensorType>();
   RankedTensorType bTensorType = bType.dyn_cast<RankedTensorType>();
@@ -277,7 +271,8 @@ static LogicalResult verify(MatrixMultiplyOp op) {
     return op.emitError("Result element type differs from the input element types.");
 
   Value mask = op.mask();
-  if (mask) {
+  if (mask)
+  {
     Type maskType = mask.getType();
     llvm::Optional<std::string> maskCompressionErrorMessage = checkCompressedSparseTensor(maskType, 2, CSR);
     if (maskCompressionErrorMessage)
@@ -289,10 +284,45 @@ static LogicalResult verify(MatrixMultiplyOp op) {
       return op.emitError("Mask shape must match output shape.");
   }
 
+  return success();
+}
+
+static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus"};
+
+static LogicalResult verify(MatrixMultiplyOp op) {
+  LogicalResult argResult = verifyMatrixMultiplyArgs(op);
+
+  if (argResult.failed())
+    return argResult;
+
+  std::string semiring = op.semiring().str();
+  bool semiringSupported = std::find(supportedSemirings.begin(), supportedSemirings.end(), semiring)
+    != supportedSemirings.end();
+  if (!semiringSupported)
+    return op.emitError("\""+semiring+"\" is not a supported semiring.");
+
   Region &body = op.body();
   auto numBlocks = body.getBlocks().size();
-  if (numBlocks > 1) {
-    return op.emitError("Region must have at most one block.");
+  if (numBlocks > 0) {
+    return op.emitError("graphblas.matrix_multiply should have no blocks.  Did you mean graphblas.matrix_multiply_generic?");
+  }
+
+  return success();
+}
+
+
+
+static LogicalResult verify(MatrixMultiplyGenericOp op)
+{
+  LogicalResult argResult = verifyMatrixMultiplyArgs(op);
+
+  if (argResult.failed())
+    return argResult;
+
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 3)
+  {
+    return op.emitError("Must have at least 3 regions: add_identity, add, mult.");
   }
 
   return success();

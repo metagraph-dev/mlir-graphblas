@@ -621,10 +621,137 @@ public:
     Location loc = rewriter.getUnknownLoc();
 
     // Inputs
+    ValueRange operands = op.getOperands();
+    StringRef semiring = op.semiring();
+
+    // Types
+    Type valueType = op.getResult().getType().dyn_cast<RankedTensorType>().getElementType();
+
+    // New op
+    ArrayRef<NamedAttribute> attributes;
+    graphblas::MatrixMultiplyGenericOp newMultOp = rewriter.create<graphblas::MatrixMultiplyGenericOp>(
+      loc, op->getResultTypes(), operands, attributes, 3);
+
+    // Insert additive identity
+    Region &addIdentityRegion = newMultOp.getRegion(0);
+    /*Block *addIdentityBlock = */ rewriter.createBlock(&addIdentityRegion, {}, {});
+    if (semiring == "plus_pair" || semiring == "plus_times" || semiring == "plus_plus") {
+      // Add identity
+      Value addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
+                              .Case<IntegerType>([&](IntegerType type)
+                                                 { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
+                              .Case<FloatType>([&](FloatType type)
+                                               { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
+      rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD_IDENTITY, addIdentity);
+    } else {
+      return op.emitError("\"" + semiring + "\" is not a supported semiring.");
+    }
+
+    // Insert additive operation
+    Region &addRegion = newMultOp.getRegion(1);
+    Block *addBlock = rewriter.createBlock(&addRegion, {}, {valueType, valueType});
+    if (semiring == "plus_pair" || semiring == "plus_times" || semiring == "plus_plus")
+    {
+      // Insert add operation
+      Value addBlockArg0 = addBlock->getArgument(0);
+      Value addBlockArg1 = addBlock->getArgument(1);
+      Value addResult = llvm::TypeSwitch<Type, Value>(valueType)
+                            .Case<IntegerType>([&](IntegerType type)
+                                               { return rewriter.create<AddIOp>(loc, addBlockArg0, addBlockArg1); })
+                            .Case<FloatType>([&](FloatType type)
+                                             { return rewriter.create<AddFOp>(loc, addBlockArg0, addBlockArg1); });
+
+      rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD, addResult);
+    }
+    else
+    {
+      return op.emitError("\"" + semiring + "\" is not a supported semiring.");
+    }
+
+    // Insert multiplicative operation
+    Region &multRegion = newMultOp.getRegion(2);
+    Block *multBlock = rewriter.createBlock(&multRegion, {}, {valueType, valueType});
+    Value multBlockArg0 = multBlock->getArgument(0);
+    Value multBlockArg1 = multBlock->getArgument(1);
+    Value multResult;
+
+    if (semiring == "plus_pair") {
+      multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                       .Case<IntegerType>([&](IntegerType type)
+                                          { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
+                       .Case<FloatType>([&](FloatType type)
+                                        { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
+    } else if (semiring == "plus_times") {
+      multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                       .Case<IntegerType>([&](IntegerType type)
+                                          { return rewriter.create<MulIOp>(loc, multBlockArg0, multBlockArg1); })
+                       .Case<FloatType>([&](FloatType type)
+                                        { return rewriter.create<MulFOp>(loc, multBlockArg0, multBlockArg1); });
+    } else if (semiring == "plus_plus") {
+      multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                       .Case<IntegerType>([&](IntegerType type)
+                                          { return rewriter.create<AddIOp>(loc, multBlockArg0, multBlockArg1); })
+                       .Case<FloatType>([&](FloatType type)
+                                        { return rewriter.create<AddFOp>(loc, multBlockArg0, multBlockArg1); });
+    } else {
+      return op.emitError("\"" + semiring + "\" is not a supported semiring.");
+    }
+    rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::MULT, multResult);
+
+    rewriter.setInsertionPointAfter(newMultOp);
+
+    rewriter.replaceOp(op, newMultOp.getResult());
+
+    return success();
+  };
+};
+
+class LowerMatrixMultiplyGenericRewrite : public OpRewritePattern<graphblas::MatrixMultiplyGenericOp> {
+public:
+  using OpRewritePattern<graphblas::MatrixMultiplyGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = rewriter.getUnknownLoc();
+
+    // Inputs
     Value A = op.a();
     Value B = op.b();
     Value mask = op.mask();
-    StringRef semiring = op.semiring();
+
+    // Required blocks
+    RegionRange extensions = op.extensions();
+    Block *addIdentityBlock = nullptr;
+    Block *addBlock = nullptr;
+    Block *multBlock = nullptr;
+    // Optional blocks
+    Block *transformOutBlock = nullptr;
+
+    // Extract blocks
+    for (Region *ext : extensions) {
+      Block &block = ext->front();
+      graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(block.getTerminator());
+      if (yield == nullptr)
+      {
+        // must have graphblas.yield as terminator
+        return op.emitError("graphblas.matrix_multiply_generic blocks must have graphblas.yield terminator");
+      }
+
+      switch(yield.kind()) {
+        case graphblas::YieldKind::ADD_IDENTITY  : addIdentityBlock = &block; break;
+        case graphblas::YieldKind::ADD           : addBlock = &block; break;
+        case graphblas::YieldKind::MULT          : multBlock = &block; break;
+        case graphblas::YieldKind::TRANSFORM_OUT : transformOutBlock = &block; break;
+        default : 
+          return op.emitError("unsupported graphblas.matrix_multiply_generic block type");
+      }
+    }
+
+    if (!addIdentityBlock)
+      return op.emitError("graphblas.matrix_multiply_generic requires add_identity block");
+    if (!addBlock)
+      return op.emitError("graphblas.matrix_multiply_generic requires add block");
+    if (!multBlock)
+      return op.emitError("graphblas.matrix_multiply_generic requires mult block");
 
     // Types
     Type indexType = rewriter.getIndexType();
@@ -645,11 +772,15 @@ public:
     Value ci1 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
     Value cf0, cf1;
     cf0 = llvm::TypeSwitch<Type, Value>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
+              .Case<IntegerType>([&](IntegerType type)
+                                  { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
+              .Case<FloatType>([&](FloatType type)
+                                { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
     cf1 = llvm::TypeSwitch<Type, Value>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
+              .Case<IntegerType>([&](IntegerType type)
+                                  { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
+              .Case<FloatType>([&](FloatType type)
+                                { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
     Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
     Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
 
@@ -667,7 +798,8 @@ public:
     Value nrow_plus_one = rewriter.create<AddIOp>(loc, nrow, c1);
 
     Value Mp, Mj;
-    if (mask) {
+    if (mask)
+    {
         Mp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, mask, c1);
         Mj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, mask, c1);
     }
@@ -900,7 +1032,13 @@ public:
     Value iStart = rewriter.create<IndexCastOp>(loc, iStart64, indexType);
     Value iEnd = rewriter.create<IndexCastOp>(loc, iEnd64, indexType);
 
-    scf::ForOp kLoop = rewriter.create<scf::ForOp>(loc, iStart, iEnd, c1, ValueRange{cf0, cfalse});
+    // insert add identity block
+    graphblas::YieldOp addIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(addIdentityBlock->getTerminator());
+    rewriter.mergeBlocks(addIdentityBlock, &colLoop3f.getLoopBody().getBlocks().front(), {});
+    Value addIdentity = addIdentityYield.values().front();
+    rewriter.eraseOp(addIdentityYield);
+
+    scf::ForOp kLoop = rewriter.create<scf::ForOp>(loc, iStart, iEnd, c1, ValueRange{addIdentity, cfalse});
     ii = kLoop.getInductionVar();
     Value curr = kLoop.getLoopBody().getArgument(1);
     Value alive = kLoop.getLoopBody().getArgument(2);
@@ -912,21 +1050,23 @@ public:
     scf::IfOp ifBlock_cmpPair = rewriter.create<scf::IfOp>(loc, ArrayRef<Type>{valueType, boolType}, cmpPair, true);
     // if cmpPair
     rewriter.setInsertionPointToStart(ifBlock_cmpPair.thenBlock());
-    Value newVal;
-    if (semiring == "plus_pair") {
-        newVal = rewriter.create<AddFOp>(loc, curr, cf1);
-    } else {
-        Value aVal = rewriter.create<memref::LoadOp>(loc, kvec, kk);
-        Value bVal = rewriter.create<memref::LoadOp>(loc, Bx, ii);
-        if (semiring == "plus_times") {
-            val = rewriter.create<MulFOp>(loc, aVal, bVal);
-            newVal = rewriter.create<AddFOp>(loc, curr, val);
-        } else if (semiring == "plus_plus") {
-            val = rewriter.create<AddFOp>(loc, aVal, bVal);
-            newVal = rewriter.create<AddFOp>(loc, curr, val);
-        }
-    }
-    rewriter.create<scf::YieldOp>(loc, ValueRange{newVal, ctrue});
+
+    Value aVal = rewriter.create<memref::LoadOp>(loc, kvec, kk);
+    Value bVal = rewriter.create<memref::LoadOp>(loc, Bx, ii);
+
+    // insert multiply operation block
+    graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(multBlock->getTerminator());
+    Value multResult = multYield.values().front();
+    rewriter.eraseOp(multYield);
+    rewriter.mergeBlocks(multBlock, rewriter.getBlock(), {aVal, bVal});
+
+    // insert add operation block
+    graphblas::YieldOp addYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(addBlock->getTerminator());
+    Value addResult = addYield.values().front();
+    rewriter.eraseOp(addYield);
+    rewriter.mergeBlocks(addBlock, rewriter.getBlock(), {curr, multResult});
+
+    rewriter.create<scf::YieldOp>(loc, ValueRange{addResult, ctrue});
 
     // else
     rewriter.setInsertionPointToStart(ifBlock_cmpPair.elseBlock());
@@ -953,24 +1093,13 @@ public:
     rewriter.create<memref::StoreOp>(loc, col64, Cj, cjPos);
 
     // Does total need to be transformed?
-    Region &body = op.body();
-    if (!body.empty()) {
-      Region::BlockListType &blocks = body.getBlocks();
+    if (transformOutBlock) {
+      graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(transformOutBlock->getTerminator());
+      Value transformResult = yield.values().front();
 
-      // if body is not empty, there can only be one block because of validation check
-      Block &transform_block = blocks.front();
-      graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(transform_block.getTerminator());
-      if (yield == nullptr)
-      {
-        // must have graphblas.yield as terminator
-        return op.emitError("graphblas.matrix_multiply block must have graphblas.yield terminator");
-      }
-      Value result = yield.values().front();
+      rewriter.mergeBlocks(transformOutBlock, ifBlock_newOffset.thenBlock(), {total});
 
-      rewriter.mergeBlocks(&transform_block, ifBlock_newOffset.thenBlock(), {total});
-
-      // write transformed total
-      rewriter.create<memref::StoreOp>(loc, result, Cx, cjPos);
+      rewriter.create<memref::StoreOp>(loc, transformResult, Cx, cjPos);
       rewriter.eraseOp(yield);
     } else {
       // write total as-is
@@ -1233,6 +1362,7 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
     LowerConvertLayoutRewrite,
     LowerMatrixApplyRewrite,
     LowerMatrixMultiplyReduceToScalarRewrite,
+    LowerMatrixMultiplyGenericRewrite,
     LowerSizeRewrite,
     LowerNumRowsRewrite,
     LowerNumColsRewrite,
@@ -1252,8 +1382,31 @@ struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPas
   }
 };
 
+void populateGraphBLASStructuralizePatterns(RewritePatternSet &patterns)
+{
+  patterns.add<
+      LowerMatrixMultiplyRewrite
+      >(patterns.getContext());
+}
+
+struct GraphBLASStructuralizePass : public GraphBLASStructuralizeBase<GraphBLASStructuralizePass>
+{
+  void runOnOperation() override
+  {
+    MLIRContext *ctx = &getContext();
+    RewritePatternSet patterns(ctx);
+    ConversionTarget target(*ctx);
+    populateGraphBLASStructuralizePatterns(patterns);
+    (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+  }
+};
 } // end anonymous namespace
 
 std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASLoweringPass() {
   return std::make_unique<GraphBLASLoweringPass>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASStructuralizePass()
+{
+  return std::make_unique<GraphBLASStructuralizePass>();
 }

@@ -357,13 +357,9 @@ module {
 }>
 
 module {
-    func @matrix_multiply_too_many_blocks(%argA: tensor<2x2xf64, #CSR64>, %argB: tensor<2x2xf64, #CSC64>, %mask: tensor<2x2xf64, #CSR64>) -> tensor<2x2xf64, #CSR64> {
+    func @matrix_multiply_no_blocks (%argA: tensor<2x2xf64, #CSR64>, %argB: tensor<2x2xf64, #CSC64>, %mask: tensor<2x2xf64, #CSR64>) -> tensor<2x2xf64, #CSR64> {
         %cf0 = constant 0.0 : f64
-        %answer = graphblas.matrix_multiply %argA, %argB, %mask { semiring = "plus_plus" } : (tensor<2x2xf64, #CSR64>, tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSR64>) to tensor<2x2xf64, #CSR64> { // expected-error {{Region must have at most one block.}}
-          ^bb0(%x : f64):
-            %result1 = addf %x, %cf0 : f64
-            graphblas.yield transform_out %result1 : f64
-
+        %answer = graphblas.matrix_multiply %argA, %argB, %mask { semiring = "plus_plus" } : (tensor<2x2xf64, #CSR64>, tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSR64>) to tensor<2x2xf64, #CSR64> { // expected-error {{graphblas.matrix_multiply should have no blocks.  Did you mean graphblas.matrix_multiply_generic?}}
           ^bb1(%y : f64):
             %result2 = addf %y, %cf0 : f64
             graphblas.yield transform_out %result2 : f64

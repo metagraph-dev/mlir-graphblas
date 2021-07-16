@@ -35,4 +35,15 @@ def GraphBLASOptimize : Pass<"graphblas-optimize", "ModuleOp"> {
   ];
 }
 
+//===----------------------------------------------------------------------===//
+// GraphBLASStructuralize
+//===----------------------------------------------------------------------===//
+
+def GraphBLASStructuralize : Pass<"graphblas-structuralize", "ModuleOp"> {
+  let summary = "TODO add documentation";
+  let constructor = "mlir::createGraphBLASStructuralizePass()";
+  let dependentDialects = [
+  ];
+}
+
 #endif // MLIR_CONVERSION_PASSES
