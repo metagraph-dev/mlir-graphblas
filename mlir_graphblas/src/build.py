@@ -65,7 +65,7 @@ def build_graphblas_opt(build_clean: bool) -> None:
     if env_lib_path not in LD_LIBRARY_PATH.split(":"):
         LD_LIBRARY_PATH = LD_LIBRARY_PATH + ":" + env_lib_path
 
-    (PYTHONPATH,) = site.getsitepackages()
+    PYTHONPATH = ":".join(site.getsitepackages())
 
     command, stdout_string, stderr_string = run_shell_commands(
         _BUILD_DIR,
