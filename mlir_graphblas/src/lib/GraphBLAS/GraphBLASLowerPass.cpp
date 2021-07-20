@@ -568,11 +568,75 @@ public:
     Location loc = op->getLoc();
 
     Type valueType = op.input().getType().dyn_cast<RankedTensorType>().getElementType();
+
+    Value input = op.input();
+    Value thunk = op.thunk();
+    StringRef apply_operator = op.apply_operator();
+
+    // New op
+    graphblas::MatrixApplyGenericOp newApplyOp = rewriter.create<graphblas::MatrixApplyGenericOp>(
+        loc, op->getResultTypes(), input, 1);
+
+    // Insert transformOut block
+    Region &transformOutRegion = newApplyOp.getRegion(0);
+    Block *transformOutBlock = rewriter.createBlock(&transformOutRegion, {}, {valueType});
+
+    Value transformResult;
+    if (apply_operator == "min")
+    {
+      Value val = transformOutBlock->getArgument(0);
+      Value cmp = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OLT, val, thunk);
+      transformResult = rewriter.create<mlir::SelectOp>(loc, cmp, val, thunk);
+    } else {
+      return op.emitError("\"" + apply_operator + "\" is not a supported apply_operator.");
+    };
+
+    rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::TRANSFORM_OUT, transformResult);
+
+    rewriter.replaceOp(op, newApplyOp.getResult());
+
+    return success();
+  };
+};
+
+class LowerMatrixApplyGenericRewrite : public OpRewritePattern<graphblas::MatrixApplyGenericOp>
+{
+public:
+  using OpRewritePattern<graphblas::MatrixApplyGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op, PatternRewriter &rewriter) const
+  {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Type valueType = op.input().getType().dyn_cast<RankedTensorType>().getElementType();
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
     Value inputTensor = op.input();
-    Value thunk = op.thunk();
-    StringRef apply_operator = op.apply_operator();
+
+    // Required blocks
+    RegionRange extensions = op.extensions();
+    Block *transformOutBlock = nullptr;
+
+    // Extract blocks
+    for (Region *ext : extensions)
+    {
+      Block &block = ext->front();
+      graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(block.getTerminator());
+      if (yield == nullptr)
+      {
+        // must have graphblas.yield as terminator
+        return op.emitError("graphblas.matrix_multiply_generic blocks must have graphblas.yield terminator");
+      }
+
+      switch (yield.kind())
+      {
+      case graphblas::YieldKind::TRANSFORM_OUT:
+        transformOutBlock = &block;
+        break;
+      default:
+        return op.emitError("unsupported graphblas.matrix_apply_generic block type");
+      }
+    }
 
     // Initial constants
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
@@ -592,13 +656,16 @@ public:
     rewriter.setInsertionPointToStart(valueLoop.getBody());
     Value val = rewriter.create<memref::LoadOp>(loc, inputValues, valueLoopIdx);
 
-    Value result;
-    if (apply_operator == "min")
-    {
-      Value cmp = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OLT, val, thunk);
-      result = rewriter.create<mlir::SelectOp>(loc, cmp, val, thunk);
-    };
+    // scf::ParallelOp automatically gets an empty scf.yield at the end which we need to insert before
+    Operation *scfYield = valueLoop.getBody()->getTerminator();
 
+    // insert transformOut block
+    graphblas::YieldOp transformOutYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(transformOutBlock->getTerminator());
+
+    rewriter.mergeBlockBefore(transformOutBlock, scfYield, {val});
+    Value result = transformOutYield.values().front();
+    rewriter.eraseOp(transformOutYield);
+    
     rewriter.create<memref::StoreOp>(loc, result, outputValues, valueLoopIdx);
 
     // end value loop
@@ -1356,19 +1423,19 @@ public:
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
-    LowerMatrixSelectRewrite,
-    LowerMatrixReduceToScalarRewrite,
-    LowerMatrixMultiplyRewrite,
-    LowerConvertLayoutRewrite,
-    LowerMatrixApplyRewrite,
-    LowerMatrixMultiplyReduceToScalarRewrite,
-    LowerMatrixMultiplyGenericRewrite,
-    LowerSizeRewrite,
-    LowerNumRowsRewrite,
-    LowerNumColsRewrite,
-    LowerNumValsRewrite,
-    LowerDupRewrite
-    >(patterns.getContext());
+      LowerMatrixSelectRewrite,
+      LowerMatrixReduceToScalarRewrite,
+      LowerMatrixMultiplyRewrite,
+      LowerConvertLayoutRewrite,
+      LowerMatrixApplyRewrite,
+      LowerMatrixApplyGenericRewrite,
+      LowerMatrixMultiplyReduceToScalarRewrite,
+      LowerMatrixMultiplyGenericRewrite,
+      LowerSizeRewrite,
+      LowerNumRowsRewrite,
+      LowerNumColsRewrite,
+      LowerNumValsRewrite,
+      LowerDupRewrite>(patterns.getContext());
 }
 
 struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPass> {
@@ -1385,7 +1452,8 @@ struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPas
 void populateGraphBLASStructuralizePatterns(RewritePatternSet &patterns)
 {
   patterns.add<
-      LowerMatrixMultiplyRewrite
+      LowerMatrixMultiplyRewrite,
+      LowerMatrixApplyRewrite
       >(patterns.getContext());
 }
 

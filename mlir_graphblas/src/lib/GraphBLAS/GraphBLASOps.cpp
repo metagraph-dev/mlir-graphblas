@@ -193,9 +193,10 @@ void DupOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
   build(builder, result, inputType, tensor);
 }
 
-static LogicalResult verify(MatrixApplyOp op) {
+template <class T>
+static LogicalResult verifyMatrixApplyArgs(T op)
+{
   Type inputType = op.input().getType();
-  Type thunkType = op.thunk().getType();
   Type resultType = op.getResult().getType();
 
   llvm::Optional<std::string> inputCompressionErrorMessage = checkCompressedSparseTensor(inputType, 0, EITHER);
@@ -209,19 +210,35 @@ static LogicalResult verify(MatrixApplyOp op) {
   RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
   RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
 
-  if (inputTensorType.getElementType() != thunkType)
-    return op.emitError("Element type of input tensor does not match type of thunk.");
-
-  if (resultTensorType.getElementType() != thunkType)
-    // TODO this is not always correct, e.g. matrix_apply_less_than(tensor<f64>, 2.3) -> tensor<i1>.
-    return op.emitError("Element type of result tensor does not match type of thunk.");
-
   ArrayRef<int64_t> inputShape = inputTensorType.getShape();
   ArrayRef<int64_t> resultShape = resultTensorType.getShape();
 
   // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with shapes using "?"
   if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
     return op.emitError("Input shape does not match output shape.");
+
+  return success();
+}
+
+static LogicalResult verify(MatrixApplyOp op) {
+  LogicalResult argResult = verifyMatrixApplyArgs(op);
+
+  if (argResult.failed())
+    return argResult;
+
+  Type inputType = op.input().getType();
+  Type thunkType = op.thunk().getType();
+  Type resultType = op.getResult().getType();
+
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
+
+  if (inputTensorType.getElementType() != thunkType)
+    return op.emitError("Element type of input tensor does not match type of thunk.");
+
+  if (resultTensorType.getElementType() != thunkType)
+    // TODO this is not always correct, e.g. matrix_apply_less_than(tensor<f64>, 2.3) -> tensor<i1>.
+    return op.emitError("Element type of result tensor does not match type of thunk.");
 
   static const std::vector<std::string> supportedOperators{"min"};
   std::string applyOperator = op.apply_operator().str();
@@ -232,6 +249,23 @@ static LogicalResult verify(MatrixApplyOp op) {
 
   return success();
 }
+
+static LogicalResult verify(MatrixApplyGenericOp op)
+{
+  LogicalResult argResult = verifyMatrixApplyArgs(op);
+
+  if (argResult.failed())
+    return argResult;
+
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 1)
+  {
+    return op.emitError("Must have at least 1 region: transform_out.");
+  }
+
+  return success();
+}
+
 
 template <class T>
 static LogicalResult verifyMatrixMultiplyArgs(T op)

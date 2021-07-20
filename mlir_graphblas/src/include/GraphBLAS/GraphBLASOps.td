@@ -209,6 +209,21 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
     }];
 }
 
+def GraphBLAS_MatrixApplyGenericOp : GraphBLAS_Op<"matrix_apply_generic", [NoSideEffect]> {
+    let summary = "generic matrix apply operation";
+    let description = [{
+        Applies an arbitrary transformation to every element of a matrix.
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs AnyTensor:$output);
+    let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
+    
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($output) $extensions
+    }];
+}
+
 def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]> {
     let summary = "matrix multiply operation with an optional structural mask";
     let description = [{
@@ -324,7 +339,7 @@ def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Termina
         a meaning that depends on the op.
 
         ```mlir
-        graphblas.yield "transform_out" %f0 : f64
+        graphblas.yield transform_out %f0 : f64
         ```
     }];
     
