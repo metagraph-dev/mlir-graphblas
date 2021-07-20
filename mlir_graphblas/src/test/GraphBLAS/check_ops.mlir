@@ -14,6 +14,12 @@
   indexBitWidth = 64
 }>
 
+#SparseVec64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
 module {
 
     // CHECK: func @convert_layout_wrapper(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[CSC_TYPE:tensor<.*->.*>]] {
@@ -128,6 +134,110 @@ module {
         %answer = graphblas.matrix_multiply %argA, %argB, %mask { semiring = "plus_plus" } : (tensor<2x2xf64, #CSR64>, tensor<2x2xf64, #CSC64>, tensor<2x2xf64, #CSR64>) to tensor<2x2xf64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : tensor<2x2xf64, #CSR64>
+    }
+
+}
+
+module {
+
+    // CHECK: func @matrix_vector_multiply_plus_times(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]], %[[VECTOR:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:tensor<.*->.*>]] {
+    func @matrix_vector_multiply_plus_times(%matrix: tensor<2x3xi64, #CSR64>, %vector: tensor<3xi64, #SparseVec64>) -> tensor<2x2xi64, #CSR64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_vector_multiply %[[MATRIX]], %[[VECTOR]] {semiring = "plus_times"} : ([[MATRIX_TYPE]], [[VECTOR_TYPE]]) to [[RETURN_TYPE]]
+        %answer = graphblas.matrix_vector_multiply %matrix, %vector { semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3xi64, #SparseVec64>) to tensor<2x2xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x2xi64, #CSR64>
+    }
+
+    // CHECK: func @matrix_vector_multiply_with_mask_plus_times(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]], %[[VECTOR:.*]]: [[VECTOR_TYPE:tensor<.*>]], %[[MASK:.*]]: [[MASK_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:tensor<.*->.*>]] {
+    func @matrix_vector_multiply_with_mask_plus_times(%matrix: tensor<2x2xf64, #CSR64>, %vector: tensor<2xf64, #SparseVec64>, %mask: tensor<2x2xf64, #CSR64>) -> tensor<2x2xf64, #CSR64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_vector_multiply %[[MATRIX]], %[[VECTOR]], %[[MASK]] {semiring = "plus_times"} : ([[MATRIX_TYPE]], [[VECTOR_TYPE]], [[MASK_TYPE]]) to [[RETURN_TYPE]]
+        %answer = graphblas.matrix_vector_multiply %matrix, %vector, %mask { semiring = "plus_times" } : (tensor<2x2xf64, #CSR64>, tensor<2xf64, #SparseVec64>, tensor<2x2xf64, #CSR64>) to tensor<2x2xf64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x2xf64, #CSR64>
+    }
+
+    // CHECK: func @matrix_vector_multiply_plus_pair(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]], %[[VECTOR:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:tensor<.*->.*>]] {
+    func @matrix_vector_multiply_plus_pair(%matrix: tensor<2x3xi64, #CSR64>, %vector: tensor<3xi64, #SparseVec64>) -> tensor<2x2xi64, #CSR64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_vector_multiply %[[MATRIX]], %[[VECTOR]] {semiring = "plus_pair"} : ([[MATRIX_TYPE]], [[VECTOR_TYPE]]) to [[RETURN_TYPE]]
+        %answer = graphblas.matrix_vector_multiply %matrix, %vector { semiring = "plus_pair" } : (tensor<2x3xi64, #CSR64>, tensor<3xi64, #SparseVec64>) to tensor<2x2xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x2xi64, #CSR64>
+    }
+
+    // CHECK: func @matrix_vector_multiply_with_mask_plus_pair(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]], %[[VECTOR:.*]]: [[VECTOR_TYPE:tensor<.*>]], %[[MASK:.*]]: [[MASK_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:tensor<.*->.*>]] {
+    func @matrix_vector_multiply_with_mask_plus_pair(%matrix: tensor<2x2xf64, #CSR64>, %vector: tensor<2xf64, #SparseVec64>, %mask: tensor<2x2xf64, #CSR64>) -> tensor<2x2xf64, #CSR64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_vector_multiply %[[MATRIX]], %[[VECTOR]], %[[MASK]] {semiring = "plus_pair"} : ([[MATRIX_TYPE]], [[VECTOR_TYPE]], [[MASK_TYPE]]) to [[RETURN_TYPE]]
+        %answer = graphblas.matrix_vector_multiply %matrix, %vector, %mask { semiring = "plus_pair" } : (tensor<2x2xf64, #CSR64>, tensor<2xf64, #SparseVec64>, tensor<2x2xf64, #CSR64>) to tensor<2x2xf64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x2xf64, #CSR64>
+    }
+
+    // CHECK: func @matrix_vector_multiply_plus_plus(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]], %[[VECTOR:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:tensor<.*->.*>]] {
+    func @matrix_vector_multiply_plus_plus(%matrix: tensor<2x3xi64, #CSR64>, %vector: tensor<3xi64, #SparseVec64>) -> tensor<2x2xi64, #CSR64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_vector_multiply %[[MATRIX]], %[[VECTOR]] {semiring = "plus_plus"} : ([[MATRIX_TYPE]], [[VECTOR_TYPE]]) to [[RETURN_TYPE]]
+        %answer = graphblas.matrix_vector_multiply %matrix, %vector { semiring = "plus_plus" } : (tensor<2x3xi64, #CSR64>, tensor<3xi64, #SparseVec64>) to tensor<2x2xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x2xi64, #CSR64>
+    }
+
+    // CHECK: func @matrix_vector_multiply_with_mask_plus_plus(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]], %[[VECTOR:.*]]: [[VECTOR_TYPE:tensor<.*>]], %[[MASK:.*]]: [[MASK_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:tensor<.*->.*>]] {
+    func @matrix_vector_multiply_with_mask_plus_plus(%matrix: tensor<2x2xf64, #CSR64>, %vector: tensor<2xf64, #SparseVec64>, %mask: tensor<2x2xf64, #CSR64>) -> tensor<2x2xf64, #CSR64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_vector_multiply %[[MATRIX]], %[[VECTOR]], %[[MASK]] {semiring = "plus_plus"} : ([[MATRIX_TYPE]], [[VECTOR_TYPE]], [[MASK_TYPE]]) to [[RETURN_TYPE]]
+        %answer = graphblas.matrix_vector_multiply %matrix, %vector, %mask { semiring = "plus_plus" } : (tensor<2x2xf64, #CSR64>, tensor<2xf64, #SparseVec64>, tensor<2x2xf64, #CSR64>) to tensor<2x2xf64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x2xf64, #CSR64>
+    }
+
+}
+
+module {
+
+    // CHECK: func @vector_accumulate_plus(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]], %[[ARGB:.*]]: [[B_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @vector_accumulate_plus(%vec: tensor<?xi64, #SparseVec64>, %other_vec: tensor<?xi64, #SparseVec64>) -> tensor<?xi64, #SparseVec64> {
+        // CHECK-NEXT: graphblas.vector_accumulate %[[ARGA]], %[[ARGB]] {accumulate_operator = "plus"} : ([[A_TYPE]], [[B_TYPE]])
+        graphblas.vector_accumulate %vec, %other_vec { accumulate_operator = "plus" } : (tensor<?xi64, #SparseVec64>, tensor<?xi64, #SparseVec64>)
+        // CHECK-NEXT: return %[[ARGA]] : [[RETURN_TYPE]]
+        return %vec : tensor<?xi64, #SparseVec64>
+    }
+
+}
+
+module {
+
+    // CHECK: func @vector_dot_product_plus_times(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]], %[[ARGB:.*]]: [[B_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @vector_dot_product_plus_times(%argA: tensor<3xi64, #SparseVec64>, %argB: tensor<3xi64, #SparseVec64>) -> i64 {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_dot_product %[[ARGA]], %[[ARGB]] {semiring = "plus_times"} : ([[A_TYPE]], [[B_TYPE]]) to [[RETURN_TYPE]]
+        %answer = graphblas.vector_dot_product %argA, %argB { semiring = "plus_times" } : (tensor<3xi64, #SparseVec64>, tensor<3xi64, #SparseVec64>) to i64
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : i64
+    }
+
+    // CHECK: func @vector_dot_product_plus_pair(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]], %[[ARGB:.*]]: [[B_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @vector_dot_product_plus_pair(%argA: tensor<3xi64, #SparseVec64>, %argB: tensor<3xi64, #SparseVec64>) -> i64 {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_dot_product %[[ARGA]], %[[ARGB]] {semiring = "plus_pair"} : ([[A_TYPE]], [[B_TYPE]]) to [[RETURN_TYPE]]
+        %answer = graphblas.vector_dot_product %argA, %argB { semiring = "plus_pair" } : (tensor<3xi64, #SparseVec64>, tensor<3xi64, #SparseVec64>) to i64
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : i64
+    }
+
+    // CHECK: func @vector_dot_product_plus_plus(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]], %[[ARGB:.*]]: [[B_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @vector_dot_product_plus_plus(%argA: tensor<3xi64, #SparseVec64>, %argB: tensor<3xi64, #SparseVec64>) -> i64 {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_dot_product %[[ARGA]], %[[ARGB]] {semiring = "plus_plus"} : ([[A_TYPE]], [[B_TYPE]]) to [[RETURN_TYPE]]
+        %answer = graphblas.vector_dot_product %argA, %argB { semiring = "plus_plus" } : (tensor<3xi64, #SparseVec64>, tensor<3xi64, #SparseVec64>) to i64
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : i64
+    }
+
+}
+
+module {
+
+    // CHECK: func @vector_equaity_checking(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]], %[[ARGB:.*]]: [[B_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @vector_equaity_checking(%argA: tensor<3xi64, #SparseVec64>, %argB: tensor<3xi64, #SparseVec64>) -> i1 {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_equals %[[ARGA]], %[[ARGB]] : ([[A_TYPE]], [[B_TYPE]])
+        %answer = graphblas.vector_equals %argA, %argB : (tensor<3xi64, #SparseVec64>, tensor<3xi64, #SparseVec64>)
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : i1
     }
 
 }
