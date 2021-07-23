@@ -312,7 +312,7 @@ Example:
     %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_times" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
         ^bb0(%value: f64):
             %result = std.mulf %value, %value: f64
-            graphblas.yield %result : f64
+            graphblas.yield transform_out %result : f64
     }
 
 Syntax:
@@ -449,21 +449,32 @@ Results:
 
 Special terminator operation for blocks inside regions in several ``graphblas`` operations,
 e.g. ``graphblas.matrix_multiply``. It returns a value to the enclosing op, with a meaning
-that depends on the op.
+that depends on the required "kind" attribute.  It must be one of the following:
+
+* transform_in_a
+* transform_in_b
+* transform_out
+* select_in_a
+* select_in_b
+* select_out
+* add_identity
+* add
+* mult_identity
+* mult
 
 Example:
 ^^^^^^^^
 
 .. code-block:: text
 
-    graphblas.yield %result : f64
+    graphblas.yield transform_out %result : f64
 
 Syntax:
 ^^^^^^^
 
 .. code-block:: text
 
-    operation ::= `graphblas.yield` $values attr-dict `:` type($values)
+    operation ::= `graphblas.yield` $kind $values attr-dict `:` type($values)
 
 Operands:
 ^^^^^^^^^

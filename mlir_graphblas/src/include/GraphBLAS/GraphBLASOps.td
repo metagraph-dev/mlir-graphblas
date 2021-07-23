@@ -209,6 +209,21 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
     }];
 }
 
+def GraphBLAS_MatrixApplyGenericOp : GraphBLAS_Op<"matrix_apply_generic", [NoSideEffect]> {
+    let summary = "generic matrix apply operation";
+    let description = [{
+        Applies an arbitrary transformation to every element of a matrix.
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs AnyTensor:$output);
+    let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
+    
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($output) $extensions
+    }];
+}
+
 def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]> {
     let summary = "matrix multiply operation with an optional structural mask";
     let description = [{
@@ -246,6 +261,25 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
     }];
 }
 
+def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", [NoSideEffect]> {
+    let summary = "generic matrix multiply operation with an optional structural mask";
+    let description = [{
+        Performs a matrix multiply according to the given semiring and optional structural mask.
+        The given sparse tensors must be a matrix, i.e. have rank 2.
+        The first input tensors must be CSR format, while the second input tensor must be CSC format.
+        The mask (if provided) must be CSR format.
+
+    }];
+
+    let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask);
+    let results = (outs AnyTensor:$output);
+    let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
+    
+    let assemblyFormat = [{
+           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) $extensions
+    }];
+}
+
 def GraphBLAS_MatrixMultiplyReduceToScalarOp : GraphBLAS_Op<"matrix_multiply_reduce_to_scalar", [NoSideEffect]> {
     let summary = "matrix multiply followed by reduction to a scalar with an optional structural mask";
     let description = [{
@@ -274,8 +308,30 @@ def GraphBLAS_MatrixMultiplyReduceToScalarOp : GraphBLAS_Op<"matrix_multiply_red
     }];
 }
 
-def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Terminator]>, 
-    Arguments<(ins Variadic<AnyType>:$values)> {
+// Generic ops
+
+def YIELD_TRANSFORM_IN_A : I64EnumAttrCase<"TRANSFORM_IN_A", 0, "transform_in_a">;
+def YIELD_TRANSFORM_IN_B : I64EnumAttrCase<"TRANSFORM_IN_B", 1, "transform_in_b">;
+def YIELD_TRANSFORM_OUT  : I64EnumAttrCase<"TRANSFORM_OUT", 2, "transform_out">;
+def YIELD_SELECT_IN_A    : I64EnumAttrCase<"SELECT_IN_A", 3, "select_in_a">;
+def YIELD_SELECT_IN_B    : I64EnumAttrCase<"SELECT_IN_B", 4, "select_in_b">;
+def YIELD_SELECT_OUT     : I64EnumAttrCase<"SELECT_OUT", 5, "select_out">;
+def YIELD_ADD_IDENTITY   : I64EnumAttrCase<"ADD_IDENTITY", 6, "add_identity">;
+def YIELD_ADD            : I64EnumAttrCase<"ADD", 7, "add">;
+def YIELD_MULT_IDENTITY  : I64EnumAttrCase<"MULT_IDENTITY", 8, "mult_identity">;
+def YIELD_MULT           : I64EnumAttrCase<"MULT", 9, "mult">;
+
+def YieldKindAttr : I64EnumAttr<
+    "YieldKind", "",
+    [YIELD_TRANSFORM_IN_A, YIELD_TRANSFORM_IN_B, YIELD_TRANSFORM_OUT,
+     YIELD_SELECT_IN_A,    YIELD_SELECT_IN_B,    YIELD_SELECT_OUT,
+     YIELD_ADD_IDENTITY,   YIELD_ADD,
+     YIELD_MULT_IDENTITY,  YIELD_MULT]
+    > {
+  let cppNamespace = "::mlir::graphblas";
+}
+
+def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Terminator]> {
     let summary = "graphblas yield operation";
     let description = [{
         `graphblas.yield` is a special terminator operation for blocks inside regions in
@@ -283,15 +339,24 @@ def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Termina
         a meaning that depends on the op.
 
         ```mlir
-        graphblas.yield %f0 : f64
+        graphblas.yield transform_out %f0 : f64
         ```
     }];
+    
+    let arguments = (ins
+      YieldKindAttr:$kind,
+      Variadic<AnyType>:$values
+    );
 
-    let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
+    /*let builders = [
+      OpBuilder<(ins "YieldKind":$kind, "ValueRange":$values), [{
+      ::buildYieldOp($_builder, $_state, kind, values);
+      }]>
+    ];*/
+
     let assemblyFormat = [{
-           $values attr-dict `:` type($values)
+           $kind $values attr-dict `:` type($values)
     }];
-
 }
 
 #endif // GRAPHBLAS_OPS

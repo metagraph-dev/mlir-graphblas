@@ -11,14 +11,15 @@
 #include "mlir/Pass/Pass.h"
 
 namespace mlir {
-  
 std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASLoweringPass();
 std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASOptimizePass();
+std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASStructuralizePass();
 }
 
 //===----------------------------------------------------------------------===//
 // Ops declaration.
 //===----------------------------------------------------------------------===//
+#include "GraphBLAS/GraphBLASOpsEnums.h.inc"
 
 #define GET_OP_CLASSES
 #include "GraphBLAS/GraphBLASOps.h.inc"

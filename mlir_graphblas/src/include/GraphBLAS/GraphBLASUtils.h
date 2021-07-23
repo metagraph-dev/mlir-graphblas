@@ -2,6 +2,7 @@
 #define GRAPHBLAS_GRAPHBLASUTILS_H
 
 #include <string>
+#include <set>
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
@@ -29,5 +30,23 @@ mlir::CallOp callResizeValues(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mli
                               mlir::Value tensor, mlir::Value size);
 
 void cleanupIntermediateTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
+
+struct ExtensionBlocks {
+    mlir::Block *transformInA = nullptr;
+    mlir::Block *transformInB = nullptr;
+    mlir::Block *transformOut = nullptr;
+    mlir::Block *selectInA = nullptr;
+    mlir::Block *selectInB = nullptr;
+    mlir::Block *selectOut = nullptr;
+    mlir::Block *addIdentity = nullptr;
+    mlir::Block *add = nullptr;
+    mlir::Block *multIdentity = nullptr;
+    mlir::Block *mult = nullptr;
+
+    ExtensionBlocks() { };
+    mlir::LogicalResult extractBlocks(mlir::Operation *op, mlir::RegionRange &regions,
+                                      const std::set<mlir::graphblas::YieldKind> &required,
+                                      const std::set<mlir::graphblas::YieldKind> &optional);
+};
 
 #endif // GRAPHBLAS_GRAPHBLASUTILS_H
