@@ -5,6 +5,9 @@
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 
+#include "GraphBLAS/GraphBLASOps.h"
+#include "GraphBLAS/GraphBLASUtils.h"
+
 using namespace std;
 using namespace mlir;
 using namespace mlir::sparse_tensor;
@@ -338,3 +341,70 @@ void cleanupIntermediateTensor(OpBuilder &builder, ModuleOp &mod, Location loc, 
     }
   }
 }
+
+LogicalResult ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions,
+                                             const std::set<graphblas::YieldKind> &required,
+                                             const std::set<graphblas::YieldKind> &optional)
+{
+  std::set<graphblas::YieldKind> allowed(required);
+  allowed.insert(optional.begin(), optional.end());
+  std::set<graphblas::YieldKind> seen;
+
+  for (Region *ext : regions)
+  {
+    Block &block = ext->front();
+    graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(block.getTerminator());
+    if (yield == nullptr)
+    {
+      // must have graphblas.yield as terminator
+      return op->emitError("extension blocks must have a graphblas.yield terminator");
+    }
+
+    graphblas::YieldKind kind = yield.kind();
+    if (allowed.count(kind) == 0) {
+      return op->emitError("extension block " + stringifyYieldKind(kind) + " not allowed for this op");
+    }
+
+    switch (kind)
+    {
+    case graphblas::YieldKind::TRANSFORM_IN_A:
+      this->transformInA = &block;
+      break;
+    case graphblas::YieldKind::TRANSFORM_IN_B:
+      this->transformInB = &block;
+      break;
+    case graphblas::YieldKind::TRANSFORM_OUT:
+      this->transformOut = &block;
+      break;
+    case graphblas::YieldKind::SELECT_IN_A:
+      this->selectInA = &block;
+      break;
+    case graphblas::YieldKind::SELECT_IN_B:
+      this->selectInB = &block;
+      break;
+    case graphblas::YieldKind::SELECT_OUT:
+      this->selectOut = &block;
+      break;
+    case graphblas::YieldKind::ADD_IDENTITY:
+      this->addIdentity = &block;
+      break;
+    case graphblas::YieldKind::ADD:
+      this->add = &block;
+      break;
+    case graphblas::YieldKind::MULT:
+      this->mult = &block;
+      break;
+    default:
+      return op->emitError("unsupported graphblas extension block type");
+    }
+    seen.insert(kind);
+  }
+
+  for (auto requiredKind : required) {
+    if (seen.count(requiredKind) != 1) {
+      return op->emitError("required extension block " + stringifyYieldKind(requiredKind) + " not found");
+    }
+  }
+
+  return success();
+};

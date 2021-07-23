@@ -255,14 +255,11 @@ module {
 
 module {
 
-   func @matrix_vector_multiply_plus_times(%matrix: tensor<2x3xi64, #CSR64>, %vector: tensor<3xi64, #SparseVec64>, %mask: tensor<2x2xi64, #CSR64>) -> tensor<2x2xi64, #CSR64> {
-       %answer = graphblas.matrix_vector_multiply %matrix, %vector, %mask { semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3xi64, #SparseVec64>, tensor<2x2xi64, #CSR64>) to tensor<2x2xi64, #CSR64> { // expected-error {{Region must have at most one block.}}
-            ^bb0(%value0: i64):
-                %result0 = std.muli %value0, %value0: i64
-                graphblas.yield %result0 : i64
+   func @matrix_vector_multiply_no_blocks(%matrix: tensor<2x3xi64, #CSR64>, %vector: tensor<3xi64, #SparseVec64>, %mask: tensor<2x2xi64, #CSR64>) -> tensor<2x2xi64, #CSR64> {
+       %answer = graphblas.matrix_vector_multiply %matrix, %vector, %mask { semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3xi64, #SparseVec64>, tensor<2x2xi64, #CSR64>) to tensor<2x2xi64, #CSR64> { // expected-error {{graphblas.matrix_vector_multiply should have no blocks.  Did you mean graphblas.matrix_vector_multiply_generic?}}
             ^bb1(%value1: i64):
                 %result1 = std.addi %value1, %value1: i64
-                graphblas.yield %result1 : i64
+                graphblas.yield transform_out %result1 : i64
        }
        return %answer : tensor<2x2xi64, #CSR64>
    }

@@ -27,10 +27,22 @@
 func @matrix_multiply_plus_times(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSR64> {
     %cf4 = constant 4.0 : f64
 
-    %answer = graphblas.matrix_multiply %a, %b { semiring = "plus_times" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
+    %answer = graphblas.matrix_multiply_generic %a, %b : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
+        ^bb0:
+            %identity = constant 0.0 : f64
+            graphblas.yield add_identity %identity : f64
+    },{
+        ^bb0(%add_a: f64, %add_b: f64):
+            %add_result = std.addf %add_a, %add_b : f64
+            graphblas.yield add %add_result : f64
+    },{
+        ^bb0(%mult_a: f64, %mult_b: f64):
+            %mult_result = std.mulf %mult_a, %mult_b : f64
+            graphblas.yield mult %mult_result : f64
+    },{
         ^bb0(%value: f64):
             %result = std.addf %value, %cf4: f64
-            graphblas.yield %result : f64
+            graphblas.yield transform_out %result : f64
     }
     return %answer : tensor<?x?xf64, #CSR64>
 }

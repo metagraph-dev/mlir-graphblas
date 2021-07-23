@@ -36,6 +36,11 @@
 // CHECK:         }
 
 func @apply_min(%sparse_tensor: tensor<?x?xf64, #CSR64>, %thunk: f64) -> tensor<?x?xf64, #CSR64> {
-    %answer = graphblas.matrix_apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
+    %answer = graphblas.matrix_apply_generic %sparse_tensor : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64> {
+      ^bb0(%val: f64):
+        %pick = cmpf olt, %val, %thunk : f64
+        %result = select %pick, %val, %thunk : f64
+        graphblas.yield transform_out %result : f64
+    }
     return %answer : tensor<?x?xf64, #CSR64>
 }
