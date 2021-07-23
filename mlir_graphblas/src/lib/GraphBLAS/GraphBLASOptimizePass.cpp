@@ -116,14 +116,14 @@ public:
   };
 };
 
-class FuseMatrixMultiplyApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyOp>
+class FuseMatrixMultiplyApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyGenericOp>
 {
 public:
-  using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const
+  using OpRewritePattern<graphblas::MatrixApplyGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op, PatternRewriter &rewriter) const
   {
     Value input = op.input();
-    graphblas::MatrixMultiplyOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyOp>();
+    graphblas::MatrixMultiplyGenericOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyGenericOp>();
 
     if (predecessor != nullptr && predecessor->hasOneUse())
     {
@@ -133,26 +133,44 @@ public:
       // then add in the aggregator from the Apply
       ValueRange operands = predecessor.getOperands();
       NamedAttrList attributes = predecessor->getAttrs();
-      Value thunk = op.thunk();
-      StringRef apply_operator = op.apply_operator();
+      RegionRange multiplyExtensions = predecessor.extensions();
+      unsigned newRegions = multiplyExtensions.size();
+
+      ExtensionBlocks multiplyBlocks;
+      std::set<graphblas::YieldKind> required = {
+          graphblas::YieldKind::ADD_IDENTITY,
+          graphblas::YieldKind::ADD,
+          graphblas::YieldKind::MULT};
+      std::set<graphblas::YieldKind> optional = {graphblas::YieldKind::TRANSFORM_OUT};
+      LogicalResult result = multiplyBlocks.extractBlocks(op, multiplyExtensions, required, optional);
+      if (result.failed()) {
+        return result;
+      }
+
+      if (multiplyBlocks.transformOut)
+      {
+        return failure(); // FIXME: cannot fuse with existing transform for now
+      }
+      else
+      {
+        newRegions += 1; // adding new transformOut block
+      }
+
+      RegionRange applyExtensions = op.extensions();
 
       RankedTensorType tensorType = predecessor.a().getType().dyn_cast<RankedTensorType>();
       Type valueType = tensorType.getElementType();
 
-      graphblas::MatrixMultiplyOp newMultOp = rewriter.create<graphblas::MatrixMultiplyOp>(loc,
-                                op->getResultTypes(), operands, attributes.getAttrs());
+      graphblas::MatrixMultiplyGenericOp newMultOp = rewriter.create<graphblas::MatrixMultiplyGenericOp>(loc,
+                                op->getResultTypes(), operands, attributes.getAttrs(),
+                                newRegions);
 
-      Region &region = newMultOp.getRegion();
-      Block *transformBlock = rewriter.createBlock(&region, region.begin(), valueType);
-      Value blockInput = transformBlock->getArgument(0);
-
-      if (apply_operator == "min") {
-        Value cmp = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OLT, blockInput, thunk);
-        Value result = rewriter.create<mlir::SelectOp>(loc, cmp, blockInput, thunk);
-        rewriter.create<graphblas::YieldOp>(loc, mlir::graphblas::YieldKind::TRANSFORM_OUT, result);
-      } else {
-        return op.emitError("invalid apply_operator: " + apply_operator);
+      for (unsigned i=0; i < newRegions - 1; i++) {
+        newMultOp.getRegion(i).takeBody(*multiplyExtensions[i]);
       }
+
+      Region &transformOutRegion = newMultOp.getRegion(newRegions - 1);
+      transformOutRegion.takeBody(*applyExtensions[0]);
 
       rewriter.replaceOp(op, newMultOp.getResult());
 

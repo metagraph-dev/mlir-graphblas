@@ -615,27 +615,13 @@ public:
 
     // Required blocks
     RegionRange extensions = op.extensions();
-    Block *transformOutBlock = nullptr;
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {graphblas::YieldKind::TRANSFORM_OUT};
+    LogicalResult extractResult = extBlocks.extractBlocks(op, extensions, required, {});
 
-    // Extract blocks
-    for (Region *ext : extensions)
+    if (extractResult.failed())
     {
-      Block &block = ext->front();
-      graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(block.getTerminator());
-      if (yield == nullptr)
-      {
-        // must have graphblas.yield as terminator
-        return op.emitError("graphblas.matrix_multiply_generic blocks must have graphblas.yield terminator");
-      }
-
-      switch (yield.kind())
-      {
-      case graphblas::YieldKind::TRANSFORM_OUT:
-        transformOutBlock = &block;
-        break;
-      default:
-        return op.emitError("unsupported graphblas.matrix_apply_generic block type");
-      }
+      return extractResult;
     }
 
     // Initial constants
@@ -660,9 +646,9 @@ public:
     Operation *scfYield = valueLoop.getBody()->getTerminator();
 
     // insert transformOut block
-    graphblas::YieldOp transformOutYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(transformOutBlock->getTerminator());
+    graphblas::YieldOp transformOutYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.transformOut->getTerminator());
 
-    rewriter.mergeBlockBefore(transformOutBlock, scfYield, {val});
+    rewriter.mergeBlockBefore(extBlocks.transformOut, scfYield, {val});
     Value result = transformOutYield.values().front();
     rewriter.eraseOp(transformOutYield);
     
@@ -787,38 +773,18 @@ public:
 
     // Required blocks
     RegionRange extensions = op.extensions();
-    Block *addIdentityBlock = nullptr;
-    Block *addBlock = nullptr;
-    Block *multBlock = nullptr;
-    // Optional blocks
-    Block *transformOutBlock = nullptr;
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {
+        graphblas::YieldKind::ADD_IDENTITY,
+        graphblas::YieldKind::ADD,
+        graphblas::YieldKind::MULT
+    };
+    std::set<graphblas::YieldKind> optional = {graphblas::YieldKind::TRANSFORM_OUT};
+    LogicalResult extractResult = extBlocks.extractBlocks(op, extensions, required, optional);
 
-    // Extract blocks
-    for (Region *ext : extensions) {
-      Block &block = ext->front();
-      graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(block.getTerminator());
-      if (yield == nullptr)
-      {
-        // must have graphblas.yield as terminator
-        return op.emitError("graphblas.matrix_multiply_generic blocks must have graphblas.yield terminator");
-      }
-
-      switch(yield.kind()) {
-        case graphblas::YieldKind::ADD_IDENTITY  : addIdentityBlock = &block; break;
-        case graphblas::YieldKind::ADD           : addBlock = &block; break;
-        case graphblas::YieldKind::MULT          : multBlock = &block; break;
-        case graphblas::YieldKind::TRANSFORM_OUT : transformOutBlock = &block; break;
-        default : 
-          return op.emitError("unsupported graphblas.matrix_multiply_generic block type");
-      }
+    if (extractResult.failed()) {
+      return extractResult;
     }
-
-    if (!addIdentityBlock)
-      return op.emitError("graphblas.matrix_multiply_generic requires add_identity block");
-    if (!addBlock)
-      return op.emitError("graphblas.matrix_multiply_generic requires add block");
-    if (!multBlock)
-      return op.emitError("graphblas.matrix_multiply_generic requires mult block");
 
     // Types
     Type indexType = rewriter.getIndexType();
@@ -1100,8 +1066,8 @@ public:
     Value iEnd = rewriter.create<IndexCastOp>(loc, iEnd64, indexType);
 
     // insert add identity block
-    graphblas::YieldOp addIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(addIdentityBlock->getTerminator());
-    rewriter.mergeBlocks(addIdentityBlock, &colLoop3f.getLoopBody().getBlocks().front(), {});
+    graphblas::YieldOp addIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.addIdentity->getTerminator());
+    rewriter.mergeBlocks(extBlocks.addIdentity, &colLoop3f.getLoopBody().getBlocks().front(), {});
     Value addIdentity = addIdentityYield.values().front();
     rewriter.eraseOp(addIdentityYield);
 
@@ -1122,16 +1088,16 @@ public:
     Value bVal = rewriter.create<memref::LoadOp>(loc, Bx, ii);
 
     // insert multiply operation block
-    graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(multBlock->getTerminator());
+    graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.mult->getTerminator());
     Value multResult = multYield.values().front();
     rewriter.eraseOp(multYield);
-    rewriter.mergeBlocks(multBlock, rewriter.getBlock(), {aVal, bVal});
+    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
 
     // insert add operation block
-    graphblas::YieldOp addYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(addBlock->getTerminator());
+    graphblas::YieldOp addYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.add->getTerminator());
     Value addResult = addYield.values().front();
     rewriter.eraseOp(addYield);
-    rewriter.mergeBlocks(addBlock, rewriter.getBlock(), {curr, multResult});
+    rewriter.mergeBlocks(extBlocks.add, rewriter.getBlock(), {curr, multResult});
 
     rewriter.create<scf::YieldOp>(loc, ValueRange{addResult, ctrue});
 
@@ -1160,11 +1126,11 @@ public:
     rewriter.create<memref::StoreOp>(loc, col64, Cj, cjPos);
 
     // Does total need to be transformed?
-    if (transformOutBlock) {
-      graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(transformOutBlock->getTerminator());
+    if (extBlocks.transformOut) {
+      graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.transformOut->getTerminator());
       Value transformResult = yield.values().front();
 
-      rewriter.mergeBlocks(transformOutBlock, ifBlock_newOffset.thenBlock(), {total});
+      rewriter.mergeBlocks(extBlocks.transformOut, ifBlock_newOffset.thenBlock(), {total});
 
       rewriter.create<memref::StoreOp>(loc, transformResult, Cx, cjPos);
       rewriter.eraseOp(yield);
