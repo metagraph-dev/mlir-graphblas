@@ -164,7 +164,8 @@ cdef extern from "SparseUtils.cpp" nogil:
     MemRef1DF32 sparseValuesF32(void *)
     MemRef1DF64 sparseValuesF64(void *)
 
-    void delSparseTensor(void *)
+    void delSparseVector(void *)
+    void delSparseMatrix(void *)
 
     # HACKED IN
     # These return pointers to the vectors
@@ -179,20 +180,33 @@ cdef extern from "SparseUtils.cpp" nogil:
     void swap_indices(void *tensor, void *new_indices)
     void swap_values(void *tensor, void *new_values)
 
-    void resize_pointers(void *tensor, uint64_t d, uint64_t size)
-    void resize_index(void *tensor, uint64_t d, uint64_t size)
-    void resize_values(void *tensor, uint64_t size)
-    void resize_dim(void *tensor, uint64_t d, uint64_t size)
+    # Vector versions
+    void vector_resize_pointers(void *tensor, uint64_t d, uint64_t size)
+    void vector_resize_index(void *tensor, uint64_t d, uint64_t size)
+    void vector_resize_values(void *tensor, uint64_t size)
+    void vector_resize_dim(void *tensor, uint64_t d, uint64_t size)
 
-    void *dup_tensor(void *tensor)
-    void *ptr8_to_tensor(void *tensor)
-    void *tensor_to_ptr8(void *tensor)
+    void *dup_vector(void *tensor)
+    void *ptr8_to_vector(void *tensor)
+    void *vector_to_ptr8(void *tensor)
+    void *vector_empty_like(void *tensor)
+    void *vector_empty(void *tensor, uint64_t ndims)
+
+    # Matrix versions
+    void matrix_resize_pointers(void *tensor, uint64_t d, uint64_t size)
+    void matrix_resize_index(void *tensor, uint64_t d, uint64_t size)
+    void matrix_resize_values(void *tensor, uint64_t size)
+    void matrix_resize_dim(void *tensor, uint64_t d, uint64_t size)
+
+    void *dup_matrix(void *tensor)
+    void *ptr8_to_matrix(void *tensor)
+    void *matrix_to_ptr8(void *tensor)
     void *cast_csr_to_csx(void *tensor)
     void *cast_csc_to_csx(void *tensor)
     void *cast_csx_to_csr(void *tensor)
     void *cast_csx_to_csc(void *tensor)
-    void *empty_like(void *tensor)
-    void *empty(void *tensor, uint64_t ndims)
+    void *matrix_empty_like(void *tensor)
+    void *matrix_empty(void *tensor, uint64_t ndims)
 
 
 # st for "sparse tensor"
@@ -445,7 +459,7 @@ cdef class MLIRSparseTensor:
             raise
 
     def __dealloc__(self):
-        delSparseTensor(self._data)
+        delSparseMatrix(self._data)
 
     @classmethod
     def from_raw_pointer(cls, uintptr_t data, pointer_dtype, index_dtype, value_dtype):
@@ -569,20 +583,20 @@ cdef class MLIRSparseTensor:
         swap_values(self._data, get_values_ptr(other._data))
 
     cpdef resize_pointers(self, uint64_t d, uint64_t size):
-        resize_pointers(self._data, d, size)
+        matrix_resize_pointers(self._data, d, size)
 
     cpdef resize_index(self, uint64_t d, uint64_t size):
-        resize_index(self._data, d, size)
+        matrix_resize_index(self._data, d, size)
 
     cpdef resize_values(self, uint64_t size):
-        resize_values(self._data, size)
+        matrix_resize_values(self._data, size)
 
     cpdef resize_dim(self, uint64_t d, uint64_t size):
-        resize_dim(self._data, d, size)
+        matrix_resize_dim(self._data, d, size)
 
     cpdef MLIRSparseTensor dup(self):
         cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
-        rv._data = dup_tensor(self._data)
+        rv._data = dup_matrix(self._data)
         rv.ndim = self.ndim
         rv.pointer_dtype = self.pointer_dtype
         rv.index_dtype = self.index_dtype
@@ -591,7 +605,7 @@ cdef class MLIRSparseTensor:
 
     cpdef MLIRSparseTensor empty_like(self):
         cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
-        rv._data = empty_like(self._data)
+        rv._data = matrix_empty_like(self._data)
         rv.ndim = self.ndim
         rv.pointer_dtype = self.pointer_dtype
         rv.index_dtype = self.index_dtype
@@ -600,7 +614,7 @@ cdef class MLIRSparseTensor:
 
     cpdef MLIRSparseTensor empty(self, uint64_t ndims):
         cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
-        rv._data = empty(self._data, ndims)
+        rv._data = matrix_empty(self._data, ndims)
         rv.ndim = self.ndim
         rv.pointer_dtype = self.pointer_dtype
         rv.index_dtype = self.index_dtype

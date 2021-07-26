@@ -444,7 +444,7 @@ class PtrToTensorOp(BaseOp):
             )
         ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
         ret_string = (
-            f"{ret_val.assign} = call @ptr8_to_tensor({input}) : "
+            f"{ret_val.assign} = call @ptr8_to_matrix({input}) : "
             f"(!llvm.ptr<i8>) -> tensor<?x?xf64, {CSX64}>"
         )
         if encoding.ordering is None:
@@ -491,7 +491,7 @@ class TensorToPtrOp(BaseOp):
 
         ret_val = irbuilder.new_var("!llvm.ptr<i8>")
         return ret_val, cast_string + (
-            f"{ret_val.assign} = call @tensor_to_ptr8({input}) : "
+            f"{ret_val.assign} = call @matrix_to_ptr8({input}) : "
             f"({input.type}) -> !llvm.ptr<i8>"
         )
 
@@ -514,7 +514,7 @@ class DelSparseTensor(BaseOp):
             cast_string += "\n"
 
         return None, cast_string + (
-            f"call @delSparseTensor({input}) : ({input.type}) -> ()"
+            f"call @delSparseMatrix({input}) : ({input.type}) -> ()"
         )
 
 
@@ -537,5 +537,5 @@ class DupTensor(BaseOp):
 
         ret_val = irbuilder.new_var(input.type)
         return ret_val, cast_string + (
-            f"{ret_val.assign} = call @dup_tensor({input}) : ({input.type}) -> {input.type}"
+            f"{ret_val.assign} = call @dup_matrix({input}) : ({input.type}) -> {input.type}"
         )

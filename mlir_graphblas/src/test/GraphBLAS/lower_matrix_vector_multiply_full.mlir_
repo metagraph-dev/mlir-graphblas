@@ -1,0 +1,28 @@
+// RUN: graphblas-opt %s | graphblas-opt --graphblas-lower | FileCheck %s
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+#CSC64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (j,i)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+#CV64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+func @matrix_multiply_vector_plus_times(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?xf64, #CV64>) -> tensor<?xf64, #CV64> {
+    %answer = graphblas.matrix_multiply %a, %b { semiring = "plus_times" } : (tensor<?x?xf64, #CSR64>, tensor<?xf64, #CV64>) to tensor<?xf64, #CV64>
+    return %answer : tensor<?xf64, #CV64>
+}
+
+// TODO: Check all type combinations
