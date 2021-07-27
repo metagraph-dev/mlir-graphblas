@@ -895,7 +895,7 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
         passes: Tuple[str],
         *,
         debug=False,
-        profile=True, # TODO make this false again
+        profile=True,  # TODO make this false again
     ) -> Union[List[str], DebugResult]:
         """List of new function names added."""
         if isinstance(mlir_text, str):
