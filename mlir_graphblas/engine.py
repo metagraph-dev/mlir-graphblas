@@ -1,5 +1,6 @@
 import os
 import sys
+import shutil
 import re
 import subprocess
 import itertools
@@ -9,8 +10,9 @@ import glob
 import operator
 import tempfile
 import uuid
-import llvmlite.binding as llvm
 import distutils.ccompiler
+import multiprocessing as mp
+import llvmlite.binding as llvm
 import numpy as np
 from .sparse_utils import MLIRSparseTensor
 from functools import reduce, partial
@@ -545,6 +547,80 @@ class MlirJitEngine:
         self.name_to_callable: Dict[str, Callable] = {}
         return
 
+    def profiled_function(self, main_callable: Callable) -> Callable:
+        """Decorator to profile a function via Linux's perf tool."""
+
+        def mp_func(queue: mp.SimpleQueue, *args):
+            # send pid to decorated_func
+            queue.put(os.getpid())
+            # wait for decorated_func to signal start of execution
+            start_signal = queue.get()
+            assert start_signal == "start"
+            # execute the function
+            result = main_callable(*args)
+            # return the result on the queue
+            queue.put(result)
+            return
+
+        def decorated_func(*args) -> Any:
+            # get pid from mp_func
+            q = mp.SimpleQueue()
+            execution_process = mp.Process(target=mp_func, args=(q, *args))
+            execution_process.start()
+            execution_process_id = q.get()
+
+            # start profiling
+            record_process = subprocess.Popen(
+                "/bin/bash",
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            record_process.stdin.write(
+                f"""
+            perf record -p {execution_process_id}
+            exit
+            """.encode()
+            )
+            record_process.stdin.flush()
+
+            # wait for profiling to initialize
+            for _ in range(3):  # FIXME how do we truly know perf-record is ready?
+                record_process.stderr.readline()
+
+            # signal mp_func to start execution
+            q.put("start")  # dummy value
+            # wait for execution to finish
+            result = q.get()
+            execution_process.join()
+            execution_process.close()
+
+            # wait for profiling to finish
+            while record_process.poll() is None:
+                pass
+
+            # gather profiling results
+            report_command = f"perf report --pid={execution_process_id} | cat"
+            report_process = subprocess.Popen(
+                report_command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )  # combines stdout and stderr
+            stdout_string, _ = report_process.communicate()
+            stdout_string = stdout_string.decode()
+
+            # print results
+            profile_text = stdout_string.strip()
+            profile_text = "\n" + profile_text
+            profile_text = profile_text.replace("\n", "\n    ")
+            profile_text = "Profile Results:" + profile_text
+            print(profile_text)
+
+            return result
+
+        return decorated_func
+
     def _add_llvm_module(
         self, mod: llvm.module.ModuleRef, profile: Union[bool, ctypes.CDLL]
     ) -> Optional[ctypes.CDLL]:
@@ -676,6 +752,8 @@ class MlirJitEngine:
             bound_func = partial(
                 python_callable, mlir_function, encoders, c_callable, decoder
             )
+            if shared_lib is not None:
+                bound_func = self.profiled_function(bound_func)
             name_to_callable[name] = bound_func
 
         return name_to_callable
@@ -875,6 +953,8 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                 c_callable,
                 decoders,
             )
+            if wrapper_shared_lib is not None:
+                bound_func = self.profiled_function(bound_func)
             name_to_callable[mlir_function.name.value] = bound_func
 
         return name_to_callable
@@ -899,8 +979,11 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
         profile=False,
     ) -> Union[List[str], DebugResult]:
         """List of new function names added."""
-        if profile and not sys.platform.startswith("linux"):
-            raise NotImplementedError("Profiling only supported on linux.")
+        if profile:
+            if not sys.platform.startswith("linux"):
+                raise NotImplementedError("Profiling only supported on linux.")
+            elif shutil.which("perf") is None:
+                raise RuntimeError("Profiling requires perf to be installed.")
 
         if isinstance(mlir_text, str):
             mlir_text = mlir_text.encode()
