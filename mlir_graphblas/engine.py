@@ -1,4 +1,5 @@
 import os
+import sys
 import re
 import subprocess
 import itertools
@@ -895,9 +896,12 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
         passes: Tuple[str],
         *,
         debug=False,
-        profile=True,  # TODO make this false again
+        profile=False,
     ) -> Union[List[str], DebugResult]:
         """List of new function names added."""
+        if profile and not sys.platform.startswith("linux"):
+            raise NotImplementedError("Profiling only supported on linux.")
+
         if isinstance(mlir_text, str):
             mlir_text = mlir_text.encode()
 
@@ -957,8 +961,6 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
             # function itself. If self._engine, gets garbage collected,
             # we get a seg fault. Thus, we must keep the engine alive.
             setattr(python_callable, "jit_engine", self)
-
-            # TODO if profile is True, shoud we instead track the shared object loaded in ctypes?
 
             self.name_to_callable[name] = python_callable
 
