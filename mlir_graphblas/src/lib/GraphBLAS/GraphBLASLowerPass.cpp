@@ -890,15 +890,16 @@ void computeInnerProduct(PatternRewriter &rewriter, Location loc, Value nk,
   scf::ParallelOp colLoop3p = rewriter.create<scf::ParallelOp>(loc, fixedIndexStart, fixedIndexEnd, c1);
   Value jj = colLoop3p.getInductionVars()[0];
   rewriter.setInsertionPointToStart(colLoop3p.getBody());
-  Value col64 = rewriter.create<memref::LoadOp>(loc, fixedIndices, jj);
-  Value col = rewriter.create<IndexCastOp>(loc, col64, indexType);
-  rewriter.create<memref::StoreOp>(loc, ctrue, kvec_i1, col);
+  Value fixedJ64 = rewriter.create<memref::LoadOp>(loc, fixedIndices, jj);
+  Value fixedJ = rewriter.create<IndexCastOp>(loc, fixedJ64, indexType);
+  rewriter.create<memref::StoreOp>(loc, ctrue, kvec_i1, fixedJ);
   Value val = rewriter.create<memref::LoadOp>(loc, fixedValues, jj);
-  rewriter.create<memref::StoreOp>(loc, val, kvec, col);
+  rewriter.create<memref::StoreOp>(loc, val, kvec, fixedJ);
 
   // end col loop 3p
   rewriter.setInsertionPointAfter(colLoop3p);
 
+  Value col64, col;
   scf::ForOp colLoop3f;
   if (maskIndices != nullptr) {
       colLoop3f = rewriter.create<scf::ForOp>(loc, maskStart, maskEnd, c1, c0);
@@ -1018,14 +1019,6 @@ class LowerMatrixMultiplyGenericRewrite : public OpRewritePattern<graphblas::Mat
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyGenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter) const {
-    ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = rewriter.getUnknownLoc();
-
-    // Inputs
-    Value A = op.a();
-    Value B = op.b();
-    Value mask = op.mask();
-
     // Required blocks
     RegionRange extensions = op.extensions();
     ExtensionBlocks extBlocks;
@@ -1041,21 +1034,45 @@ public:
       return extractResult;
     }
 
+    // Inputs
+    Value A = op.a();
+    Value B = op.b();
+
+    unsigned aRank = A.getType().dyn_cast<RankedTensorType>().getRank();
+    unsigned bRank = B.getType().dyn_cast<RankedTensorType>().getRank();
+
+    if (aRank == 2 && bRank == 2)
+      return rewriteMatrixMatrixMultiplication(op, rewriter, extBlocks);
+    else if (aRank == 2 && bRank == 1)
+      return rewriteMatrixVectorMultiplication(op, rewriter, extBlocks);
+    else if (aRank == 1 && bRank == 2)
+      return rewriteVectorMatrixMultiplication(op, rewriter, extBlocks);
+    else
+      return op.emitError("Only matrix-matrix, matrix-vector, and vector-matrix multiplication is supported.");
+  };
+
+private:
+  LogicalResult rewriteMatrixMatrixMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = rewriter.getUnknownLoc();
+
+    // Inputs
+    Value A = op.a();
+    Value B = op.b();
+    Value mask = op.mask();
+
     // Types
     Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
-    Type boolType = rewriter.getI1Type();
     Type valueType = op.getResult().getType().dyn_cast<RankedTensorType>().getElementType();
 
     MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
-    MemRefType memref1DBoolType = MemRefType::get({-1}, boolType);
     MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
 
     // Initial constants
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
-    Value ci1 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
     Value cf0, cf1;
     cf0 = llvm::TypeSwitch<Type, Value>(valueType)
               .Case<IntegerType>([&](IntegerType type)
@@ -1067,71 +1084,36 @@ public:
                                   { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
               .Case<FloatType>([&](FloatType type)
                                 { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
-    Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
-    Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
 
-    unsigned aRank = A.getType().dyn_cast<RankedTensorType>().getRank();
-    unsigned bRank = B.getType().dyn_cast<RankedTensorType>().getRank();
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, A);
+    Value ncol = rewriter.create<graphblas::NumColsOp>(loc, B);
+    Value nk = rewriter.create<graphblas::NumColsOp>(loc, A); // guaranteed equal to B.rows
+    Value nrow_plus_one = rewriter.create<AddIOp>(loc, nrow, c1);
 
-    // Get sparse tensor info
-    Value size, nrow, ncol, nk, C, compressedDim;
+    Value C = callEmptyLike(rewriter, module, loc, A);
+    callResizeDim(rewriter, module, loc, C, c0, nrow);
+    callResizeDim(rewriter, module, loc, C, c1, ncol);
+    callResizePointers(rewriter, module, loc, C, c1, nrow_plus_one);
+    C = convertToExternalCSR(rewriter, module, loc, C);
 
-    if (aRank == 2 && bRank == 2)
-    {
-      // Matrix-Matrix
-      nrow = rewriter.create<graphblas::NumRowsOp>(loc, A);
-      ncol = rewriter.create<graphblas::NumColsOp>(loc, B);
-      nk = rewriter.create<graphblas::NumColsOp>(loc, A); // guaranteed equal to B.rows
-      Value nrow_plus_one = rewriter.create<AddIOp>(loc, nrow, c1);
-
-      compressedDim = c1;
-      C = callEmptyLike(rewriter, module, loc, A);
-      callResizeDim(rewriter, module, loc, C, c0, nrow);
-      callResizeDim(rewriter, module, loc, C, c1, ncol);
-      callResizePointers(rewriter, module, loc, C, c1, nrow_plus_one);
-      C = convertToExternalCSR(rewriter, module, loc, C);
-    }
-    else if (aRank == 2 && bRank == 1)
-    {
-      // Matrix-Vector
-      size = rewriter.create<graphblas::NumRowsOp>(loc, A);
-      nk = rewriter.create<graphblas::SizeOp>(loc, B); // guaranteed equal to A.cols
-
-      compressedDim = c0;
-      C = callEmptyLike(rewriter, module, loc, B);
-      callResizeDim(rewriter, module, loc, C, c0, size);
-      callResizePointers(rewriter, module, loc, C, c0, c1);
-    }
-    else if (aRank == 1 && bRank == 2)
-    {
-      // Vector-Matrix
-      size = rewriter.create<graphblas::NumColsOp>(loc, B);
-      nk = rewriter.create<graphblas::SizeOp>(loc, A); // guaranteed equal to B.rows
-
-      compressedDim = c0;
-      C = callEmptyLike(rewriter, module, loc, A);
-      callResizeDim(rewriter, module, loc, C, c0, size);
-      callResizePointers(rewriter, module, loc, C, c0, c1);
-    }
-
-    Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, A, compressedDim);
-    Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, compressedDim);
+    Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, A, c1);
+    Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, c1);
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, A);
-    Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, B, compressedDim);
-    Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, compressedDim);
+    Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, B, c1);
+    Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c1);
     Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
-    Value Cp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, C, compressedDim);
+    Value Cp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, C, c1);
     Value Mp, Mj;
     if (mask)
     {
-        Mp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, mask, compressedDim);
-        Mj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, mask, compressedDim);
+        Mp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, mask, c1);
+        Mj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, mask, c1);
     }
 
     // 1st pass
-    //   Using nested parallel loops for each row and column,
-    //   compute the number of nonzero entries per row.
+    //   Compute the number of nonzero entries per row.
     //   Store results in Cp
+    //   The rows in A are the fixed elements, while the columns of B are the iteration element
     scf::ParallelOp rowLoop1 = rewriter.create<scf::ParallelOp>(loc, c0, nrow, c1);
     Value row = rowLoop1.getInductionVars()[0];
     rewriter.setInsertionPointToStart(rowLoop1.getBody());
@@ -1173,6 +1155,7 @@ public:
     // 2nd pass
     //   Compute the cumsum of values in Cp to build the final Cp
     //   Then resize C's indices and values
+    //   The rows in A are the fixed elements, while the columns of B are the iteration element
     scf::ForOp rowLoop2 = rewriter.create<scf::ForOp>(loc, c0, nrow, c1);
     Value cs_i = rowLoop2.getInductionVar();
     rewriter.setInsertionPointToStart(rowLoop2.getBody());
@@ -1237,7 +1220,134 @@ public:
     cleanupIntermediateTensor(rewriter, module, loc, C);
 
     return success();
-  };
+  }
+
+  LogicalResult rewriteMatrixVectorMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = rewriter.getUnknownLoc();
+
+    // Inputs
+    Value A = op.a();
+    Value B = op.b();
+    Value mask = op.mask();
+
+    // Types
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type valueType = op.getResult().getType().dyn_cast<RankedTensorType>().getElementType();
+
+    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
+
+    // Initial constants
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
+    Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
+    Value cf0, cf1;
+    cf0 = llvm::TypeSwitch<Type, Value>(valueType)
+              .Case<IntegerType>([&](IntegerType type)
+                                  { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
+              .Case<FloatType>([&](FloatType type)
+                                { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
+    cf1 = llvm::TypeSwitch<Type, Value>(valueType)
+              .Case<IntegerType>([&](IntegerType type)
+                                  { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
+              .Case<FloatType>([&](FloatType type)
+                                { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
+
+    Value size = rewriter.create<graphblas::NumRowsOp>(loc, A);
+    Value nk = rewriter.create<graphblas::SizeOp>(loc, B); // guaranteed equal to A.cols
+
+    Value C = callEmptyLike(rewriter, module, loc, B);
+    callResizeDim(rewriter, module, loc, C, c0, size);
+    callResizePointers(rewriter, module, loc, C, c0, c2);
+
+    Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, A, c1);
+    Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, c1);
+    Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, A);
+    Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, B, c0);
+    Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c0);
+    Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
+    Value Cp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, C, c0);
+    Value Mp, Mi, maskStart, maskEnd;
+    if (mask)
+    {
+        Mp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, mask, c0);
+        Mi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, mask, c0);
+        Value maskStart64 = rewriter.create<memref::LoadOp>(loc, Mp, c0);
+        Value maskEnd64 = rewriter.create<memref::LoadOp>(loc, Mp, c1);
+        maskStart = rewriter.create<IndexCastOp>(loc, maskStart64, indexType);
+        maskEnd = rewriter.create<IndexCastOp>(loc, maskEnd64, indexType);
+    }
+
+    // 1st pass
+    //   Compute the number of nonzero entries in the result
+    //   Store results in Cp
+    //   The vector B is the fixed element, while the rows of A are the iteration element
+    Value fixedIndexEnd64 = rewriter.create<memref::LoadOp>(loc, Bp, c1);
+    Value fixedIndexEnd = rewriter.create<IndexCastOp>(loc, fixedIndexEnd64, indexType);
+    Value cmpColSame = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, c0, fixedIndexEnd);
+
+    scf::IfOp ifBlock_rowTotal = rewriter.create<scf::IfOp>(loc, int64Type, cmpColSame, true);
+    // if cmpColSame
+    rewriter.setInsertionPointToStart(ifBlock_rowTotal.thenBlock());
+    rewriter.create<scf::YieldOp>(loc, ci0);
+
+    // else
+    rewriter.setInsertionPointToStart(ifBlock_rowTotal.elseBlock());
+    Value total;
+    if (mask) {
+      total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap, Aj, Mi, maskStart, maskEnd, valueType);
+    } else {
+      total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap, Aj, nullptr, c0, size, valueType);
+    }
+    rewriter.create<scf::YieldOp>(loc, total);
+
+    // end if cmpColSame
+    rewriter.setInsertionPointAfter(ifBlock_rowTotal);
+    Value nnzTotal = ifBlock_rowTotal.getResult(0);
+    Value nnz = rewriter.create<IndexCastOp>(loc, nnzTotal, indexType);
+    rewriter.create<memref::StoreOp>(loc, nnzTotal, Cp, c1);
+
+    callResizeIndex(rewriter, module, loc, C, c0, nnz);
+    callResizeValues(rewriter, module, loc, C, nnz);
+    Value Ci = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, C, c0);
+    Value Cx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, C);
+
+    // 2nd pass
+    //   Compute the nonzero values.
+    //   Store in Ci and Cx
+    //   The vector B is the fixed element, while the rows of A are the iteration element
+    Value cmp_cpDifferent = rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, c0, nnz);
+    scf::IfOp ifBlock_cmpDiff = rewriter.create<scf::IfOp>(loc, cmp_cpDifferent);
+    rewriter.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
+
+    if (mask) {
+      computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
+    } else {
+      computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
+    }
+
+    // end if cmpDiff
+    rewriter.setInsertionPointAfter(ifBlock_cmpDiff);
+
+    rewriter.replaceOp(op, C);
+
+    cleanupIntermediateTensor(rewriter, module, loc, C);
+
+    return success();
+  }
+
+  LogicalResult rewriteVectorMatrixMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
+      /*size = rewriter.create<graphblas::NumColsOp>(loc, B);
+      nk = rewriter.create<graphblas::SizeOp>(loc, A); // guaranteed equal to B.rows
+
+      compressedDim = c0;
+      C = callEmptyLike(rewriter, module, loc, A);
+      callResizeDim(rewriter, module, loc, C, c0, size);
+      callResizePointers(rewriter, module, loc, C, c0, c1);*/
+  }
 };
 
 class LowerMatrixMultiplyReduceToScalarRewrite : public OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarOp> {
