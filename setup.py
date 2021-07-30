@@ -8,6 +8,14 @@ from Cython.Build import cythonize
 from Cython.Compiler.Options import get_directive_defaults
 import versioneer
 
+if sys.platform == "darwin":
+    # Create a dynamiclib instead of bundles so that it may be linked.
+    # https://stackoverflow.com/questions/32419594/how-to-create-a-dylib-c-extension-on-mac-os-x-with-distutils-and-or-setuptools/32765319#32765319
+    from distutils import sysconfig
+
+    vars = sysconfig.get_config_vars()
+    vars["LDSHARED"] = vars["LDSHARED"].replace("-bundle", "-dynamiclib")
+
 ##################################
 # SparseUtils.cpp Cython Wrapper #
 ##################################
