@@ -676,7 +676,8 @@ public:
     StringRef semiring = op.semiring();
 
     // Types
-    Type valueType = op.getResult().getType().dyn_cast<RankedTensorType>().getElementType();
+    // Can't use result here because it might be a scalar (vector-vector)
+    Type valueType = op.a().getType().dyn_cast<RankedTensorType>().getElementType();
 
     // New op
     ArrayRef<NamedAttribute> attributes;
@@ -758,13 +759,15 @@ public:
 };
 
 
-Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
+Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
                          Value fixedIndices, Value fixedIndexStart, Value fixedIndexEnd,
                          Value iterPointers, Value iterIndices,
                          // If no mask is used, set maskIndices to nullptr, and provide maskStart=c0 and maskEnd=len(iterPointers)-1
                          Value maskIndices, Value maskStart, Value maskEnd,
                          Type valueType
                          ) {
+  Location loc = rewriter.getUnknownLoc();
+
   // Types used in this function
   Type indexType = rewriter.getIndexType();
   Type int64Type = rewriter.getIntegerType(64);
@@ -862,14 +865,16 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
   return total;
 }
 
-void computeInnerProduct(PatternRewriter &rewriter, Location loc, Value nk,
-                         Value fixedIndices, Value fixedValues, Value fixedIndexStart, Value fixedIndexEnd,
-                         Value iterPointers, Value iterIndices, Value iterValues,
-                         // If no mask is used, set maskIndices to nullptr, and provide maskStart=c0 and maskEnd=len(iterPointers)-1
-                         Value maskIndices, Value maskStart, Value maskEnd,
-                         Type valueType, ExtensionBlocks extBlocks,
-                         Value outputIndices, Value outputValues, Value indexOffset
-                         ) {
+void computeInnerProduct(PatternRewriter &rewriter, Value nk,
+                          Value fixedIndices, Value fixedValues, Value fixedIndexStart, Value fixedIndexEnd,
+                          Value iterPointers, Value iterIndices, Value iterValues,
+                          // If no mask is used, set maskIndices to nullptr, and provide maskStart=c0 and maskEnd=len(iterPointers)-1
+                          Value maskIndices, Value maskStart, Value maskEnd,
+                          Type valueType, ExtensionBlocks extBlocks,
+                          Value outputIndices, Value outputValues, Value indexOffset
+                          ) {
+  Location loc = rewriter.getUnknownLoc();
+
   // Types used in this function
   Type indexType = rewriter.getIndexType();
   Type int64Type = rewriter.getIntegerType(64);
@@ -1048,7 +1053,7 @@ public:
     else if (aRank == 1 && bRank == 2)
       return rewriteVectorMatrixMultiplication(op, rewriter, extBlocks);
     else
-      return op.emitError("Only matrix-matrix, matrix-vector, and vector-matrix multiplication is supported.");
+      return rewriteVectorVectorMultiplication(op, rewriter, extBlocks);
   };
 
 private:
@@ -1073,17 +1078,6 @@ private:
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
-    Value cf0, cf1;
-    cf0 = llvm::TypeSwitch<Type, Value>(valueType)
-              .Case<IntegerType>([&](IntegerType type)
-                                  { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
-              .Case<FloatType>([&](FloatType type)
-                                { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
-    cf1 = llvm::TypeSwitch<Type, Value>(valueType)
-              .Case<IntegerType>([&](IntegerType type)
-                                  { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
-              .Case<FloatType>([&](FloatType type)
-                                { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
 
     Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, A);
     Value ncol = rewriter.create<graphblas::NumColsOp>(loc, B);
@@ -1138,9 +1132,9 @@ private:
       Value mcolEnd64 = rewriter.create<memref::LoadOp>(loc, Mp, rowPlus1);
       Value mcolStart = rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
-      total = computeNumOverlaps(rewriter, loc, nk, Aj, colStart, colEnd, Bp, Bi, Mj, mcolStart, mcolEnd, valueType);
+      total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi, Mj, mcolStart, mcolEnd, valueType);
     } else {
-      total = computeNumOverlaps(rewriter, loc, nk, Aj, colStart, colEnd, Bp, Bi, nullptr, c0, ncol, valueType);
+      total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi, nullptr, c0, ncol, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1204,9 +1198,9 @@ private:
       Value mcolEnd64 = rewriter.create<memref::LoadOp>(loc, Mp, rowPlus1);
       Value mcolStart = rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
-      computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj, Cx, baseIndex);
+      computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj, Cx, baseIndex);
     } else {
-      computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, nullptr, c0, ncol, valueType, extBlocks, Cj, Cx, baseIndex);
+      computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, nullptr, c0, ncol, valueType, extBlocks, Cj, Cx, baseIndex);
     }
 
     // end if cmpDiff
@@ -1244,17 +1238,6 @@ private:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
     Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
-    Value cf0, cf1;
-    cf0 = llvm::TypeSwitch<Type, Value>(valueType)
-              .Case<IntegerType>([&](IntegerType type)
-                                  { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
-              .Case<FloatType>([&](FloatType type)
-                                { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
-    cf1 = llvm::TypeSwitch<Type, Value>(valueType)
-              .Case<IntegerType>([&](IntegerType type)
-                                  { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
-              .Case<FloatType>([&](FloatType type)
-                                { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
 
     Value size = rewriter.create<graphblas::NumRowsOp>(loc, A);
     Value nk = rewriter.create<graphblas::SizeOp>(loc, B); // guaranteed equal to A.cols
@@ -1298,9 +1281,9 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_rowTotal.elseBlock());
     Value total;
     if (mask) {
-      total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap, Aj, Mi, maskStart, maskEnd, valueType);
+      total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj, Mi, maskStart, maskEnd, valueType);
     } else {
-      total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap, Aj, nullptr, c0, size, valueType);
+      total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj, nullptr, c0, size, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1324,9 +1307,9 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
 
     if (mask) {
-      computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
+      computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
     } else {
-      computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
+      computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
     }
 
     // end if cmpDiff
@@ -1340,13 +1323,166 @@ private:
   }
 
   LogicalResult rewriteVectorMatrixMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
-      /*size = rewriter.create<graphblas::NumColsOp>(loc, B);
-      nk = rewriter.create<graphblas::SizeOp>(loc, A); // guaranteed equal to B.rows
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = rewriter.getUnknownLoc();
 
-      compressedDim = c0;
-      C = callEmptyLike(rewriter, module, loc, A);
-      callResizeDim(rewriter, module, loc, C, c0, size);
-      callResizePointers(rewriter, module, loc, C, c0, c1);*/
+    // Inputs
+    Value A = op.a();
+    Value B = op.b();
+    Value mask = op.mask();
+
+    // Types
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type valueType = op.getResult().getType().dyn_cast<RankedTensorType>().getElementType();
+
+    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
+
+    // Initial constants
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
+    Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
+
+    Value size = rewriter.create<graphblas::NumColsOp>(loc, B);
+    Value nk = rewriter.create<graphblas::SizeOp>(loc, A); // guaranteed equal to B.rows
+
+    Value C = callEmptyLike(rewriter, module, loc, A);
+    callResizeDim(rewriter, module, loc, C, c0, size);
+    callResizePointers(rewriter, module, loc, C, c0, c2);
+
+    Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, A, c0);
+    Value Ai = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, c0);
+    Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, A);
+    Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, B, c1);
+    Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c1);
+    Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
+    Value Cp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, C, c0);
+    Value Mp, Mi, maskStart, maskEnd;
+    if (mask)
+    {
+        Mp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, mask, c0);
+        Mi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, mask, c0);
+        Value maskStart64 = rewriter.create<memref::LoadOp>(loc, Mp, c0);
+        Value maskEnd64 = rewriter.create<memref::LoadOp>(loc, Mp, c1);
+        maskStart = rewriter.create<IndexCastOp>(loc, maskStart64, indexType);
+        maskEnd = rewriter.create<IndexCastOp>(loc, maskEnd64, indexType);
+    }
+
+    // 1st pass
+    //   Compute the number of nonzero entries in the result
+    //   Store results in Cp
+    //   The vector A is the fixed element, while the columns of B are the iteration element
+    Value fixedIndexEnd64 = rewriter.create<memref::LoadOp>(loc, Ap, c1);
+    Value fixedIndexEnd = rewriter.create<IndexCastOp>(loc, fixedIndexEnd64, indexType);
+    Value cmpColSame = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, c0, fixedIndexEnd);
+
+    scf::IfOp ifBlock_rowTotal = rewriter.create<scf::IfOp>(loc, int64Type, cmpColSame, true);
+    // if cmpColSame
+    rewriter.setInsertionPointToStart(ifBlock_rowTotal.thenBlock());
+    rewriter.create<scf::YieldOp>(loc, ci0);
+
+    // else
+    rewriter.setInsertionPointToStart(ifBlock_rowTotal.elseBlock());
+    Value total;
+    if (mask) {
+      total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi, Mi, maskStart, maskEnd, valueType);
+    } else {
+      total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi, nullptr, c0, size, valueType);
+    }
+    rewriter.create<scf::YieldOp>(loc, total);
+
+    // end if cmpColSame
+    rewriter.setInsertionPointAfter(ifBlock_rowTotal);
+    Value nnzTotal = ifBlock_rowTotal.getResult(0);
+    Value nnz = rewriter.create<IndexCastOp>(loc, nnzTotal, indexType);
+    rewriter.create<memref::StoreOp>(loc, nnzTotal, Cp, c1);
+
+    callResizeIndex(rewriter, module, loc, C, c0, nnz);
+    callResizeValues(rewriter, module, loc, C, nnz);
+    Value Ci = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, C, c0);
+    Value Cx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, C);
+
+    // 2nd pass
+    //   Compute the nonzero values.
+    //   Store in Ci and Cx
+    //   The vector A is the fixed element, while the columns of B are the iteration element
+    Value cmp_cpDifferent = rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, c0, nnz);
+    scf::IfOp ifBlock_cmpDiff = rewriter.create<scf::IfOp>(loc, cmp_cpDifferent);
+    rewriter.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
+
+    if (mask) {
+      computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
+    } else {
+      computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
+    }
+
+    // end if cmpDiff
+    rewriter.setInsertionPointAfter(ifBlock_cmpDiff);
+
+    rewriter.replaceOp(op, C);
+
+    cleanupIntermediateTensor(rewriter, module, loc, C);
+
+    return success();
+  }
+
+  LogicalResult rewriteVectorVectorMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = rewriter.getUnknownLoc();
+
+    // Inputs
+    Value A = op.a();
+    Value B = op.b();
+
+    // Types
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type valueType = A.getType().dyn_cast<RankedTensorType>().getElementType();
+
+    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
+
+    // Initial constants
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
+
+    Value size = rewriter.create<graphblas::SizeOp>(loc, A);
+
+    Value C = callEmptyLike(rewriter, module, loc, A);
+    callResizeDim(rewriter, module, loc, C, c0, c1);  // exactly one entry because this is a vector representing a scalar
+    callResizePointers(rewriter, module, loc, C, c0, c2);
+    callResizeIndex(rewriter, module, loc, C, c0, c1);
+    callResizeValues(rewriter, module, loc, C, c1);
+
+    Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, A, c0);
+    Value Ai = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, c0);
+    Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, A);
+    Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, B, c0);
+    Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c0);
+    Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
+    Value Ci = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, C, c0);
+    Value Cx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, C);
+
+    // Single pass
+    //   Compute the nonzero values.
+    //   Store in Ci and Cx (single-element vector representing a scalar)
+    //   The vector A is the fixed element, while the vector B is treated as the iteration element
+    Value fixedIndexEnd64 = rewriter.create<memref::LoadOp>(loc, Ap, c1);
+    Value fixedIndexEnd = rewriter.create<IndexCastOp>(loc, fixedIndexEnd64, indexType);
+
+    computeInnerProduct(rewriter, size, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, nullptr, c0, c1, valueType, extBlocks, Ci, Cx, c0);
+
+    // extract scalar from C
+    Value cScalar = rewriter.create<memref::LoadOp>(loc, Cx, c0);
+
+    rewriter.replaceOp(op, cScalar);
+
+    cleanupIntermediateTensor(rewriter, module, loc, C);
+
+    return success();
   }
 };
 
@@ -1376,12 +1512,11 @@ public:
     // Initial constants
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-    Value cf0, cf1;
     // TODO: make cf0 value dependent on the aggregator
-    cf0 = llvm::TypeSwitch<Type, Value>(valueType)
+    Value cf0 = llvm::TypeSwitch<Type, Value>(valueType)
         .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
         .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
-    cf1 = llvm::TypeSwitch<Type, Value>(valueType)
+    Value cf1 = llvm::TypeSwitch<Type, Value>(valueType)
         .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
         .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
     Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);

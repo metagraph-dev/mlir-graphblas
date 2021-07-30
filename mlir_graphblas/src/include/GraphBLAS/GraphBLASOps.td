@@ -229,9 +229,13 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
     let description = [{
         Performs a matrix multiply according to the given semiring and optional structural mask.
         The semiring must be one of "plus_times", "plus_pair", or "plus_plus".
-        The given sparse tensors must be a matrix, i.e. have rank 2.
-        The first input tensor must be CSR format, while the second input tensor must be CSC format.
-        The mask (if provided) must be CSR format.
+        The given sparse tensors must be a matrix (i.e. rank 2) or a vector (i.e. rank 1).
+        If the first input is a matrix, it must be CSR format.
+        If the second input is a matrix, it must be CSC format.
+        Matrix times vector will return a vector.
+        Vector times matrix will return a vector.
+        Matrix times matrix will return a CSR matrix.
+        The mask (if provided) must be the same format as the returned object.
         This operation also accepts an optional region that specifies element-wise postprocessing to be done on the result of the matrix multiplication.
         The region must use `graphblas.yield` to indicate the result of the element-wise postprocessing.
 
@@ -253,7 +257,7 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
     }];
 
     let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask, StrAttr:$semiring);
-    let results = (outs AnyTensor:$output);
+    let results = (outs AnyType:$output);
     let regions = (region AnyRegion:$body);
     
     let assemblyFormat = [{
@@ -272,7 +276,7 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
     }];
 
     let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask);
-    let results = (outs AnyTensor:$output);
+    let results = (outs AnyType:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
     
     let assemblyFormat = [{
@@ -308,43 +312,6 @@ def GraphBLAS_MatrixMultiplyReduceToScalarOp : GraphBLAS_Op<"matrix_multiply_red
     }];
 }
 
-def GraphBLAS_MatrixVectorMultiplyOp : GraphBLAS_Op<"matrix_vector_multiply", [NoSideEffect]> {
-    let summary = "matrix-vector multiply operation with an optional structural mask";
-    let description = [{
-        Performs a matrix-vector multiply according to the given semiring and optional structural mask.
-        The semiring must be one of "plus_times", "plus_pair", or "plus_plus".
-        The given sparse matrix must have rank 2 and must be CSR format.
-        The given sparse vector must have rank 1 and must be sparse.
-        The mask (if provided) must be CSR format.
-        This operation also accepts an optional region that specifies element-wise postprocessing to be done on the result of the matrix-vector multiplication.
-        The region must use `graphblas.yield` to indicate the result of the element-wise postprocessing.
-
-        No Mask Example:
-        ```%answer = graphblas.matrix_vector_multiply %mat, %vec { semiring = "plus_plus" } : (tensor<?x?xi64, #CSR64>, tensor<?xi64, #SparseVec64>) to tensor<?x?xi64, #CSR64>```
-        
-        Mask Example:
-        ```%answer = graphblas.matrix_vector_multiply %mat, %vec, %mask { semiring = "plus_plus" } : (tensor<?x?xi64, #CSR64>, tensor<?xi64, #SparseVec64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xi64, #CSR64>```
-
-        Body Example:
-        ```
-        %answer = graphblas.matrix_vector_multiply %mat, %vec { semiring = "plus_times" } : (tensor<?x?xf64, #CSR64>, tensor<?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
-            ^bb0(%value: f64):
-                %result = std.mulf %value, %value: f64
-                graphblas.yield %result : f64
-        }
-        ```
-
-    }];
-
-    let arguments = (ins AnyTensor:$mat, AnyTensor:$vec, Optional<AnyTensor>:$mask, StrAttr:$semiring);
-    let results = (outs AnyTensor:$output);
-    let regions = (region AnyRegion:$body);
-    
-    let assemblyFormat = [{
-           $mat `,` $vec (`,` $mask^)? attr-dict `:` `(` type($mat) `,` type($vec)  (`,` type($mask)^)? `)` `to` type($output) ($body^)?
-    }];
-}
-
 def GraphBLAS_VectorAccumulateOp : GraphBLAS_Op<"vector_accumulate", []> {
     let summary = "vector accumulation operation";
     let description = [{
@@ -364,28 +331,6 @@ def GraphBLAS_VectorAccumulateOp : GraphBLAS_Op<"vector_accumulate", []> {
     
     let assemblyFormat = [{
            $a `,` $b attr-dict `:` `(` type($a) `,` type($b) `)`
-    }];
-}
-
-def GraphBLAS_VectorDotProductOp : GraphBLAS_Op<"vector_dot_product", [NoSideEffect]> {
-    let summary = "vector dot product operation";
-    let description = [{
-        Performs a vector dot product according to the given semiring.
-        The semiring must be one of "plus_times", "plus_pair", or "plus_plus".
-        The given tensors must have rank 1 and be sparse. 
-
-        Example:
-        ```
-        %answer = graphblas.vector_dot_product %vec, %other_vec { semiring = "plus_plus" } : (tensor<?xi64, #SparseVec64>, tensor<?xi64, #SparseVec64>) to i64
-        ```
-
-    }];
-
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$semiring);
-    let results = (outs AnyType:$output);
-    
-    let assemblyFormat = [{
-           $a `,` $b attr-dict `:` `(` type($a) `,` type($b) `)` `to` type($output)
     }];
 }
 
