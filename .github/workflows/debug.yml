@@ -1,0 +1,48 @@
+name: Debug CI Jobs
+
+on:
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'     
+        required: false
+        default: false
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          # - macos-latest
+        pyver:
+          - 3.8
+    runs-on: ${{ matrix.os }}
+    env:
+      ARTIFACT_NAME: built_package_py${{matrix.pyver}}_${{matrix.os}}.tar.bz2
+    defaults:
+      run:
+        shell: bash -l {0}
+    steps:
+      # Enable tmate debugging of manually-triggered workflows if the input option was provided
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled }}
+      - name: Create env
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          activate-environment: mg
+          environment-file: continuous_integration/environment.yml
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled }}
+      - name: Update env
+        run: |
+          conda install -q conda-build
+          pip install -e .
+          conda list
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled }}
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.debug_enabled }}
