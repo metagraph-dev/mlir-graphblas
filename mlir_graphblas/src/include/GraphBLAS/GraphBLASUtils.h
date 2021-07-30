@@ -42,6 +42,8 @@ struct ExtensionBlocks {
     mlir::Block *add = nullptr;
     mlir::Block *multIdentity = nullptr;
     mlir::Block *mult = nullptr;
+    mlir::Block *aggIdentity = nullptr;
+    mlir::Block *agg = nullptr;
 
     ExtensionBlocks() { };
     mlir::LogicalResult extractBlocks(mlir::Operation *op, mlir::RegionRange &regions,

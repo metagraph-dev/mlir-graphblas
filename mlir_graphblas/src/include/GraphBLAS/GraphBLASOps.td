@@ -185,6 +185,32 @@ def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [
     }];
 }
 
+def GraphBLAS_MatrixReduceToScalarGenericOp : GraphBLAS_Op<"matrix_reduce_to_scalar_generic", [NoSideEffect]> {
+    let summary = "matrix reduce to scalar generic operation";
+    let description = [{
+        Reduces a sparse tensor to a scalar according to the given aggregator block.
+        The given sparse tensor must be a matrix, i.e. have rank 2.
+        The given tensor must have a CSR sparsity or a CSC sparsity.
+        The resulting scalar's type will depend on the type of the input tensor.
+
+        Example:
+        ```%answer = graphblas.matrix_reduce_to_scalar_generic %sparse_tensor : tensor<?x?xi64, #CSR64> to i64 {
+            ^bb0(%a : i64, %b : i64):
+              %result = std.addi %a, %b : i64
+              graphblas.yield agg %result : i64
+        }        
+        ```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs AnyType:$output);
+    let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
+    
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($output) $extensions
+    }];
+}
+
 def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
     let summary = "matrix apply operation";
     let description = [{
@@ -284,31 +310,24 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
     }];
 }
 
-def GraphBLAS_MatrixMultiplyReduceToScalarOp : GraphBLAS_Op<"matrix_multiply_reduce_to_scalar", [NoSideEffect]> {
+def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp : GraphBLAS_Op<"matrix_multiply_reduce_to_scalar_generic", [NoSideEffect]> {
     let summary = "matrix multiply followed by reduction to a scalar with an optional structural mask";
     let description = [{
         Performs a matrix multiply followed by a reduction to scalar.
-        The multiplication is done according to the given semiring and optional structural mask.
-        The semiring must be one of "plus_times", "plus_pair", or "plus_plus".
-        The reduction to scalar is done according to the given aggregator.
-        The aggregator must be "sum".
+        Supports same extension blocks as matrix_multiply_generic, and also requires binary aggregation
+        block (aggregation assumes same identity as semiring add).
+
         The given sparse tensors must be a matrix, i.e. have rank 2.
         The first input tensors must be CSR format, while the second input tensor must be CSC format.
         The mask (if provided) must be CSR format.
-
-        No Mask Example:
-        ```%answer = graphblas.matrix_multiply_reduce_to_scalar %argA, %argB { semiring = "plus_plus", aggregator = "sum" } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to f64```
-
-        Mask Example:
-        ```%answer = graphblas.matrix_multiply_reduce_to_scalar %argA, %argB, %mask { semiring = "plus_times", aggregator = "sum" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>, tensor<?x?xf64, #CSR64>) to f64```
-
     }];
 
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask, StrAttr:$semiring, StrAttr:$aggregator);
+    let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask);
     let results = (outs AnyType:$output);
+    let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
 
     let assemblyFormat = [{
-           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output)
+           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) $extensions
     }];
 }
 
@@ -367,13 +386,16 @@ def YIELD_ADD_IDENTITY   : I64EnumAttrCase<"ADD_IDENTITY", 6, "add_identity">;
 def YIELD_ADD            : I64EnumAttrCase<"ADD", 7, "add">;
 def YIELD_MULT_IDENTITY  : I64EnumAttrCase<"MULT_IDENTITY", 8, "mult_identity">;
 def YIELD_MULT           : I64EnumAttrCase<"MULT", 9, "mult">;
+def YIELD_AGG_IDENTITY   : I64EnumAttrCase<"AGG_IDENTITY", 10, "agg_identity">;
+def YIELD_AGG            : I64EnumAttrCase<"AGG", 11, "agg">;
 
 def YieldKindAttr : I64EnumAttr<
     "YieldKind", "",
     [YIELD_TRANSFORM_IN_A, YIELD_TRANSFORM_IN_B, YIELD_TRANSFORM_OUT,
      YIELD_SELECT_IN_A,    YIELD_SELECT_IN_B,    YIELD_SELECT_OUT,
      YIELD_ADD_IDENTITY,   YIELD_ADD,
-     YIELD_MULT_IDENTITY,  YIELD_MULT]
+     YIELD_MULT_IDENTITY,  YIELD_MULT, 
+     YIELD_AGG_IDENTITY,   YIELD_AGG]
     > {
   let cppNamespace = "::mlir::graphblas";
 }

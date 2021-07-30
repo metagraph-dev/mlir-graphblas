@@ -495,6 +495,12 @@ LogicalResult ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions
     case graphblas::YieldKind::MULT:
       this->mult = &block;
       break;
+    case graphblas::YieldKind::AGG_IDENTITY:
+      this->aggIdentity = &block;
+      break;
+    case graphblas::YieldKind::AGG:
+      this->agg = &block;
+      break;
     default:
       return op->emitError("unsupported graphblas extension block type");
     }
