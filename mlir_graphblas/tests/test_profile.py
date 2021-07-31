@@ -53,6 +53,15 @@ func @single_value_slow_mul(%input_val: i32) -> i32 {
     except NotImplementedError as e:
         if not sys.platform.startswith("linux"):
             pytest.skip(f"Profiling not supported on {sys.platform}.")
+    except RuntimeError as e:
+        (err_string,) = e.args
+        if err_string == (
+            "Profiling not permitted since the contents of "
+            "/proc/sys/kernel/perf_event_paranoid must be -1."
+        ):
+            pytest.skip(f"Profiling not permitted.")
+        else:
+            raise e
     compiled_func = getattr(engine, "single_value_slow_mul")
     input_val = 12
 
@@ -92,6 +101,15 @@ func @multiple_value_slow_mul(%input_val: i32) -> (i32, i32) {
     except NotImplementedError as e:
         if not sys.platform.startswith("linux"):
             pytest.skip(f"Profiling not supported on {sys.platform}.")
+    except RuntimeError as e:
+        (err_string,) = e.args
+        if err_string == (
+            "Profiling not permitted since the contents of "
+            "/proc/sys/kernel/perf_event_paranoid must be -1."
+        ):
+            pytest.skip(f"Profiling not permitted.")
+        else:
+            raise e
     compiled_func = getattr(engine, "multiple_value_slow_mul")
     input_val = 12
 

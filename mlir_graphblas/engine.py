@@ -984,6 +984,13 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                 raise NotImplementedError("Profiling only supported on linux.")
             elif shutil.which("perf") is None:
                 raise RuntimeError("Profiling requires perf to be installed.")
+            with open("/proc/sys/kernel/perf_event_paranoid", "r") as f:
+                perf_event_paranoid_setting = int(f.read().strip())
+            if perf_event_paranoid_setting != -1:  # TODO is this too restrictive?
+                raise RuntimeError(
+                    "Profiling not permitted since the contents of "
+                    "/proc/sys/kernel/perf_event_paranoid must be -1."
+                )
 
         if isinstance(mlir_text, str):
             mlir_text = mlir_text.encode()
