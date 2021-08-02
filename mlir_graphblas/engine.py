@@ -541,14 +541,31 @@ class MlirJitEngine:
             backing_mod = llvm.parse_assembly("")
             llvmlite_engine = llvm.create_mcjit_compiler(backing_mod, target_machine)
         self._engine = llvmlite_engine
-        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.default_profile_dir = tempfile.TemporaryDirectory()
+        self.current_profile_dir: Optional[str] = None
         self.c_compiler = distutils.ccompiler.new_compiler()
         self._cli = MlirOptCli(cli_executable, cli_options)
         self.name_to_callable: Dict[str, Callable] = {}
         return
 
-    def profiled_function(self, main_callable: Callable) -> Callable:
+    @property
+    def profile_dir_name(self) -> str:
+        if self.current_profile_dir is not None:
+            # TODO consider making a context manager for setting self.current_profile_dir
+            return self.current_profile_dir
+        return self.default_profile_dir.name
+
+    def profiled_function(
+        self, main_callable: Callable, symbol_to_profile: str
+    ) -> Callable:
         """Decorator to profile a function via Linux's perf tool."""
+
+        # set this at the time that decorated_func is created and
+        # not at the time it is called as the value of
+        # self.profile_dir_name may change.
+        perf_data_file_name = os.path.join(
+            self.profile_dir_name, f"perf-{uuid.uuid4()}.data"
+        )
 
         def mp_func(queue: mp.SimpleQueue, *args):
             # send pid to decorated_func
@@ -576,12 +593,11 @@ class MlirJitEngine:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
             )
-            record_process.stdin.write(
-                f"""
-            perf record -p {execution_process_id}
+            record_command = f"""
+            perf record -p {execution_process_id} --output={perf_data_file_name}
             exit
-            """.encode()
-            )
+            """
+            record_process.stdin.write(record_command.encode())
             record_process.stdin.flush()
 
             # wait for profiling to initialize
@@ -600,14 +616,14 @@ class MlirJitEngine:
                 pass
 
             # gather profiling results
-            report_command = f"perf report --pid={execution_process_id} | cat"
-            report_process = subprocess.Popen(
-                report_command,
+            annotate_command = f"perf annotate --stdio --symbol {symbol_to_profile} -l --input={perf_data_file_name}"
+            annotate_process = subprocess.Popen(
+                annotate_command,
                 shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
             )  # combines stdout and stderr
-            stdout_string, _ = report_process.communicate()
+            stdout_string, _ = annotate_process.communicate()
             stdout_string = stdout_string.decode()
 
             # print results
@@ -645,14 +661,14 @@ class MlirJitEngine:
             assert len(o_file_bytes_list) in (1, 2)
             o_file_bytes = o_file_bytes_list[-1]
             o_file_name = f"mod-{uuid.uuid4()}.o"
-            o_file_name = os.path.join(self.tmp_dir.name, o_file_name)
+            o_file_name = os.path.join(self.profile_dir_name, o_file_name)
             with open(o_file_name, "wb") as f:
                 f.write(o_file_bytes_list[-1])
             files_to_link.append(o_file_name)
             if isinstance(profile, ctypes.CDLL):
                 files_to_link.append(profile._name)
             so_file_name = f"shared-{uuid.uuid4()}.so"
-            so_file_name = os.path.join(self.tmp_dir.name, so_file_name)
+            so_file_name = os.path.join(self.profile_dir_name, so_file_name)
             self.c_compiler.link_shared_object(files_to_link, so_file_name)
             ctypes.cdll.LoadLibrary(so_file_name)
             shared_lib = ctypes.CDLL(so_file_name)
@@ -753,7 +769,7 @@ class MlirJitEngine:
                 python_callable, mlir_function, encoders, c_callable, decoder
             )
             if shared_lib is not None:
-                bound_func = self.profiled_function(bound_func)
+                bound_func = self.profiled_function(bound_func, name)
             name_to_callable[name] = bound_func
 
         return name_to_callable
@@ -791,7 +807,7 @@ class MlirJitEngine:
 
     def _generate_mlir_string_for_multivalued_functions(
         self, mlir_functions: Iterable[mlir.astnodes.Function], passes: List[str]
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, List[str], List[str]]:
 
         result_type_name_to_lowered_result_type_name = self._lower_types_to_strings(
             sum((mlir_function.result_types for mlir_function in mlir_functions), []),
@@ -800,9 +816,8 @@ class MlirJitEngine:
 
         # Generate conglomerate MLIR string for all wrappers
         mlir_wrapper_texts: List[str] = []
-        wrapper_names = [
-            mlir_function.name.value + "wrapper" for mlir_function in mlir_functions
-        ]
+        names = [mlir_function.name.value for mlir_function in mlir_functions]
+        wrapper_names = [name + "wrapper" for name in names]
         for mlir_function, wrapper_name in zip(mlir_functions, wrapper_names):
             lowered_result_type_names = [
                 result_type_name_to_lowered_result_type_name[result_type.dump()]
@@ -860,7 +875,7 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
             mlir_wrapper_texts.append(mlir_wrapper_text)
 
         mlir_text = "\n".join(mlir_wrapper_texts)
-        return mlir_text, wrapper_names
+        return mlir_text, names, wrapper_names
 
     def _generate_multivalued_functions(
         self,
@@ -870,9 +885,11 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
     ) -> Dict[str, Callable]:
         name_to_callable: Dict[str, Callable] = {}
 
-        mlir_text, wrapper_names = self._generate_mlir_string_for_multivalued_functions(
-            mlir_functions, passes
-        )
+        (
+            mlir_text,
+            names,
+            wrapper_names,
+        ) = self._generate_mlir_string_for_multivalued_functions(mlir_functions, passes)
 
         # this is guaranteed to not raise exceptions since the user-provided
         # code was already added (failures would occur then)
@@ -882,7 +899,9 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
         assert bool(wrapper_shared_lib) == bool(internal_shared_lib)
 
         # Generate callables
-        for mlir_function, wrapper_name in zip(mlir_functions, wrapper_names):
+        for mlir_function, name, wrapper_name in zip(
+            mlir_functions, names, wrapper_names
+        ):
             ctypes_input_types, input_encoders = mlir_function_input_encoders(
                 mlir_function
             )
@@ -954,7 +973,7 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                 decoders,
             )
             if wrapper_shared_lib is not None:
-                bound_func = self.profiled_function(bound_func)
+                bound_func = self.profiled_function(bound_func, name)
             name_to_callable[mlir_function.name.value] = bound_func
 
         return name_to_callable
@@ -975,10 +994,18 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
         mlir_text: Union[str, bytes],
         passes: Tuple[str],
         *,
-        debug=False,
-        profile=False,
+        debug: bool = False,
+        profile: bool = False,
+        profile_result_directory: Optional[str] = None,
     ) -> Union[List[str], DebugResult]:
         """List of new function names added."""
+        if profile_result_directory is not None:
+            if not profile:
+                raise ValueError(
+                    "Cannot specify a profile result directory without also enabling profiling."
+                )
+            self.current_profile_dir = profile_result_directory
+
         if profile:
             if not sys.platform.startswith("linux"):
                 raise NotImplementedError("Profiling only supported on linux.")
@@ -1053,6 +1080,9 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
             setattr(python_callable, "jit_engine", self)
 
             self.name_to_callable[name] = python_callable
+
+        if profile_result_directory is not None:
+            self.current_profile_dir = None
 
         return function_names
 
