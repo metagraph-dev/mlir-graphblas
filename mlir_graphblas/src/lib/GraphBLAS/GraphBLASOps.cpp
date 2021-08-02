@@ -551,20 +551,44 @@ static LogicalResult verify(VectorAccumulateOp op) {
   return success();
 }
 
-static LogicalResult verify(VectorEqualsOp op) {
+static LogicalResult verify(EqualOp op) {
   Type aType = op.a().getType();
   Type bType = op.b().getType();
-  
-  llvm::Optional<std::string> aCompressionErrorMessage = checkCompressedVector(aType, 0);
-  if (aCompressionErrorMessage)
-    return op.emitError(aCompressionErrorMessage.getValue());
-  
+
   if (failed(verifyCompatibleShape(aType, bType)))
     return op.emitError("Input vectors must have compatible shapes.");
 
   if (aType != bType)
-    return op.emitError("Input vectors must have the same type.");
-    
+    return op.emitError("Arguments must have the same type.");
+
+  int64_t aRank = getRank(aType);
+  int64_t bRank = getRank(bType);
+
+  if (aRank < 1 || aRank > 2)
+    return op.emitError("First argument must be a sparse vector or sparse matrix.");
+  if (bRank < 1 || bRank > 2)
+    return op.emitError("Second argument must be a sparse vector or sparse matrix.");
+
+  if (aRank != bRank)
+    return op.emitError("Arguments must have same rank.");
+
+  llvm::Optional<std::string> errMsg;
+  if (aRank == 1) {
+    errMsg = checkCompressedVector(aType, 0);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+    errMsg = checkCompressedVector(bType, 1);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+  } else if (aRank == 2) {
+    errMsg = checkCompressedMatrix(aType, 0, EITHER);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+    errMsg = checkCompressedMatrix(bType, 1, EITHER);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+  }
+
   return success();
 }
 

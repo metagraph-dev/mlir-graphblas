@@ -334,15 +334,16 @@ def GraphBLAS_VectorAccumulateOp : GraphBLAS_Op<"vector_accumulate", []> {
     }];
 }
 
-def GraphBLAS_VectorEqualsOp : GraphBLAS_Op<"vector_equals", [NoSideEffect]> {
-    let summary = "vector equality checking operation";
+def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
+    let summary = "Equality checking operation for vectors and matrices";
     let description = [{
-        Performs a vector equality check.
-        The given tensors must have rank 1 and be sparse. 
+        Performs an equality check.
+        The given tensors must be sparse.
+        Checks equality of rank and size of tensors, as well as values and structure.
 
         Example:
         ```
-        %answer = graphblas.vector_equals %vec, %other_vec : (tensor<?xi64, #SparseVec64>, tensor<?xi64, #SparseVec64>)
+        %answer = graphblas.equal %vec, %other_vec : (tensor<?xi64, #SparseVec64>, tensor<?xi64, #SparseVec64>)
         ```
 
     }];
