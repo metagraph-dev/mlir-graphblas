@@ -70,11 +70,11 @@ module  {
     func private @cast_csx_to_csr(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSR64>
     func private @cast_csx_to_csc(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSC64>
     
-    func private @ptr8_to_tensor(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSX64>
-    func private @tensor_to_ptr8(tensor<?x?xf64, #CSX64>) -> !llvm.ptr<i8>
+    func private @ptr8_to_matrix(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSX64>
+    func private @matrix_to_ptr8(tensor<?x?xf64, #CSX64>) -> !llvm.ptr<i8>
     
-    func private @delSparseTensor(tensor<?x?xf64, #CSX64>) -> ()
-    func private @dup_tensor(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSX64>
+    func private @delSparseMatrix(tensor<?x?xf64, #CSX64>) -> ()
+    func private @dup_matrix(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSX64>
 
     {{ body }}
 

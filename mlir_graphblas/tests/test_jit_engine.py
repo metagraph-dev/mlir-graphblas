@@ -521,7 +521,7 @@ def test_jit_engine_sequence_of_sparse_tensors_input(engine):
   indexBitWidth = 64
 }>
 
-func private @ptr8_to_tensor(!llvm.ptr<i8>) -> tensor<2x3xf64, #sparseTensor>
+func private @ptr8_to_matrix(!llvm.ptr<i8>) -> tensor<2x3xf64, #sparseTensor>
 
 func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_length: index) -> f64 {
   // Take an array of sparse 2x3 matrices
@@ -543,7 +543,7 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
     // dereference %sparse_tensor_ptr_ptr to get an !llvm.ptr<i8>
     %sparse_tensor_ptr = llvm.load %sparse_tensor_ptr_ptr : !llvm.ptr<!llvm.ptr<i8>>
     
-    %sparse_tensor = call @ptr8_to_tensor(%sparse_tensor_ptr) : (!llvm.ptr<i8>) -> tensor<2x3xf64, #sparseTensor>
+    %sparse_tensor = call @ptr8_to_matrix(%sparse_tensor_ptr) : (!llvm.ptr<i8>) -> tensor<2x3xf64, #sparseTensor>
     
     %reduction = linalg.generic #trait_sum_reduction
         ins(%sparse_tensor: tensor<2x3xf64, #sparseTensor>)

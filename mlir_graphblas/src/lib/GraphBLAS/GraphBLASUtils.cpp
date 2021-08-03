@@ -92,6 +92,23 @@ bool typeIsCSC(Type inputType) {
   return true;
 }
 
+// make Compressed Vector type
+RankedTensorType getCompressedVectorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
+{
+    SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 1> dlt;
+    dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
+    unsigned ptr = 64;
+    unsigned ind = 64;
+    AffineMap map = {};
+
+    RankedTensorType rtt = RankedTensorType::get(
+        shape,
+        valueType,
+        sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
+
+    return rtt;
+}
+
 // make CSX tensor type
 RankedTensorType getCSXTensorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
 {
@@ -102,12 +119,12 @@ RankedTensorType getCSXTensorType(MLIRContext *context, ArrayRef<int64_t> shape,
     unsigned ind = 64;
     AffineMap map = {};
     
-    RankedTensorType csrTensor = RankedTensorType::get(
+    RankedTensorType rtt = RankedTensorType::get(
         shape,
         valueType,
         sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
     
-    return csrTensor;
+    return rtt;
 }
 
 // make CSR tensor type
@@ -120,12 +137,12 @@ RankedTensorType getCSRTensorType(MLIRContext *context, ArrayRef<int64_t> shape,
     unsigned ind = 64;
     AffineMap map = AffineMap::getMultiDimIdentityMap(2, context);
 
-    RankedTensorType csrTensor = RankedTensorType::get(
+    RankedTensorType rtt = RankedTensorType::get(
         shape,
         valueType,
         sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
 
-    return csrTensor;
+    return rtt;
 }
 
 // make CSC tensor type
@@ -138,12 +155,12 @@ RankedTensorType getCSCTensorType(MLIRContext *context, ArrayRef<int64_t> shape,
     unsigned ind = 64;
     AffineMap map = AffineMap::getPermutationMap(ArrayRef<unsigned>{1, 0}, context);
 
-    RankedTensorType cscTensor = RankedTensorType::get(
+    RankedTensorType rtt = RankedTensorType::get(
         shape,
         valueType,
         sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
 
-    return cscTensor;
+    return rtt;
 }
 
 /// Returns function reference (first hit also inserts into module).
@@ -242,30 +259,66 @@ Value convertToExternalCSC(OpBuilder &builder, ModuleOp &mod, Location loc, Valu
 }
 
 void callDelSparseTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
-    Value csxTensor = convertToExternalCSX(builder, mod, loc, tensor);
-    Type csxTensorType = csxTensor.getType();
+  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
 
-    FlatSymbolRefAttr func = getFunc(mod, loc, "delSparseTensor", ArrayRef<Type>({}), csxTensorType);
-    builder.create<mlir::CallOp>(loc, func, TypeRange(), csxTensor);
-    return;
+  std::string funcName;
+  if (rank == 2)
+  {
+    tensor = convertToExternalCSX(builder, mod, loc, tensor);
+    funcName = "delSparseMatrix";
+  }
+  else
+  {
+    funcName = "delSparseVector";
+  }
+  Type tensorType = tensor.getType();
+
+  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, ArrayRef<Type>({}), tensorType);
+  builder.create<mlir::CallOp>(loc, func, TypeRange(), tensor);
+  return;
 }
 
 mlir::Value callEmptyLike(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
-    Value csxTensor = convertToExternalCSX(builder, mod, loc, tensor);
-    Type csxTensorType = csxTensor.getType();
+  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
 
-    FlatSymbolRefAttr func = getFunc(mod, loc, "empty_like", csxTensorType, csxTensorType);
-    mlir::CallOp callOpResult = builder.create<mlir::CallOp>(loc, func, csxTensorType, csxTensor);
-    Value result = callOpResult->getResult(0);
-    return result;
+  std::string funcName;
+  if (rank == 2)
+  {
+    tensor = convertToExternalCSX(builder, mod, loc, tensor);
+    funcName = "matrix_empty_like";
+  }
+  else
+  {
+    funcName = "vector_empty_like";
+  }
+  Type tensorType = tensor.getType();
+
+  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, tensorType, tensorType);
+  mlir::CallOp callOpResult = builder.create<mlir::CallOp>(loc, func, tensorType, tensor);
+  Value result = callOpResult->getResult(0);
+  return result;
 }
 
 mlir::Value callDupTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
-  Value csxTensor = convertToExternalCSX(builder, mod, loc, tensor);
-  Type csxTensorType = csxTensor.getType();
+  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
 
-  FlatSymbolRefAttr func = getFunc(mod, loc, "dup_tensor", csxTensorType, csxTensorType);
-    mlir::CallOp callOpResult = builder.create<mlir::CallOp>(loc, func, csxTensorType, csxTensor);
+  std::string funcName;
+  if (rank == 2)
+  {
+    tensor = convertToExternalCSX(builder, mod, loc, tensor);
+    funcName = "dup_matrix";
+  }
+  else
+  {
+    funcName = "dup_vector";
+  }
+  Type tensorType = tensor.getType();
+
+  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, tensorType, tensorType);
+    mlir::CallOp callOpResult = builder.create<mlir::CallOp>(loc, func, tensorType, tensor);
     Value result = callOpResult->getResult(0);
     return result;
   
@@ -274,12 +327,24 @@ mlir::Value callDupTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value
 mlir::CallOp callResizeDim(OpBuilder &builder, ModuleOp &mod, Location loc,
                            Value tensor, Value d, Value size)
 {
-  Value csxTensor = convertToExternalCSX(builder, mod, loc, tensor);
-  Type csxTensorType = csxTensor.getType();
+  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
+
+  std::string funcName;
+  if (rank == 2)
+  {
+    tensor = convertToExternalCSX(builder, mod, loc, tensor);
+    funcName = "matrix_resize_dim";
+  }
+  else
+  {
+    funcName = "vector_resize_dim";
+  }
+  Type tensorType = tensor.getType();
 
   Type indexType = builder.getIndexType();
-  FlatSymbolRefAttr func = getFunc(mod, loc, "resize_dim", TypeRange(), {csxTensorType, indexType, indexType});
-  mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({csxTensor, d, size}));
+  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, TypeRange(), {tensorType, indexType, indexType});
+  mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, d, size}));
 
   return result;
 }
@@ -287,40 +352,76 @@ mlir::CallOp callResizeDim(OpBuilder &builder, ModuleOp &mod, Location loc,
 mlir::CallOp callResizePointers(OpBuilder &builder, ModuleOp &mod, Location loc,
                                 Value tensor, Value d, Value size)
 {
-    Value csxTensor = convertToExternalCSX(builder, mod, loc, tensor);
-    Type tensorType = csxTensor.getType();
+  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
 
-    Type indexType = builder.getIndexType();
-    FlatSymbolRefAttr func = getFunc(mod, loc, "resize_pointers", TypeRange(), {tensorType, indexType, indexType});
-    mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({csxTensor, d, size}));
+  std::string funcName;
+  if (rank == 2)
+  {
+    tensor = convertToExternalCSX(builder, mod, loc, tensor);
+    funcName = "matrix_resize_pointers";
+  }
+  else
+  {
+    funcName = "vector_resize_pointers";
+  }
+  Type tensorType = tensor.getType();
 
-    return result;
+  Type indexType = builder.getIndexType();
+  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, TypeRange(), {tensorType, indexType, indexType});
+  mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, d, size}));
+
+  return result;
 }
 
 mlir::CallOp callResizeIndex(OpBuilder &builder, ModuleOp &mod, Location loc,
                              Value tensor, Value d, Value size)
 {
-    Value csxTensor = convertToExternalCSX(builder, mod, loc, tensor);
-    Type tensorType = csxTensor.getType();
+  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
 
-    Type indexType = builder.getIndexType();
-    FlatSymbolRefAttr func = getFunc(mod, loc, "resize_index", TypeRange(), {tensorType, indexType, indexType});
-    mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({csxTensor, d, size}));
+  std::string funcName;
+  if (rank == 2)
+  {
+    tensor = convertToExternalCSX(builder, mod, loc, tensor);
+    funcName = "matrix_resize_index";
+  }
+  else
+  {
+    funcName = "vector_resize_index";
+  }
+  Type tensorType = tensor.getType();
 
-    return result;
+  Type indexType = builder.getIndexType();
+  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, TypeRange(), {tensorType, indexType, indexType});
+  mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, d, size}));
+
+  return result;
 }
 
 mlir::CallOp callResizeValues(OpBuilder &builder, ModuleOp &mod, Location loc,
                               Value tensor, Value size)
 {
-    Value csxTensor = convertToExternalCSX(builder, mod, loc, tensor);
-    Type tensorType = csxTensor.getType();
+  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
 
-    Type indexType = builder.getIndexType();
-    FlatSymbolRefAttr func = getFunc(mod, loc, "resize_values", TypeRange(), {tensorType, indexType});
-    mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({csxTensor, size}));
+  std::string funcName;
+  if (rank == 2)
+  {
+    tensor = convertToExternalCSX(builder, mod, loc, tensor);
+    funcName = "matrix_resize_values";
+  }
+  else
+  {
+    funcName = "vector_resize_values";
+  }
+  Type tensorType = tensor.getType();
 
-    return result;
+  Type indexType = builder.getIndexType();
+  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, TypeRange(), {tensorType, indexType});
+  mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, size}));
+
+  return result;
 }
 
 void cleanupIntermediateTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {

@@ -16,7 +16,7 @@
 
 module {
     func @matrix_multiply_wrapper(%argA: tensor<2x3xi64>, %argB: tensor<3x2xi64, #CSC64>) -> tensor<2x2xi64, #CSR64> {
-        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_times" } : (tensor<2x3xi64>, tensor<3x2xi64, #CSC64>) to tensor<2x2xi64, #CSR64> // expected-error {{Operand #0 must be a sparse tensor.}}
+        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_times" } : (tensor<2x3xi64>, tensor<3x2xi64, #CSC64>) to tensor<2x2xi64, #CSR64> // expected-error {{First argument must be a sparse vector or sparse matrix}}
         return %answer : tensor<2x2xi64, #CSR64>
     }
 }
@@ -39,7 +39,7 @@ module {
 
 module {
     func @matrix_multiply_wrapper(%argA: tensor<2x3xi64, #CSR64>, %argB: tensor<3x2xi64>) -> tensor<2x2xi64, #CSR64> {
-        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_pair" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64>) to tensor<2x2xi64, #CSR64> // expected-error {{Operand #1 must be a sparse tensor.}}
+        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_pair" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64>) to tensor<2x2xi64, #CSR64> // expected-error {{Second argument must be a sparse vector or sparse matrix}}
         return %answer : tensor<2x2xi64, #CSR64>
     }
 }
