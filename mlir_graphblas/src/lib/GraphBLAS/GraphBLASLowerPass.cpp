@@ -564,7 +564,7 @@ public:
 
     // insert agg identity
     graphblas::YieldOp aggIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.aggIdentity->getTerminator());
-    rewriter.mergeBlocks(extBlocks.aggIdentity, rewriter.getInsertionBlock(), {});
+    rewriter.mergeBlocks(extBlocks.aggIdentity, rewriter.getBlock(), {});
     Value c0Accumulator = aggIdentityYield.values().front();
     rewriter.eraseOp(aggIdentityYield);
 
@@ -596,7 +596,7 @@ public:
     rewriter.setInsertionPointToStart(&reducer.getRegion().front());
 
     graphblas::YieldOp aggYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.agg->getTerminator());
-    rewriter.mergeBlocks(extBlocks.agg, &reducer.getRegion().getBlocks().front(), {lhs, rhs});
+    rewriter.mergeBlocks(extBlocks.agg, rewriter.getBlock(), {lhs, rhs});
     Value result = aggYield.values().front();
     rewriter.eraseOp(aggYield);
 
@@ -980,7 +980,7 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
 
   // insert add identity block
   graphblas::YieldOp addIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.addIdentity->getTerminator());
-  rewriter.mergeBlocks(extBlocks.addIdentity, &colLoop3f.getLoopBody().getBlocks().front(), {});
+  rewriter.mergeBlocks(extBlocks.addIdentity, rewriter.getBlock(), {});
   Value addIdentity = addIdentityYield.values().front();
   rewriter.eraseOp(addIdentityYield);
 
@@ -1043,7 +1043,7 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
     graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.transformOut->getTerminator());
     Value transformResult = yield.values().front();
 
-    rewriter.mergeBlocks(extBlocks.transformOut, ifBlock_newOffset.thenBlock(), {total});
+    rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(), {total});
 
     rewriter.create<memref::StoreOp>(loc, transformResult, outputValues, cjPos);
     rewriter.eraseOp(yield);
@@ -1674,7 +1674,7 @@ public:
 
     // insert add identity block
     graphblas::YieldOp addIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.addIdentity->getTerminator());
-    rewriter.mergeBlocks(extBlocks.addIdentity, &colLoop2.getLoopBody().getBlocks().front(), {});
+    rewriter.mergeBlocks(extBlocks.addIdentity, rewriter.getBlock(), {});
     Value addIdentity = addIdentityYield.values().front();
     rewriter.eraseOp(addIdentityYield);
 
@@ -1766,7 +1766,7 @@ public:
     Value aggResult = yield.values().front();
 
     // we can safely merge this agg block now, since the previous agg instance was cloned above
-    rewriter.mergeBlocks(extBlocks.agg, rewriter.getInsertionBlock(), {lhs, rhs});
+    rewriter.mergeBlocks(extBlocks.agg, rewriter.getBlock(), {lhs, rhs});
     rewriter.create<scf::ReduceReturnOp>(loc, aggResult);
     rewriter.eraseOp(yield);
 
