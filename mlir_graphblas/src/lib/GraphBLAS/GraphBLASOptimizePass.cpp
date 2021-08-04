@@ -134,17 +134,6 @@ public:
       }
 
       RegionRange reduceExtensions = op.extensions();
-
-      // ExtensionBlocks aggBlocks;
-      // std::set<graphblas::YieldKind> aggRequired = {
-      //     graphblas::YieldKind::AGG_IDENTITY,
-      //     graphblas::YieldKind::AGG};
-      // LogicalResult result = multiplyBlocks.extractBlocks(op, aggExtensions, aggRequired, {});
-      // if (result.failed())
-      // {
-      //   return result;
-      // }
-
       Region &aggRegion0 = newMultOp.getRegion(newRegions - 2);
       aggRegion0.takeBody(*reduceExtensions[0]);
       Region &aggRegion1 = newMultOp.getRegion(newRegions - 1);
