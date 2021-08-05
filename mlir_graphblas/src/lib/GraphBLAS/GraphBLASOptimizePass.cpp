@@ -86,30 +86,64 @@ public:
   };
 };
 
-class FuseMatrixMultiplyReduceRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarOp>
+class FuseMatrixMultiplyReduceRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp>
 {
 public:
-  using OpRewritePattern<graphblas::MatrixReduceToScalarOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const
+  using OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op, PatternRewriter &rewriter) const
   {
     Value input = op.input();
-    graphblas::MatrixMultiplyOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyOp>();
+    graphblas::MatrixMultiplyGenericOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyGenericOp>();
     if (predecessor != nullptr && predecessor->hasOneUse()) {
       Location loc = op->getLoc();
 
-      // Build new MatrixMultiplyReduce op with the operands and arguments of the multiply,
+      if (getRank(predecessor.a()) < 2 || getRank(predecessor.b()) < 2)
+        return failure();
+
+      // Build new MatrixMultiplyReduceToScalarGeneric op with the operands and regions of the multiply,
       // then add in the aggregator from the reduce
       ValueRange operands = predecessor.getOperands();
       NamedAttrList attributes = predecessor->getAttrs();
+      RegionRange multiplyExtensions = predecessor.extensions();
+      unsigned newRegions = multiplyExtensions.size();
 
-      StringAttr aggregator = rewriter.getStringAttr(op.aggregator());
-      attributes.push_back(rewriter.getNamedAttr("aggregator", aggregator));
+      ExtensionBlocks multiplyBlocks;
+      std::set<graphblas::YieldKind> required = {
+          graphblas::YieldKind::ADD_IDENTITY,
+          graphblas::YieldKind::ADD,
+          graphblas::YieldKind::MULT};
+      std::set<graphblas::YieldKind> optional = {graphblas::YieldKind::TRANSFORM_OUT};
+      LogicalResult result = multiplyBlocks.extractBlocks(op, multiplyExtensions, required, optional);
+      if (result.failed())
+      {
+        return result;
+      }
 
-      Value result = rewriter.create<graphblas::MatrixMultiplyReduceToScalarOp>(loc, 
-        op->getResultTypes(), operands, attributes.getAttrs());
+      if (multiplyBlocks.transformOut)
+      {
+        return failure(); // FIXME: cannot fuse with existing transform for now
+      }
+      else
+      {
+        newRegions += 2; // adding new agg and agg identity block
+      }
 
-      rewriter.replaceOp(op, result);
-      
+      graphblas::MatrixMultiplyReduceToScalarGenericOp newMultOp = rewriter.create<graphblas::MatrixMultiplyReduceToScalarGenericOp>(loc,
+          op->getResultTypes(), operands, attributes.getAttrs(), newRegions);
+
+      for (unsigned i = 0; i < newRegions - 2; i++)
+      {
+        newMultOp.getRegion(i).takeBody(*multiplyExtensions[i]);
+      }
+
+      RegionRange reduceExtensions = op.extensions();
+      Region &aggRegion0 = newMultOp.getRegion(newRegions - 2);
+      aggRegion0.takeBody(*reduceExtensions[0]);
+      Region &aggRegion1 = newMultOp.getRegion(newRegions - 1);
+      aggRegion1.takeBody(*reduceExtensions[1]);
+
+      rewriter.replaceOp(op, newMultOp.getResult());
+      rewriter.eraseOp(predecessor);
       return success();
     }
     return failure();
@@ -129,7 +163,7 @@ public:
     {
       Location loc = op->getLoc();
 
-      // Build new MatrixMultiplyApply op with the operands and arguments of the multiply,
+      // Build new MatrixMultiplyApply op with the operands and regions of the multiply,
       // then add in the aggregator from the Apply
       ValueRange operands = predecessor.getOperands();
       NamedAttrList attributes = predecessor->getAttrs();
@@ -159,7 +193,6 @@ public:
       RegionRange applyExtensions = op.extensions();
 
       RankedTensorType tensorType = predecessor.a().getType().dyn_cast<RankedTensorType>();
-      Type valueType = tensorType.getElementType();
 
       graphblas::MatrixMultiplyGenericOp newMultOp = rewriter.create<graphblas::MatrixMultiplyGenericOp>(loc,
                                 op->getResultTypes(), operands, attributes.getAttrs(),

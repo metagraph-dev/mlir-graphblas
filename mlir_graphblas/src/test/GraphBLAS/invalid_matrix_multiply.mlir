@@ -200,7 +200,7 @@ module {
 
 module {
     func @matrix_multiply_wrapper(%argA: tensor<2x3xi64, #CSR64>, %argB: tensor<3x2xi64, #CSC64>, %mask: tensor<2x999xi64, #CSR64>) -> tensor<2x2xi64, #CSR64> {
-        %answer = graphblas.matrix_multiply %argA, %argB, %mask{ semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>, tensor<2x999xi64, #CSR64>) to tensor<2x2xi64, #CSR64> // expected-error {{Mask shape must match output shape.}}
+        %answer = graphblas.matrix_multiply %argA, %argB, %mask{ semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>, tensor<2x999xi64, #CSR64>) to tensor<2x2xi64, #CSR64> // expected-error {{Mask shape must match shape of matrix multiply result.}}
         return %answer : tensor<2x2xi64, #CSR64>
     }
 }
@@ -223,7 +223,7 @@ module {
 
 module {
     func @matrix_multiply_wrapper(%argA: tensor<2x3xi64, #CSR64>, %argB: tensor<3x2xi64, #CSC64>, %mask: tensor<999x2xi64, #CSR64>) -> tensor<2x2xi64, #CSR64> {
-        %answer = graphblas.matrix_multiply %argA, %argB, %mask{ semiring = "plus_pair" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>, tensor<999x2xi64, #CSR64>) to tensor<2x2xi64, #CSR64> // expected-error {{Mask shape must match output shape.}}
+        %answer = graphblas.matrix_multiply %argA, %argB, %mask{ semiring = "plus_pair" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>, tensor<999x2xi64, #CSR64>) to tensor<2x2xi64, #CSR64> // expected-error {{Mask shape must match shape of matrix multiply result.}}
         return %answer : tensor<2x2xi64, #CSR64>
     }
 }
@@ -246,7 +246,7 @@ module {
 
 module {
     func @matrix_multiply_wrapper(%argA: tensor<2x3xi64, #CSR64>, %argB: tensor<3x2xi64, #CSC64>, %mask: tensor<999x999xi64, #CSR64>) -> tensor<2x2xi64, #CSR64> {
-        %answer = graphblas.matrix_multiply %argA, %argB, %mask{ semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>, tensor<999x999xi64, #CSR64>) to tensor<2x2xi64, #CSR64> // expected-error {{Mask shape must match output shape.}}
+        %answer = graphblas.matrix_multiply %argA, %argB, %mask{ semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>, tensor<999x999xi64, #CSR64>) to tensor<2x2xi64, #CSR64> // expected-error {{Mask shape must match shape of matrix multiply result.}}
         return %answer : tensor<2x2xi64, #CSR64>
     }
 }
