@@ -21,11 +21,21 @@ CSC64_LINES = (
     "}>",
 )
 
+CSX64_LINES = (
+    "#sparse_tensor.encoding<{ ",
+    '    dimLevelType = [ "dense", "compressed" ], ',
+    "    pointerBitWidth = 64, ",
+    "    indexBitWidth = 64 ",
+    "}>",
+)
+
 CSR64_PRETTY_TEXT = "\n".join(CSR64_LINES)
 CSC64_PRETTY_TEXT = "\n".join(CSC64_LINES)
+CSX64_PRETTY_TEXT = "\n".join(CSX64_LINES)
 
 CSR64_EXPANDED_TEXT = " ".join(line.strip() for line in CSR64_LINES)
 CSC64_EXPANDED_TEXT = " ".join(line.strip() for line in CSC64_LINES)
+CSX64_EXPANDED_TEXT = " ".join(line.strip() for line in CSX64_LINES)
 
 CLI = None
 
@@ -44,6 +54,9 @@ def tersify_mlir(input_string: str) -> str:
     if CSC64_EXPANDED_TEXT in terse_string:
         terse_string = terse_string.replace(CSC64_EXPANDED_TEXT, "#CSC64")
         terse_string = f"#CSC64 = {CSC64_PRETTY_TEXT}\n\n" + terse_string
+    if CSX64_EXPANDED_TEXT in terse_string:
+        terse_string = terse_string.replace(CSX64_EXPANDED_TEXT, "#CSX64")
+        terse_string = f"#CSX64 = {CSX64_PRETTY_TEXT}\n\n" + terse_string
     return terse_string
 
 

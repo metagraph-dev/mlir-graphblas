@@ -55,11 +55,13 @@ static llvm::Optional<std::string> checkCompressedMatrix(
     return inputName+" must have CSR or CSC compression, i.e. must have "
       "dimLevelType = [ \"dense\", \"compressed\" ] in the sparse encoding.";
 
+  // Even if (compressionType == EITHER), we still need to check that the
+  // dim ordering is present, i.e. not CSX
+  AffineMap dimOrdering = sparseEncoding.getDimOrdering();
+  unsigned dimOrdering0 = dimOrdering.getDimPosition(0); 
+  unsigned dimOrdering1 = dimOrdering.getDimPosition(1);
+  
   if (compressionType != EITHER) {
-    
-    AffineMap dimOrdering = sparseEncoding.getDimOrdering();
-    unsigned dimOrdering0 = dimOrdering.getDimPosition(0); 
-    unsigned dimOrdering1 = dimOrdering.getDimPosition(1);
 
     assert(compressionType == CSR || compressionType == CSC);
     
@@ -635,6 +637,66 @@ static LogicalResult verify(ConvertLayoutOp op) {
 
   if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
     return op.emitError("Input and output shapes are expected to be the same.");
+
+  if (inputSparseEncoding != resultSparseEncoding) {
+    AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
+    AffineMap resultDimOrdering = resultSparseEncoding.getDimOrdering();
+    unsigned inputDimOrdering0 = inputDimOrdering.getDimPosition(0);
+    unsigned inputDimOrdering1 = inputDimOrdering.getDimPosition(1);
+    unsigned resultDimOrdering0 = resultDimOrdering.getDimPosition(0);
+    unsigned resultDimOrdering1 = resultDimOrdering.getDimPosition(1);
+    if (inputDimOrdering0 != resultDimOrdering1 || inputDimOrdering1 != resultDimOrdering0)
+      return op.emitError("Sparse encoding dimension orderings of input and result tensors "
+        "expected to be swapped or encodings must be identical.");
+
+    // TODO should we be more lenient like the sparse tensor dialect is via isMatchingWidth?
+    // see llvm-project/mlir/lib/Dialect/SparseTensor/IR/SparseTensorDialect.cpp
+    unsigned inputPointerBitWidth = inputSparseEncoding.getPointerBitWidth();
+    unsigned resultPointerBitWidth = resultSparseEncoding.getPointerBitWidth();
+    if (inputPointerBitWidth != resultPointerBitWidth)
+      return op.emitError("Sparse encoding pointer bit widths of input and result tensors do not match.");
+
+    unsigned inputIndexBitWidth = inputSparseEncoding.getIndexBitWidth();
+    unsigned resultIndexBitWidth = resultSparseEncoding.getIndexBitWidth();
+    if (inputIndexBitWidth != resultIndexBitWidth)
+      return op.emitError("Sparse encoding index bit widths of input and result tensors do not match.");
+    // dimLevelType values guaranteed to be the same since we already checked earlier
+  }
+
+  return success();
+}
+
+static LogicalResult verify(TransposeOp op) {
+  Type inputType = op.input().getType();
+  Type resultType = op.getResult().getType();
+
+  llvm::Optional<std::string> inputCompressionErrorMessage = checkCompressedMatrix(inputType, 0, EITHER);
+  if (inputCompressionErrorMessage)
+    return op.emitError(inputCompressionErrorMessage.getValue());
+
+  llvm::Optional<std::string> resultCompressionErrorMessage = checkCompressedMatrix(resultType, -1, EITHER);
+  if (resultCompressionErrorMessage)
+    return op.emitError(resultCompressionErrorMessage.getValue());
+
+  // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with shapes using "?"
+
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
+
+  if (inputTensorType.getElementType() != resultTensorType.getElementType())
+    return op.emitError("Input and output tensors have different element types.");
+
+  ArrayRef<int64_t> inputShape = inputTensorType.getShape();
+  ArrayRef<int64_t> resultShape = resultTensorType.getShape();
+
+  mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
+    mlir::sparse_tensor::getSparseTensorEncoding(inputType);
+
+  mlir::sparse_tensor::SparseTensorEncodingAttr resultSparseEncoding =
+    mlir::sparse_tensor::getSparseTensorEncoding(resultType);
+
+  if (inputShape[0] != resultShape[1] || inputShape[1] != resultShape[0])
+    return op.emitError("Input and output shapes are expected to be swapped.");
 
   if (inputSparseEncoding != resultSparseEncoding) {
     AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();

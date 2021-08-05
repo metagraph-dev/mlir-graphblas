@@ -205,7 +205,9 @@ Value convertToExternalCSX(OpBuilder &builder, ModuleOp &mod, Location loc, Valu
   if (typeIsCSX(inputType))
     return input;
   
-  RankedTensorType csxType = getCSXTensorType(context, {-1, -1}, builder.getF64Type()); 
+  llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
+  Type inputTensorValueType = inputType.getElementType();
+  RankedTensorType csxType = getCSXTensorType(context, inputShape, inputTensorValueType);
   FlatSymbolRefAttr castFuncSymbol;
   if (typeIsCSC(inputType))
     castFuncSymbol = getFunc(mod, loc, "cast_csc_to_csx", csxType, inputType);
@@ -239,7 +241,9 @@ Value convertToExternalCSR(OpBuilder &builder, ModuleOp &mod, Location loc, Valu
   }
   
   // all external calls are currently for unknown size float64 tensors
-  RankedTensorType csrType = getCSRTensorType(context, {-1, -1}, builder.getF64Type()); 
+  llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
+  Type inputTensorValueType = inputType.getElementType();
+  RankedTensorType csrType = getCSRTensorType(context, inputShape, inputTensorValueType); 
   FlatSymbolRefAttr castFuncSymbol = getFunc(mod, loc, "cast_csx_to_csr", csrType, inputType);
   CallOp castCallOp = builder.create<CallOp>(loc,
                                              castFuncSymbol,
@@ -263,7 +267,9 @@ Value convertToExternalCSC(OpBuilder &builder, ModuleOp &mod, Location loc, Valu
     inputType = input.getType().dyn_cast<RankedTensorType>();
   }
   
-  RankedTensorType cscType = getCSCTensorType(context, {-1, -1}, builder.getF64Type()); 
+  llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
+  Type inputTensorValueType = inputType.getElementType();
+  RankedTensorType cscType = getCSCTensorType(context, inputShape, inputTensorValueType); 
   FlatSymbolRefAttr castFuncSymbol = getFunc(mod, loc, "cast_csx_to_csc", cscType, inputType);
   CallOp castCallOp = builder.create<CallOp>(loc,
                                              castFuncSymbol,
