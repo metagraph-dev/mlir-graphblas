@@ -13,6 +13,7 @@
 #include "llvm/ADT/None.h"
 
 #include "GraphBLAS/GraphBLASOpsEnums.cpp.inc"
+#include "GraphBLAS/GraphBLASUtils.h"
 
 using namespace mlir;
 using namespace mlir::graphblas;
@@ -97,17 +98,6 @@ static llvm::Optional<std::string> checkCompressedVector(
       "dimLevelType = [ \"dense\", \"compressed\" ] in the sparse encoding.";
   
   return llvm::None;
-}
-
-static int64_t getRank(Type inputType)
-{
-  mlir::sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
-    mlir::sparse_tensor::getSparseTensorEncoding(inputType);
-  if (!sparseEncoding)
-    return -1;
-
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  return inputTensorType.getRank();
 }
 
 //===--------------------------------------------------------------------===//
@@ -310,7 +300,6 @@ static LogicalResult verifyMatrixMultiplyArgs(T op, bool checkResultTensorType)
       resultTensorType = resultType.dyn_cast<RankedTensorType>();
       resultShape = resultTensorType.getShape();
       resultRank = getRank(resultType);
-      RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
       resultElementType = resultTensorType.getElementType();
     }
   }

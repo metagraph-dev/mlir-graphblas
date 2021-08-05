@@ -92,6 +92,23 @@ bool typeIsCSC(Type inputType) {
   return true;
 }
 
+int64_t getRank(Type inputType)
+{
+  mlir::sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      mlir::sparse_tensor::getSparseTensorEncoding(inputType);
+  if (!sparseEncoding)
+    return -1;
+
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  return inputTensorType.getRank();
+}
+
+int64_t getRank(Value inputValue)
+{
+  Type inputType = inputValue.getType();
+  return getRank(inputType);
+}
+
 // make Compressed Vector type
 RankedTensorType getCompressedVectorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
 {

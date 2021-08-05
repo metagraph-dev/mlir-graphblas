@@ -97,6 +97,9 @@ public:
     if (predecessor != nullptr && predecessor->hasOneUse()) {
       Location loc = op->getLoc();
 
+      if (getRank(predecessor.a()) < 2 || getRank(predecessor.b()) < 2)
+        return failure();
+
       // Build new MatrixMultiplyReduceToScalarGeneric op with the operands and regions of the multiply,
       // then add in the aggregator from the reduce
       ValueRange operands = predecessor.getOperands();
@@ -190,7 +193,6 @@ public:
       RegionRange applyExtensions = op.extensions();
 
       RankedTensorType tensorType = predecessor.a().getType().dyn_cast<RankedTensorType>();
-      Type valueType = tensorType.getElementType();
 
       graphblas::MatrixMultiplyGenericOp newMultOp = rewriter.create<graphblas::MatrixMultiplyGenericOp>(loc,
                                 op->getResultTypes(), operands, attributes.getAttrs(),
