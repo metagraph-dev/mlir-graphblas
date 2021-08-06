@@ -312,25 +312,36 @@ def GraphBLAS_MatrixMultiplyReduceToScalarOp : GraphBLAS_Op<"matrix_multiply_red
     }];
 }
 
-def GraphBLAS_VectorAccumulateOp : GraphBLAS_Op<"vector_accumulate", []> {
-    let summary = "vector accumulation operation";
+def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
+    let summary = "update operation handling accumulation, mask, and replacement";
     let description = [{
-        Performs vector accumulation with the given accumulate operator.
-        This returns zero values and modifies the given vector (arg #0) in place.
+        Updates the output tensor based on the input and desired accumulation, mask, and replacement.
+        This returns zero values and modifies the output in place.
         The only supported accumulate operator is "plus".
-        The given sparse vectors must have rank 1 and must be sparse.
+        The given tensors must be sparse.
 
-        Example:
+        Simple Accumulation Example:
         ```
-        graphblas.vector_accumulate %vec, %other_vec { accumulate_operator = "plus" } : (tensor<?xi64, #SparseVec64>, tensor<?xi64, #SparseVec64>)
+        graphblas.update %other_vec -> %vec { accumulate_operator = "plus" } : tensor<?xi64, #SparseVec64> -> tensor<?xi64, #SparseVec64>
         ```
 
+        Complemented Mask + Accumulate + Replace Example:
+        ```
+        graphblas.update %other_vec -> %vec(%mask) { accumulate_operator = "plus", replace = true, mask_complement = true } : tensor<?xi64, #SparseVec64> -> tensor<?xi64, #SparseVec64>(tensor<?xi64, #SparseVec64>)
+        ```
     }];
 
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$accumulate_operator);
+    let arguments = (ins
+     AnyTensor:$input,
+     AnyTensor:$output,
+     Optional<AnyTensor>:$mask,
+     OptionalAttr<StrAttr>:$accumulate_operator,
+     DefaultValuedAttr<BoolAttr, "false">:$replace,
+     DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
+    let results = (outs Index:$fake_output);
     
     let assemblyFormat = [{
-           $a `,` $b attr-dict `:` `(` type($a) `,` type($b) `)`
+           $input `->` $output (`(` $mask^ `)`)? attr-dict `:` type($input) `->` type($output) (`(` type($mask)^ `)`)?
     }];
 }
 

@@ -184,12 +184,18 @@ module {
 
 module {
 
-    // CHECK: func @vector_accumulate_plus(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]], %[[ARGB:.*]]: [[B_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
-    func @vector_accumulate_plus(%vec: tensor<?xi64, #SparseVec64>, %other_vec: tensor<?xi64, #SparseVec64>) -> tensor<?xi64, #SparseVec64> {
-        // CHECK-NEXT: graphblas.vector_accumulate %[[ARGA]], %[[ARGB]] {accumulate_operator = "plus"} : ([[A_TYPE]], [[B_TYPE]])
-        graphblas.vector_accumulate %vec, %other_vec { accumulate_operator = "plus" } : (tensor<?xi64, #SparseVec64>, tensor<?xi64, #SparseVec64>)
-        // CHECK-NEXT: return %[[ARGA]] : [[RETURN_TYPE]]
-        return %vec : tensor<?xi64, #SparseVec64>
+    // CHECK: func @vector_update(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]], %[[ARGB:.*]]: [[B_TYPE:tensor<.*>]]) {
+    func @vector_update(%other_vec: tensor<?xi64, #SparseVec64>, %vec: tensor<?xi64, #SparseVec64>) {
+        // CHECK-NEXT: graphblas.update %[[ARGA]] -> %[[ARGB]] : [[A_TYPE]] -> [[B_TYPE]]
+        graphblas.update %other_vec -> %vec : tensor<?xi64, #SparseVec64> -> tensor<?xi64, #SparseVec64>
+        return
+    }
+
+    // CHECK: func @matrix_update_all_options(%[[ARGA:.*]]: [[A_TYPE:tensor<.*->.*>]], %[[ARGB:.*]]: [[B_TYPE:tensor<.*->.*>]], %[[ARGM:.*]]: [[M_TYPE:tensor<.*->.*>]]) {
+    func @matrix_update_all_options(%input: tensor<?x?xf64, #CSR64>, %output: tensor<?x?xf64, #CSR64>, %mask: tensor<?x?xf64, #CSR64>) {
+        // CHECK-NEXT: graphblas.update %[[ARGA]] -> %[[ARGB]](%[[ARGM]]) {accumulate_operator = "plus", mask_complement = true, replace = true} : [[A_TYPE]] -> [[B_TYPE]]([[M_TYPE]])
+        graphblas.update %input -> %output(%mask) { accumulate_operator = "plus", replace = true, mask_complement = true }: tensor<?x?xf64, #CSR64> -> tensor<?x?xf64, #CSR64>(tensor<?x?xf64, #CSR64>)
+        return
     }
 
 }
