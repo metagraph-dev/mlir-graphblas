@@ -1781,6 +1781,15 @@ public:
   };
 };
 
+class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
+public:
+  using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::CommentOp op, PatternRewriter &rewriter) const {
+    rewriter.eraseOp(op);
+    return success();
+  };
+};
+
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
       LowerMatrixSelectRewrite,
@@ -1792,6 +1801,7 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
       LowerMatrixApplyGenericRewrite,
       LowerMatrixMultiplyReduceToScalarGenericRewrite,
       LowerMatrixMultiplyGenericRewrite,
+      LowerCommentRewrite,
       LowerSizeRewrite,
       LowerNumRowsRewrite,
       LowerNumColsRewrite,

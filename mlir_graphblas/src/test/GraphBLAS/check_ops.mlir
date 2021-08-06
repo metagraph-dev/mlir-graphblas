@@ -205,3 +205,15 @@ module {
     }
 
 }
+
+module {
+
+    // CHECK: func @comment_wrapper() {
+    func @comment_wrapper() -> () {
+        // CHECK-NEXT: graphblas.comment {comment = "here is a comment!"}
+        graphblas.comment { comment = "here is a comment!" } 
+        // CHECK-NEXT: return
+        return
+    }
+
+}

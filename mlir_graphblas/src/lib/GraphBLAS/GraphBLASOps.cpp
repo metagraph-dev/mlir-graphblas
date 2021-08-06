@@ -670,5 +670,11 @@ static LogicalResult verify(YieldOp op)
   return success();
 }
 
+static LogicalResult verify(CommentOp op)
+{
+  // no additional verification needed yet
+  return success();
+}
+
 #define GET_OP_CLASSES
 #include "GraphBLAS/GraphBLASOps.cpp.inc"
