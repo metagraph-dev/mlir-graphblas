@@ -95,7 +95,26 @@
 
 
 func @matrix_multiply_plus_times_sum(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CSC64>) -> f64 {
-    %answer = graphblas.matrix_multiply_reduce_to_scalar %a, %b { semiring = "plus_times", aggregator = "sum" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to f64
+    %answer = graphblas.matrix_multiply_reduce_to_scalar_generic %a, %b : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to f64 {
+        ^bb0:
+            %identity = constant 0.0 : f64
+            graphblas.yield add_identity %identity : f64
+    },{
+        ^bb0(%add_a: f64, %add_b: f64):
+            %add_result = std.addf %add_a, %add_b : f64
+            graphblas.yield add %add_result : f64
+    },{
+        ^bb0(%mult_a: f64, %mult_b: f64):
+            %mult_result = std.mulf %mult_a, %mult_b : f64
+            graphblas.yield mult %mult_result : f64
+    },{
+        %agg_identity = constant 0.0 : f64
+        graphblas.yield agg_identity %agg_identity : f64
+    },{
+        ^bb0(%lhs: f64, %rhs: f64):
+            %agg_result = std.addf %lhs, %rhs: f64
+            graphblas.yield agg %agg_result : f64
+    }
     return %answer : f64
 }
 

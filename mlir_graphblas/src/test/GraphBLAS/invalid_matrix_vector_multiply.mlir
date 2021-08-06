@@ -136,7 +136,7 @@ module {
 module {
 
    func @matrix_vector_multiply_plus_times(%matrix: tensor<2x3xi64, #CSR64>, %vector: tensor<3xi64, #SparseVec64>, %mask: tensor<99xi64, #SparseVec64>) -> tensor<2xi64, #SparseVec64> {
-       %answer = graphblas.matrix_multiply %matrix, %vector, %mask { semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3xi64, #SparseVec64>, tensor<99xi64, #SparseVec64>) to tensor<2xi64, #SparseVec64> // expected-error {{Mask shape must match output shape.}}
+       %answer = graphblas.matrix_multiply %matrix, %vector, %mask { semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3xi64, #SparseVec64>, tensor<99xi64, #SparseVec64>) to tensor<2xi64, #SparseVec64> // expected-error {{Mask shape must match shape of matrix multiply result.}}
        return %answer : tensor<2xi64, #SparseVec64>
    }
 

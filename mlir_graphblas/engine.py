@@ -1,4 +1,6 @@
 import os
+import sys
+import shutil
 import re
 import subprocess
 import itertools
@@ -6,6 +8,10 @@ import mlir
 import ctypes
 import glob
 import operator
+import tempfile
+import uuid
+import distutils.ccompiler
+import multiprocessing as mp
 import llvmlite.binding as llvm
 import numpy as np
 from .sparse_utils import MLIRSparseTensor
@@ -37,7 +43,8 @@ _SPARSE_UTILS_SO_FILES = glob.glob(_SPARSE_UTILS_SO_FILE_PATTERN)
 if len(_SPARSE_UTILS_SO_FILES) == 0:
     # TODO this hard-codes the setup.py option and the location of setup.py
     raise RuntimeError(
-        f'{_SPARSE_UTILS_SO_FILE_PATTERN} not found. This can typically be solved by running "python setup.py build_ext" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
+        f"{_SPARSE_UTILS_SO_FILE_PATTERN} not found. This can typically be solved "
+        f'by running "python setup.py build_ext" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
     )
 elif len(_SPARSE_UTILS_SO_FILES) > 1:
     raise RuntimeError(
@@ -330,7 +337,8 @@ def input_tensor_to_ctypes(
                     and arg.shape[dim_index] != expected_dim_size
                 ):
                     raise ValueError(
-                        f"{repr(arg)} is expected to have size {expected_dim_size} in the {dim_index}th dimension but has size {arg.shape[dim_index]}."
+                        f"{repr(arg)} is expected to have size {expected_dim_size} in the "
+                        f"{dim_index}th dimension but has size {arg.shape[dim_index]}."
                     )
                 encoded_args.append(arg.shape[dim_index])
 
@@ -534,12 +542,151 @@ class MlirJitEngine:
             backing_mod = llvm.parse_assembly("")
             llvmlite_engine = llvm.create_mcjit_compiler(backing_mod, target_machine)
         self._engine = llvmlite_engine
+        self.default_profile_dir = tempfile.TemporaryDirectory()
+        self.current_profile_dir: Optional[str] = None
+        self.c_compiler = distutils.ccompiler.new_compiler()
         self._cli = MlirOptCli(cli_executable, cli_options)
         self.name_to_callable: Dict[str, Callable] = {}
+        return
+
+    @property
+    def profile_dir_name(self) -> str:
+        if self.current_profile_dir is not None:
+            # TODO consider making a context manager for setting self.current_profile_dir
+            return self.current_profile_dir
+        return self.default_profile_dir.name
+
+    def profiled_function(
+        self, main_callable: Callable, symbol_to_profile: str
+    ) -> Callable:
+        """Decorator to profile a function via Linux's perf tool."""
+
+        # set this at the time that decorated_func is created and
+        # not at the time it is called as the value of
+        # self.profile_dir_name may change.
+        perf_data_file_name = os.path.join(
+            self.profile_dir_name, f"perf-{uuid.uuid4()}.data"
+        )
+
+        def mp_func(queue: mp.SimpleQueue, *args):
+            # send pid to decorated_func
+            queue.put(os.getpid())
+            # wait for decorated_func to signal start of execution
+            start_signal = queue.get()
+            assert start_signal == "start"
+            # execute the function
+            result = main_callable(*args)
+            # return the result on the queue
+            queue.put(result)
+            return
+
+        def decorated_func(*args) -> Any:
+            # get pid from mp_func
+            q = mp.SimpleQueue()
+            execution_process = mp.Process(target=mp_func, args=(q, *args))
+            execution_process.start()
+            execution_process_id = q.get()
+
+            # start profiling
+            record_process = subprocess.Popen(
+                "/bin/bash",
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+            )
+            record_command = f"""
+            perf record -p {execution_process_id} --output={perf_data_file_name}
+            exit
+            """
+            record_process.stdin.write(record_command.encode())
+            record_process.stdin.flush()
+
+            # wait for profiling to initialize
+            for _ in range(3):  # FIXME how do we truly know perf-record is ready?
+                record_process.stderr.readline()
+
+            # signal mp_func to start execution
+            q.put("start")  # dummy value
+            # wait for execution to finish
+            result = q.get()
+            execution_process.join()
+            execution_process.close()
+
+            # wait for profiling to finish
+            while record_process.poll() is None:
+                pass
+
+            # gather profiling results
+            annotate_command = f"perf annotate --stdio --symbol {symbol_to_profile} -l --input={perf_data_file_name}"
+            annotate_process = subprocess.Popen(
+                annotate_command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+            )  # combines stdout and stderr
+            stdout_string, _ = annotate_process.communicate()
+            stdout_string = stdout_string.decode()
+
+            # print results
+            profile_text = stdout_string.strip()
+            profile_text = "\n" + profile_text
+            profile_text = profile_text.replace("\n", "\n    ")
+            profile_text = "Profile Results:" + profile_text
+            print(profile_text)
+
+            return result
+
+        return decorated_func
+
+    def _add_llvm_module(
+        self, mod: llvm.module.ModuleRef, profile: Union[bool, ctypes.CDLL]
+    ) -> Optional[ctypes.CDLL]:
+        if profile:
+            o_file_bytes_list = []
+            self._engine.set_object_cache(
+                notify_func=lambda module, buffer: o_file_bytes_list.append(buffer)
+            )
+
+        self._engine.add_module(mod)
+        self._engine.finalize_object()
+        self._engine.run_static_constructors()
+
+        if profile:
+            files_to_link = [_SPARSE_UTILS_SO]
+            # On the first call (globally) to self._engine.add_module,
+            # the notify_func is called twice. The first time is on some
+            # buffer with no symbols and the second is on the buffer
+            # containig the .o code for mod. On all other calls,
+            # we have len(o_file_bytes_list) == 1.
+            # Thus, we use the last element of o_file_bytes_list.
+            assert len(o_file_bytes_list) in (1, 2)
+            o_file_bytes = o_file_bytes_list[-1]
+            o_file_name = f"mod-{uuid.uuid4()}.o"
+            o_file_name = os.path.join(self.profile_dir_name, o_file_name)
+            with open(o_file_name, "wb") as f:
+                f.write(o_file_bytes_list[-1])
+            files_to_link.append(o_file_name)
+            if isinstance(profile, ctypes.CDLL):
+                files_to_link.append(profile._name)
+            so_file_name = f"shared-{uuid.uuid4()}.so"
+            so_file_name = os.path.join(self.profile_dir_name, so_file_name)
+            self.c_compiler.link_shared_object(files_to_link, so_file_name)
+            ctypes.cdll.LoadLibrary(so_file_name)
+            shared_lib = ctypes.CDLL(so_file_name)
+            self._engine.set_object_cache(notify_func=None)
+        else:
+            shared_lib = None
+
+        return shared_lib
 
     def _add_mlir_module(
-        self, mlir_text: bytes, passes: List[str], debug=False
-    ) -> Optional[DebugResult]:
+        self,
+        mlir_text: bytes,
+        passes: List[str],
+        *,
+        debug: bool = False,
+        profile: Union[bool, ctypes.CDLL] = False,
+    ) -> Optional[Union[DebugResult, ctypes.CDLL]]:
         """Translates MLIR code -> LLVM dialect of MLIR -> actual LLVM IR."""
         if debug:
             try:
@@ -564,28 +711,22 @@ class MlirJitEngine:
         # Create a LLVM module object from the IR
         mod = llvm.parse_assembly(llvm_ir_text)
         mod.verify()
-        # Now add the module and make sure it is ready for execution
-        self._engine.add_module(mod)
-        self._engine.finalize_object()
-        self._engine.run_static_constructors()
 
-        return
+        # Now add the module and make sure it is ready for execution
+        optional_shared_lib = self._add_llvm_module(mod, profile)
+
+        return optional_shared_lib
 
     def _generate_zero_or_single_valued_functions(
         self,
         mlir_functions: Iterable[mlir.astnodes.Function],
+        shared_lib: Optional[ctypes.CDLL],
     ) -> Dict[str, Callable]:
         """Generates a Python callable from a function returning zero values or one value."""
         name_to_callable: Dict[str, Callable] = {}
         for mlir_function in mlir_functions:
 
             name: str = mlir_function.name.value
-            function_pointer: int = self._engine.get_function_address(name)
-
-            if function_pointer == 0:
-                raise ValueError(
-                    f"The address for the function {repr(name)} is the null pointer."
-                )
 
             mlir_types = mlir_function.result_types
             if not isinstance(mlir_types, list):
@@ -598,9 +739,20 @@ class MlirJitEngine:
                     f"MLIR functions with multiple return values should be handled elsewhere."
                 )
             ctypes_input_types, encoders = mlir_function_input_encoders(mlir_function)
-            c_callable = ctypes.CFUNCTYPE(ctypes_return_type, *ctypes_input_types)(
-                function_pointer
-            )
+
+            if shared_lib is not None:
+                c_callable = getattr(shared_lib, name)
+                c_callable.argtypes = ctypes_input_types
+                c_callable.restype = ctypes_return_type
+            else:
+                function_pointer: int = self._engine.get_function_address(name)
+                if function_pointer == 0:
+                    raise ValueError(
+                        f"The address for the function {repr(name)} is the null pointer."
+                    )
+                c_callable = ctypes.CFUNCTYPE(ctypes_return_type, *ctypes_input_types)(
+                    function_pointer
+                )
 
             def python_callable(mlir_function, encoders, c_callable, decoder, *args):
                 if len(args) != len(mlir_function.args):
@@ -617,6 +769,8 @@ class MlirJitEngine:
             bound_func = partial(
                 python_callable, mlir_function, encoders, c_callable, decoder
             )
+            if shared_lib is not None:
+                bound_func = self.profiled_function(bound_func, name)
             name_to_callable[name] = bound_func
 
         return name_to_callable
@@ -654,7 +808,7 @@ class MlirJitEngine:
 
     def _generate_mlir_string_for_multivalued_functions(
         self, mlir_functions: Iterable[mlir.astnodes.Function], passes: List[str]
-    ) -> Tuple[str, str]:
+    ) -> Tuple[str, List[str], List[str]]:
 
         result_type_name_to_lowered_result_type_name = self._lower_types_to_strings(
             sum((mlir_function.result_types for mlir_function in mlir_functions), []),
@@ -663,9 +817,8 @@ class MlirJitEngine:
 
         # Generate conglomerate MLIR string for all wrappers
         mlir_wrapper_texts: List[str] = []
-        wrapper_names = [
-            mlir_function.name.value + "wrapper" for mlir_function in mlir_functions
-        ]
+        names = [mlir_function.name.value for mlir_function in mlir_functions]
+        wrapper_names = [name + "wrapper" for name in names]
         for mlir_function, wrapper_name in zip(mlir_functions, wrapper_names):
             lowered_result_type_names = [
                 result_type_name_to_lowered_result_type_name[result_type.dump()]
@@ -723,23 +876,33 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
             mlir_wrapper_texts.append(mlir_wrapper_text)
 
         mlir_text = "\n".join(mlir_wrapper_texts)
-        return mlir_text, wrapper_names
+        return mlir_text, names, wrapper_names
 
     def _generate_multivalued_functions(
-        self, mlir_functions: Iterable[mlir.astnodes.Function], passes: List[str]
+        self,
+        mlir_functions: Iterable[mlir.astnodes.Function],
+        passes: List[str],
+        internal_shared_lib: Optional[ctypes.CDLL],
     ) -> Dict[str, Callable]:
         name_to_callable: Dict[str, Callable] = {}
 
-        mlir_text, wrapper_names = self._generate_mlir_string_for_multivalued_functions(
-            mlir_functions, passes
-        )
+        (
+            mlir_text,
+            names,
+            wrapper_names,
+        ) = self._generate_mlir_string_for_multivalued_functions(mlir_functions, passes)
 
-        # this is guaranteed to not fail since the user-provided
+        # this is guaranteed to not raise exceptions since the user-provided
         # code was already added (failures would occur then)
-        self._add_mlir_module(mlir_text.encode(), passes)
+        wrapper_shared_lib = self._add_mlir_module(
+            mlir_text.encode(), passes, profile=internal_shared_lib
+        )
+        assert bool(wrapper_shared_lib) == bool(internal_shared_lib)
 
         # Generate callables
-        for mlir_function, wrapper_name in zip(mlir_functions, wrapper_names):
+        for mlir_function, name, wrapper_name in zip(
+            mlir_functions, names, wrapper_names
+        ):
             ctypes_input_types, input_encoders = mlir_function_input_encoders(
                 mlir_function
             )
@@ -754,14 +917,21 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                 ctypes_result_arg_types.append(result_type_ctypes_type)
                 decoders.append(decoder)
 
-            function_pointer: int = self._engine.get_function_address(wrapper_name)
-            if function_pointer == 0:
-                raise ValueError(
-                    f"The address for the function {repr(wrapper_name)} is the null pointer."
+            if wrapper_shared_lib is not None:
+                c_callable = getattr(wrapper_shared_lib, wrapper_name)
+                c_callable.argtypes = (
+                    ctypes_result_arg_pointer_types + ctypes_input_types
                 )
-            c_callable = ctypes.CFUNCTYPE(
-                None, *ctypes_result_arg_pointer_types, *ctypes_input_types
-            )(function_pointer)
+                c_callable.restype = None
+            else:
+                function_pointer: int = self._engine.get_function_address(wrapper_name)
+                if function_pointer == 0:
+                    raise ValueError(
+                        f"The address for the function {repr(wrapper_name)} is the null pointer."
+                    )
+                c_callable = ctypes.CFUNCTYPE(
+                    None, *ctypes_result_arg_pointer_types, *ctypes_input_types
+                )(function_pointer)
 
             def python_callable(
                 mlir_function,
@@ -773,7 +943,8 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
             ) -> tuple:
                 if len(args) != len(mlir_function.args):
                     raise ValueError(
-                        f"{mlir_function.name.value} expected {len(mlir_function.args)} args but got {len(args)}."
+                        f"{mlir_function.name.value} expected {len(mlir_function.args)} "
+                        f"args but got {len(args)}."
                     )
                 result_arg_values = [
                     result_arg_type() for result_arg_type in ctypes_result_arg_types
@@ -802,6 +973,8 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                 c_callable,
                 decoders,
             )
+            if wrapper_shared_lib is not None:
+                bound_func = self.profiled_function(bound_func, name)
             name_to_callable[mlir_function.name.value] = bound_func
 
         return name_to_callable
@@ -818,15 +991,45 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
                 yield item
 
     def add(
-        self, mlir_text: Union[str, bytes], passes: Tuple[str], debug=False
+        self,
+        mlir_text: Union[str, bytes],
+        passes: Tuple[str],
+        *,
+        debug: bool = False,
+        profile: bool = False,
+        profile_result_directory: Optional[str] = None,
     ) -> Union[List[str], DebugResult]:
         """List of new function names added."""
+        if profile_result_directory is not None:
+            if not profile:
+                raise ValueError(
+                    "Cannot specify a profile result directory without also enabling profiling."
+                )
+            self.current_profile_dir = profile_result_directory
+
+        if profile:
+            if not sys.platform.startswith("linux"):
+                raise NotImplementedError("Profiling only supported on linux.")
+            elif shutil.which("perf") is None:
+                raise RuntimeError("Profiling requires perf to be installed.")
+            with open("/proc/sys/kernel/perf_event_paranoid", "r") as f:
+                perf_event_paranoid_setting = int(f.read().strip())
+            if perf_event_paranoid_setting != -1:  # TODO is this too restrictive?
+                raise RuntimeError(
+                    "Profiling not permitted since the contents of "
+                    "/proc/sys/kernel/perf_event_paranoid must be -1."
+                )
+
         if isinstance(mlir_text, str):
             mlir_text = mlir_text.encode()
 
-        optional_debug_result = self._add_mlir_module(mlir_text, passes, debug)
-        if isinstance(optional_debug_result, DebugResult):
-            return optional_debug_result
+        add_mlir_module_result = self._add_mlir_module(
+            mlir_text, passes, debug=debug, profile=profile
+        )
+        if isinstance(add_mlir_module_result, DebugResult):
+            return add_mlir_module_result
+        shared_lib = add_mlir_module_result
+        assert (not profile) == (shared_lib is None)
 
         function_names: List[str] = []
         mlir_ast = parse_mlir_functions(mlir_text, self._cli)
@@ -855,7 +1058,9 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
 
         # Compile & add functions
         name_to_zero_or_single_callable = (
-            self._generate_zero_or_single_valued_functions(zero_or_single_valued_funcs)
+            self._generate_zero_or_single_valued_functions(
+                zero_or_single_valued_funcs, shared_lib
+            )
         )
         # TODO we currently need two separate compilations ; we can avoid this if
         # we can use PyMLIR to simply add on the extra functions/wrappers we need
@@ -864,7 +1069,7 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
         # PyMLIR can't parse all MLIR. It'd also be difficult without an IR
         # builder (which is currently a PyMLIR WIP).
         name_to_multicallable = self._generate_multivalued_functions(
-            multivalued_funcs, passes
+            multivalued_funcs, passes, shared_lib
         )
 
         for name, python_callable in itertools.chain(
@@ -876,6 +1081,9 @@ func @{wrapper_name}({wrapper_signature}) -> () {{
             setattr(python_callable, "jit_engine", self)
 
             self.name_to_callable[name] = python_callable
+
+        if profile_result_directory is not None:
+            self.current_profile_dir = None
 
         return function_names
 

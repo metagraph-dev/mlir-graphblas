@@ -487,12 +487,63 @@ public:
   };
 };
 
-class LowerMatrixReduceToScalarRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarOp> {
+class LowerMatrixReduceToScalarRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarOp>
+{
 public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const
+  {
     Value input = op.input();
     StringRef aggregator = op.aggregator();
+    Location loc = rewriter.getUnknownLoc();
+
+    RankedTensorType operandType = op.input().getType().dyn_cast<RankedTensorType>();
+    Type valueType = operandType.getElementType();
+
+    // New op
+    graphblas::MatrixReduceToScalarGenericOp newReduceOp = rewriter.create<graphblas::MatrixReduceToScalarGenericOp>(
+        loc, op->getResultTypes(), input, 2);
+
+    if (aggregator == "sum")
+    {
+      // Insert agg identity block
+      Region &aggIdentityRegion = newReduceOp.getRegion(0);
+      /*Block *aggIdentityBlock = */ rewriter.createBlock(&aggIdentityRegion, {}, {});
+
+      Value aggIdentity = llvm::TypeSwitch<Type, Value>(valueType)
+                              .Case<IntegerType>([&](IntegerType type)
+                                                 { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
+                              .Case<FloatType>([&](FloatType type)
+                                               { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
+      rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::AGG_IDENTITY, aggIdentity);
+
+      // Insert agg block
+      Region &aggRegion = newReduceOp.getRegion(1);
+      Block *aggBlock = rewriter.createBlock(&aggRegion, {}, {valueType, valueType});
+      Value lhs = aggBlock->getArgument(0);
+      Value rhs = aggBlock->getArgument(1);
+
+      Value aggResult = llvm::TypeSwitch<Type, Value>(valueType)
+                        .Case<IntegerType>([&](IntegerType type)
+                                           { return rewriter.create<AddIOp>(loc, lhs, rhs).getResult(); })
+                        .Case<FloatType>([&](FloatType type)
+                                         { return rewriter.create<AddFOp>(loc, lhs, rhs).getResult(); });
+      rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::AGG, aggResult);
+    } else {
+      return op.emitError("\"" + aggregator + "\" is not a supported aggregator.");
+    }
+
+    rewriter.replaceOp(op, newReduceOp.getResult());
+
+    return success();
+  };
+};
+
+class LowerMatrixReduceToScalarGenericRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp> {
+public:
+  using OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op, PatternRewriter &rewriter) const {
+    Value input = op.input();
     Location loc = rewriter.getUnknownLoc();
 
     RankedTensorType operandType = op.input().getType().dyn_cast<RankedTensorType>();
@@ -500,18 +551,24 @@ public:
     Type int64Type = rewriter.getIntegerType(64); // TODO should we get this from the sparse encoding?
     Type indexType = rewriter.getIndexType();
 
-    // Initial constants
-    llvm::Optional<ConstantOp> c0Accumulator = llvm::TypeSwitch<Type, llvm::Optional<ConstantOp>>(valueType)
-      .Case<IntegerType>([&](IntegerType type) {
-                           return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth());
-                         })
-      .Case<FloatType>([&](FloatType type) {
-                         return rewriter.create<ConstantFloatOp>(loc, APFloat(type.getFloatSemantics()), type);
-                       })
-      .Default([&](Type type) { return llvm::None; });
-    if (!c0Accumulator.hasValue()) {
-      return failure(); // TODO test this case
+    // Required blocks
+    RegionRange extensions = op.extensions();
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {graphblas::YieldKind::AGG_IDENTITY, graphblas::YieldKind::AGG};
+    LogicalResult extractResult = extBlocks.extractBlocks(op, extensions, required, {});
+
+    if (extractResult.failed())
+    {
+      return extractResult;
     }
+
+    // insert agg identity
+    graphblas::YieldOp aggIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.aggIdentity->getTerminator());
+    rewriter.mergeBlocks(extBlocks.aggIdentity, rewriter.getBlock(), {});
+    Value c0Accumulator = aggIdentityYield.values().front();
+    rewriter.eraseOp(aggIdentityYield);
+
+    // initial constants
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
 
@@ -526,7 +583,7 @@ public:
     IndexCastOp nnz = rewriter.create<IndexCastOp>(loc, nnz64, indexType);
 
     // begin loop
-    scf::ParallelOp valueLoop = rewriter.create<scf::ParallelOp>(loc, c0, nnz.getResult(), c1, c0Accumulator.getValue().getResult());
+    scf::ParallelOp valueLoop = rewriter.create<scf::ParallelOp>(loc, c0, nnz.getResult(), c1, c0Accumulator);
     ValueRange valueLoopIdx = valueLoop.getInductionVars();
 
     rewriter.setInsertionPointToStart(valueLoop.getBody());
@@ -538,19 +595,12 @@ public:
 
     rewriter.setInsertionPointToStart(&reducer.getRegion().front());
 
-    llvm::Optional<Value> z;
-    if (aggregator == "sum") {
-      z = llvm::TypeSwitch<Type, llvm::Optional<Value>>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<AddIOp>(loc, lhs, rhs).getResult(); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<AddFOp>(loc, lhs, rhs).getResult(); })
-        .Default([&](Type type) { return llvm::None; });
-      if (!z.hasValue()) {
-        return failure();
-      }
-    } else {
-      return failure(); // TODO test this
-    }
-    rewriter.create<scf::ReduceReturnOp>(loc, z.getValue());
+    graphblas::YieldOp aggYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.agg->getTerminator());
+    rewriter.mergeBlocks(extBlocks.agg, rewriter.getBlock(), {lhs, rhs});
+    Value result = aggYield.values().front();
+    rewriter.eraseOp(aggYield);
+
+    rewriter.create<scf::ReduceReturnOp>(loc, result);
 
     rewriter.setInsertionPointAfter(reducer);
 
@@ -564,6 +614,7 @@ class LowerMatrixApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyOp
 public:
   using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
     Location loc = op->getLoc();
 
     Type valueType = op.input().getType().dyn_cast<RankedTensorType>().getElementType();
@@ -669,6 +720,7 @@ class LowerMatrixMultiplyRewrite : public OpRewritePattern<graphblas::MatrixMult
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
     Location loc = rewriter.getUnknownLoc();
 
     // Inputs
@@ -928,7 +980,7 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
 
   // insert add identity block
   graphblas::YieldOp addIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.addIdentity->getTerminator());
-  rewriter.mergeBlocks(extBlocks.addIdentity, &colLoop3f.getLoopBody().getBlocks().front(), {});
+  rewriter.mergeBlocks(extBlocks.addIdentity, rewriter.getBlock(), {});
   Value addIdentity = addIdentityYield.values().front();
   rewriter.eraseOp(addIdentityYield);
 
@@ -991,7 +1043,7 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
     graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.transformOut->getTerminator());
     Value transformResult = yield.values().front();
 
-    rewriter.mergeBlocks(extBlocks.transformOut, ifBlock_newOffset.thenBlock(), {total});
+    rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(), {total});
 
     rewriter.create<memref::StoreOp>(loc, transformResult, outputValues, cjPos);
     rewriter.eraseOp(yield);
@@ -1488,18 +1540,34 @@ private:
   }
 };
 
-class LowerMatrixMultiplyReduceToScalarRewrite : public OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarOp> {
+class LowerMatrixMultiplyReduceToScalarGenericRewrite : public OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarGenericOp> {
 public:
-  using OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarOp op, PatternRewriter &rewriter) const {
+  using OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void) module;
     Location loc = rewriter.getUnknownLoc();
 
     // Inputs
     Value A = op.a();
     Value B = op.b();
     Value mask = op.mask();
-    StringRef semiring = op.semiring();
-    StringRef aggregator = op.aggregator();
+
+    // Required blocks
+    RegionRange extensions = op.extensions();
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {
+        graphblas::YieldKind::ADD_IDENTITY,
+        graphblas::YieldKind::ADD,
+        graphblas::YieldKind::MULT,
+        graphblas::YieldKind::AGG_IDENTITY,
+        graphblas::YieldKind::AGG};
+    std::set<graphblas::YieldKind> optional = {};
+    LogicalResult extractResult = extBlocks.extractBlocks(op, extensions, required, optional);
+
+    if (extractResult.failed())
+    {
+      return extractResult;
+    }
 
     // Types
     Type indexType = rewriter.getIndexType();
@@ -1606,7 +1674,13 @@ public:
     Value iStart = rewriter.create<IndexCastOp>(loc, iStart64, indexType);
     Value iEnd = rewriter.create<IndexCastOp>(loc, iEnd64, indexType);
 
-    scf::ForOp kLoop = rewriter.create<scf::ForOp>(loc, iStart, iEnd, c1, cf0);
+    // insert add identity block
+    graphblas::YieldOp addIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.addIdentity->getTerminator());
+    rewriter.mergeBlocks(extBlocks.addIdentity, rewriter.getBlock(), {});
+    Value addIdentity = addIdentityYield.values().front();
+    rewriter.eraseOp(addIdentityYield);
+
+    scf::ForOp kLoop = rewriter.create<scf::ForOp>(loc, iStart, iEnd, c1, addIdentity);
     Value ii = kLoop.getInductionVar();
     Value curr = kLoop.getLoopBody().getArgument(1);
     rewriter.setInsertionPointToStart(kLoop.getBody());
@@ -1617,21 +1691,23 @@ public:
     scf::IfOp ifBlock_cmpPair = rewriter.create<scf::IfOp>(loc, valueType, cmpPair, true);
     // if cmpPair
     rewriter.setInsertionPointToStart(ifBlock_cmpPair.thenBlock());
-    Value newVal;
-    if (semiring == "plus_pair") {
-        newVal = rewriter.create<AddFOp>(loc, curr, cf1);
-    } else {
-        Value aVal = rewriter.create<memref::LoadOp>(loc, kvec, kk);
-        Value bVal = rewriter.create<memref::LoadOp>(loc, Bx, ii);
-        if (semiring == "plus_times") {
-            val = rewriter.create<MulFOp>(loc, aVal, bVal);
-            newVal = rewriter.create<AddFOp>(loc, curr, val);
-        } else if (semiring == "plus_plus") {
-            val = rewriter.create<AddFOp>(loc, aVal, bVal);
-            newVal = rewriter.create<AddFOp>(loc, curr, val);
-        }
-    }
-    rewriter.create<scf::YieldOp>(loc, newVal);
+
+    Value aVal = rewriter.create<memref::LoadOp>(loc, kvec, kk);
+    Value bVal = rewriter.create<memref::LoadOp>(loc, Bx, ii);
+
+    // insert multiply operation block
+    graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.mult->getTerminator());
+    Value multResult = multYield.values().front();
+    rewriter.eraseOp(multYield);
+    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
+
+    // insert add operation block
+    graphblas::YieldOp addYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.add->getTerminator());
+    Value addResult = addYield.values().front();
+    rewriter.eraseOp(addYield);
+    rewriter.mergeBlocks(extBlocks.add, rewriter.getBlock(), {curr, multResult});
+
+    rewriter.create<scf::YieldOp>(loc, addResult);
 
     // else
     rewriter.setInsertionPointToStart(ifBlock_cmpPair.elseBlock());
@@ -1647,19 +1723,25 @@ public:
 
     Value colVal = kLoop.getResult(0);
 
+    // FIXME: this is where transform_out goes
+
     scf::ReduceOp colReducer = rewriter.create<scf::ReduceOp>(loc, colVal);
     BlockArgument lhs = colReducer.getRegion().getArgument(0);
     BlockArgument rhs = colReducer.getRegion().getArgument(1);
 
     rewriter.setInsertionPointToStart(&colReducer.getRegion().front());
 
-    Value z;
-    if (aggregator == "sum") {
-      z = llvm::TypeSwitch<Type, Value>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<AddIOp>(loc, lhs, rhs); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<AddFOp>(loc, lhs, rhs); });
-    }
-    rewriter.create<scf::ReduceReturnOp>(loc, z);
+
+    Region *aggRegion = extBlocks.agg->getParent();
+    BlockAndValueMapping mapper;
+    // Clone blocks into front of region to displace existing entry block, which will be removed
+    // by canonicalization later
+    aggRegion->cloneInto(&colReducer.getRegion(), colReducer.getRegion().begin(), mapper);
+    graphblas::YieldOp colYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(colReducer.getRegion().front().getTerminator());
+    Value colAggResult = colYield.values().front();
+    rewriter.setInsertionPointAfter(colYield);
+    rewriter.create<scf::ReduceReturnOp>(loc, colAggResult);
+    rewriter.eraseOp(colYield);
 
     rewriter.setInsertionPointAfter(colReducer);
 
@@ -1682,12 +1764,13 @@ public:
 
     rewriter.setInsertionPointToStart(&rowReducer.getRegion().front());
 
-    if (aggregator == "sum") {
-      z = llvm::TypeSwitch<Type, Value>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<AddIOp>(loc, lhs, rhs); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<AddFOp>(loc, lhs, rhs); });
-    }
-    rewriter.create<scf::ReduceReturnOp>(loc, z);
+    graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.agg->getTerminator());
+    Value aggResult = yield.values().front();
+
+    // we can safely merge this agg block now, since the previous agg instance was cloned above
+    rewriter.mergeBlocks(extBlocks.agg, rewriter.getBlock(), {lhs, rhs});
+    rewriter.create<scf::ReduceReturnOp>(loc, aggResult);
+    rewriter.eraseOp(yield);
 
     // end row loop
     rewriter.setInsertionPointAfter(rowLoop);
@@ -2039,11 +2122,12 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
       LowerMatrixSelectRewrite,
       LowerMatrixReduceToScalarRewrite,
+      LowerMatrixReduceToScalarGenericRewrite,
       LowerMatrixMultiplyRewrite,
       LowerConvertLayoutRewrite,
       LowerMatrixApplyRewrite,
       LowerMatrixApplyGenericRewrite,
-      LowerMatrixMultiplyReduceToScalarRewrite,
+      LowerMatrixMultiplyReduceToScalarGenericRewrite,
       LowerMatrixMultiplyGenericRewrite,
       LowerUpdateRewrite,
       LowerEqualRewrite,
@@ -2069,7 +2153,8 @@ void populateGraphBLASStructuralizePatterns(RewritePatternSet &patterns)
 {
   patterns.add<
       LowerMatrixMultiplyRewrite,
-      LowerMatrixApplyRewrite
+      LowerMatrixApplyRewrite,
+      LowerMatrixReduceToScalarRewrite
       >(patterns.getContext());
 }
 
