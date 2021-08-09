@@ -689,11 +689,13 @@ class MlirJitEngine:
         """Translates MLIR code -> LLVM dialect of MLIR -> actual LLVM IR."""
 
         if profile:
-            prof_filename=os.path.join(self.profile_dir_name, f'prof-{uuid.uuid4()}.mlir')
-            with open(prof_filename, 'wb') as f:
+            prof_filename = os.path.join(
+                self.profile_dir_name, f"prof-{uuid.uuid4()}.mlir"
+            )
+            with open(prof_filename, "wb") as f:
                 f.write(mlir_text)
             mlir_text = prof_filename
-        
+
         if debug:
             try:
                 llvm_dialect_text = self._cli.apply_passes(mlir_text, passes)

@@ -49,7 +49,7 @@ class MlirOptCli:
         elif hasattr(file, "close"):
             return file.read()
         else:
-            raise TypeError('file must be bytes or a file object')
+            raise TypeError("file must be bytes or a file object")
 
     def apply_passes(self, file, passes: List[str]) -> Union[str, "DebugResult"]:
         """
