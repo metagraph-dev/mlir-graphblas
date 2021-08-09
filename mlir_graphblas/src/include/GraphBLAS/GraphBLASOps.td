@@ -373,7 +373,7 @@ def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
 
         Example:
         ```
-        %answer = graphblas.equal %vec, %other_vec : (tensor<?xi64, #SparseVec64>, tensor<?xi64, #SparseVec64>)
+        %answer = graphblas.equal %vec, %other_vec : tensor<?xi64, #SparseVec64>, tensor<?xi64, #SparseVec64>
         ```
 
     }];
@@ -382,7 +382,7 @@ def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
     let results = (outs I1:$output);
     
     let assemblyFormat = [{
-           $a `,` $b attr-dict `:` `(` type($a) `,` type($b) `)`
+           $a `,` $b attr-dict `:` type($a) `,` type($b)
     }];
 }
 

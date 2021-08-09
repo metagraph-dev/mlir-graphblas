@@ -438,7 +438,7 @@ static LogicalResult verifyMatrixMultiplyArgs(T op, bool checkResultTensorType)
   return success();
 }
 
-static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus"};
+static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus", "min_plus"};
 
 static LogicalResult verify(MatrixMultiplyOp op) {
   LogicalResult argResult = verifyMatrixMultiplyArgs(op, true);
@@ -509,7 +509,7 @@ static LogicalResult verifyMatrixReduceToScalarArgs(T op)
   return success();
 }
 
-static const std::vector<std::string> supportedUpdateAccumulateOperators{"plus"};
+static const std::vector<std::string> supportedUpdateAccumulateOperators{"plus", "min"};
 
 static LogicalResult verify(UpdateOp op) {
   Type iType = op.input().getType();

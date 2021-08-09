@@ -55,7 +55,7 @@
 // CHECK:         }
 
 func @vector_equal(%a: tensor<?xf64, #CV64>, %b: tensor<?xf64, #CV64>) -> i1 {
-    %answer = graphblas.equal %a, %b : (tensor<?xf64, #CV64>, tensor<?xf64, #CV64>)
+    %answer = graphblas.equal %a, %b : tensor<?xf64, #CV64>, tensor<?xf64, #CV64>
     return %answer : i1
 }
 

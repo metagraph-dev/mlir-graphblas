@@ -204,8 +204,8 @@ module {
 
     // CHECK: func @vector_equaity_checking(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]], %[[ARGB:.*]]: [[B_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
     func @vector_equaity_checking(%argA: tensor<3xi64, #SparseVec64>, %argB: tensor<3xi64, #SparseVec64>) -> i1 {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.equal %[[ARGA]], %[[ARGB]] : ([[A_TYPE]], [[B_TYPE]])
-        %answer = graphblas.equal %argA, %argB : (tensor<3xi64, #SparseVec64>, tensor<3xi64, #SparseVec64>)
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.equal %[[ARGA]], %[[ARGB]] : [[A_TYPE]], [[B_TYPE]]
+        %answer = graphblas.equal %argA, %argB : tensor<3xi64, #SparseVec64>, tensor<3xi64, #SparseVec64>
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : i1
     }

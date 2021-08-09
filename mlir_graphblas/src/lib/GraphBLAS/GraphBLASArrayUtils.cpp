@@ -545,6 +545,13 @@ Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect, std::st
     aggVal = llvm::TypeSwitch<Type, Value>(valueType)
         .Case<IntegerType>([&](IntegerType type) { return rewriter.create<AddIOp>(loc, newValA, newValB); })
         .Case<FloatType>([&](FloatType type) { return rewriter.create<AddFOp>(loc, newValA, newValB); });
+  } else if (agg == "min") {
+    Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+                    .Case<IntegerType>([&](IntegerType type)
+                                       { return rewriter.create<CmpIOp>(loc, CmpIPredicate::slt, newValA, newValB); })
+                    .Case<FloatType>([&](FloatType type)
+                                       { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OLT, newValA, newValB); });
+    aggVal = rewriter.create<SelectOp>(loc, cmp, newValA, newValB);
   }
   rewriter.create<memref::StoreOp>(loc, aggVal, Ox, posO);
   rewriter.create<scf::YieldOp>(loc, ValueRange{posAplus1, posBplus1, posOplus1, ctrue, ctrue});
