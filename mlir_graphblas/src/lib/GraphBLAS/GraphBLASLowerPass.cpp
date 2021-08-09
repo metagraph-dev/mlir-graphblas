@@ -17,6 +17,7 @@
 
 #include "GraphBLAS/GraphBLASPasses.h"
 #include "GraphBLAS/GraphBLASUtils.h"
+#include "GraphBLAS/GraphBLASArrayUtils.h"
 
 using namespace ::mlir;
 
@@ -810,268 +811,6 @@ public:
   };
 };
 
-
-Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
-                         Value fixedIndices, Value fixedIndexStart, Value fixedIndexEnd,
-                         Value iterPointers, Value iterIndices,
-                         // If no mask is used, set maskIndices to nullptr, and provide maskStart=c0 and maskEnd=len(iterPointers)-1
-                         Value maskIndices, Value maskStart, Value maskEnd,
-                         Type valueType
-                         ) {
-  Location loc = rewriter.getUnknownLoc();
-
-  // Types used in this function
-  Type indexType = rewriter.getIndexType();
-  Type int64Type = rewriter.getIntegerType(64);
-  Type boolType = rewriter.getI1Type();
-  MemRefType memref1DBoolType = MemRefType::get({-1}, boolType);
-
-  // Initial constants
-  Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-  Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
-  Value ci1 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
-  Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
-  Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
-
-  // Construct a dense array indicating valid kk positions within fixed index
-  Value kvec_i1 = rewriter.create<memref::AllocOp>(loc, memref1DBoolType, nk);
-  rewriter.create<linalg::FillOp>(loc, kvec_i1, cfalse);
-  scf::ParallelOp colLoop1 = rewriter.create<scf::ParallelOp>(loc, fixedIndexStart, fixedIndexEnd, c1);
-  Value jj = colLoop1.getInductionVars()[0];
-  rewriter.setInsertionPointToStart(colLoop1.getBody());
-  Value col64 = rewriter.create<memref::LoadOp>(loc, fixedIndices, jj);
-  Value col = rewriter.create<IndexCastOp>(loc, col64, indexType);
-  rewriter.create<memref::StoreOp>(loc, ctrue, kvec_i1, col);
-  rewriter.setInsertionPointAfter(colLoop1);
-  // Loop thru all columns; count number of resulting nonzeros in the row
-  if (maskIndices != nullptr) {
-    colLoop1 = rewriter.create<scf::ParallelOp>(loc, maskStart, maskEnd, c1, ci0);
-    Value mm = colLoop1.getInductionVars()[0];
-    rewriter.setInsertionPointToStart(colLoop1.getBody());
-    col64 = rewriter.create<memref::LoadOp>(loc, maskIndices, mm);
-    col = rewriter.create<IndexCastOp>(loc, col64, indexType);
-  } else {
-    colLoop1 = rewriter.create<scf::ParallelOp>(loc, maskStart, maskEnd, c1, ci0);
-    col = colLoop1.getInductionVars()[0];
-    rewriter.setInsertionPointToStart(colLoop1.getBody());
-  }
-  Value colPlus1 = rewriter.create<AddIOp>(loc, col, c1);
-  Value rowStart64 = rewriter.create<memref::LoadOp>(loc, iterPointers, col);
-  Value rowEnd64 = rewriter.create<memref::LoadOp>(loc, iterPointers, colPlus1);
-  Value cmpRowSame = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, rowStart64, rowEnd64);
-  // Find overlap in column indices with kvec
-  scf::IfOp ifBlock_overlap = rewriter.create<scf::IfOp>(loc, int64Type, cmpRowSame, true);
-  // if cmpRowSame
-  rewriter.setInsertionPointToStart(ifBlock_overlap.thenBlock());
-  rewriter.create<scf::YieldOp>(loc, ci0);
-  // else
-  rewriter.setInsertionPointToStart(ifBlock_overlap.elseBlock());
-  // Walk thru the indices; on a match yield 1, else yield 0
-  scf::WhileOp whileLoop = rewriter.create<scf::WhileOp>(loc, int64Type, rowStart64);
-  Block *before = rewriter.createBlock(&whileLoop.before(), {}, int64Type);
-  Block *after = rewriter.createBlock(&whileLoop.after(), {}, int64Type);
-  Value ii64 = before->getArgument(0);
-  rewriter.setInsertionPointToStart(&whileLoop.before().front());
-  // Check if ii >= rowEnd
-  Value cmpEndReached = rewriter.create<CmpIOp>(loc, CmpIPredicate::uge, ii64, rowEnd64);
-  scf::IfOp ifBlock_continueSearch = rewriter.create<scf::IfOp>(loc, ArrayRef<Type>{boolType, int64Type}, cmpEndReached, true);
-  // if cmpEndReached
-  rewriter.setInsertionPointToStart(ifBlock_continueSearch.thenBlock());
-  rewriter.create<scf::YieldOp>(loc, ValueRange{cfalse, ci0});
-  // else
-  rewriter.setInsertionPointToStart(ifBlock_continueSearch.elseBlock());
-  // Check if row has a match in kvec
-  Value ii = rewriter.create<IndexCastOp>(loc, ii64, indexType);
-  Value kk64 = rewriter.create<memref::LoadOp>(loc, iterIndices, ii);
-  Value kk = rewriter.create<IndexCastOp>(loc, kk64, indexType);
-  Value cmpPair = rewriter.create<memref::LoadOp>(loc, kvec_i1, kk);
-  Value cmpResult0 = rewriter.create<SelectOp>(loc, cmpPair, cfalse, ctrue);
-  Value cmpResult1 = rewriter.create<SelectOp>(loc, cmpPair, ci1, ii64);
-  rewriter.create<scf::YieldOp>(loc, ValueRange{cmpResult0, cmpResult1});
-  // end if cmpEndReached
-  rewriter.setInsertionPointAfter(ifBlock_continueSearch);
-  Value continueSearch = ifBlock_continueSearch.getResult(0);
-  Value valToSend = ifBlock_continueSearch.getResult(1);
-  rewriter.create<scf::ConditionOp>(loc, continueSearch, valToSend);
-  // "do" portion of while loop
-  rewriter.setInsertionPointToStart(&whileLoop.after().front());
-  Value iiPrev = after->getArgument(0);
-  Value iiNext = rewriter.create<AddIOp>(loc, iiPrev, ci1);
-  rewriter.create<scf::YieldOp>(loc, iiNext);
-  rewriter.setInsertionPointAfter(whileLoop);
-  Value res = whileLoop.getResult(0);
-  rewriter.create<scf::YieldOp>(loc, res);
-  // end if cmpRowSame
-  rewriter.setInsertionPointAfter(ifBlock_overlap);
-  Value overlap = ifBlock_overlap.getResult(0);
-  scf::ReduceOp reducer = rewriter.create<scf::ReduceOp>(loc, overlap);
-  Value lhs = reducer.getRegion().getArgument(0);
-  Value rhs = reducer.getRegion().getArgument(1);
-  rewriter.setInsertionPointToStart(&reducer.getRegion().front());
-  Value z = rewriter.create<AddIOp>(loc, lhs, rhs);
-  rewriter.create<scf::ReduceReturnOp>(loc, z);
-  // end col loop
-  rewriter.setInsertionPointAfter(colLoop1);
-  Value total = colLoop1.getResult(0);
-  rewriter.create<memref::DeallocOp>(loc, kvec_i1);
-  return total;
-}
-
-void computeInnerProduct(PatternRewriter &rewriter, Value nk,
-                          Value fixedIndices, Value fixedValues, Value fixedIndexStart, Value fixedIndexEnd,
-                          Value iterPointers, Value iterIndices, Value iterValues,
-                          // If no mask is used, set maskIndices to nullptr, and provide maskStart=c0 and maskEnd=len(iterPointers)-1
-                          Value maskIndices, Value maskStart, Value maskEnd,
-                          Type valueType, ExtensionBlocks extBlocks,
-                          Value outputIndices, Value outputValues, Value indexOffset
-                          ) {
-  Location loc = rewriter.getUnknownLoc();
-
-  // Types used in this function
-  Type indexType = rewriter.getIndexType();
-  Type int64Type = rewriter.getIntegerType(64);
-  Type boolType = rewriter.getI1Type();
-  MemRefType memref1DBoolType = MemRefType::get({-1}, boolType);
-  MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
-
-  // Initial constants
-  Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-  Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-  Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
-  Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
-
-  // Construct a dense array of row values
-  Value kvec = rewriter.create<memref::AllocOp>(loc, memref1DValueType, nk);
-  Value kvec_i1 = rewriter.create<memref::AllocOp>(loc, memref1DBoolType, nk);
-  rewriter.create<linalg::FillOp>(loc, kvec_i1, cfalse);
-  scf::ParallelOp colLoop3p = rewriter.create<scf::ParallelOp>(loc, fixedIndexStart, fixedIndexEnd, c1);
-  Value jj = colLoop3p.getInductionVars()[0];
-  rewriter.setInsertionPointToStart(colLoop3p.getBody());
-  Value fixedJ64 = rewriter.create<memref::LoadOp>(loc, fixedIndices, jj);
-  Value fixedJ = rewriter.create<IndexCastOp>(loc, fixedJ64, indexType);
-  rewriter.create<memref::StoreOp>(loc, ctrue, kvec_i1, fixedJ);
-  Value val = rewriter.create<memref::LoadOp>(loc, fixedValues, jj);
-  rewriter.create<memref::StoreOp>(loc, val, kvec, fixedJ);
-
-  // end col loop 3p
-  rewriter.setInsertionPointAfter(colLoop3p);
-
-  Value col64, col;
-  scf::ForOp colLoop3f;
-  if (maskIndices != nullptr) {
-      colLoop3f = rewriter.create<scf::ForOp>(loc, maskStart, maskEnd, c1, c0);
-      Value mm = colLoop3f.getInductionVar();
-      rewriter.setInsertionPointToStart(colLoop3f.getBody());
-      col64 = rewriter.create<memref::LoadOp>(loc, maskIndices, mm);
-      col = rewriter.create<IndexCastOp>(loc, col64, indexType);
-  } else {
-      colLoop3f = rewriter.create<scf::ForOp>(loc, maskStart, maskEnd, c1, c0);
-      col = colLoop3f.getInductionVar();
-      rewriter.setInsertionPointToStart(colLoop3f.getBody());
-      col64 = rewriter.create<IndexCastOp>(loc, col, int64Type);
-  }
-
-  Value offset = colLoop3f.getLoopBody().getArgument(1);
-  Value colPlus1 = rewriter.create<AddIOp>(loc, col, c1);
-  Value iStart64 = rewriter.create<memref::LoadOp>(loc, iterPointers, col);
-  Value iEnd64 = rewriter.create<memref::LoadOp>(loc, iterPointers, colPlus1);
-  Value iStart = rewriter.create<IndexCastOp>(loc, iStart64, indexType);
-  Value iEnd = rewriter.create<IndexCastOp>(loc, iEnd64, indexType);
-
-  // insert add identity block
-  graphblas::YieldOp addIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.addIdentity->getTerminator());
-  rewriter.mergeBlocks(extBlocks.addIdentity, rewriter.getBlock(), {});
-  Value addIdentity = addIdentityYield.values().front();
-  rewriter.eraseOp(addIdentityYield);
-
-  scf::ForOp kLoop = rewriter.create<scf::ForOp>(loc, iStart, iEnd, c1, ValueRange{addIdentity, cfalse});
-  Value ii = kLoop.getInductionVar();
-  Value curr = kLoop.getLoopBody().getArgument(1);
-  Value alive = kLoop.getLoopBody().getArgument(2);
-  rewriter.setInsertionPointToStart(kLoop.getBody());
-
-  Value kk64 = rewriter.create<memref::LoadOp>(loc, iterIndices, ii);
-  Value kk = rewriter.create<IndexCastOp>(loc, kk64, indexType);
-  Value cmpPair = rewriter.create<memref::LoadOp>(loc, kvec_i1, kk);
-  scf::IfOp ifBlock_cmpPair = rewriter.create<scf::IfOp>(loc, ArrayRef<Type>{valueType, boolType}, cmpPair, true);
-  // if cmpPair
-  rewriter.setInsertionPointToStart(ifBlock_cmpPair.thenBlock());
-
-  Value aVal = rewriter.create<memref::LoadOp>(loc, kvec, kk);
-  Value bVal = rewriter.create<memref::LoadOp>(loc, iterValues, ii);
-
-  // insert multiply operation block
-  graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.mult->getTerminator());
-  Value multResult = multYield.values().front();
-  rewriter.eraseOp(multYield);
-  rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
-
-  // insert add operation block
-  graphblas::YieldOp addYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.add->getTerminator());
-  Value addResult = addYield.values().front();
-  rewriter.eraseOp(addYield);
-  rewriter.mergeBlocks(extBlocks.add, rewriter.getBlock(), {curr, multResult});
-
-  rewriter.create<scf::YieldOp>(loc, ValueRange{addResult, ctrue});
-
-  // else
-  rewriter.setInsertionPointToStart(ifBlock_cmpPair.elseBlock());
-  rewriter.create<scf::YieldOp>(loc, ValueRange{curr, alive});
-
-  // end if cmpPair
-  rewriter.setInsertionPointAfter(ifBlock_cmpPair);
-  Value newCurr = ifBlock_cmpPair.getResult(0);
-  Value newAlive = ifBlock_cmpPair.getResult(1);
-  rewriter.create<scf::YieldOp>(loc, ValueRange{newCurr, newAlive});
-
-  // end k loop
-  rewriter.setInsertionPointAfter(kLoop);
-
-  Value total = kLoop.getResult(0);
-  Value notEmpty = kLoop.getResult(1);
-
-  scf::IfOp ifBlock_newOffset = rewriter.create<scf::IfOp>(loc, indexType, notEmpty, true);
-  // if not empty
-  rewriter.setInsertionPointToStart(ifBlock_newOffset.thenBlock());
-
-  // Store total in Cx
-  Value cjPos = rewriter.create<AddIOp>(loc, indexOffset, offset);
-  rewriter.create<memref::StoreOp>(loc, col64, outputIndices, cjPos);
-
-  // Does total need to be transformed?
-  if (extBlocks.transformOut) {
-    graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.transformOut->getTerminator());
-    Value transformResult = yield.values().front();
-
-    rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(), {total});
-
-    rewriter.create<memref::StoreOp>(loc, transformResult, outputValues, cjPos);
-    rewriter.eraseOp(yield);
-  } else {
-    // write total as-is
-    rewriter.create<memref::StoreOp>(loc, total, outputValues, cjPos);
-  }
-
-  // Increment offset
-  Value offsetPlus1 = rewriter.create<AddIOp>(loc, offset, c1);
-  rewriter.create<scf::YieldOp>(loc, offsetPlus1);
-
-  // else
-  rewriter.setInsertionPointToStart(ifBlock_newOffset.elseBlock());
-  rewriter.create<scf::YieldOp>(loc, offset);
-
-  // end if not empty
-  rewriter.setInsertionPointAfter(ifBlock_newOffset);
-
-  Value newOffset = ifBlock_newOffset.getResult(0);
-  rewriter.create<scf::YieldOp>(loc, newOffset);
-
-  // end col loop 3f
-  rewriter.setInsertionPointAfter(colLoop3f);
-  rewriter.create<memref::DeallocOp>(loc, kvec);
-  rewriter.create<memref::DeallocOp>(loc, kvec_i1);
-}
-
 class LowerMatrixMultiplyGenericRewrite : public OpRewritePattern<graphblas::MatrixMultiplyGenericOp> {
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyGenericOp>::OpRewritePattern;
@@ -1293,8 +1032,8 @@ private:
 
     Value size = rewriter.create<graphblas::NumRowsOp>(loc, A);
     Value nk = rewriter.create<graphblas::SizeOp>(loc, B);
-    Value nk_check = rewriter.create<graphblas::NumColsOp>(loc, A);
     // TODO: how do I check nk == nk_check and raise an exception if they don't match?
+    // Value nk_check = rewriter.create<graphblas::NumColsOp>(loc, A);
 
     Value C = callEmptyLike(rewriter, module, loc, B);
     callResizeDim(rewriter, module, loc, C, c0, size);
@@ -1586,9 +1325,6 @@ public:
     Value cf0 = llvm::TypeSwitch<Type, Value>(valueType)
         .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
         .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
-    Value cf1 = llvm::TypeSwitch<Type, Value>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
     Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
     Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
 
@@ -1848,7 +1584,6 @@ private:
 
     // Types
     RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
-    Type boolType = rewriter.getI1Type();
     Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
     Type valueType = outputType.getElementType();
@@ -1858,11 +1593,7 @@ private:
     // Initial constants
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-    Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
-    Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
-    Value cf0 = llvm::TypeSwitch<Type, Value>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
+    Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
 
     Value size = rewriter.create<graphblas::SizeOp>(loc, output);
 
@@ -1878,138 +1609,33 @@ private:
     Value Innz = rewriter.create<IndexCastOp>(loc, Innz64, indexType);
     Value Onnz = rewriter.create<IndexCastOp>(loc, Onnz64, indexType);
 
-    // While Loop (exit when either array is exhausted)
-    ArrayRef<Type> whileTypes = ArrayRef<Type>{indexType, indexType, indexType, indexType, boolType, boolType, indexType};
-    scf::WhileOp whileLoop = rewriter.create<scf::WhileOp>(loc, whileTypes, ValueRange{c0, c0, c0, c0, ctrue, ctrue, c0});
-    Block *before = rewriter.createBlock(&whileLoop.before(), {}, whileTypes);
-    Block *after = rewriter.createBlock(&whileLoop.after(), {}, whileTypes);
-    // "while" portion of the loop
-    rewriter.setInsertionPointToStart(&whileLoop.before().front());
-    Value posI = before->getArgument(0);
-    Value posO = before->getArgument(1);
-    Value validPosI = rewriter.create<CmpIOp>(loc, CmpIPredicate::ult, posI, Innz);
-    Value validPosO = rewriter.create<CmpIOp>(loc, CmpIPredicate::ult, posO, Onnz);
-    Value continueLoop = rewriter.create<AndOp>(loc, validPosI, validPosO);
-    rewriter.create<scf::ConditionOp>(loc, continueLoop, before->getArguments());
+    Value unionSize = computeIndexOverlapSize(rewriter, /* intersect */ false, c0, Innz, Ii, c0, Onnz, Oi);
+    Value unionSize64 = rewriter.create<IndexCastOp>(loc, unionSize, int64Type);
 
-    // "do" portion of while loop
-    rewriter.setInsertionPointToStart(&whileLoop.after().front());
-    posI = after->getArgument(0);
-    posO = after->getArgument(1);
-    Value idxI = after->getArgument(2);
-    Value idxO = after->getArgument(3);
-    Value needsUpdateI = after->getArgument(4);
-    Value needsUpdateO = after->getArgument(5);
-    Value count = after->getArgument(6);
+    // Create temp copy of output
+    Value temp = callDupTensor(rewriter, module, loc, output);
+    Value Ti = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, temp, c0);
+    Value Tx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, temp);
 
-    // Update input index based on flag
-    scf::IfOp if_updateI = rewriter.create<scf::IfOp>(loc, indexType, needsUpdateI, true);
-    // if updateI
-    rewriter.setInsertionPointToStart(if_updateI.thenBlock());
-    Value updatedIdxI64 = rewriter.create<memref::LoadOp>(loc, Ii, posI);
-    Value updatedIdxI = rewriter.create<IndexCastOp>(loc, updatedIdxI64, indexType);
-    rewriter.create<scf::YieldOp>(loc, updatedIdxI);
-    // else
-    rewriter.setInsertionPointToStart(if_updateI.elseBlock());
-    rewriter.create<scf::YieldOp>(loc, idxI);
-    rewriter.setInsertionPointAfter(if_updateI);
+    // Resize output to be unionSize
+    callResizeDim(rewriter, module, loc, output, c0, size);
+    callResizePointers(rewriter, module, loc, output, c0, c2);
+    callResizeIndex(rewriter, module, loc, output, c0, unionSize);
+    callResizeValues(rewriter, module, loc, output, unionSize);
 
-    // Update output index based on flag
-    scf::IfOp if_updateO = rewriter.create<scf::IfOp>(loc, indexType, needsUpdateO, true);
-    // if updateO
-    rewriter.setInsertionPointToStart(if_updateO.thenBlock());
-    Value updatedIdxO64 = rewriter.create<memref::LoadOp>(loc, Oi, posO);
-    Value updatedIdxO = rewriter.create<IndexCastOp>(loc, updatedIdxO64, indexType);
-    rewriter.create<scf::YieldOp>(loc, updatedIdxO);
-    // else
-    rewriter.setInsertionPointToStart(if_updateO.elseBlock());
-    rewriter.create<scf::YieldOp>(loc, idxO);
-    rewriter.setInsertionPointAfter(if_updateO);
+    Op = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c0);
+    rewriter.create<memref::StoreOp>(loc, unionSize64, Op, c1);
+    Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c0);
+    Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
 
-    Value newIdxI = if_updateI.getResult(0);
-    Value newIdxO = if_updateO.getResult(0);
-    Value idxI_lt_idxO = rewriter.create<CmpIOp>(loc, CmpIPredicate::ult, newIdxI, newIdxO);
-    Value idxI_gt_idxO = rewriter.create<CmpIOp>(loc, CmpIPredicate::ugt, newIdxI, newIdxO);
-    Value posIplus1 = rewriter.create<AddIOp>(loc, posI, c1);
-    Value posOplus1 = rewriter.create<AddIOp>(loc, posO, c1);
-    Value countplus1 = rewriter.create<AddIOp>(loc, count, c1);
+    Value finalIndexPos = computeUnionAggregation(rewriter, /* intersect */ false, accumulateOperator, valueType,
+                                                  c0, Innz, Ii, Ix, c0, Onnz, Ti, Tx, c0, Oi, Ox);
 
-    ArrayRef<Type> doTypes = ArrayRef<Type>{indexType, indexType, boolType, boolType};
-    scf::IfOp if_onlyI = rewriter.create<scf::IfOp>(loc, doTypes, idxI_lt_idxO, true);
-    // if useIOnly
-    rewriter.setInsertionPointToStart(if_onlyI.thenBlock());
-    // Should include idxI here in the output
-    rewriter.create<scf::YieldOp>(loc, ValueRange{posIplus1, posO, ctrue, cfalse});
-    // else
-    rewriter.setInsertionPointToStart(if_onlyI.elseBlock());
-    scf::IfOp if_onlyO = rewriter.create<scf::IfOp>(loc, doTypes, idxI_gt_idxO, true);
-    // if useOOnly
-    rewriter.setInsertionPointToStart(if_onlyO.thenBlock());
-    // Should include idxO here in the output
-    rewriter.create<scf::YieldOp>(loc, ValueRange{posI, posOplus1, cfalse, ctrue});
-    // else
-    rewriter.setInsertionPointToStart(if_onlyO.elseBlock());
-    // At this point, we know idxI == idxO
-    // Should include idxI and idxO here in the output
-    rewriter.create<scf::YieldOp>(loc, ValueRange{posIplus1, posOplus1, ctrue, ctrue});
-    // end useOOnly
-    rewriter.setInsertionPointAfter(if_onlyO);
-    rewriter.create<scf::YieldOp>(loc, if_onlyO.getResults());
-    // end useIOnly
-    rewriter.setInsertionPointAfter(if_onlyI);
-    Value newPosI = if_onlyI.getResult(0);
-    Value newPosO = if_onlyI.getResult(1);
-    needsUpdateI = if_onlyI.getResult(2);
-    needsUpdateO = if_onlyI.getResult(3);
+    // Delete temporary copy
+    callDelSparseTensor(rewriter, module, loc, temp);
 
-    rewriter.create<scf::YieldOp>(loc, ValueRange{newPosI, newPosO, newIdxI, newIdxO, needsUpdateI, needsUpdateO, countplus1});
-    rewriter.setInsertionPointAfter(whileLoop);
-
-    // For loop (remaining elements after other array is exhausted)
-    scf::ForOp forLoop;
-    count = whileLoop.getResult(6);
-    posI = whileLoop.getResult(0);
-    Value remainingPosI = rewriter.create<CmpIOp>(loc, CmpIPredicate::ult, posI, Innz);
-    scf::IfOp if_remainingI = rewriter.create<scf::IfOp>(loc, indexType, remainingPosI, true);
-    // if remainingI
-    rewriter.setInsertionPointToStart(if_remainingI.thenBlock());
-    forLoop = rewriter.create<scf::ForOp>(loc, posI, Innz, c1, count);
-    Value ii = forLoop.getInductionVar();
-    Value currCount = forLoop.getLoopBody().getArgument(1);
-    rewriter.setInsertionPointToStart(forLoop.getBody());
-    // Should include idxI here in the output
-    Value newCount = rewriter.create<AddIOp>(loc, currCount, c1);
-    rewriter.create<scf::YieldOp>(loc, newCount);
-    rewriter.setInsertionPointAfter(forLoop);
-    rewriter.create<scf::YieldOp>(loc, forLoop.getResult(0));
-    // else
-    rewriter.setInsertionPointToStart(if_remainingI.elseBlock());
-    posO = whileLoop.getResult(1);
-    Value remainingPosO = rewriter.create<CmpIOp>(loc, CmpIPredicate::ult, posO, Onnz);
-    scf::IfOp if_remainingO = rewriter.create<scf::IfOp>(loc, indexType, remainingPosO, true);
-    // if remainingO
-    rewriter.setInsertionPointToStart(if_remainingO.thenBlock());
-    forLoop = rewriter.create<scf::ForOp>(loc, posO, Onnz, c1, count);
-    Value oo = forLoop.getInductionVar();
-    currCount = forLoop.getLoopBody().getArgument(1);
-    rewriter.setInsertionPointToStart(forLoop.getBody());
-    // Should include idxO here in the output
-    newCount = rewriter.create<AddIOp>(loc, currCount, c1);
-    rewriter.create<scf::YieldOp>(loc, newCount);
-    rewriter.setInsertionPointAfter(forLoop);
-    rewriter.create<scf::YieldOp>(loc, forLoop.getResult(0));
-    // else
-    rewriter.setInsertionPointToStart(if_remainingO.elseBlock());
-    rewriter.create<scf::YieldOp>(loc, count);
-    // end remainingO
-    rewriter.setInsertionPointAfter(if_remainingO);
-    rewriter.create<scf::YieldOp>(loc, if_remainingO.getResults());
-    // end remainingI
-    rewriter.setInsertionPointAfter(if_remainingI);
-
-    Value finalCount = if_remainingI.getResult(0);
-
-    rewriter.replaceOp(op, finalCount);
+    // TODO: figure out how to replace an op with no return type
+    rewriter.replaceOp(op, finalIndexPos);
 
     return success();
   }
