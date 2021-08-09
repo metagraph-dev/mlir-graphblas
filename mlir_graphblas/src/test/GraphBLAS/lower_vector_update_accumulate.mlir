@@ -180,3 +180,5 @@ func @vector_update_accumulate(%input: tensor<?xf64, #CV64>, %output: tensor<?xf
     %final_position = graphblas.update %input -> %output { accumulate_operator = "plus" } : tensor<?xf64, #CV64> -> tensor<?xf64, #CV64>
     return %final_position : index
 }
+
+// TODO: Check all type combinations
