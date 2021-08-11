@@ -54,6 +54,8 @@ jobs:
         run: |
           conda install -c conda-forge coveralls
           coveralls --service=github
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
       - name: Conda Build
         run: |
           conda build -c metagraph/label/dev -c conda-forge --python ${{ matrix.pyver }} continuous_integration/conda # temp restriction to use metagraph dev label

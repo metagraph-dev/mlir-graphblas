@@ -38,7 +38,7 @@ namespace {
 class LowerSizeRewrite : public OpRewritePattern<graphblas::SizeOp> {
 public:
   using OpRewritePattern<graphblas::SizeOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::SizeOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::SizeOp op, PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
 
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
@@ -53,7 +53,7 @@ public:
 class LowerNumRowsRewrite : public OpRewritePattern<graphblas::NumRowsOp> {
 public:
   using OpRewritePattern<graphblas::NumRowsOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::NumRowsOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::NumRowsOp op, PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
 
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
@@ -68,7 +68,7 @@ public:
 class LowerNumColsRewrite : public OpRewritePattern<graphblas::NumColsOp> {
 public:
   using OpRewritePattern<graphblas::NumColsOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::NumColsOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::NumColsOp op, PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
 
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
@@ -83,7 +83,7 @@ public:
 class LowerNumValsRewrite : public OpRewritePattern<graphblas::NumValsOp> {
 public:
   using OpRewritePattern<graphblas::NumValsOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::NumValsOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::NumValsOp op, PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
     Value inputTensor = op.input();
     Type inputType = inputTensor.getType();
@@ -120,7 +120,7 @@ public:
 class LowerDupRewrite : public OpRewritePattern<graphblas::DupOp> {
 public:
   using OpRewritePattern<graphblas::DupOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::DupOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::DupOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
     Value inputTensor = op.input();
@@ -144,7 +144,7 @@ public:
 class LowerConvertLayoutRewrite : public OpRewritePattern<graphblas::ConvertLayoutOp> {
 public:
   using OpRewritePattern<graphblas::ConvertLayoutOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::ConvertLayoutOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::ConvertLayoutOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -406,7 +406,7 @@ struct MatrixSelectOutputWriter {
 class LowerMatrixSelectRewrite : public OpRewritePattern<graphblas::MatrixSelectOp> {
 public:
   using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -493,7 +493,7 @@ class LowerMatrixReduceToScalarRewrite : public OpRewritePattern<graphblas::Matr
 {
 public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const override
   {
     Value input = op.input();
     StringRef aggregator = op.aggregator();
@@ -544,7 +544,7 @@ public:
 class LowerMatrixReduceToScalarGenericRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp> {
 public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op, PatternRewriter &rewriter) const override {
     Value input = op.input();
     Location loc = rewriter.getUnknownLoc();
 
@@ -615,7 +615,7 @@ public:
 class LowerMatrixApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyOp> {
 public:
   using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
     Location loc = op->getLoc();
 
@@ -655,7 +655,7 @@ class LowerMatrixApplyGenericRewrite : public OpRewritePattern<graphblas::Matrix
 {
 public:
   using OpRewritePattern<graphblas::MatrixApplyGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op, PatternRewriter &rewriter) const
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op, PatternRewriter &rewriter) const override
   {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
@@ -721,7 +721,7 @@ public:
 class LowerMatrixMultiplyRewrite : public OpRewritePattern<graphblas::MatrixMultiplyOp> {
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
     Location loc = rewriter.getUnknownLoc();
 
@@ -826,7 +826,7 @@ public:
 class LowerMatrixMultiplyGenericRewrite : public OpRewritePattern<graphblas::MatrixMultiplyGenericOp> {
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter) const override {
     // Required blocks
     RegionRange extensions = op.extensions();
     ExtensionBlocks extBlocks;
@@ -1294,7 +1294,7 @@ private:
 class LowerMatrixMultiplyReduceToScalarGenericRewrite : public OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarGenericOp> {
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void) module;
     Location loc = rewriter.getUnknownLoc();
 
@@ -1534,7 +1534,7 @@ public:
 class LowerUpdateRewrite : public OpRewritePattern<graphblas::UpdateOp> {
 public:
   using OpRewritePattern<graphblas::UpdateOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::UpdateOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::UpdateOp op, PatternRewriter &rewriter) const override {
     // Inputs
     Value output = op.output();
     llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
@@ -1656,7 +1656,7 @@ private:
 class LowerEqualRewrite : public OpRewritePattern<graphblas::EqualOp> {
 public:
   using OpRewritePattern<graphblas::EqualOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::EqualOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::EqualOp op, PatternRewriter &rewriter) const override {
     Location loc = rewriter.getUnknownLoc();
 
     // Inputs
