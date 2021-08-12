@@ -1836,10 +1836,10 @@ public:
     Value inputTensor = op.vec();
     Type outputType = op->getResultTypes()[0];
 
-    graphblas::VectorArgMinMaxOp newVectorArgMinMaxOp =
+    Value newVectorArgMinMaxOp =
       rewriter.create<graphblas::VectorArgMinMaxOp>(loc, outputType, inputTensor, "min");
 
-    rewriter.replaceOp(op, newVectorArgMinMaxOp.getResult());
+    rewriter.replaceOp(op, newVectorArgMinMaxOp);
     
     return success();
   };
@@ -1854,10 +1854,10 @@ public:
     Value inputTensor = op.vec();
     Type outputType = op->getResultTypes()[0];
 
-    graphblas::VectorArgMinMaxOp newVectorArgMinMaxOp =
+    Value newVectorArgMinMaxOp =
       rewriter.create<graphblas::VectorArgMinMaxOp>(loc, outputType, inputTensor, "max");
 
-    rewriter.replaceOp(op, newVectorArgMinMaxOp.getResult());
+    rewriter.replaceOp(op, newVectorArgMinMaxOp);
     
     return success();
   };
