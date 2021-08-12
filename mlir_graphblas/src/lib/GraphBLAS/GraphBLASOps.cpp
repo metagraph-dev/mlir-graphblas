@@ -536,6 +536,36 @@ static LogicalResult verify(VectorEqualsOp op) {
   return success();
 }
 
+static LogicalResult verify(VectorArgMinMaxOp op) {
+  Type vecType = op.vec().getType();
+  
+  llvm::Optional<std::string> vecCompressionErrorMessage = checkCompressedVector(vecType, 0);
+  if (vecCompressionErrorMessage)
+    return op.emitError(vecCompressionErrorMessage.getValue());
+      
+  return success();
+}
+
+static LogicalResult verify(VectorArgMinOp op) {
+  Type vecType = op.vec().getType();
+  
+  llvm::Optional<std::string> vecCompressionErrorMessage = checkCompressedVector(vecType, 0);
+  if (vecCompressionErrorMessage)
+    return op.emitError(vecCompressionErrorMessage.getValue());
+      
+  return success();
+}
+
+static LogicalResult verify(VectorArgMaxOp op) {
+  Type vecType = op.vec().getType();
+  
+  llvm::Optional<std::string> vecCompressionErrorMessage = checkCompressedVector(vecType, 0);
+  if (vecCompressionErrorMessage)
+    return op.emitError(vecCompressionErrorMessage.getValue());
+      
+  return success();
+}
+
 template <class T>
 static LogicalResult verifyMatrixReduceToScalarArgs(T op)
 {
@@ -727,6 +757,12 @@ static LogicalResult verify(TransposeOp op) {
 }
 
 static LogicalResult verify(YieldOp op)
+{
+  // no additional verification needed yet
+  return success();
+}
+
+static LogicalResult verify(CommentOp op)
 {
   // no additional verification needed yet
   return success();
