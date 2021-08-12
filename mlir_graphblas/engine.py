@@ -594,7 +594,7 @@ class MlirJitEngine:
                 stderr=subprocess.PIPE,
             )
             record_command = f"""
-            perf record -p {execution_process_id} --output={perf_data_file_name}
+            perf record -g -p {execution_process_id} --output={perf_data_file_name}
             exit
             """
             record_process.stdin.write(record_command.encode())
@@ -669,7 +669,7 @@ class MlirJitEngine:
                 files_to_link.append(profile._name)
             so_file_name = f"shared-{uuid.uuid4()}.so"
             so_file_name = os.path.join(self.profile_dir_name, so_file_name)
-            self.c_compiler.link_shared_object(files_to_link, so_file_name)
+            self.c_compiler.link_shared_object(files_to_link, so_file_name, debug=True)
             ctypes.cdll.LoadLibrary(so_file_name)
             shared_lib = ctypes.CDLL(so_file_name)
             self._engine.set_object_cache(notify_func=None)
@@ -687,6 +687,15 @@ class MlirJitEngine:
         profile: Union[bool, ctypes.CDLL] = False,
     ) -> Optional[Union[DebugResult, ctypes.CDLL]]:
         """Translates MLIR code -> LLVM dialect of MLIR -> actual LLVM IR."""
+
+        if profile:
+            prof_filename = os.path.join(
+                self.profile_dir_name, f"prof-{uuid.uuid4()}.mlir"
+            )
+            with open(prof_filename, "wb") as f:
+                f.write(mlir_text)
+            mlir_text = prof_filename
+
         if debug:
             try:
                 llvm_dialect_text = self._cli.apply_passes(mlir_text, passes)

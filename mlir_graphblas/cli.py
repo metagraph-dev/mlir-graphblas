@@ -1,4 +1,5 @@
 import os
+import io
 import math
 import subprocess
 import tempfile
@@ -43,33 +44,41 @@ class MlirOptCli:
             options = []
         self._options = options
 
-    def _read_input(self, file) -> bytes:
+    def _read_input(self, file: Union[bytes, io.IOBase]) -> bytes:
         if isinstance(file, bytes):
             return file
         elif hasattr(file, "close"):
             return file.read()
         else:
-            with open(file, "rb") as f:
-                return f.read()
+            raise TypeError("file must be bytes or a file object")
 
-    def apply_passes(self, file, passes: List[str]) -> Union[str, "DebugResult"]:
+    def apply_passes(
+        self, file: Union[bytes, str, io.IOBase], passes: List[str]
+    ) -> Union[str, "DebugResult"]:
         """
         Converts a file of MLIR by applying passes sequentially.
         Returns a string of the result.
 
-        :param file: file-like object -or- path to file on disk -or- bytes of file content
+        :param file: file-like object -or- path to file on disk (as string) -or- bytes of file content
         :param passes: list of mlir-opt pass options
         :return: str (if successful)
                  list of str containing transformations and eventual error (if failure)
         """
-        input = self._read_input(file)
+        args = [self._executable] + self._options + list(passes)
+        if isinstance(file, str):
+            args.append(file)
+            input = None
+        else:
+            input = self._read_input(file)
         result = logged_subprocess_run(
-            [self._executable] + self._options + list(passes),
+            args,
             capture_output=True,
             input=input,
         )
+
         if result.returncode == 0:
             return result.stdout.decode()
+
         err_lines = result.stderr.split(b"\n")
         err = MlirOptError("\n".join(el.decode() for el in err_lines[:3]))
         err.debug_result = self.debug_passes(input, passes) if passes else None
