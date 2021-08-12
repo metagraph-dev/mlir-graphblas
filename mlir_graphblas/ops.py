@@ -274,6 +274,20 @@ class GraphBLAS_ConvertLayout(BaseOp):
         )
 
 
+class GraphBLAS_Transpose(BaseOp):
+    dialect = "graphblas"
+    name = "transpose"
+
+    @classmethod
+    def call(cls, irbuilder, input, return_type):
+        cls.ensure_mlirvar(input, TensorType)
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.transpose {input} : "
+            f"{input.type} to {ret_val.type}"
+        )
+
+
 class GraphBLAS_MatrixSelect(BaseOp):
     dialect = "graphblas"
     name = "matrix_select"

@@ -296,6 +296,69 @@ public:
   };
 };
 
+class LowerTransposeRewrite : public OpRewritePattern<graphblas::TransposeOp> {
+public:
+  using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::TransposeOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Value inputTensor = op.input();
+    RankedTensorType inputType = inputTensor.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType outputType = op->getResultTypes()[0].dyn_cast<RankedTensorType>();
+    
+    bool inputTypeIsCSR = typeIsCSR(inputType);
+    bool outputTypeIsCSR = typeIsCSR(outputType);
+
+    // Add a graphblas.convert_layout op if the input and output compression types are the same
+    if (inputTypeIsCSR == outputTypeIsCSR) {
+      // TODO consider separating this out into its own rewrite pattern
+      MLIRContext* context = op.getContext();
+      Type inputTensorValueType = inputType.getElementType();
+      llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
+      RankedTensorType newType = inputTypeIsCSR ?
+       	getCSCTensorType(context, inputShape, inputTensorValueType) :
+      	getCSRTensorType(context, inputShape, inputTensorValueType);
+      graphblas::ConvertLayoutOp newConvertLayoutOp =
+      	rewriter.create<graphblas::ConvertLayoutOp>(loc, newType, inputTensor);
+      Value newLayOutInputTensor = newConvertLayoutOp.getResult();
+      graphblas::TransposeOp newTransposeOp =
+	rewriter.create<graphblas::TransposeOp>(loc, outputType, newLayOutInputTensor);
+      
+      rewriter.replaceOp(op, newTransposeOp.getResult()); 
+      
+      return success();
+    }
+
+    // Cast types
+    Value output = callDupTensor(rewriter, module, loc, inputTensor);
+    if (inputTypeIsCSR) {
+      output = convertToExternalCSC(rewriter, module, loc, output);
+    } else {
+      output = convertToExternalCSR(rewriter, module, loc, output);
+    }
+
+    // Swap sizes
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
+    Value ncol = rewriter.create<graphblas::NumColsOp>(loc, inputTensor);
+    Value cond = rewriter.create<CmpIOp>(op.getLoc(), CmpIPredicate::ne, nrow, ncol);
+    scf::IfOp ifOp = rewriter.create<scf::IfOp>(loc, cond, /*withElseRegion=*/ false);
+    rewriter.setInsertionPointToStart(&ifOp.thenRegion().front());
+    callResizeDim(rewriter, module, loc, output, c0, ncol);
+    callResizeDim(rewriter, module, loc, output, c1, nrow);
+    
+    // TODO we get an error when we have hard-coded/known sizes at compile time.
+
+    rewriter.replaceOp(op, output);
+
+    cleanupIntermediateTensor(rewriter, module, loc, output);
+    
+    return success();
+  };
+};
+  
 struct MatrixSelectOutputWriter {
   MatrixSelectOutputWriter(StringRef _selector) : selector(_selector)
   {
@@ -309,6 +372,7 @@ struct MatrixSelectOutputWriter {
     c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     c0_64 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
     c1_64 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
+    // TODO support other element types besides f64
     cf0 = rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), float64Type);
   }
 
@@ -495,7 +559,7 @@ public:
   {
     Value input = op.input();
     StringRef aggregator = op.aggregator();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     RankedTensorType operandType = op.input().getType().dyn_cast<RankedTensorType>();
     Type valueType = operandType.getElementType();
@@ -544,7 +608,7 @@ public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op, PatternRewriter &rewriter) const {
     Value input = op.input();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     RankedTensorType operandType = op.input().getType().dyn_cast<RankedTensorType>();
     Type valueType = operandType.getElementType();
@@ -721,7 +785,7 @@ public:
   using OpRewritePattern<graphblas::MatrixMultiplyOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     ValueRange operands = op.getOperands();
@@ -811,14 +875,13 @@ public:
 };
 
 
-Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
+Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
                          Value fixedIndices, Value fixedIndexStart, Value fixedIndexEnd,
                          Value iterPointers, Value iterIndices,
                          // If no mask is used, set maskIndices to nullptr, and provide maskStart=c0 and maskEnd=len(iterPointers)-1
                          Value maskIndices, Value maskStart, Value maskEnd,
                          Type valueType
                          ) {
-  Location loc = rewriter.getUnknownLoc();
 
   // Types used in this function
   Type indexType = rewriter.getIndexType();
@@ -917,7 +980,7 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
   return total;
 }
 
-void computeInnerProduct(PatternRewriter &rewriter, Value nk,
+void computeInnerProduct(PatternRewriter &rewriter, Location loc, Value nk,
                           Value fixedIndices, Value fixedValues, Value fixedIndexStart, Value fixedIndexEnd,
                           Value iterPointers, Value iterIndices, Value iterValues,
                           // If no mask is used, set maskIndices to nullptr, and provide maskStart=c0 and maskEnd=len(iterPointers)-1
@@ -925,7 +988,6 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
                           Type valueType, ExtensionBlocks extBlocks,
                           Value outputIndices, Value outputValues, Value indexOffset
                           ) {
-  Location loc = rewriter.getUnknownLoc();
 
   // Types used in this function
   Type indexType = rewriter.getIndexType();
@@ -1111,7 +1173,7 @@ public:
 private:
   LogicalResult rewriteMatrixMatrixMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1184,9 +1246,9 @@ private:
       Value mcolEnd64 = rewriter.create<memref::LoadOp>(loc, Mp, rowPlus1);
       Value mcolStart = rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
-      total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi, Mj, mcolStart, mcolEnd, valueType);
+      total = computeNumOverlaps(rewriter, loc, nk, Aj, colStart, colEnd, Bp, Bi, Mj, mcolStart, mcolEnd, valueType);
     } else {
-      total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi, nullptr, c0, ncol, valueType);
+      total = computeNumOverlaps(rewriter, loc, nk, Aj, colStart, colEnd, Bp, Bi, nullptr, c0, ncol, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1250,9 +1312,9 @@ private:
       Value mcolEnd64 = rewriter.create<memref::LoadOp>(loc, Mp, rowPlus1);
       Value mcolStart = rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
-      computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj, Cx, baseIndex);
+      computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj, Cx, baseIndex);
     } else {
-      computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, nullptr, c0, ncol, valueType, extBlocks, Cj, Cx, baseIndex);
+      computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, nullptr, c0, ncol, valueType, extBlocks, Cj, Cx, baseIndex);
     }
 
     // end if cmpDiff
@@ -1270,7 +1332,7 @@ private:
 
   LogicalResult rewriteMatrixVectorMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1333,9 +1395,9 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_rowTotal.elseBlock());
     Value total;
     if (mask) {
-      total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj, Mi, maskStart, maskEnd, valueType);
+      total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap, Aj, Mi, maskStart, maskEnd, valueType);
     } else {
-      total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj, nullptr, c0, size, valueType);
+      total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap, Aj, nullptr, c0, size, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1359,9 +1421,9 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
 
     if (mask) {
-      computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
+      computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
     } else {
-      computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
+      computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
     }
 
     // end if cmpDiff
@@ -1376,7 +1438,7 @@ private:
 
   LogicalResult rewriteVectorMatrixMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1439,9 +1501,9 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_rowTotal.elseBlock());
     Value total;
     if (mask) {
-      total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi, Mi, maskStart, maskEnd, valueType);
+      total = computeNumOverlaps(rewriter, loc, nk, Ai, c0, fixedIndexEnd, Bp, Bi, Mi, maskStart, maskEnd, valueType);
     } else {
-      total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi, nullptr, c0, size, valueType);
+      total = computeNumOverlaps(rewriter, loc, nk, Ai, c0, fixedIndexEnd, Bp, Bi, nullptr, c0, size, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1465,9 +1527,9 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
 
     if (mask) {
-      computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
+      computeInnerProduct(rewriter, loc, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
     } else {
-      computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
+      computeInnerProduct(rewriter, loc, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
     }
 
     // end if cmpDiff
@@ -1482,7 +1544,7 @@ private:
 
   LogicalResult rewriteVectorVectorMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1525,7 +1587,7 @@ private:
     Value fixedIndexEnd64 = rewriter.create<memref::LoadOp>(loc, Ap, c1);
     Value fixedIndexEnd = rewriter.create<IndexCastOp>(loc, fixedIndexEnd64, indexType);
 
-    computeInnerProduct(rewriter, size, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, nullptr, c0, c1, valueType, extBlocks, Ci, Cx, c0);
+    computeInnerProduct(rewriter, loc, size, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, nullptr, c0, c1, valueType, extBlocks, Ci, Cx, c0);
 
     // extract scalar from C
     Value cScalar = rewriter.create<memref::LoadOp>(loc, Cx, c0);
@@ -1543,7 +1605,7 @@ public:
   using OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarGenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op, PatternRewriter &rewriter) const {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void) module;
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1584,9 +1646,6 @@ public:
     Value cf0 = llvm::TypeSwitch<Type, Value>(valueType)
         .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
         .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
-    Value cf1 = llvm::TypeSwitch<Type, Value>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
     Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
     Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
 
@@ -1781,6 +1840,44 @@ public:
   };
 };
 
+class LowerVectorArgMinOpRewrite : public OpRewritePattern<graphblas::VectorArgMinOp> {
+public:
+  using OpRewritePattern<graphblas::VectorArgMinOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::VectorArgMinOp op, PatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+
+    Value inputTensor = op.vec();
+    RankedTensorType inputType = inputTensor.getType().dyn_cast<RankedTensorType>();
+    Type outputType = op->getResultTypes()[0];
+
+    graphblas::VectorArgMinMaxOp newVectorArgMinMaxOp =
+      rewriter.create<graphblas::VectorArgMinMaxOp>(loc, outputType, inputTensor, "min");
+
+    rewriter.replaceOp(op, newVectorArgMinMaxOp.getResult());
+    
+    return success();
+  };
+};
+
+class LowerVectorArgMaxOpRewrite : public OpRewritePattern<graphblas::VectorArgMaxOp> {
+public:
+  using OpRewritePattern<graphblas::VectorArgMaxOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::VectorArgMaxOp op, PatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+
+    Value inputTensor = op.vec();
+    RankedTensorType inputType = inputTensor.getType().dyn_cast<RankedTensorType>();
+    Type outputType = op->getResultTypes()[0];
+
+    graphblas::VectorArgMinMaxOp newVectorArgMinMaxOp =
+      rewriter.create<graphblas::VectorArgMinMaxOp>(loc, outputType, inputTensor, "max");
+
+    rewriter.replaceOp(op, newVectorArgMinMaxOp.getResult());
+    
+    return success();
+  };
+};
+
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
       LowerMatrixSelectRewrite,
@@ -1788,15 +1885,19 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
       LowerMatrixReduceToScalarGenericRewrite,
       LowerMatrixMultiplyRewrite,
       LowerConvertLayoutRewrite,
+      LowerTransposeRewrite,
       LowerMatrixApplyRewrite,
       LowerMatrixApplyGenericRewrite,
       LowerMatrixMultiplyReduceToScalarGenericRewrite,
       LowerMatrixMultiplyGenericRewrite,
+      LowerVectorArgMinOpRewrite,
+      LowerVectorArgMaxOpRewrite,
       LowerSizeRewrite,
       LowerNumRowsRewrite,
       LowerNumColsRewrite,
       LowerNumValsRewrite,
-      LowerDupRewrite>(patterns.getContext());
+      LowerDupRewrite
+    >(patterns.getContext());
 }
 
 struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPass> {

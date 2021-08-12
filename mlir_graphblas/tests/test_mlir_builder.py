@@ -45,6 +45,17 @@ def engine():
   indexBitWidth = 64
 }>
 
+func @csr_densify5x5(%argA: tensor<5x5xf64, #CSR64>) -> tensor<5x5xf64> {
+  %output_storage = constant dense<0.0> : tensor<5x5xf64>
+  %0 = linalg.generic #trait_densify_csr
+    ins(%argA: tensor<5x5xf64, #CSR64>)
+    outs(%output_storage: tensor<5x5xf64>) {
+      ^bb(%A: f64, %x: f64):
+        linalg.yield %A : f64
+    } -> tensor<5x5xf64>
+  return %0 : tensor<5x5xf64>
+}
+
 func @csr_densify8x8(%argA: tensor<8x8xf64, #CSR64>) -> tensor<8x8xf64> {
   %output_storage = constant dense<0.0> : tensor<8x8xf64>
   %0 = linalg.generic #trait_densify_csr
@@ -487,5 +498,52 @@ numpy_dense_result
 np.isclose(dense_result, numpy_dense_result)
 {np.isclose(dense_result, numpy_dense_result)}
 """
+
+    return
+
+
+def test_ir_project_and_filter(engine: MlirJitEngine, aliases: AliasMap):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "left_project_and_filter",
+        input_types=["tensor<?x?xf64, #CSR64>"],
+        return_types=["tensor<?x?xf64, #CSR64>"],
+        aliases=aliases,
+    )
+    (M,) = ir_builder.inputs
+    M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSC64>")
+    left_projection = ir_builder.graphblas.matrix_multiply(M, M_T, "plus_times")
+    filtered = ir_builder.graphblas.matrix_select(left_projection, "gt0")
+    ir_builder.return_vars(filtered)
+    left_project_and_filter = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    r"""
+    0  1  2  3
+    |\ | /|\ |\
+    | \|/ | \| \
+    5  6  7  8  9
+    """
+    # fmt: off
+    dense_input_tensor = np.array(
+        [  #   0   1   2   3
+            [  1,  0,  0,  0], # 5
+            [ -9,  1,  1,  0], # 6
+            [  0,  0,  1,  0], # 7
+            [  0,  0,  1,  1], # 8
+            [  0,  0,  0, -9], # 9
+        ],
+        dtype=np.float64,
+    )
+    # fmt: on
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    result = left_project_and_filter(input_tensor)
+    dense_result = engine.csr_densify5x5(result)
+
+    expected_dense_result = dense_input_tensor @ dense_input_tensor.T
+    expected_dense_result[expected_dense_result < 0] = 0
+
+    assert np.all(dense_result == expected_dense_result)
 
     return

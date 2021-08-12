@@ -140,6 +140,29 @@ def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
     }];
 }
 
+def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
+    let summary = "transpose";
+    let description = [{
+        Returns a new sparse matrix that's the transpose of the input matrix.
+        The given sparse tensor must be a matrix, i.e. have rank 2.
+        The given tensor must have a CSR sparsity or a CSC sparsity.
+        The output type must be CSR or CSC.
+
+        Example:
+        ```
+        %a = graphblas.transpose %sparse_tensor : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSC64>
+        %b = graphblas.transpose %sparse_tensor : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+        ```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs AnyTensor:$output);
+    
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($output)
+    }];
+}
+
 def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, SameOperandsAndResultType]> {
     let summary = "matrix select operation";
     let description = [{
@@ -371,6 +394,72 @@ def GraphBLAS_VectorEqualsOp : GraphBLAS_Op<"vector_equals", [NoSideEffect]> {
     
     let assemblyFormat = [{
            $a `,` $b attr-dict `:` `(` type($a) `,` type($b) `)`
+    }];
+}
+
+def GraphBLAS_VectorArgMinMaxOp : GraphBLAS_Op<"vector_argminmax", [NoSideEffect]> {
+    let summary = "vector argmin/argmax operation";
+    let description = [{
+        Determines the argmin or argmax of a vector depending on the value of thhe minmax string attribute, which may only take on the value of "min" or "max".
+        If there are multiple values that can be the argmin or argmax, an arbitrary one is chosen from them.
+        The given sparse vector must have rank 1 and must be sparse.
+
+        Example:
+        ```
+        graphblas.vector_argminmax %vec { minmax = "min" } : tensor<?xi64, #SparseVec64>
+        ```
+
+    }];
+
+    let arguments = (ins AnyTensor:$vec, StrAttr:$minmax);
+    let results = (outs Index:$output);
+    
+    let assemblyFormat = [{
+           $vec attr-dict `:` type($vec)
+    }];
+}
+
+def GraphBLAS_VectorArgMinOp : GraphBLAS_Op<"vector_argmin", [NoSideEffect]> {
+    let summary = "vector argmin operation";
+    let description = [{
+        Determines the argmin of a vector.
+        If there are multiple values that can be the argmin or argmax, an arbitrary one is chosen from them.
+        The given sparse vector must have rank 1 and must be sparse.
+
+        Example:
+        ```
+        graphblas.vector_argmin %vec : tensor<?xi64, #SparseVec64>
+        ```
+
+    }];
+
+    let arguments = (ins AnyTensor:$vec);
+    let results = (outs Index:$output);
+    
+    let assemblyFormat = [{
+           $vec attr-dict `:` type($vec)
+    }];
+}
+
+def GraphBLAS_VectorArgMaxOp : GraphBLAS_Op<"vector_argmax", [NoSideEffect]> {
+    let summary = "vector argmax operation";
+    let description = [{
+        Determaxes the argmax of a vector.
+        If there are multiple values that can be the argmax or argmax, an arbitrary one is chosen from them.
+        The given sparse vector must have rank 1 and must be sparse.
+
+        Example:
+        ```
+        graphblas.vector_argmax %vec : tensor<?xi64, #SparseVec64>
+        ```
+
+    }];
+
+    let arguments = (ins AnyTensor:$vec);
+    let results = (outs Index:$output);
+    
+    let assemblyFormat = [{
+           $vec attr-dict `:` type($vec)
     }];
 }
 
