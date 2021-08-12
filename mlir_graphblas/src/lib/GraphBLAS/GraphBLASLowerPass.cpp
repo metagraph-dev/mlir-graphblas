@@ -3,8 +3,6 @@
 // TODO add documentation
 //
 //===--------------------------------------------------------------------===//
-#include <limits>
-
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
@@ -752,7 +750,7 @@ public:
     } else if (semiring == "min_plus") {
       addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
                               .Case<IntegerType>([&](IntegerType type)
-                                                 { return rewriter.create<ConstantIntOp>(loc, std::numeric_limits<int>::max(), type.getWidth()); })
+                                                 { return rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(valueType, APInt::getSignedMaxValue(type.getWidth()))); })
                               .Case<FloatType>([&](FloatType type)
                                                  { return rewriter.create<ConstantOp>(loc, rewriter.getFloatAttr(valueType, APFloat::getLargest(type.getFloatSemantics(), false))); });
     } else {

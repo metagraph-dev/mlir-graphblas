@@ -296,10 +296,11 @@ Value computeIndexOverlapSize(PatternRewriter &rewriter, bool intersect,
   Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
 
   // While Loop (exit when either array is exhausted)
-  ArrayRef<Type> whileTypes = ArrayRef<Type>{indexType, indexType, indexType, indexType, boolType, boolType, indexType};
-  scf::WhileOp whileLoop = rewriter.create<scf::WhileOp>(loc, whileTypes, ValueRange{aPosStart, bPosStart, c0, c0, ctrue, ctrue, c0});
-  Block *before = rewriter.createBlock(&whileLoop.before(), {}, whileTypes);
-  Block *after = rewriter.createBlock(&whileLoop.after(), {}, whileTypes);
+  scf::WhileOp whileLoop = rewriter.create<scf::WhileOp>(loc,
+                                                         TypeRange{indexType, indexType, indexType, indexType, boolType, boolType, indexType},
+                                                         ValueRange{aPosStart, bPosStart, c0, c0, ctrue, ctrue, c0});
+  Block *before = rewriter.createBlock(&whileLoop.before(), {}, TypeRange{indexType, indexType, indexType, indexType, boolType, boolType, indexType});
+  Block *after = rewriter.createBlock(&whileLoop.after(), {}, TypeRange{indexType, indexType, indexType, indexType, boolType, boolType, indexType});
   // "while" portion of the loop
   rewriter.setInsertionPointToStart(&whileLoop.before().front());
   Value posA = before->getArgument(0);
@@ -450,10 +451,11 @@ Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect, std::st
         .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
 
   // While Loop (exit when either array is exhausted)
-  ArrayRef<Type> whileTypes = ArrayRef<Type>{indexType, indexType, indexType, int64Type, int64Type, valueType, valueType, boolType, boolType};
-  scf::WhileOp whileLoop = rewriter.create<scf::WhileOp>(loc, whileTypes, ValueRange{aPosStart, bPosStart, oPosStart, ci0, ci0, cf0, cf0, ctrue, ctrue});
-  Block *before = rewriter.createBlock(&whileLoop.before(), {}, whileTypes);
-  Block *after = rewriter.createBlock(&whileLoop.after(), {}, whileTypes);
+  scf::WhileOp whileLoop = rewriter.create<scf::WhileOp>(loc,
+                                                         TypeRange{indexType, indexType, indexType, int64Type, int64Type, valueType, valueType, boolType, boolType},
+                                                         ValueRange{aPosStart, bPosStart, oPosStart, ci0, ci0, cf0, cf0, ctrue, ctrue});
+  Block *before = rewriter.createBlock(&whileLoop.before(), {}, TypeRange{indexType, indexType, indexType, int64Type, int64Type, valueType, valueType, boolType, boolType});
+  Block *after = rewriter.createBlock(&whileLoop.after(), {}, TypeRange{indexType, indexType, indexType, int64Type, int64Type, valueType, valueType, boolType, boolType});
   // "while" portion of the loop
   rewriter.setInsertionPointToStart(&whileLoop.before().front());
   Value posA = before->getArgument(0);
