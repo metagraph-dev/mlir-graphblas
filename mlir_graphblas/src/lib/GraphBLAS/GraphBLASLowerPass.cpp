@@ -3,7 +3,6 @@
 // TODO add documentation
 //
 //===--------------------------------------------------------------------===//
-
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
@@ -17,6 +16,7 @@
 
 #include "GraphBLAS/GraphBLASPasses.h"
 #include "GraphBLAS/GraphBLASUtils.h"
+#include "GraphBLAS/GraphBLASArrayUtils.h"
 
 using namespace ::mlir;
 
@@ -36,7 +36,7 @@ namespace {
 class LowerSizeRewrite : public OpRewritePattern<graphblas::SizeOp> {
 public:
   using OpRewritePattern<graphblas::SizeOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::SizeOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::SizeOp op, PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
 
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
@@ -51,7 +51,7 @@ public:
 class LowerNumRowsRewrite : public OpRewritePattern<graphblas::NumRowsOp> {
 public:
   using OpRewritePattern<graphblas::NumRowsOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::NumRowsOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::NumRowsOp op, PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
 
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
@@ -66,7 +66,7 @@ public:
 class LowerNumColsRewrite : public OpRewritePattern<graphblas::NumColsOp> {
 public:
   using OpRewritePattern<graphblas::NumColsOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::NumColsOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::NumColsOp op, PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
 
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
@@ -81,7 +81,7 @@ public:
 class LowerNumValsRewrite : public OpRewritePattern<graphblas::NumValsOp> {
 public:
   using OpRewritePattern<graphblas::NumValsOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::NumValsOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::NumValsOp op, PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
     Value inputTensor = op.input();
     Type inputType = inputTensor.getType();
@@ -118,7 +118,7 @@ public:
 class LowerDupRewrite : public OpRewritePattern<graphblas::DupOp> {
 public:
   using OpRewritePattern<graphblas::DupOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::DupOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::DupOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
     Value inputTensor = op.input();
@@ -142,7 +142,7 @@ public:
 class LowerConvertLayoutRewrite : public OpRewritePattern<graphblas::ConvertLayoutOp> {
 public:
   using OpRewritePattern<graphblas::ConvertLayoutOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::ConvertLayoutOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::ConvertLayoutOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -317,13 +317,13 @@ public:
       Type inputTensorValueType = inputType.getElementType();
       llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
       RankedTensorType newType = inputTypeIsCSR ?
-       	getCSCTensorType(context, inputShape, inputTensorValueType) :
-      	getCSRTensorType(context, inputShape, inputTensorValueType);
+        getCSCTensorType(context, inputShape, inputTensorValueType) :
+        getCSRTensorType(context, inputShape, inputTensorValueType);
       graphblas::ConvertLayoutOp newConvertLayoutOp =
-      	rewriter.create<graphblas::ConvertLayoutOp>(loc, newType, inputTensor);
+        rewriter.create<graphblas::ConvertLayoutOp>(loc, newType, inputTensor);
       Value newLayOutInputTensor = newConvertLayoutOp.getResult();
       graphblas::TransposeOp newTransposeOp =
-	rewriter.create<graphblas::TransposeOp>(loc, outputType, newLayOutInputTensor);
+        rewriter.create<graphblas::TransposeOp>(loc, outputType, newLayOutInputTensor);
       
       rewriter.replaceOp(op, newTransposeOp.getResult()); 
       
@@ -468,7 +468,7 @@ struct MatrixSelectOutputWriter {
 class LowerMatrixSelectRewrite : public OpRewritePattern<graphblas::MatrixSelectOp> {
 public:
   using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -555,7 +555,7 @@ class LowerMatrixReduceToScalarRewrite : public OpRewritePattern<graphblas::Matr
 {
 public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op, PatternRewriter &rewriter) const override
   {
     Value input = op.input();
     StringRef aggregator = op.aggregator();
@@ -606,7 +606,7 @@ public:
 class LowerMatrixReduceToScalarGenericRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp> {
 public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op, PatternRewriter &rewriter) const override {
     Value input = op.input();
     Location loc = rewriter.getUnknownLoc();
 
@@ -677,7 +677,7 @@ public:
 class LowerMatrixApplyRewrite : public OpRewritePattern<graphblas::MatrixApplyOp> {
 public:
   using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
     Location loc = op->getLoc();
 
@@ -717,7 +717,7 @@ class LowerMatrixApplyGenericRewrite : public OpRewritePattern<graphblas::Matrix
 {
 public:
   using OpRewritePattern<graphblas::MatrixApplyGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op, PatternRewriter &rewriter) const
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op, PatternRewriter &rewriter) const override
   {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
@@ -783,7 +783,7 @@ public:
 class LowerMatrixMultiplyRewrite : public OpRewritePattern<graphblas::MatrixMultiplyOp> {
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
     Location loc = rewriter.getUnknownLoc();
 
@@ -802,39 +802,50 @@ public:
 
     // Insert additive identity
     Region &addIdentityRegion = newMultOp.getRegion(0);
+    Value addIdentity;
     /*Block *addIdentityBlock = */ rewriter.createBlock(&addIdentityRegion, {}, {});
     if (semiring == "plus_pair" || semiring == "plus_times" || semiring == "plus_plus") {
       // Add identity
-      Value addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
+      addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
                               .Case<IntegerType>([&](IntegerType type)
                                                  { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
                               .Case<FloatType>([&](FloatType type)
                                                { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
-      rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD_IDENTITY, addIdentity);
+    } else if (semiring == "min_plus") {
+      addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
+                              .Case<IntegerType>([&](IntegerType type)
+                                                 { return rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(valueType, APInt::getSignedMaxValue(type.getWidth()))); })
+                              .Case<FloatType>([&](FloatType type)
+                                                 { return rewriter.create<ConstantOp>(loc, rewriter.getFloatAttr(valueType, APFloat::getLargest(type.getFloatSemantics(), false))); });
     } else {
       return op.emitError("\"" + semiring + "\" is not a supported semiring.");
     }
+    rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD_IDENTITY, addIdentity);
 
     // Insert additive operation
     Region &addRegion = newMultOp.getRegion(1);
     Block *addBlock = rewriter.createBlock(&addRegion, {}, {valueType, valueType});
-    if (semiring == "plus_pair" || semiring == "plus_times" || semiring == "plus_plus")
-    {
+    Value addBlockArg0 = addBlock->getArgument(0);
+    Value addBlockArg1 = addBlock->getArgument(1);
+    Value addResult;
+    if (semiring == "plus_pair" || semiring == "plus_times" || semiring == "plus_plus") {
       // Insert add operation
-      Value addBlockArg0 = addBlock->getArgument(0);
-      Value addBlockArg1 = addBlock->getArgument(1);
-      Value addResult = llvm::TypeSwitch<Type, Value>(valueType)
-                            .Case<IntegerType>([&](IntegerType type)
-                                               { return rewriter.create<AddIOp>(loc, addBlockArg0, addBlockArg1); })
-                            .Case<FloatType>([&](FloatType type)
-                                             { return rewriter.create<AddFOp>(loc, addBlockArg0, addBlockArg1); });
-
-      rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD, addResult);
-    }
-    else
-    {
+      addResult = llvm::TypeSwitch<Type, Value>(valueType)
+                      .Case<IntegerType>([&](IntegerType type)
+                                         { return rewriter.create<AddIOp>(loc, addBlockArg0, addBlockArg1); })
+                      .Case<FloatType>([&](FloatType type)
+                                       { return rewriter.create<AddFOp>(loc, addBlockArg0, addBlockArg1); });
+    } else if (semiring == "min_plus") {
+      Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+                      .Case<IntegerType>([&](IntegerType type)
+                                         { return rewriter.create<CmpIOp>(loc, CmpIPredicate::slt, addBlockArg0, addBlockArg1); })
+                      .Case<FloatType>([&](FloatType type)
+                                         { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OLT, addBlockArg0, addBlockArg1); });
+      addResult = rewriter.create<SelectOp>(loc, cmp, addBlockArg0, addBlockArg1);
+    } else {
       return op.emitError("\"" + semiring + "\" is not a supported semiring.");
     }
+    rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD, addResult);
 
     // Insert multiplicative operation
     Region &multRegion = newMultOp.getRegion(2);
@@ -855,7 +866,7 @@ public:
                                           { return rewriter.create<MulIOp>(loc, multBlockArg0, multBlockArg1); })
                        .Case<FloatType>([&](FloatType type)
                                         { return rewriter.create<MulFOp>(loc, multBlockArg0, multBlockArg1); });
-    } else if (semiring == "plus_plus") {
+    } else if (semiring == "plus_plus" || semiring == "min_plus") {
       multResult = llvm::TypeSwitch<Type, Value>(valueType)
                        .Case<IntegerType>([&](IntegerType type)
                                           { return rewriter.create<AddIOp>(loc, multBlockArg0, multBlockArg1); })
@@ -874,272 +885,10 @@ public:
   };
 };
 
-
-Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
-                         Value fixedIndices, Value fixedIndexStart, Value fixedIndexEnd,
-                         Value iterPointers, Value iterIndices,
-                         // If no mask is used, set maskIndices to nullptr, and provide maskStart=c0 and maskEnd=len(iterPointers)-1
-                         Value maskIndices, Value maskStart, Value maskEnd,
-                         Type valueType
-                         ) {
-  Location loc = rewriter.getUnknownLoc();
-
-  // Types used in this function
-  Type indexType = rewriter.getIndexType();
-  Type int64Type = rewriter.getIntegerType(64);
-  Type boolType = rewriter.getI1Type();
-  MemRefType memref1DBoolType = MemRefType::get({-1}, boolType);
-
-  // Initial constants
-  Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-  Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
-  Value ci1 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
-  Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
-  Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
-
-  // Construct a dense array indicating valid kk positions within fixed index
-  Value kvec_i1 = rewriter.create<memref::AllocOp>(loc, memref1DBoolType, nk);
-  rewriter.create<linalg::FillOp>(loc, kvec_i1, cfalse);
-  scf::ParallelOp colLoop1 = rewriter.create<scf::ParallelOp>(loc, fixedIndexStart, fixedIndexEnd, c1);
-  Value jj = colLoop1.getInductionVars()[0];
-  rewriter.setInsertionPointToStart(colLoop1.getBody());
-  Value col64 = rewriter.create<memref::LoadOp>(loc, fixedIndices, jj);
-  Value col = rewriter.create<IndexCastOp>(loc, col64, indexType);
-  rewriter.create<memref::StoreOp>(loc, ctrue, kvec_i1, col);
-  rewriter.setInsertionPointAfter(colLoop1);
-  // Loop thru all columns; count number of resulting nonzeros in the row
-  if (maskIndices != nullptr) {
-    colLoop1 = rewriter.create<scf::ParallelOp>(loc, maskStart, maskEnd, c1, ci0);
-    Value mm = colLoop1.getInductionVars()[0];
-    rewriter.setInsertionPointToStart(colLoop1.getBody());
-    col64 = rewriter.create<memref::LoadOp>(loc, maskIndices, mm);
-    col = rewriter.create<IndexCastOp>(loc, col64, indexType);
-  } else {
-    colLoop1 = rewriter.create<scf::ParallelOp>(loc, maskStart, maskEnd, c1, ci0);
-    col = colLoop1.getInductionVars()[0];
-    rewriter.setInsertionPointToStart(colLoop1.getBody());
-  }
-  Value colPlus1 = rewriter.create<AddIOp>(loc, col, c1);
-  Value rowStart64 = rewriter.create<memref::LoadOp>(loc, iterPointers, col);
-  Value rowEnd64 = rewriter.create<memref::LoadOp>(loc, iterPointers, colPlus1);
-  Value cmpRowSame = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, rowStart64, rowEnd64);
-  // Find overlap in column indices with kvec
-  scf::IfOp ifBlock_overlap = rewriter.create<scf::IfOp>(loc, int64Type, cmpRowSame, true);
-  // if cmpRowSame
-  rewriter.setInsertionPointToStart(ifBlock_overlap.thenBlock());
-  rewriter.create<scf::YieldOp>(loc, ci0);
-  // else
-  rewriter.setInsertionPointToStart(ifBlock_overlap.elseBlock());
-  // Walk thru the indices; on a match yield 1, else yield 0
-  scf::WhileOp whileLoop = rewriter.create<scf::WhileOp>(loc, int64Type, rowStart64);
-  Block *before = rewriter.createBlock(&whileLoop.before(), {}, int64Type);
-  Block *after = rewriter.createBlock(&whileLoop.after(), {}, int64Type);
-  Value ii64 = before->getArgument(0);
-  rewriter.setInsertionPointToStart(&whileLoop.before().front());
-  // Check if ii >= rowEnd
-  Value cmpEndReached = rewriter.create<CmpIOp>(loc, CmpIPredicate::uge, ii64, rowEnd64);
-  scf::IfOp ifBlock_continueSearch = rewriter.create<scf::IfOp>(loc, ArrayRef<Type>{boolType, int64Type}, cmpEndReached, true);
-  // if cmpEndReached
-  rewriter.setInsertionPointToStart(ifBlock_continueSearch.thenBlock());
-  rewriter.create<scf::YieldOp>(loc, ValueRange{cfalse, ci0});
-  // else
-  rewriter.setInsertionPointToStart(ifBlock_continueSearch.elseBlock());
-  // Check if row has a match in kvec
-  Value ii = rewriter.create<IndexCastOp>(loc, ii64, indexType);
-  Value kk64 = rewriter.create<memref::LoadOp>(loc, iterIndices, ii);
-  Value kk = rewriter.create<IndexCastOp>(loc, kk64, indexType);
-  Value cmpPair = rewriter.create<memref::LoadOp>(loc, kvec_i1, kk);
-  Value cmpResult0 = rewriter.create<SelectOp>(loc, cmpPair, cfalse, ctrue);
-  Value cmpResult1 = rewriter.create<SelectOp>(loc, cmpPair, ci1, ii64);
-  rewriter.create<scf::YieldOp>(loc, ValueRange{cmpResult0, cmpResult1});
-  // end if cmpEndReached
-  rewriter.setInsertionPointAfter(ifBlock_continueSearch);
-  Value continueSearch = ifBlock_continueSearch.getResult(0);
-  Value valToSend = ifBlock_continueSearch.getResult(1);
-  rewriter.create<scf::ConditionOp>(loc, continueSearch, valToSend);
-  // "do" portion of while loop
-  rewriter.setInsertionPointToStart(&whileLoop.after().front());
-  Value iiPrev = after->getArgument(0);
-  Value iiNext = rewriter.create<AddIOp>(loc, iiPrev, ci1);
-  rewriter.create<scf::YieldOp>(loc, iiNext);
-  rewriter.setInsertionPointAfter(whileLoop);
-  Value res = whileLoop.getResult(0);
-  rewriter.create<scf::YieldOp>(loc, res);
-  // end if cmpRowSame
-  rewriter.setInsertionPointAfter(ifBlock_overlap);
-  Value overlap = ifBlock_overlap.getResult(0);
-  scf::ReduceOp reducer = rewriter.create<scf::ReduceOp>(loc, overlap);
-  Value lhs = reducer.getRegion().getArgument(0);
-  Value rhs = reducer.getRegion().getArgument(1);
-  rewriter.setInsertionPointToStart(&reducer.getRegion().front());
-  Value z = rewriter.create<AddIOp>(loc, lhs, rhs);
-  rewriter.create<scf::ReduceReturnOp>(loc, z);
-  // end col loop
-  rewriter.setInsertionPointAfter(colLoop1);
-  Value total = colLoop1.getResult(0);
-  rewriter.create<memref::DeallocOp>(loc, kvec_i1);
-  return total;
-}
-
-void computeInnerProduct(PatternRewriter &rewriter, Value nk,
-                          Value fixedIndices, Value fixedValues, Value fixedIndexStart, Value fixedIndexEnd,
-                          Value iterPointers, Value iterIndices, Value iterValues,
-                          // If no mask is used, set maskIndices to nullptr, and provide maskStart=c0 and maskEnd=len(iterPointers)-1
-                          Value maskIndices, Value maskStart, Value maskEnd,
-                          Type valueType, ExtensionBlocks extBlocks,
-                          Value outputIndices, Value outputValues, Value indexOffset
-                          ) {
-  Location loc = rewriter.getUnknownLoc();
-
-  // Types used in this function
-  Type indexType = rewriter.getIndexType();
-  Type int64Type = rewriter.getIntegerType(64);
-  Type boolType = rewriter.getI1Type();
-  MemRefType memref1DBoolType = MemRefType::get({-1}, boolType);
-  MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
-
-  // Initial constants
-  Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-  Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-  Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
-  Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
-
-  // Construct a dense array of row values
-  Value kvec = rewriter.create<memref::AllocOp>(loc, memref1DValueType, nk);
-  Value kvec_i1 = rewriter.create<memref::AllocOp>(loc, memref1DBoolType, nk);
-  rewriter.create<linalg::FillOp>(loc, kvec_i1, cfalse);
-  scf::ParallelOp colLoop3p = rewriter.create<scf::ParallelOp>(loc, fixedIndexStart, fixedIndexEnd, c1);
-  Value jj = colLoop3p.getInductionVars()[0];
-  rewriter.setInsertionPointToStart(colLoop3p.getBody());
-  Value fixedJ64 = rewriter.create<memref::LoadOp>(loc, fixedIndices, jj);
-  Value fixedJ = rewriter.create<IndexCastOp>(loc, fixedJ64, indexType);
-  rewriter.create<memref::StoreOp>(loc, ctrue, kvec_i1, fixedJ);
-  Value val = rewriter.create<memref::LoadOp>(loc, fixedValues, jj);
-  rewriter.create<memref::StoreOp>(loc, val, kvec, fixedJ);
-
-  // end col loop 3p
-  rewriter.setInsertionPointAfter(colLoop3p);
-
-  Value col64, col;
-  scf::ForOp colLoop3f;
-  if (maskIndices != nullptr) {
-      colLoop3f = rewriter.create<scf::ForOp>(loc, maskStart, maskEnd, c1, c0);
-      Value mm = colLoop3f.getInductionVar();
-      rewriter.setInsertionPointToStart(colLoop3f.getBody());
-      col64 = rewriter.create<memref::LoadOp>(loc, maskIndices, mm);
-      col = rewriter.create<IndexCastOp>(loc, col64, indexType);
-  } else {
-      colLoop3f = rewriter.create<scf::ForOp>(loc, maskStart, maskEnd, c1, c0);
-      col = colLoop3f.getInductionVar();
-      rewriter.setInsertionPointToStart(colLoop3f.getBody());
-      col64 = rewriter.create<IndexCastOp>(loc, col, int64Type);
-  }
-
-  Value offset = colLoop3f.getLoopBody().getArgument(1);
-  Value colPlus1 = rewriter.create<AddIOp>(loc, col, c1);
-  Value iStart64 = rewriter.create<memref::LoadOp>(loc, iterPointers, col);
-  Value iEnd64 = rewriter.create<memref::LoadOp>(loc, iterPointers, colPlus1);
-  Value iStart = rewriter.create<IndexCastOp>(loc, iStart64, indexType);
-  Value iEnd = rewriter.create<IndexCastOp>(loc, iEnd64, indexType);
-
-  // insert add identity block
-  graphblas::YieldOp addIdentityYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.addIdentity->getTerminator());
-  rewriter.mergeBlocks(extBlocks.addIdentity, rewriter.getBlock(), {});
-  Value addIdentity = addIdentityYield.values().front();
-  rewriter.eraseOp(addIdentityYield);
-
-  scf::ForOp kLoop = rewriter.create<scf::ForOp>(loc, iStart, iEnd, c1, ValueRange{addIdentity, cfalse});
-  Value ii = kLoop.getInductionVar();
-  Value curr = kLoop.getLoopBody().getArgument(1);
-  Value alive = kLoop.getLoopBody().getArgument(2);
-  rewriter.setInsertionPointToStart(kLoop.getBody());
-
-  Value kk64 = rewriter.create<memref::LoadOp>(loc, iterIndices, ii);
-  Value kk = rewriter.create<IndexCastOp>(loc, kk64, indexType);
-  Value cmpPair = rewriter.create<memref::LoadOp>(loc, kvec_i1, kk);
-  scf::IfOp ifBlock_cmpPair = rewriter.create<scf::IfOp>(loc, ArrayRef<Type>{valueType, boolType}, cmpPair, true);
-  // if cmpPair
-  rewriter.setInsertionPointToStart(ifBlock_cmpPair.thenBlock());
-
-  Value aVal = rewriter.create<memref::LoadOp>(loc, kvec, kk);
-  Value bVal = rewriter.create<memref::LoadOp>(loc, iterValues, ii);
-
-  // insert multiply operation block
-  graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.mult->getTerminator());
-  Value multResult = multYield.values().front();
-  rewriter.eraseOp(multYield);
-  rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
-
-  // insert add operation block
-  graphblas::YieldOp addYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.add->getTerminator());
-  Value addResult = addYield.values().front();
-  rewriter.eraseOp(addYield);
-  rewriter.mergeBlocks(extBlocks.add, rewriter.getBlock(), {curr, multResult});
-
-  rewriter.create<scf::YieldOp>(loc, ValueRange{addResult, ctrue});
-
-  // else
-  rewriter.setInsertionPointToStart(ifBlock_cmpPair.elseBlock());
-  rewriter.create<scf::YieldOp>(loc, ValueRange{curr, alive});
-
-  // end if cmpPair
-  rewriter.setInsertionPointAfter(ifBlock_cmpPair);
-  Value newCurr = ifBlock_cmpPair.getResult(0);
-  Value newAlive = ifBlock_cmpPair.getResult(1);
-  rewriter.create<scf::YieldOp>(loc, ValueRange{newCurr, newAlive});
-
-  // end k loop
-  rewriter.setInsertionPointAfter(kLoop);
-
-  Value total = kLoop.getResult(0);
-  Value notEmpty = kLoop.getResult(1);
-
-  scf::IfOp ifBlock_newOffset = rewriter.create<scf::IfOp>(loc, indexType, notEmpty, true);
-  // if not empty
-  rewriter.setInsertionPointToStart(ifBlock_newOffset.thenBlock());
-
-  // Store total in Cx
-  Value cjPos = rewriter.create<AddIOp>(loc, indexOffset, offset);
-  rewriter.create<memref::StoreOp>(loc, col64, outputIndices, cjPos);
-
-  // Does total need to be transformed?
-  if (extBlocks.transformOut) {
-    graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(extBlocks.transformOut->getTerminator());
-    Value transformResult = yield.values().front();
-
-    rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(), {total});
-
-    rewriter.create<memref::StoreOp>(loc, transformResult, outputValues, cjPos);
-    rewriter.eraseOp(yield);
-  } else {
-    // write total as-is
-    rewriter.create<memref::StoreOp>(loc, total, outputValues, cjPos);
-  }
-
-  // Increment offset
-  Value offsetPlus1 = rewriter.create<AddIOp>(loc, offset, c1);
-  rewriter.create<scf::YieldOp>(loc, offsetPlus1);
-
-  // else
-  rewriter.setInsertionPointToStart(ifBlock_newOffset.elseBlock());
-  rewriter.create<scf::YieldOp>(loc, offset);
-
-  // end if not empty
-  rewriter.setInsertionPointAfter(ifBlock_newOffset);
-
-  Value newOffset = ifBlock_newOffset.getResult(0);
-  rewriter.create<scf::YieldOp>(loc, newOffset);
-
-  // end col loop 3f
-  rewriter.setInsertionPointAfter(colLoop3f);
-  rewriter.create<memref::DeallocOp>(loc, kvec);
-  rewriter.create<memref::DeallocOp>(loc, kvec_i1);
-}
-
 class LowerMatrixMultiplyGenericRewrite : public OpRewritePattern<graphblas::MatrixMultiplyGenericOp> {
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter) const override {
     // Required blocks
     RegionRange extensions = op.extensions();
     ExtensionBlocks extBlocks;
@@ -1356,7 +1105,9 @@ private:
     Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
 
     Value size = rewriter.create<graphblas::NumRowsOp>(loc, A);
-    Value nk = rewriter.create<graphblas::SizeOp>(loc, B); // guaranteed equal to A.cols
+    Value nk = rewriter.create<graphblas::SizeOp>(loc, B);
+    // TODO: how do I check nk == nk_check and raise an exception if they don't match?
+    // Value nk_check = rewriter.create<graphblas::NumColsOp>(loc, A);
 
     Value C = callEmptyLike(rewriter, module, loc, B);
     callResizeDim(rewriter, module, loc, C, c0, size);
@@ -1605,7 +1356,7 @@ private:
 class LowerMatrixMultiplyReduceToScalarGenericRewrite : public OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarGenericOp> {
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void) module;
     Location loc = rewriter.getUnknownLoc();
 
@@ -1648,9 +1399,6 @@ public:
     Value cf0 = llvm::TypeSwitch<Type, Value>(valueType)
         .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
         .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
-    Value cf1 = llvm::TypeSwitch<Type, Value>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
     Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
     Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
 
@@ -1845,6 +1593,231 @@ public:
   };
 };
 
+class LowerUpdateRewrite : public OpRewritePattern<graphblas::UpdateOp> {
+public:
+  using OpRewritePattern<graphblas::UpdateOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::UpdateOp op, PatternRewriter &rewriter) const override {
+    // Inputs
+    Value output = op.output();
+    llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
+    Value mask = op.mask();
+    bool replace = op.replace();
+    bool maskComplement = op.mask_complement();
+
+    // Types
+    RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
+
+    unsigned rank = outputType.getRank();  // ranks guaranteed to be equal
+
+    if (rank == 2) {
+      return op.emitError("Matrix update is not yet supported.");
+    } else {
+      // Vector past this point
+      if (accumulateOperator) {
+        if (mask) {
+          if (replace) {
+            // input -> output(mask) { accumulate, replace }
+            return op.emitError("Update with mask+accumulate+replace is not supported yet");
+          } else {
+            // input -> output(mask) { accumulate }
+            return op.emitError("Update with mask+accumulate is not supported yet");
+          }
+        } else {
+          // input -> output { accumulate, replace? }
+          return rewriteUpdateVectorAccumulate(op, rewriter);
+        }
+      } else {
+        if (mask) {
+          if (replace) {
+            // input -> output(mask) { replace }
+            // Inefficient; caller should apply mask when input is created
+            return op.emitError("Update with mask+replace is not supported yet");
+          } else {
+            // input -> output(mask)
+            // Merges input into output
+            return op.emitError("Update with mask and no accumulator is not supported yet");
+          }
+        } else {
+          // input -> output { replace? }
+          // Sort of pointless; caller should simply use input or call graphblas.dup if they want a copy
+          return op.emitError("Update with no accumulator or mask is not supported yet");
+        }
+      }
+    }
+  };
+
+private:
+  LogicalResult rewriteUpdateVectorAccumulate(graphblas::UpdateOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
+    Location loc = rewriter.getUnknownLoc();
+
+    // Inputs
+    Value input = op.input();
+    Value output = op.output();
+    std::string accumulateOperator = op.accumulate_operator()->str();
+
+    // Types
+    RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type valueType = outputType.getElementType();
+    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
+
+    // Initial constants
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
+
+    Value size = rewriter.create<graphblas::SizeOp>(loc, output);
+
+    // Get sparse tensor info
+    Value Ip = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c0);
+    Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c0);
+    Value Ix = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
+    Value Op = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c0);
+    Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c0);
+    Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
+    Value Innz64 = rewriter.create<memref::LoadOp>(loc, Ip, c1);
+    Value Onnz64 = rewriter.create<memref::LoadOp>(loc, Op, c1);
+    Value Innz = rewriter.create<IndexCastOp>(loc, Innz64, indexType);
+    Value Onnz = rewriter.create<IndexCastOp>(loc, Onnz64, indexType);
+
+    Value unionSize = computeIndexOverlapSize(rewriter, /* intersect */ false, c0, Innz, Ii, c0, Onnz, Oi);
+    Value unionSize64 = rewriter.create<IndexCastOp>(loc, unionSize, int64Type);
+
+    // Create temp copy of output
+    Value temp = callDupTensor(rewriter, module, loc, output);
+    Value Ti = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, temp, c0);
+    Value Tx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, temp);
+
+    // Resize output to be unionSize
+    callResizeDim(rewriter, module, loc, output, c0, size);
+    callResizePointers(rewriter, module, loc, output, c0, c2);
+    callResizeIndex(rewriter, module, loc, output, c0, unionSize);
+    callResizeValues(rewriter, module, loc, output, unionSize);
+
+    Op = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c0);
+    rewriter.create<memref::StoreOp>(loc, unionSize64, Op, c1);
+    Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c0);
+    Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
+
+    Value finalIndexPos = computeUnionAggregation(rewriter, /* intersect */ false, accumulateOperator, valueType,
+                                                  c0, Innz, Ii, Ix, c0, Onnz, Ti, Tx, c0, Oi, Ox);
+
+    // Delete temporary copy
+    callDelSparseTensor(rewriter, module, loc, temp);
+
+    // TODO: figure out how to replace an op with no return type
+    rewriter.replaceOp(op, finalIndexPos);
+
+    return success();
+  }
+};
+
+class LowerEqualRewrite : public OpRewritePattern<graphblas::EqualOp> {
+public:
+  using OpRewritePattern<graphblas::EqualOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::EqualOp op, PatternRewriter &rewriter) const override {
+    Location loc = rewriter.getUnknownLoc();
+
+    // Inputs
+    Value A = op.a();
+    Value B = op.b();
+    RankedTensorType aType = A.getType().dyn_cast<RankedTensorType>();
+
+    // Types
+    Type boolType = rewriter.getI1Type();
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type valueType = aType.getElementType();
+    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
+
+    // Initial constants
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
+    Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
+
+    unsigned rank = aType.getRank();  // ranks guaranteed to be equal
+
+    if (rank == 2) {
+      // Matrix check
+      return op.emitError("Matrix equality check is not yet supported.");
+    } else {
+      // Vector check
+      // Check size
+      Value aSize = rewriter.create<graphblas::SizeOp>(loc, A);
+      Value bSize = rewriter.create<graphblas::SizeOp>(loc, B);
+      Value cmpSize = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aSize, bSize);
+      scf::IfOp ifOuter = rewriter.create<scf::IfOp>(loc, boolType, cmpSize, true);
+      // if cmpSize
+      rewriter.setInsertionPointToStart(ifOuter.thenBlock());
+
+      // Check number of non-zeros
+      Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, A, c0);
+      Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, B, c0);
+      Value aNnz = rewriter.create<memref::LoadOp>(loc, Ap, c1);
+      Value bNnz = rewriter.create<memref::LoadOp>(loc, Bp, c1);
+      Value cmpNnz = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aNnz, bNnz);
+      scf::IfOp ifNnz = rewriter.create<scf::IfOp>(loc, boolType, cmpNnz, true);
+      // if cmpNnz
+      rewriter.setInsertionPointToStart(ifNnz.thenBlock());
+
+      // Check index positions and values
+      Value nnz = rewriter.create<IndexCastOp>(loc, aNnz, indexType);
+      Value Ai = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, c0);
+      Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c0);
+      Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, A);
+      Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
+
+      scf::ParallelOp indexLoop = rewriter.create<scf::ParallelOp>(loc, c0, nnz, c1, ctrue);
+      Value loopIdx = indexLoop.getInductionVars()[0];
+      rewriter.setInsertionPointToStart(indexLoop.getBody());
+
+      Value aIndex = rewriter.create<memref::LoadOp>(loc, Ai, loopIdx);
+      Value bIndex = rewriter.create<memref::LoadOp>(loc, Bi, loopIdx);
+      Value aValue = rewriter.create<memref::LoadOp>(loc, Ax, loopIdx);
+      Value bValue = rewriter.create<memref::LoadOp>(loc, Bx, loopIdx);
+      Value cmpIndex = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aIndex, bIndex);
+      Value cmpValue = llvm::TypeSwitch<Type, Value>(valueType)
+        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aValue, bValue); })
+        .Case<FloatType>([&](FloatType type) { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OEQ, aValue, bValue); });
+      Value cmpCombined = rewriter.create<AndOp>(loc, cmpIndex, cmpValue);
+
+      scf::ReduceOp reducer = rewriter.create<scf::ReduceOp>(loc, cmpCombined);
+      BlockArgument lhs = reducer.getRegion().getArgument(0);
+      BlockArgument rhs = reducer.getRegion().getArgument(1);
+      rewriter.setInsertionPointToStart(&reducer.getRegion().front());
+      Value cmpFinal = rewriter.create<AndOp>(loc, lhs, rhs);
+      rewriter.create<scf::ReduceReturnOp>(loc, cmpFinal);
+
+      rewriter.setInsertionPointAfter(indexLoop);
+      rewriter.create<scf::YieldOp>(loc, indexLoop.getResult(0));
+
+      // else cmpNnz
+      rewriter.setInsertionPointToStart(ifNnz.elseBlock());
+      rewriter.create<scf::YieldOp>(loc, cfalse);
+      // end cmpNnz
+      rewriter.setInsertionPointAfter(ifNnz);
+      Value nnzReturn = ifNnz.getResult(0);
+      rewriter.create<scf::YieldOp>(loc, nnzReturn);
+
+      // else cmpSize
+      rewriter.setInsertionPointToStart(ifOuter.elseBlock());
+      rewriter.create<scf::YieldOp>(loc, cfalse);
+      // end cmpSize
+      rewriter.setInsertionPointAfter(ifOuter);
+      Value isEqual = ifOuter.getResult(0);
+
+      rewriter.replaceOp(op, isEqual);
+
+      return success();
+    }
+  };
+};
+
 class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
 public:
   using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
@@ -1866,6 +1839,8 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
       LowerMatrixApplyGenericRewrite,
       LowerMatrixMultiplyReduceToScalarGenericRewrite,
       LowerMatrixMultiplyGenericRewrite,
+      LowerUpdateRewrite,
+      LowerEqualRewrite,
       LowerCommentRewrite,
       LowerSizeRewrite,
       LowerNumRowsRewrite,
