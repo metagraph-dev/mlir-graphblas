@@ -66,6 +66,7 @@ MLIR_FLOAT_ENUM_TO_NP_TYPE = {
 }
 
 INTEGER_WIDTH_TO_NP_TYPE = {  # TODO is there some nice accessor to get np.int* types from integers ?
+    1: np.bool_,
     8: np.int8,
     16: np.int16,
     32: np.int32,

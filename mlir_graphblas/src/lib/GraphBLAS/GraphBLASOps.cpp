@@ -7,6 +7,7 @@
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "GraphBLAS/GraphBLASOps.h"
 #include "GraphBLAS/GraphBLASDialect.h"
+#include "GraphBLAS/GraphBLASUtils.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "llvm/ADT/Optional.h"
@@ -289,6 +290,7 @@ static LogicalResult verifyMatrixMultiplyArgs(T op, bool checkResultTensorType)
 
   ArrayRef<int64_t> aShape = aTensorType.getShape();
   ArrayRef<int64_t> bShape = bTensorType.getShape();
+
   int64_t resultRank = 0;
   ArrayRef<int64_t> resultShape;
   Type resultElementType = resultType;
@@ -438,7 +440,7 @@ static LogicalResult verifyMatrixMultiplyArgs(T op, bool checkResultTensorType)
   return success();
 }
 
-static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus"};
+static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus", "min_plus"};
 
 static LogicalResult verify(MatrixMultiplyOp op) {
   LogicalResult argResult = verifyMatrixMultiplyArgs(op, true);
@@ -492,77 +494,33 @@ static LogicalResult verify(MatrixMultiplyReduceToScalarGenericOp op) {
   return success();
 }
 
-static const std::vector<std::string> supportedVectorAccumulateOperators{"plus"};
-
-static LogicalResult verify(VectorAccumulateOp op) {  
-  Type aType = op.a().getType();
-  Type bType = op.b().getType();
-  
-  llvm::Optional<std::string> aCompressionErrorMessage = checkCompressedVector(aType, 0);
-  if (aCompressionErrorMessage)
-    return op.emitError(aCompressionErrorMessage.getValue());
-  
-  if (failed(verifyCompatibleShape(aType, bType)))
-    return op.emitError("Input vectors must have compatible shapes.");
- 
-  if (aType != bType)
-    return op.emitError("Input vectors must have the same type.");
-  
-  std::string accumulateOperator = op.accumulate_operator().str();
-  bool operatorSupported = std::find(supportedVectorAccumulateOperators.begin(),
-                                     supportedVectorAccumulateOperators.end(),
-                                     accumulateOperator)
-    != supportedVectorAccumulateOperators.end();
-  if (!operatorSupported)
-    return op.emitError("\""+accumulateOperator+"\" is not a supported accumulate operator.");
-
-  return success();
-}
-
-static LogicalResult verify(VectorEqualsOp op) {
-  Type aType = op.a().getType();
-  Type bType = op.b().getType();
-  
-  llvm::Optional<std::string> aCompressionErrorMessage = checkCompressedVector(aType, 0);
-  if (aCompressionErrorMessage)
-    return op.emitError(aCompressionErrorMessage.getValue());
-  
-  if (failed(verifyCompatibleShape(aType, bType)))
-    return op.emitError("Input vectors must have compatible shapes.");
-
-  if (aType != bType)
-    return op.emitError("Input vectors must have the same type.");
-    
-  return success();
-}
-
 static LogicalResult verify(VectorArgMinMaxOp op) {
   Type vecType = op.vec().getType();
-  
+
   llvm::Optional<std::string> vecCompressionErrorMessage = checkCompressedVector(vecType, 0);
   if (vecCompressionErrorMessage)
     return op.emitError(vecCompressionErrorMessage.getValue());
-      
+
   return success();
 }
 
 static LogicalResult verify(VectorArgMinOp op) {
   Type vecType = op.vec().getType();
-  
+
   llvm::Optional<std::string> vecCompressionErrorMessage = checkCompressedVector(vecType, 0);
   if (vecCompressionErrorMessage)
     return op.emitError(vecCompressionErrorMessage.getValue());
-      
+
   return success();
 }
 
 static LogicalResult verify(VectorArgMaxOp op) {
   Type vecType = op.vec().getType();
-  
+
   llvm::Optional<std::string> vecCompressionErrorMessage = checkCompressedVector(vecType, 0);
   if (vecCompressionErrorMessage)
     return op.emitError(vecCompressionErrorMessage.getValue());
-      
+
   return success();
 }
 
@@ -579,6 +537,120 @@ static LogicalResult verifyMatrixReduceToScalarArgs(T op)
   RankedTensorType operandTensorType = operandType.dyn_cast<RankedTensorType>();
   if (resultType != operandTensorType.getElementType())
     return op.emitError("Operand and output types are incompatible.");
+
+  return success();
+}
+
+static const std::vector<std::string> supportedUpdateAccumulateOperators{"plus", "min"};
+
+static LogicalResult verify(UpdateOp op) {
+  Type iType = op.input().getType();
+  Type oType = op.output().getType();
+  Value mask = op.mask();
+
+  int64_t iRank = getRank(iType);
+  int64_t oRank = getRank(oType);
+  int64_t mRank = -1;
+  if (mask)
+    mRank = getRank(mask.getType());
+
+  if (iRank < 1 || iRank > 2)
+    return op.emitError("Input argument must be a sparse vector or sparse matrix.");
+  if (oRank < 1 || oRank > 2)
+    return op.emitError("Output argument must be a sparse vector or sparse matrix.");
+  if (mask && (mRank < 1 || mRank > 2))
+    return op.emitError("Mask argument must be a sparse vector or sparse matrix.");
+
+  if (failed(verifyCompatibleShape(iType, oType)))
+    return op.emitError("Input and Output arguments must have compatible shapes.");
+  if (mask and failed(verifyCompatibleShape(oType, mask.getType())))
+    return op.emitError("Mask and Output arguments must have compatible shapes.");
+
+  llvm::Optional<std::string> errMsg;
+  if (iRank == 1) {
+    errMsg = checkCompressedVector(iType, 0);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+    errMsg = checkCompressedVector(oType, 1);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+    if (mask) {
+      errMsg = checkCompressedVector(mask.getType(), 2);
+      if (errMsg)
+        return op.emitError(errMsg.getValue());
+    }
+  } else if (iRank == 2) {
+    errMsg = checkCompressedMatrix(iType, 0, EITHER);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+    // Determine output sparse encoding
+    CompressionType sparseEncoding = CSR;
+    if (typeIsCSC(iType)) {
+      sparseEncoding = CSC;
+    }
+    errMsg = checkCompressedMatrix(oType, 1, sparseEncoding);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+    if (mask) {
+      errMsg = checkCompressedMatrix(mask.getType(), 2, sparseEncoding);
+      if (errMsg)
+        return op.emitError(errMsg.getValue());
+    }
+  }
+
+  if (iType != oType)
+    return op.emitError("Arguments must have the same type.");
+
+  llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
+  if (accumulateOperator) {
+    bool operatorSupported = std::find(supportedUpdateAccumulateOperators.begin(),
+                                       supportedUpdateAccumulateOperators.end(),
+                                       accumulateOperator->str())
+      != supportedUpdateAccumulateOperators.end();
+    if (!operatorSupported)
+      return op.emitError("\""+accumulateOperator->str()+"\" is not a supported accumulate operator.");
+  }
+
+  return success();
+}
+
+static LogicalResult verify(EqualOp op) {
+  Type aType = op.a().getType();
+  Type bType = op.b().getType();
+
+  if (failed(verifyCompatibleShape(aType, bType)))
+    return op.emitError("Input vectors must have compatible shapes.");
+
+  if (aType != bType)
+    return op.emitError("Arguments must have the same type.");
+
+  int64_t aRank = getRank(aType);
+  int64_t bRank = getRank(bType);
+
+  if (aRank < 1 || aRank > 2)
+    return op.emitError("First argument must be a sparse vector or sparse matrix.");
+  if (bRank < 1 || bRank > 2)
+    return op.emitError("Second argument must be a sparse vector or sparse matrix.");
+
+  if (aRank != bRank)
+    return op.emitError("Arguments must have same rank.");
+
+  llvm::Optional<std::string> errMsg;
+  if (aRank == 1) {
+    errMsg = checkCompressedVector(aType, 0);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+    errMsg = checkCompressedVector(bType, 1);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+  } else if (aRank == 2) {
+    errMsg = checkCompressedMatrix(aType, 0, EITHER);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+    errMsg = checkCompressedMatrix(bType, 1, EITHER);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+  }
 
   return success();
 }

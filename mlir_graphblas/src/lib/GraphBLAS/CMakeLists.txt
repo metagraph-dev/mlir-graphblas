@@ -4,6 +4,7 @@ add_mlir_dialect_library(MLIRGraphBLAS
         GraphBLASLowerPass.cpp
         GraphBLASOptimizePass.cpp
         GraphBLASUtils.cpp
+        GraphBLASArrayUtils.cpp
 
         ADDITIONAL_HEADER_DIRS
         ${PROJECT_SOURCE_DIR}/include/GraphBLAS
