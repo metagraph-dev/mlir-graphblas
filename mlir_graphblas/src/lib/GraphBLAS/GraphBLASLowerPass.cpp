@@ -296,6 +296,69 @@ public:
   };
 };
 
+class LowerTransposeRewrite : public OpRewritePattern<graphblas::TransposeOp> {
+public:
+  using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::TransposeOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Value inputTensor = op.input();
+    RankedTensorType inputType = inputTensor.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType outputType = op->getResultTypes()[0].dyn_cast<RankedTensorType>();
+    
+    bool inputTypeIsCSR = typeIsCSR(inputType);
+    bool outputTypeIsCSR = typeIsCSR(outputType);
+
+    // Add a graphblas.convert_layout op if the input and output compression types are the same
+    if (inputTypeIsCSR == outputTypeIsCSR) {
+      // TODO consider separating this out into its own rewrite pattern
+      MLIRContext* context = op.getContext();
+      Type inputTensorValueType = inputType.getElementType();
+      llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
+      RankedTensorType newType = inputTypeIsCSR ?
+        getCSCTensorType(context, inputShape, inputTensorValueType) :
+        getCSRTensorType(context, inputShape, inputTensorValueType);
+      graphblas::ConvertLayoutOp newConvertLayoutOp =
+        rewriter.create<graphblas::ConvertLayoutOp>(loc, newType, inputTensor);
+      Value newLayOutInputTensor = newConvertLayoutOp.getResult();
+      graphblas::TransposeOp newTransposeOp =
+        rewriter.create<graphblas::TransposeOp>(loc, outputType, newLayOutInputTensor);
+      
+      rewriter.replaceOp(op, newTransposeOp.getResult()); 
+      
+      return success();
+    }
+
+    // Cast types
+    Value output = callDupTensor(rewriter, module, loc, inputTensor);
+    if (inputTypeIsCSR) {
+      output = convertToExternalCSC(rewriter, module, loc, output);
+    } else {
+      output = convertToExternalCSR(rewriter, module, loc, output);
+    }
+
+    // Swap sizes
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
+    Value ncol = rewriter.create<graphblas::NumColsOp>(loc, inputTensor);
+    Value cond = rewriter.create<CmpIOp>(op.getLoc(), CmpIPredicate::ne, nrow, ncol);
+    scf::IfOp ifOp = rewriter.create<scf::IfOp>(loc, cond, /*withElseRegion=*/ false);
+    rewriter.setInsertionPointToStart(&ifOp.thenRegion().front());
+    callResizeDim(rewriter, module, loc, output, c0, ncol);
+    callResizeDim(rewriter, module, loc, output, c1, nrow);
+    
+    // TODO we get an error when we have hard-coded/known sizes at compile time.
+
+    rewriter.replaceOp(op, output);
+
+    cleanupIntermediateTensor(rewriter, module, loc, output);
+    
+    return success();
+  };
+};
+  
 struct MatrixSelectOutputWriter {
   MatrixSelectOutputWriter(StringRef _selector) : selector(_selector)
   {
@@ -309,6 +372,7 @@ struct MatrixSelectOutputWriter {
     c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     c0_64 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
     c1_64 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
+    // TODO support other element types besides f64
     cf0 = rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), float64Type);
   }
 
@@ -1754,6 +1818,15 @@ public:
   };
 };
 
+class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
+public:
+  using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::CommentOp op, PatternRewriter &rewriter) const {
+    rewriter.eraseOp(op);
+    return success();
+  };
+};
+
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
       LowerMatrixSelectRewrite,
@@ -1761,17 +1834,20 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
       LowerMatrixReduceToScalarGenericRewrite,
       LowerMatrixMultiplyRewrite,
       LowerConvertLayoutRewrite,
+      LowerTransposeRewrite,
       LowerMatrixApplyRewrite,
       LowerMatrixApplyGenericRewrite,
       LowerMatrixMultiplyReduceToScalarGenericRewrite,
       LowerMatrixMultiplyGenericRewrite,
       LowerUpdateRewrite,
       LowerEqualRewrite,
+      LowerCommentRewrite,
       LowerSizeRewrite,
       LowerNumRowsRewrite,
       LowerNumColsRewrite,
       LowerNumValsRewrite,
-      LowerDupRewrite>(patterns.getContext());
+      LowerDupRewrite
+    >(patterns.getContext());
 }
 
 struct GraphBLASLoweringPass : public GraphBLASLoweringBase<GraphBLASLoweringPass> {

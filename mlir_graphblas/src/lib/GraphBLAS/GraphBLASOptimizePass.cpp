@@ -192,8 +192,6 @@ public:
 
       RegionRange applyExtensions = op.extensions();
 
-      RankedTensorType tensorType = predecessor.a().getType().dyn_cast<RankedTensorType>();
-
       graphblas::MatrixMultiplyGenericOp newMultOp = rewriter.create<graphblas::MatrixMultiplyGenericOp>(loc,
                                 op->getResultTypes(), operands, attributes.getAttrs(),
                                 newRegions);

@@ -140,6 +140,29 @@ def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
     }];
 }
 
+def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
+    let summary = "transpose";
+    let description = [{
+        Returns a new sparse matrix that's the transpose of the input matrix.
+        The given sparse tensor must be a matrix, i.e. have rank 2.
+        The given tensor must have a CSR sparsity or a CSC sparsity.
+        The output type must be CSR or CSC.
+
+        Example:
+        ```
+        %a = graphblas.transpose %sparse_tensor : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSC64>
+        %b = graphblas.transpose %sparse_tensor : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+        ```
+    }];
+
+    let arguments = (ins AnyTensor:$input);
+    let results = (outs AnyTensor:$output);
+    
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($output)
+    }];
+}
+
 def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, SameOperandsAndResultType]> {
     let summary = "matrix select operation";
     let description = [{
@@ -437,6 +460,24 @@ def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Termina
 
     let assemblyFormat = [{
            $kind $values attr-dict `:` type($values)
+    }];
+}
+
+def GraphBLAS_CommentOp : GraphBLAS_Op<"comment", []> {
+    let summary = "graphblas comment operation";
+    let description = [{
+        `graphblas.comment` is used to add comments to MLIR assembly.
+        It lowers into a no-op.
+
+        ```mlir
+        graphblas.comment { comment = "here is a comment!" } 
+        ```
+    }];
+    
+    let arguments = (ins StrAttr:$comment);
+
+    let assemblyFormat = [{
+           attr-dict
     }];
 }
 
