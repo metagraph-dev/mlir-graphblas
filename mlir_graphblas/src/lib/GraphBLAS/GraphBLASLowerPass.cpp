@@ -997,9 +997,9 @@ private:
       Value mcolEnd64 = rewriter.create<memref::LoadOp>(loc, Mp, rowPlus1);
       Value mcolStart = rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
-      total = computeNumOverlaps(rewriter, loc, nk, Aj, colStart, colEnd, Bp, Bi, Mj, mcolStart, mcolEnd, valueType);
+      total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi, Mj, mcolStart, mcolEnd, valueType);
     } else {
-      total = computeNumOverlaps(rewriter, loc, nk, Aj, colStart, colEnd, Bp, Bi, nullptr, c0, ncol, valueType);
+      total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi, nullptr, c0, ncol, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1063,9 +1063,9 @@ private:
       Value mcolEnd64 = rewriter.create<memref::LoadOp>(loc, Mp, rowPlus1);
       Value mcolStart = rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
-      computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj, Cx, baseIndex);
+      computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj, Cx, baseIndex);
     } else {
-      computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, nullptr, c0, ncol, valueType, extBlocks, Cj, Cx, baseIndex);
+      computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx, nullptr, c0, ncol, valueType, extBlocks, Cj, Cx, baseIndex);
     }
 
     // end if cmpDiff
@@ -1148,9 +1148,9 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_rowTotal.elseBlock());
     Value total;
     if (mask) {
-      total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap, Aj, Mi, maskStart, maskEnd, valueType);
+      total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj, Mi, maskStart, maskEnd, valueType);
     } else {
-      total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap, Aj, nullptr, c0, size, valueType);
+      total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj, nullptr, c0, size, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1174,9 +1174,9 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
 
     if (mask) {
-      computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
+      computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
     } else {
-      computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
+      computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
     }
 
     // end if cmpDiff
@@ -1254,9 +1254,9 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_rowTotal.elseBlock());
     Value total;
     if (mask) {
-      total = computeNumOverlaps(rewriter, loc, nk, Ai, c0, fixedIndexEnd, Bp, Bi, Mi, maskStart, maskEnd, valueType);
+      total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi, Mi, maskStart, maskEnd, valueType);
     } else {
-      total = computeNumOverlaps(rewriter, loc, nk, Ai, c0, fixedIndexEnd, Bp, Bi, nullptr, c0, size, valueType);
+      total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi, nullptr, c0, size, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1280,9 +1280,9 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
 
     if (mask) {
-      computeInnerProduct(rewriter, loc, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
+      computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx, c0);
     } else {
-      computeInnerProduct(rewriter, loc, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
+      computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
     }
 
     // end if cmpDiff
@@ -1340,7 +1340,7 @@ private:
     Value fixedIndexEnd64 = rewriter.create<memref::LoadOp>(loc, Ap, c1);
     Value fixedIndexEnd = rewriter.create<IndexCastOp>(loc, fixedIndexEnd64, indexType);
 
-    computeInnerProduct(rewriter, loc, size, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, nullptr, c0, c1, valueType, extBlocks, Ci, Cx, c0);
+    computeInnerProduct(rewriter, size, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx, nullptr, c0, c1, valueType, extBlocks, Ci, Cx, c0);
 
     // extract scalar from C
     Value cScalar = rewriter.create<memref::LoadOp>(loc, Cx, c0);
@@ -1649,7 +1649,7 @@ public:
 private:
   LogicalResult rewriteUpdateVectorAccumulate(graphblas::UpdateOp op, PatternRewriter &rewriter) const {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value input = op.input();
@@ -1719,7 +1719,7 @@ class LowerEqualRewrite : public OpRewritePattern<graphblas::EqualOp> {
 public:
   using OpRewritePattern<graphblas::EqualOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::EqualOp op, PatternRewriter &rewriter) const override {
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1818,15 +1818,6 @@ public:
   };
 };
 
-class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
-public:
-  using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::CommentOp op, PatternRewriter &rewriter) const {
-    rewriter.eraseOp(op);
-    return success();
-  };
-};
-
 class LowerVectorArgMinOpRewrite : public OpRewritePattern<graphblas::VectorArgMinOp> {
 public:
   using OpRewritePattern<graphblas::VectorArgMinOp>::OpRewritePattern;
@@ -1840,7 +1831,7 @@ public:
       rewriter.create<graphblas::VectorArgMinMaxOp>(loc, outputType, inputTensor, "min");
 
     rewriter.replaceOp(op, newVectorArgMinMaxOp);
-    
+
     return success();
   };
 };
@@ -1858,7 +1849,16 @@ public:
       rewriter.create<graphblas::VectorArgMinMaxOp>(loc, outputType, inputTensor, "max");
 
     rewriter.replaceOp(op, newVectorArgMinMaxOp);
-    
+
+    return success();
+  };
+};
+
+class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
+public:
+  using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::CommentOp op, PatternRewriter &rewriter) const {
+    rewriter.eraseOp(op);
     return success();
   };
 };
@@ -1877,9 +1877,9 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
       LowerMatrixMultiplyGenericRewrite,
       LowerUpdateRewrite,
       LowerEqualRewrite,
-      LowerCommentRewrite,
       LowerVectorArgMinOpRewrite,
       LowerVectorArgMaxOpRewrite,
+      LowerCommentRewrite,
       LowerSizeRewrite,
       LowerNumRowsRewrite,
       LowerNumColsRewrite,
