@@ -78,7 +78,7 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
   rewriter.setInsertionPointToStart(&whileLoop.before().front());
   // Check if ii >= rowEnd
   Value cmpEndReached = rewriter.create<CmpIOp>(loc, CmpIPredicate::uge, ii64, rowEnd64);
-  scf::IfOp ifBlock_continueSearch = rewriter.create<scf::IfOp>(loc, ArrayRef<Type>{boolType, int64Type}, cmpEndReached, true);
+  scf::IfOp ifBlock_continueSearch = rewriter.create<scf::IfOp>(loc, TypeRange{boolType, int64Type}, cmpEndReached, true);
   // if cmpEndReached
   rewriter.setInsertionPointToStart(ifBlock_continueSearch.thenBlock());
   rewriter.create<scf::YieldOp>(loc, ValueRange{cfalse, ci0});
@@ -197,7 +197,7 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
   Value kk64 = rewriter.create<memref::LoadOp>(loc, iterIndices, ii);
   Value kk = rewriter.create<IndexCastOp>(loc, kk64, indexType);
   Value cmpPair = rewriter.create<memref::LoadOp>(loc, kvec_i1, kk);
-  scf::IfOp ifBlock_cmpPair = rewriter.create<scf::IfOp>(loc, ArrayRef<Type>{valueType, boolType}, cmpPair, true);
+  scf::IfOp ifBlock_cmpPair = rewriter.create<scf::IfOp>(loc, TypeRange{valueType, boolType}, cmpPair, true);
   // if cmpPair
   rewriter.setInsertionPointToStart(ifBlock_cmpPair.thenBlock());
 
@@ -359,14 +359,13 @@ Value computeIndexOverlapSize(PatternRewriter &rewriter, bool intersect,
     countForUnion = countplus1;
   }
 
-  ArrayRef<Type> doTypes = ArrayRef<Type>{indexType, indexType, boolType, boolType, indexType};
-  scf::IfOp if_onlyA = rewriter.create<scf::IfOp>(loc, doTypes, idxA_lt_idxB, true);
+  scf::IfOp if_onlyA = rewriter.create<scf::IfOp>(loc, TypeRange{indexType, indexType, boolType, boolType, indexType}, idxA_lt_idxB, true);
   // if onlyA
   rewriter.setInsertionPointToStart(if_onlyA.thenBlock());
   rewriter.create<scf::YieldOp>(loc, ValueRange{posAplus1, posB, ctrue, cfalse, countForUnion});
   // else
   rewriter.setInsertionPointToStart(if_onlyA.elseBlock());
-  scf::IfOp if_onlyB = rewriter.create<scf::IfOp>(loc, doTypes, idxA_gt_idxB, true);
+  scf::IfOp if_onlyB = rewriter.create<scf::IfOp>(loc, TypeRange{indexType, indexType, boolType, boolType, indexType}, idxA_gt_idxB, true);
   // if onlyB
   rewriter.setInsertionPointToStart(if_onlyB.thenBlock());
   rewriter.create<scf::YieldOp>(loc, ValueRange{posA, posBplus1, cfalse, ctrue, countForUnion});
@@ -478,7 +477,7 @@ Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect, std::st
   Value needsUpdateB = after->getArgument(8);
 
   // Update input index based on flag
-  scf::IfOp if_updateA = rewriter.create<scf::IfOp>(loc, ArrayRef<Type>{int64Type, valueType}, needsUpdateA, true);
+  scf::IfOp if_updateA = rewriter.create<scf::IfOp>(loc, TypeRange{int64Type, valueType}, needsUpdateA, true);
   // if updateA
   rewriter.setInsertionPointToStart(if_updateA.thenBlock());
   Value updatedIdxA = rewriter.create<memref::LoadOp>(loc, Ai, posA);
@@ -490,7 +489,7 @@ Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect, std::st
   rewriter.setInsertionPointAfter(if_updateA);
 
   // Update output index based on flag
-  scf::IfOp if_updateB = rewriter.create<scf::IfOp>(loc, ArrayRef<Type>{int64Type, valueType}, needsUpdateB, true);
+  scf::IfOp if_updateB = rewriter.create<scf::IfOp>(loc, TypeRange{int64Type, valueType}, needsUpdateB, true);
   // if updateB
   rewriter.setInsertionPointToStart(if_updateB.thenBlock());
   Value updatedIdxB = rewriter.create<memref::LoadOp>(loc, Bi, posB);
@@ -518,8 +517,7 @@ Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect, std::st
     posOForUnion = posOplus1;
   }
 
-  ArrayRef<Type> doTypes = ArrayRef<Type>{indexType, indexType, indexType, boolType, boolType};
-  scf::IfOp if_onlyA = rewriter.create<scf::IfOp>(loc, doTypes, idxA_lt_idxB, true);
+  scf::IfOp if_onlyA = rewriter.create<scf::IfOp>(loc, TypeRange{indexType, indexType, indexType, boolType, boolType}, idxA_lt_idxB, true);
   // if onlyA
   rewriter.setInsertionPointToStart(if_onlyA.thenBlock());
   if (!intersect) {
@@ -529,7 +527,7 @@ Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect, std::st
   rewriter.create<scf::YieldOp>(loc, ValueRange{posAplus1, posB, posOForUnion, ctrue, cfalse});
   // else
   rewriter.setInsertionPointToStart(if_onlyA.elseBlock());
-  scf::IfOp if_onlyB = rewriter.create<scf::IfOp>(loc, doTypes, idxA_gt_idxB, true);
+  scf::IfOp if_onlyB = rewriter.create<scf::IfOp>(loc, TypeRange{indexType, indexType, indexType, boolType, boolType}, idxA_gt_idxB, true);
   // if onlyB
   rewriter.setInsertionPointToStart(if_onlyB.thenBlock());
   if (!intersect) {
