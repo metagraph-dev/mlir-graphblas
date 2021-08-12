@@ -451,4 +451,22 @@ def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Termina
     }];
 }
 
+def GraphBLAS_CommentOp : GraphBLAS_Op<"comment", []> {
+    let summary = "graphblas comment operation";
+    let description = [{
+        `graphblas.comment` is used to add comments to MLIR assembly.
+        It lowers into a no-op.
+
+        ```mlir
+        graphblas.comment { comment = "here is a comment!" } 
+        ```
+    }];
+    
+    let arguments = (ins StrAttr:$comment);
+
+    let assemblyFormat = [{
+           attr-dict
+    }];
+}
+
 #endif // GRAPHBLAS_OPS
