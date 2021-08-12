@@ -559,7 +559,7 @@ public:
   {
     Value input = op.input();
     StringRef aggregator = op.aggregator();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     RankedTensorType operandType = op.input().getType().dyn_cast<RankedTensorType>();
     Type valueType = operandType.getElementType();
@@ -608,7 +608,7 @@ public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op, PatternRewriter &rewriter) const override {
     Value input = op.input();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     RankedTensorType operandType = op.input().getType().dyn_cast<RankedTensorType>();
     Type valueType = operandType.getElementType();
@@ -785,7 +785,7 @@ public:
   using OpRewritePattern<graphblas::MatrixMultiplyOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixMultiplyOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     ValueRange operands = op.getOperands();
@@ -924,7 +924,7 @@ public:
 private:
   LogicalResult rewriteMatrixMatrixMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1083,7 +1083,7 @@ private:
 
   LogicalResult rewriteMatrixVectorMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1191,7 +1191,7 @@ private:
 
   LogicalResult rewriteVectorMatrixMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1297,7 +1297,7 @@ private:
 
   LogicalResult rewriteVectorVectorMultiplication(graphblas::MatrixMultiplyGenericOp op, PatternRewriter &rewriter, ExtensionBlocks extBlocks) const {
     ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1358,7 +1358,7 @@ public:
   using OpRewritePattern<graphblas::MatrixMultiplyReduceToScalarGenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op, PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void) module;
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1649,7 +1649,7 @@ public:
 private:
   LogicalResult rewriteUpdateVectorAccumulate(graphblas::UpdateOp op, PatternRewriter &rewriter) const {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value input = op.input();
@@ -1719,7 +1719,7 @@ class LowerEqualRewrite : public OpRewritePattern<graphblas::EqualOp> {
 public:
   using OpRewritePattern<graphblas::EqualOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::EqualOp op, PatternRewriter &rewriter) const override {
-    Location loc = rewriter.getUnknownLoc();
+    Location loc = op->getLoc();
 
     // Inputs
     Value A = op.a();
@@ -1818,6 +1818,42 @@ public:
   };
 };
 
+class LowerVectorArgMinOpRewrite : public OpRewritePattern<graphblas::VectorArgMinOp> {
+public:
+  using OpRewritePattern<graphblas::VectorArgMinOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::VectorArgMinOp op, PatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+
+    Value inputTensor = op.vec();
+    Type outputType = op->getResultTypes()[0];
+
+    Value newVectorArgMinMaxOp =
+      rewriter.create<graphblas::VectorArgMinMaxOp>(loc, outputType, inputTensor, "min");
+
+    rewriter.replaceOp(op, newVectorArgMinMaxOp);
+
+    return success();
+  };
+};
+
+class LowerVectorArgMaxOpRewrite : public OpRewritePattern<graphblas::VectorArgMaxOp> {
+public:
+  using OpRewritePattern<graphblas::VectorArgMaxOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::VectorArgMaxOp op, PatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+
+    Value inputTensor = op.vec();
+    Type outputType = op->getResultTypes()[0];
+
+    Value newVectorArgMinMaxOp =
+      rewriter.create<graphblas::VectorArgMinMaxOp>(loc, outputType, inputTensor, "max");
+
+    rewriter.replaceOp(op, newVectorArgMinMaxOp);
+
+    return success();
+  };
+};
+
 class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
 public:
   using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
@@ -1841,6 +1877,8 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
       LowerMatrixMultiplyGenericRewrite,
       LowerUpdateRewrite,
       LowerEqualRewrite,
+      LowerVectorArgMinOpRewrite,
+      LowerVectorArgMaxOpRewrite,
       LowerCommentRewrite,
       LowerSizeRewrite,
       LowerNumRowsRewrite,

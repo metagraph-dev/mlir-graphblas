@@ -409,6 +409,72 @@ def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
     }];
 }
 
+def GraphBLAS_VectorArgMinMaxOp : GraphBLAS_Op<"vector_argminmax", [NoSideEffect]> {
+    let summary = "vector argmin/argmax operation";
+    let description = [{
+        Determines the argmin or argmax of a vector depending on the value of thhe minmax string attribute, which may only take on the value of "min" or "max".
+        If there are multiple values that can be the argmin or argmax, an arbitrary one is chosen from them.
+        The given sparse vector must have rank 1 and must be sparse.
+
+        Example:
+        ```
+        graphblas.vector_argminmax %vec { minmax = "min" } : tensor<?xi64, #SparseVec64>
+        ```
+
+    }];
+
+    let arguments = (ins AnyTensor:$vec, StrAttr:$minmax);
+    let results = (outs Index:$output);
+    
+    let assemblyFormat = [{
+           $vec attr-dict `:` type($vec)
+    }];
+}
+
+def GraphBLAS_VectorArgMinOp : GraphBLAS_Op<"vector_argmin", [NoSideEffect]> {
+    let summary = "vector argmin operation";
+    let description = [{
+        Determines the argmin of a vector.
+        If there are multiple values that can be the argmin or argmax, an arbitrary one is chosen from them.
+        The given sparse vector must have rank 1 and must be sparse.
+
+        Example:
+        ```
+        graphblas.vector_argmin %vec : tensor<?xi64, #SparseVec64>
+        ```
+
+    }];
+
+    let arguments = (ins AnyTensor:$vec);
+    let results = (outs Index:$output);
+    
+    let assemblyFormat = [{
+           $vec attr-dict `:` type($vec)
+    }];
+}
+
+def GraphBLAS_VectorArgMaxOp : GraphBLAS_Op<"vector_argmax", [NoSideEffect]> {
+    let summary = "vector argmax operation";
+    let description = [{
+        Determaxes the argmax of a vector.
+        If there are multiple values that can be the argmax or argmax, an arbitrary one is chosen from them.
+        The given sparse vector must have rank 1 and must be sparse.
+
+        Example:
+        ```
+        graphblas.vector_argmax %vec : tensor<?xi64, #SparseVec64>
+        ```
+
+    }];
+
+    let arguments = (ins AnyTensor:$vec);
+    let results = (outs Index:$output);
+    
+    let assemblyFormat = [{
+           $vec attr-dict `:` type($vec)
+    }];
+}
+
 // Generic ops
 
 def YIELD_TRANSFORM_IN_A : I64EnumAttrCase<"TRANSFORM_IN_A", 0, "transform_in_a">;
