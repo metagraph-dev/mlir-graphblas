@@ -227,6 +227,7 @@ module {
         // CHECK-NEXT: return
         return
     }
+
 }
 
 module {
