@@ -22,7 +22,7 @@
 // CHECK-DAG:       %[[VAL_5:.*]] = constant true
 // CHECK-DAG:       %[[VAL_6:.*]] = constant false
 // CHECK-DAG:       %[[VAL_7:.*]] = constant 0.000000e+00 : f64
-// CHECK:           %[[VAL_8:.*]] = memref.dim %[[VAL_0]], %[[VAL_3]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:           %[[VAL_8:.*]] = tensor.dim %[[VAL_0]], %[[VAL_3]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           %[[VAL_9:.*]] = call @vector_empty_like(%[[VAL_0]]) : (tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           call @vector_resize_dim(%[[VAL_9]], %[[VAL_3]], %[[VAL_4]]) : (tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, index, index) -> ()
 // CHECK:           call @vector_resize_pointers(%[[VAL_9]], %[[VAL_3]], %[[VAL_2]]) : (tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, index, index) -> ()
@@ -40,7 +40,7 @@
 // CHECK:           %[[VAL_19:.*]] = index_cast %[[VAL_18]] : i64 to index
 // CHECK:           %[[VAL_20:.*]] = memref.alloc(%[[VAL_8]]) : memref<?xf64>
 // CHECK:           %[[VAL_21:.*]] = memref.alloc(%[[VAL_8]]) : memref<?xi1>
-// CHECK:           linalg.fill(%[[VAL_21]], %[[VAL_6]]) : memref<?xi1>, i1
+// CHECK:           linalg.fill(%[[VAL_6]], %[[VAL_21]]) : i1, memref<?xi1>
 // CHECK:           scf.parallel (%[[VAL_22:.*]]) = (%[[VAL_3]]) to (%[[VAL_19]]) step (%[[VAL_4]]) {
 // CHECK:             %[[VAL_23:.*]] = memref.load %[[VAL_11]]{{\[}}%[[VAL_22]]] : memref<?xi64>
 // CHECK:             %[[VAL_24:.*]] = index_cast %[[VAL_23]] : i64 to index

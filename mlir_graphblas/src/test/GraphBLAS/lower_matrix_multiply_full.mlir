@@ -60,7 +60,7 @@
 // CHECK:               %[[VAL_29:.*]] = index_cast %[[VAL_24]] : i64 to index
 // CHECK:               %[[VAL_30:.*]] = index_cast %[[VAL_26]] : i64 to index
 // CHECK:               %[[VAL_31:.*]] = memref.alloc(%[[VAL_17]]) : memref<?xi1>
-// CHECK:               linalg.fill(%[[VAL_31]], %[[VAL_8]]) : memref<?xi1>, i1
+// CHECK:               linalg.fill(%[[VAL_8]], %[[VAL_31]]) : i1, memref<?xi1>
 // CHECK:               scf.parallel (%[[VAL_32:.*]]) = (%[[VAL_29]]) to (%[[VAL_30]]) step (%[[VAL_3]]) {
 // CHECK:                 %[[VAL_33:.*]] = memref.load %[[VAL_10]]{{\[}}%[[VAL_32]]] : memref<?xi64>
 // CHECK:                 %[[VAL_34:.*]] = index_cast %[[VAL_33]] : i64 to index
@@ -139,7 +139,7 @@
 // CHECK:               %[[VAL_82:.*]] = index_cast %[[VAL_80]] : i64 to index
 // CHECK:               %[[VAL_83:.*]] = memref.alloc(%[[VAL_17]]) : memref<?xf64>
 // CHECK:               %[[VAL_84:.*]] = memref.alloc(%[[VAL_17]]) : memref<?xi1>
-// CHECK:               linalg.fill(%[[VAL_84]], %[[VAL_8]]) : memref<?xi1>, i1
+// CHECK:               linalg.fill(%[[VAL_8]], %[[VAL_84]]) : i1, memref<?xi1>
 // CHECK:               scf.parallel (%[[VAL_85:.*]]) = (%[[VAL_81]]) to (%[[VAL_82]]) step (%[[VAL_3]]) {
 // CHECK:                 %[[VAL_86:.*]] = memref.load %[[VAL_10]]{{\[}}%[[VAL_85]]] : memref<?xi64>
 // CHECK:                 %[[VAL_87:.*]] = index_cast %[[VAL_86]] : i64 to index

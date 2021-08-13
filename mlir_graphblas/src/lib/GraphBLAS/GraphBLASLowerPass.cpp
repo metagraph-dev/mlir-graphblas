@@ -1444,7 +1444,7 @@ public:
     Value colEnd = rewriter.create<IndexCastOp>(loc, apEnd64, indexType);
     Value kvec = rewriter.create<memref::AllocOp>(loc, memref1DValueType, nk);
     Value kvec_i1 = rewriter.create<memref::AllocOp>(loc, memref1DBoolType, nk);
-    rewriter.create<linalg::FillOp>(loc, kvec_i1, cfalse);
+    rewriter.create<linalg::FillOp>(loc, cfalse, kvec_i1);
 
     scf::ParallelOp colLoop1 = rewriter.create<scf::ParallelOp>(loc, colStart, colEnd, c1);
     Value jj = colLoop1.getInductionVars()[0];
