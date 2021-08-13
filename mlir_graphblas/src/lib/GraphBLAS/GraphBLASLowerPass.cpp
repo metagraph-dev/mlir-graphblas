@@ -304,7 +304,8 @@ public:
 class LowerTransposeRewrite : public OpRewritePattern<graphblas::TransposeOp> {
 public:
   using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::TransposeOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::TransposeOp op,
+                                PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -1994,7 +1995,8 @@ public:
 class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
 public:
   using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::CommentOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::CommentOp op,
+                                PatternRewriter &rewriter) const override {
     rewriter.eraseOp(op);
     return success();
   };
