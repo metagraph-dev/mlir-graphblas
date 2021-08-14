@@ -108,13 +108,9 @@ static llvm::Optional<std::string> checkCompressedVector(
 // GraphBLAS Ops Methods
 //===--------------------------------------------------------------------===//
 
+// TODO: remove me. Cannot do now as all the ops require a verifier (see:
+// GraphBLAS_Op) a follow-up commit will address this issue.
 static LogicalResult verify(SizeOp op) {
-  Type inputType = op.input().getType();
-  int64_t rank = getRank(inputType);
-
-  if (rank != 1)
-    return op.emitError("Input must be a vector (rank 1 tensor).");
-
   return success();
 }
 
@@ -123,19 +119,10 @@ void SizeOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
   build(builder, result, indexType, tensor);
 }
 
+// TODO: originally this verifier was calling 'checkCompressedMatrix'
+// why do we need to check the sparse attribute? This ops should work
+// also without passing the sparese encoding attribute.
 static LogicalResult verify(NumRowsOp op) {
-  Type inputType = op.input().getType();
-
-  llvm::Optional<std::string> inputCompressionErrorMessage = checkCompressedMatrix(inputType, 0, EITHER);
-  if (inputCompressionErrorMessage)
-    return op.emitError(inputCompressionErrorMessage.getValue());
-
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  int64_t rank = inputTensorType.getRank();
-
-  if (rank != 2)
-    return op.emitError("Input must be a matrix (rank 2 tensor).");
-
   return success();
 }
 
@@ -144,13 +131,8 @@ void NumRowsOp::build(OpBuilder &builder, OperationState &result, Value tensor) 
   build(builder, result, indexType, tensor);
 }
 
+// TODO: remove me. see SizeOp.
 static LogicalResult verify(NumColsOp op) {
-  Type inputType = op.input().getType();
-  int64_t rank = getRank(inputType);
-
-  if (rank != 2)
-    return op.emitError("Input must be a matrix (rank 2 tensor).");
-
   return success();
 }
 
@@ -178,17 +160,39 @@ void NumValsOp::build(OpBuilder &builder, OperationState &result, Value tensor) 
   build(builder, result, indexType, tensor);
 }
 
-static LogicalResult verify(DupOp op) {
-  Type inputType = op.input().getType();
-  int64_t rank = getRank(inputType);
+/// Utility function to check encoding attribute.
+static LogicalResult hasSparseEncodingAttr(RankedTensorType t) {
+  if (!sparse_tensor::getSparseTensorEncoding(t))
+    return failure();
+  return success();
+}
 
-  // Require sparse matrices to be either CSR or CSC
-  if (rank == 2) {
-    llvm::Optional<std::string> inputCompressionErrorMessage = checkCompressedMatrix(inputType, 0, EITHER);
-    if (inputCompressionErrorMessage)
-      return op.emitError(inputCompressionErrorMessage.getValue());
+/// Utility function to check if a 2d-tensor is in CSR or
+/// CSC format.
+static LogicalResult hasCSRorCSCEncoding(RankedTensorType t) {
+  assert(t.getRank() == 2 && "expect a 2d ranked tensor");
+  if (auto encoding = sparse_tensor::getSparseTensorEncoding(t)) {
+    auto compression = encoding.getDimLevelType();
+    if (((compression[0] ==
+          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense) &&
+         (compression[1] ==
+          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)) ||
+        ((compression[0] ==
+          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed) &&
+         (compression[1] ==
+          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense)))
+      return success();
   }
+  return failure();
+}
 
+static LogicalResult verify(DupOp op) {
+  auto inputType = op.input().getType().cast<RankedTensorType>();
+  auto rank = inputType.getRank();
+  if (failed(hasSparseEncodingAttr(inputType)))
+    return op.emitError("operand #0 must have sparse tensor attribute");
+  if (rank == 2 && failed(hasCSRorCSCEncoding(inputType)))
+    return op.emitError("operand #0 must be in CSR or in CSC compression");
   return success();
 }
 
@@ -847,27 +851,26 @@ static LogicalResult verify(ConvertLayoutOp op) {
 }
 
 static LogicalResult verify(TransposeOp op) {
-  Type inputType = op.input().getType();
-  Type resultType = op.getResult().getType();
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+  RankedTensorType resultType =
+      op.getResult().getType().cast<RankedTensorType>();
 
-  llvm::Optional<std::string> inputCompressionErrorMessage = checkCompressedMatrix(inputType, 0, EITHER);
-  if (inputCompressionErrorMessage)
-    return op.emitError(inputCompressionErrorMessage.getValue());
+  if (failed(hasSparseEncodingAttr(inputType)) ||
+      failed(hasCSRorCSCEncoding(inputType)))
+    return op.emitError("input: Missing sparse tensor encoding or 2d-tensor "
+                        "not in CSR or CSC form");
 
-  llvm::Optional<std::string> resultCompressionErrorMessage = checkCompressedMatrix(resultType, -1, EITHER);
-  if (resultCompressionErrorMessage)
-    return op.emitError(resultCompressionErrorMessage.getValue());
+  if (failed(hasSparseEncodingAttr(resultType)) ||
+      failed(hasCSRorCSCEncoding(resultType)))
+    return op.emitError("result: Missing sparse tensor encoding or 2d-tensor "
+                        "not in CSR or CSC form");
 
   // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with shapes using "?"
-
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
-
-  if (inputTensorType.getElementType() != resultTensorType.getElementType())
+  if (inputType.getElementType() != resultType.getElementType())
     return op.emitError("Input and output tensors have different element types.");
 
-  ArrayRef<int64_t> inputShape = inputTensorType.getShape();
-  ArrayRef<int64_t> resultShape = resultTensorType.getShape();
+  ArrayRef<int64_t> inputShape = inputType.getShape();
+  ArrayRef<int64_t> resultShape = resultType.getShape();
 
   mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
     mlir::sparse_tensor::getSparseTensorEncoding(inputType);

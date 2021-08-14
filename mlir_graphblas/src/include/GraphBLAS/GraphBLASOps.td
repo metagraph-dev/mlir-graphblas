@@ -15,8 +15,12 @@ class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Di
     let verifier = [{ return ::verify(*this); }];
 }
 
+def GraphBlasMatrixOrVectorOperand : TensorRankOf<[AnyType], [1,2]>;
+def GraphBlasVectorOperand : 1DTensorOf<[AnyType]>;
+def GraphBlasMatrixOperand : 2DTensorOf<[AnyType]>;
+
 def GraphBLAS_SizeOp : GraphBLAS_Op<"size", [NoSideEffect]> {
-    let summary = "return the size of a vector";
+    let summary = "return the size of a ranked vector";
     let description = [{
         Returns the size of a vector
 
@@ -26,7 +30,7 @@ def GraphBLAS_SizeOp : GraphBLAS_Op<"size", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input);
+    let arguments = (ins GraphBlasVectorOperand:$input);
     let results = (outs Index:$result);
 
     let assemblyFormat = [{
@@ -49,7 +53,7 @@ def GraphBLAS_NumRowsOp : GraphBLAS_Op<"num_rows", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input);
+    let arguments = (ins GraphBlasMatrixOperand:$input);
     let results = (outs Index:$result);
 
     let assemblyFormat = [{
@@ -72,7 +76,7 @@ def GraphBLAS_NumColsOp : GraphBLAS_Op<"num_cols", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input);
+    let arguments = (ins GraphBlasMatrixOperand:$input);
     let results = (outs Index:$result);
 
     let assemblyFormat = [{
@@ -118,8 +122,8 @@ def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input",
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input);
-    let results = (outs AnyTensor:$output);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
 
     let assemblyFormat = [{
            $input attr-dict `:` type($input)
@@ -130,6 +134,7 @@ def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input",
     ];
 }
 
+// TODO: Is this op still needed (see sparse_tensor.convert)
 def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
     let summary = "convert graph storage layout";
     let description = [{
@@ -167,8 +172,8 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input);
-    let results = (outs AnyTensor:$output);
+    let arguments = (ins GraphBlasMatrixOperand:$input);
+    let results = (outs GraphBlasMatrixOperand:$output);
     
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
@@ -356,7 +361,7 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
         be CSC format.  The mask (if provided) must be CSR format.
     }];
 
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a, GraphBlasMatrixOrVectorOperand:$b, Optional<AnyTensor>:$mask);
     let results = (outs AnyType:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
     
