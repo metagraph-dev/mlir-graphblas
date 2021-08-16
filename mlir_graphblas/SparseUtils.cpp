@@ -27,6 +27,11 @@
 #include <cstring>
 #include <vector>
 
+// forward declaration
+extern "C" {
+void *openTensorC(char *filename, uint64_t *idata);
+}
+
 //===----------------------------------------------------------------------===//
 //
 // Internal support for storing and reading sparse tensors.
