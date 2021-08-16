@@ -376,6 +376,46 @@ class GraphBLAS_MatrixMultiply(BaseOp):
         return ret_val, mlir
 
 
+class GraphBLAS_VectorArgMinMax(BaseOp):
+    dialect = "graphblas"
+    name = "vector_argminmax"
+
+    @classmethod
+    def call(cls, irbuilder, input, minmax):
+        cls.ensure_mlirvar(input, TensorType)
+        ret_val = irbuilder.new_var("index")
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.vector_argminmax {input} "
+            f'{{ minmax = "{minmax}" }} : {input.type}'
+        )
+
+
+class GraphBLAS_VectorArgMin(BaseOp):
+    dialect = "graphblas"
+    name = "vector_argmin"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input, TensorType)
+        ret_val = irbuilder.new_var("index")
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.vector_argmin {input} : {input.type}"
+        )
+
+
+class GraphBLAS_VectorArgMax(BaseOp):
+    dialect = "graphblas"
+    name = "vector_argmax"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input, TensorType)
+        ret_val = irbuilder.new_var("index")
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.vector_argmax {input} : {input.type}"
+        )
+
+
 ###########################################
 # util ops
 ###########################################

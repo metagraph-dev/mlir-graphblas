@@ -501,6 +501,10 @@ static LogicalResult verify(VectorArgMinMaxOp op) {
   if (vecCompressionErrorMessage)
     return op.emitError(vecCompressionErrorMessage.getValue());
 
+  std::string  minmax = op.minmax().str();
+  if (minmax != "min" && minmax != "max")
+    return op.emitError("The minmax attribute is expected to be \"min\" or \"max\"; got \""+minmax+"\" instead.");
+  
   return success();
 }
 
