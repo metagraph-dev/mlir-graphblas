@@ -508,6 +508,8 @@ def resolve_type_aliases(module: mlir.astnodes.Module) -> None:
         _resolve_type_aliases(module, type_alias_table)
     return
 
+# func may be written with an optional builtin dialect namespace
+FUNC_PATTERN = re.compile(r'\s*(builtin\.)?func ')
 
 def parse_mlir_functions(
     mlir_text: Union[str, bytes], cli: MlirOptCli
@@ -518,7 +520,7 @@ def parse_mlir_functions(
     mlir_text = cli.apply_passes(mlir_text, [])
     # Remove everything except function signatures
     func_lines = [
-        line.strip() for line in mlir_text.splitlines() if line.lstrip()[:5] == "func "
+        line.strip().replace('builtin.func ', 'func ') for line in mlir_text.splitlines() if FUNC_PATTERN.match(line)
     ]
     # Add in trailing "}" to make defined functions valid
     func_lines = [line + "}" if line[-1] == "{" else line for line in func_lines]
