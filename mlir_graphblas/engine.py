@@ -806,7 +806,7 @@ class MlirJitEngine:
         ).encode()
         lowered_text = self._cli.apply_passes(dummy_declarations_string, passes)
         lowered_lines = list(filter(len, lowered_text.splitlines()))
-        assert lowered_lines[0] == 'module attributes {llvm.data_layout = ""}  {'
+        assert lowered_lines[0] == 'builtin.module attributes {llvm.data_layout = ""}  {'
         assert lowered_lines[-1] == "}"
         lowered_lines = lowered_lines[1:-1]
         assert all(
