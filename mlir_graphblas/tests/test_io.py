@@ -46,14 +46,15 @@ def test_mlirsparsetensor_bad_dtypes():
     indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
     values = np.array([1, 3], dtype=np.int32)
 
-    with pytest.raises(TypeError, match="Bad dtype for values"):
-        mlir_graphblas.sparse_utils.MLIRSparseTensor(
-            indices,
-            values.astype(np.int64),
-            sizes,
-            sparsity,
-            pointer_type=pointer_dtype,
-        )
+    # Was bad, but now okay
+    tensor = mlir_graphblas.sparse_utils.MLIRSparseTensor(
+        indices,
+        values.astype(np.int64),
+        sizes,
+        sparsity,
+        pointer_type=pointer_dtype,
+    )
+    assert tensor.value_dtype == np.int64
     with pytest.raises(TypeError, match="Bad dtype for values"):
         mlir_graphblas.sparse_utils.MLIRSparseTensor(
             indices,
