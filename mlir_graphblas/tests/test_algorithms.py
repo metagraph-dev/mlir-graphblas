@@ -51,4 +51,48 @@ def test_triangle_count():
     num_triangles = mlalgo.triangle_count_combined(a)
     assert num_triangles == 5, num_triangles
 
-    return
+
+def test_sssp():
+    # This must be in sorted-for-CSR format. Random order breaks the constructor in strange ways.
+    indices = np.array([[0, 1], [0, 3], [1, 4], [1, 6], [2, 5], [3, 0], [3, 2], [4, 5], [5, 1], [6, 2], [6, 3], [6, 4]],
+                       dtype=np.uint64)
+    values = np.array([2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3], dtype=np.float64)
+    sizes = np.array([7, 7], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    m = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    indices = np.array([[1]], dtype=np.uint64)
+    values = np.array([0], dtype=np.float64)
+    sizes = np.array([7], dtype=np.uint64)
+    sparsity = np.array([True], dtype=np.bool8)
+    v = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    # Compute SSSP from node #1 -- correct answer is [14, 0, 9, 11, 7, 10, 4]
+    w = mlalgo.sssp(m, v)
+
+    assert (w.indices[0] == np.arange(7)).all()
+    assert (w.values == [14, 0, 9, 11, 7, 10, 4]).all()
+
+
+def test_mssp():
+    # This must be in sorted-for-CSR format. Random order breaks the constructor in strange ways.
+    indices = np.array([[0, 1], [0, 3], [1, 4], [1, 6], [2, 5], [3, 0], [3, 2], [4, 5], [5, 1], [6, 2], [6, 3], [6, 4]],
+                       dtype=np.uint64)
+    values = np.array([2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3], dtype=np.float64)
+    sizes = np.array([7, 7], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    m = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    indices = np.array([[0, 1], [1, 3]], dtype=np.uint64)
+    values = np.array([0, 0], dtype=np.float64)
+    sizes = np.array([2, 7], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    v = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    # Compute MSSP
+    # correct answer from node #1 -- [14, 0, 9, 11, 7, 10, 4]
+    # correct answer from node #3 -- [3,  5,  3,  0, 12,  4,  9]
+    w = mlalgo.mssp(m, v)
+
+    assert (w.indices[1] == [0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 6]).all()
+    assert (w.values == [14, 0, 9, 11, 7, 10, 4, 3, 5, 3, 0, 12, 4, 9]).all()

@@ -1786,7 +1786,7 @@ private:
     Value TcolEnd64 = rewriter.create<memref::LoadOp>(loc, Tp, rowPlus1);
     Value IcmpColSame = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, IcolStart64, IcolEnd64);
     Value TcmpColSame = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, TcolStart64, TcolEnd64);
-    Value cmpColSame = rewriter.create<OrOp>(loc, IcmpColSame, TcmpColSame);
+    Value cmpColSame = rewriter.create<AndOp>(loc, IcmpColSame, TcmpColSame);
 
     scf::IfOp ifBlock_rowTotal = rewriter.create<scf::IfOp>(loc, int64Type, cmpColSame, true);
     // if cmpColSame
@@ -1895,7 +1895,6 @@ public:
 
     // Types
     Type boolType = rewriter.getI1Type();
-    Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
     Type valueType = aType.getElementType();
     MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
@@ -1909,79 +1908,87 @@ public:
 
     unsigned rank = aType.getRank();  // ranks guaranteed to be equal
 
+    Value dimIndex;
+    Value cmpShape;
     if (rank == 2) {
       // Matrix check
-      return op.emitError("Matrix equality check is not yet supported.");
+      dimIndex = c1;
+      Value aNrows = rewriter.create<graphblas::NumRowsOp>(loc, A);
+      Value bNrows = rewriter.create<graphblas::NumRowsOp>(loc, B);
+      Value aNcols = rewriter.create<graphblas::NumColsOp>(loc, A);
+      Value bNcols = rewriter.create<graphblas::NumColsOp>(loc, B);
+      Value cmpNrows = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aNrows, bNrows);
+      Value cmpNcols = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aNcols, bNcols);
+      cmpShape = rewriter.create<AndOp>(loc, cmpNrows, cmpNcols);
     } else {
       // Vector check
+      dimIndex = c0;
       // Check size
       Value aSize = rewriter.create<graphblas::SizeOp>(loc, A);
       Value bSize = rewriter.create<graphblas::SizeOp>(loc, B);
-      Value cmpSize = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aSize, bSize);
-      scf::IfOp ifOuter = rewriter.create<scf::IfOp>(loc, boolType, cmpSize, true);
-      // if cmpSize
-      rewriter.setInsertionPointToStart(ifOuter.thenBlock());
-
-      // Check number of non-zeros
-      Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, A, c0);
-      Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, B, c0);
-      Value aNnz = rewriter.create<memref::LoadOp>(loc, Ap, c1);
-      Value bNnz = rewriter.create<memref::LoadOp>(loc, Bp, c1);
-      Value cmpNnz = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aNnz, bNnz);
-      scf::IfOp ifNnz = rewriter.create<scf::IfOp>(loc, boolType, cmpNnz, true);
-      // if cmpNnz
-      rewriter.setInsertionPointToStart(ifNnz.thenBlock());
-
-      // Check index positions and values
-      Value nnz = rewriter.create<IndexCastOp>(loc, aNnz, indexType);
-      Value Ai = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, c0);
-      Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c0);
-      Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, A);
-      Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
-
-      scf::ParallelOp indexLoop = rewriter.create<scf::ParallelOp>(loc, c0, nnz, c1, ctrue);
-      Value loopIdx = indexLoop.getInductionVars()[0];
-      rewriter.setInsertionPointToStart(indexLoop.getBody());
-
-      Value aIndex = rewriter.create<memref::LoadOp>(loc, Ai, loopIdx);
-      Value bIndex = rewriter.create<memref::LoadOp>(loc, Bi, loopIdx);
-      Value aValue = rewriter.create<memref::LoadOp>(loc, Ax, loopIdx);
-      Value bValue = rewriter.create<memref::LoadOp>(loc, Bx, loopIdx);
-      Value cmpIndex = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aIndex, bIndex);
-      Value cmpValue = llvm::TypeSwitch<Type, Value>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aValue, bValue); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OEQ, aValue, bValue); });
-      Value cmpCombined = rewriter.create<AndOp>(loc, cmpIndex, cmpValue);
-
-      scf::ReduceOp reducer = rewriter.create<scf::ReduceOp>(loc, cmpCombined);
-      BlockArgument lhs = reducer.getRegion().getArgument(0);
-      BlockArgument rhs = reducer.getRegion().getArgument(1);
-      rewriter.setInsertionPointToStart(&reducer.getRegion().front());
-      Value cmpFinal = rewriter.create<AndOp>(loc, lhs, rhs);
-      rewriter.create<scf::ReduceReturnOp>(loc, cmpFinal);
-
-      rewriter.setInsertionPointAfter(indexLoop);
-      rewriter.create<scf::YieldOp>(loc, indexLoop.getResult(0));
-
-      // else cmpNnz
-      rewriter.setInsertionPointToStart(ifNnz.elseBlock());
-      rewriter.create<scf::YieldOp>(loc, cfalse);
-      // end cmpNnz
-      rewriter.setInsertionPointAfter(ifNnz);
-      Value nnzReturn = ifNnz.getResult(0);
-      rewriter.create<scf::YieldOp>(loc, nnzReturn);
-
-      // else cmpSize
-      rewriter.setInsertionPointToStart(ifOuter.elseBlock());
-      rewriter.create<scf::YieldOp>(loc, cfalse);
-      // end cmpSize
-      rewriter.setInsertionPointAfter(ifOuter);
-      Value isEqual = ifOuter.getResult(0);
-
-      rewriter.replaceOp(op, isEqual);
-
-      return success();
+      cmpShape = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aSize, bSize);
     }
+
+    scf::IfOp ifOuter = rewriter.create<scf::IfOp>(loc, boolType, cmpShape, true);
+    // if cmpSize
+    rewriter.setInsertionPointToStart(ifOuter.thenBlock());
+
+    // Check number of non-zeros
+    Value aNnz = rewriter.create<graphblas::NumValsOp>(loc, A);
+    Value bNnz = rewriter.create<graphblas::NumValsOp>(loc, B);
+    Value cmpNnz = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aNnz, bNnz);
+    scf::IfOp ifNnz = rewriter.create<scf::IfOp>(loc, boolType, cmpNnz, true);
+    // if cmpNnz
+    rewriter.setInsertionPointToStart(ifNnz.thenBlock());
+
+    // Check index positions and values
+    Value Ai = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, dimIndex);
+    Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, dimIndex);
+    Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, A);
+    Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
+
+    scf::ParallelOp indexLoop = rewriter.create<scf::ParallelOp>(loc, c0, aNnz, c1, ctrue);
+    Value loopIdx = indexLoop.getInductionVars()[0];
+    rewriter.setInsertionPointToStart(indexLoop.getBody());
+
+    Value aIndex = rewriter.create<memref::LoadOp>(loc, Ai, loopIdx);
+    Value bIndex = rewriter.create<memref::LoadOp>(loc, Bi, loopIdx);
+    Value aValue = rewriter.create<memref::LoadOp>(loc, Ax, loopIdx);
+    Value bValue = rewriter.create<memref::LoadOp>(loc, Bx, loopIdx);
+    Value cmpIndex = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aIndex, bIndex);
+    Value cmpValue = llvm::TypeSwitch<Type, Value>(valueType)
+      .Case<IntegerType>([&](IntegerType type) { return rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aValue, bValue); })
+      .Case<FloatType>([&](FloatType type) { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OEQ, aValue, bValue); });
+    Value cmpCombined = rewriter.create<AndOp>(loc, cmpIndex, cmpValue);
+
+    scf::ReduceOp reducer = rewriter.create<scf::ReduceOp>(loc, cmpCombined);
+    BlockArgument lhs = reducer.getRegion().getArgument(0);
+    BlockArgument rhs = reducer.getRegion().getArgument(1);
+    rewriter.setInsertionPointToStart(&reducer.getRegion().front());
+    Value cmpFinal = rewriter.create<AndOp>(loc, lhs, rhs);
+    rewriter.create<scf::ReduceReturnOp>(loc, cmpFinal);
+
+    rewriter.setInsertionPointAfter(indexLoop);
+    rewriter.create<scf::YieldOp>(loc, indexLoop.getResult(0));
+
+    // else cmpNnz
+    rewriter.setInsertionPointToStart(ifNnz.elseBlock());
+    rewriter.create<scf::YieldOp>(loc, cfalse);
+    // end cmpNnz
+    rewriter.setInsertionPointAfter(ifNnz);
+    Value nnzReturn = ifNnz.getResult(0);
+    rewriter.create<scf::YieldOp>(loc, nnzReturn);
+
+    // else cmpSize
+    rewriter.setInsertionPointToStart(ifOuter.elseBlock());
+    rewriter.create<scf::YieldOp>(loc, cfalse);
+    // end cmpSize
+    rewriter.setInsertionPointAfter(ifOuter);
+    Value isEqual = ifOuter.getResult(0);
+
+    rewriter.replaceOp(op, isEqual);
+
+    return success();
   };
 };
 

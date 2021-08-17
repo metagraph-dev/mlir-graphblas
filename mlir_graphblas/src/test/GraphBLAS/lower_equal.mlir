@@ -18,12 +18,13 @@
 // CHECK:           %[[VAL_8:.*]] = cmpi eq, %[[VAL_6]], %[[VAL_7]] : index
 // CHECK:           %[[VAL_9:.*]] = scf.if %[[VAL_8]] -> (i1) {
 // CHECK:             %[[VAL_10:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:             %[[VAL_11:.*]] = sparse_tensor.pointers %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_12:.*]] = memref.load %[[VAL_10]]{{\[}}%[[VAL_2]]] : memref<?xi64>
+// CHECK:             %[[VAL_16:.*]] = index_cast %[[VAL_12]] : i64 to index
+// CHECK:             %[[VAL_11:.*]] = sparse_tensor.pointers %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_13:.*]] = memref.load %[[VAL_11]]{{\[}}%[[VAL_2]]] : memref<?xi64>
-// CHECK:             %[[VAL_14:.*]] = cmpi eq, %[[VAL_12]], %[[VAL_13]] : i64
+// CHECK:             %[[VAL_116:.*]] = index_cast %[[VAL_13]] : i64 to index
+// CHECK:             %[[VAL_14:.*]] = cmpi eq, %[[VAL_16]], %[[VAL_116]] : index
 // CHECK:             %[[VAL_15:.*]] = scf.if %[[VAL_14]] -> (i1) {
-// CHECK:               %[[VAL_16:.*]] = index_cast %[[VAL_12]] : i64 to index
 // CHECK:               %[[VAL_17:.*]] = sparse_tensor.indices %[[VAL_0]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:               %[[VAL_18:.*]] = sparse_tensor.indices %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:               %[[VAL_19:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
