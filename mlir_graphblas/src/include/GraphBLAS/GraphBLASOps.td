@@ -354,6 +354,47 @@ def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp : GraphBLAS_Op<"matrix_multi
     }];
 }
 
+def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
+    let summary = "element-wise union operation";
+    let description = [{
+        Performs an element-wise union between two matrices or two vectors.
+        The resulting sparse structure with be the union of the two input structures.
+        When either object has a non-overlapping element, it is copied to the output.
+        When both objects have an overlapping element in a cell, an operation combines the result.
+
+        Example:
+        ```%combined = graphblas.union %A, %B { union_operator = "plus" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>```
+
+    }];
+
+    let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$union_operator);
+    let results = (outs AnyTensor:$output);
+
+    let assemblyFormat = [{
+           $a `,` $b attr-dict `:` `(` type($a) `,` type($b)  `)` `to` type($output)
+    }];
+}
+
+def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
+    let summary = "element-wise intersection operation";
+    let description = [{
+        Performs an element-wise intersection between two matrices or two vectors.
+        The resulting sparse structure with be the intersection of the two input structures.
+        Overlapping elements are combined using an operation passed in.
+
+        Example:
+        ```%combined = graphblas.intersect %A, %B { intersect_operator = "mult" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>```
+
+    }];
+
+    let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$intersect_operator);
+    let results = (outs AnyTensor:$output);
+
+    let assemblyFormat = [{
+           $a `,` $b attr-dict `:` `(` type($a) `,` type($b)  `)` `to` type($output)
+    }];
+}
+
 def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
     let summary = "update operation handling accumulation, mask, and replacement";
     let description = [{
