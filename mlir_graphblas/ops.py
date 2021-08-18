@@ -528,7 +528,7 @@ class DelSparseTensor(BaseOp):
             cast_string += "\n"
 
         return None, cast_string + (
-            f"call @delSparseMatrix({input}) : ({input.type}) -> ()"
+            f"call @delSparseTensor({input}) : ({input.type}) -> ()"
         )
 
 

@@ -286,15 +286,8 @@ void callDelSparseTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value 
   int64_t rank = inputTensorType.getRank();
 
   std::string funcName;
-  if (rank == 2)
-  {
-    tensor = convertToExternalCSX(builder, mod, loc, tensor);
-    funcName = "delSparseMatrix";
-  }
-  else
-  {
-    funcName = "delSparseVector";
-  }
+  tensor = convertToExternalCSX(builder, mod, loc, tensor);
+  funcName = "delSparseTensor";
   Type tensorType = tensor.getType();
 
   FlatSymbolRefAttr func = getFunc(mod, loc, funcName, ArrayRef<Type>({}), tensorType);
