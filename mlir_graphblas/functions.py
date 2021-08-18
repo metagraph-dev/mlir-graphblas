@@ -74,7 +74,7 @@ module  {
     func private @ptr8_to_matrix(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSX64>
     func private @matrix_to_ptr8(tensor<?x?xf64, #CSX64>) -> !llvm.ptr<i8>
     
-    func private @delSparseTensor(tensor<?x?xf64, #CSX64>) -> ()
+    func private @delSparseMatrix(tensor<?x?xf64, #CSX64>) -> ()
     func private @dup_matrix(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSX64>
 
     {{ body }}
