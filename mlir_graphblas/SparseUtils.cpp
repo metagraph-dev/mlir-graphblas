@@ -738,9 +738,17 @@ IMPL1(MemRef1DI16, sparseValuesI16, int16_t, getValues)
 IMPL1(MemRef1DI8, sparseValuesI8, int8_t, getValues)
 
 /// Releases sparse tensor storage.
-void delSparseTensor(void *tensor) {
+//// --> MODIFIED
+void delSparseVector(void *tensor)
+{
   delete static_cast<SparseTensorStorageBase *>(tensor);
 }
+
+void delSparseMatrix(void *tensor)
+{
+  delete static_cast<SparseTensorStorageBase *>(tensor);
+}
+//// <- MODIFIED
 
 /// Helper to get pointer, one per value type.
 PTR(getPtrF64)

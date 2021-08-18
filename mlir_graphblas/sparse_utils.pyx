@@ -170,7 +170,8 @@ cdef extern from "SparseUtils.cpp" nogil:
     MemRef1DF32 sparseValuesF32(void *)
     MemRef1DF64 sparseValuesF64(void *)
 
-    void delSparseTensor(void *)
+    void delSparseVector(void *)
+    void delSparseMatrix(void *)
 
     # HACKED IN
     uint64_t get_rank(void *tensor)
@@ -502,7 +503,7 @@ cdef class MLIRSparseTensor:
             raise
 
     def __dealloc__(self):
-        delSparseTensor(self._data)
+        delSparseMatrix(self._data)
 
     @classmethod
     def from_raw_pointer(cls, uintptr_t data, pointer_dtype, index_dtype, value_dtype):
