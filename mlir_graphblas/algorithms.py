@@ -266,7 +266,7 @@ def sssp(graph: MLIRSparseTensor, vector: MLIRSparseTensor) -> MLIRSparseTensor:
         irb.graphblas.update(tmp, w, "min")
         no_change = irb.graphblas.equal(w, w_old)
         cont = irb.select(no_change, cfalse, ctrue)
-        #irb.add_statement(f"call @delSparseVector({w_old}): ({w_old.type}) -> ()")
+        # irb.add_statement(f"call @delSparseVector({w_old}): ({w_old.type}) -> ()")
         irb.add_statement(f"scf.yield {cont}: {cont.type}")
         irb.add_statement("}")
 
@@ -315,8 +315,8 @@ def mssp(graph: MLIRSparseTensor, matrix: MLIRSparseTensor) -> MLIRSparseTensor:
         irb.graphblas.update(tmp, w, "min")
         no_change = irb.graphblas.equal(w, w_old)
         cont = irb.select(no_change, cfalse, ctrue)
-        #wx_old = irb.util.cast_csr_to_csx(w_old)
-        #irb.add_statement(f"call @delSparseMatrix({wx_old}): ({wx_old.type}) -> ()")
+        # wx_old = irb.util.cast_csr_to_csx(w_old)
+        # irb.add_statement(f"call @delSparseMatrix({wx_old}): ({wx_old.type}) -> ()")
         irb.add_statement(f"scf.yield {cont}: {cont.type}")
         irb.add_statement("}")
 

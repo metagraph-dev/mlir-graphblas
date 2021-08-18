@@ -333,7 +333,9 @@ class GraphBLAS_Equal(BaseOp):
         cls.ensure_mlirvar(lhs, TensorType)
         cls.ensure_mlirvar(rhs, TensorType)
         ret_val = irbuilder.new_var("i1")
-        return ret_val, (f"{ret_val.assign} = graphblas.equal {lhs}, {rhs} : {lhs.type}, {rhs.type}")
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.equal {lhs}, {rhs} : {lhs.type}, {rhs.type}"
+        )
 
 
 class GraphBLAS_MatrixSelect(BaseOp):

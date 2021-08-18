@@ -9,30 +9,14 @@ def test_triangle_count():
     # 3 - 4 -- 2 - 7
     # fmt: off
     indices = np.array(
-        [
-            [0, 1],
-            [0, 3],
-            [0, 4],
-            [1, 0],
-            [1, 3],
-            [1, 4],
-            [2, 4],
-            [2, 5],
-            [2, 6],
-            [2, 7],
-            [3, 0],
-            [3, 1],
-            [3, 4],
-            [4, 0],
-            [4, 1],
-            [4, 2],
-            [4, 3],
-            [5, 2],
-            [5, 6],
-            [6, 2],
-            [6, 5],
-            [7, 2],
-        ],
+        [[0, 1], [0, 3], [0, 4],
+         [1, 0], [1, 3], [1, 4],
+         [2, 4], [2, 5], [2, 6], [2, 7],
+         [3, 0], [3, 1], [3, 4],
+         [4, 0], [4, 1], [4, 2], [4, 3],
+         [5, 2], [5, 6],
+         [6, 2], [6, 5],
+         [7, 2]],
         dtype=np.uint64,
     )
     values = np.array([
@@ -54,8 +38,18 @@ def test_triangle_count():
 
 def test_sssp():
     # This must be in sorted-for-CSR format. Random order breaks the constructor in strange ways.
-    indices = np.array([[0, 1], [0, 3], [1, 4], [1, 6], [2, 5], [3, 0], [3, 2], [4, 5], [5, 1], [6, 2], [6, 3], [6, 4]],
-                       dtype=np.uint64)
+    # fmt: off
+    indices = np.array(
+        [[0, 1], [0, 3],
+         [1, 4], [1, 6],
+         [2, 5],
+         [3, 0], [3, 2],
+         [4, 5],
+         [5, 1],
+         [6, 2], [6, 3], [6, 4]],
+        dtype=np.uint64,
+    )
+    # fmt: on
     values = np.array([2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3], dtype=np.float64)
     sizes = np.array([7, 7], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
@@ -76,8 +70,18 @@ def test_sssp():
 
 def test_mssp():
     # This must be in sorted-for-CSR format. Random order breaks the constructor in strange ways.
-    indices = np.array([[0, 1], [0, 3], [1, 4], [1, 6], [2, 5], [3, 0], [3, 2], [4, 5], [5, 1], [6, 2], [6, 3], [6, 4]],
-                       dtype=np.uint64)
+    # fmt: off
+    indices = np.array(
+        [[0, 1], [0, 3],
+         [1, 4], [1, 6],
+         [2, 5],
+         [3, 0], [3, 2],
+         [4, 5],
+         [5, 1],
+         [6, 2], [6, 3], [6, 4]],
+        dtype=np.uint64,
+    )
+    # fmt: on
     values = np.array([2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3], dtype=np.float64)
     sizes = np.array([7, 7], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
