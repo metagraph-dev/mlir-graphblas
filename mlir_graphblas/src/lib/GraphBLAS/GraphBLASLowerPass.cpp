@@ -2063,6 +2063,78 @@ public:
   };
 };
 
+class LowerVectorArgMinMaxOpRewrite : public OpRewritePattern<graphblas::VectorArgMinMaxOp> {
+public:
+  using OpRewritePattern<graphblas::VectorArgMinMaxOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::VectorArgMinMaxOp op, PatternRewriter &rewriter) const override {
+    // TODO we get seg faults if given a size 0 vector or a sparse vector with no non-zero values.
+    Location loc = op->getLoc();
+
+    Value input = op.vec();
+    RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
+    ArrayRef<int64_t> inputShape = inputType.getShape();
+    
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
+    int64_t inputLength = inputShape[0];
+    Value endPosition;
+    if (inputLength == -1) {
+      Type indexType = rewriter.getIndexType();
+      Value pointers = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c0);
+      Value endPosition64 = rewriter.create<memref::LoadOp>(loc, pointers, c1);
+      endPosition = rewriter.create<IndexCastOp>(loc, endPosition64, indexType);
+    } else {
+      endPosition = rewriter.create<ConstantIndexOp>(loc, inputLength);
+    }
+
+    Type inputElementType = inputType.getElementType();
+    Type memref1DValueType = MemRefType::get({-1}, inputElementType);
+    Value values = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
+    
+    Value initialMax = rewriter.create<memref::LoadOp>(loc, values, c0);
+    
+    scf::ForOp loop = rewriter.create<scf::ForOp>(loc, c1, endPosition, c1, ValueRange{initialMax, c0});
+    Value currentValuePosition = loop.getInductionVar();
+    Value currentMax = loop.getLoopBody().getArgument(1);
+    Value currentMaxPosition = loop.getLoopBody().getArgument(2);
+    rewriter.setInsertionPointToStart(loop.getBody());
+    
+    Value currentValue = rewriter.create<memref::LoadOp>(loc, values, currentValuePosition);
+    bool useMinimum = op.minmax().str() == "min";
+    Value replace = llvm::TypeSwitch<Type, Value>(inputElementType)
+      .Case<IntegerType>([&](IntegerType type) {
+			   return rewriter.create<CmpIOp>(loc, useMinimum ? CmpIPredicate::slt : CmpIPredicate::sgt, currentValue, currentMax);
+			 })
+      .Case<FloatType>([&](FloatType type) {
+			 return rewriter.create<CmpFOp>(loc, useMinimum ? CmpFPredicate::OLT : CmpFPredicate::OGT, currentValue, currentMax);
+		       });
+
+    scf::IfOp ifBlock = rewriter.create<scf::IfOp>(loc, TypeRange{inputElementType, indexType}, replace, true);
+    rewriter.setInsertionPointToStart(ifBlock.thenBlock());
+    rewriter.create<scf::YieldOp>(loc, ValueRange{currentValue, currentValuePosition});
+    rewriter.setInsertionPointToStart(ifBlock.elseBlock());
+    rewriter.create<scf::YieldOp>(loc, ValueRange{currentMax, currentMaxPosition});
+    rewriter.setInsertionPointAfter(ifBlock);
+
+    Value nextMax = ifBlock.getResult(0);
+    Value nextMaxPosition = ifBlock.getResult(1);
+    rewriter.create<scf::YieldOp>(loc, ValueRange{nextMax, nextMaxPosition});
+    
+    rewriter.setInsertionPointAfter(loop);
+
+    Value finalMaxPosition = loop.getResult(1);
+    Value indices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c0);
+    Value argmax64 = rewriter.create<memref::LoadOp>(loc, indices, finalMaxPosition);
+    Value argmax = rewriter.create<IndexCastOp>(loc, argmax64, indexType);
+    rewriter.replaceOp(op, argmax);
+    
+    return success();
+  };
+};
+
 class LowerVectorArgMinOpRewrite : public OpRewritePattern<graphblas::VectorArgMinOp> {
 public:
   using OpRewritePattern<graphblas::VectorArgMinOp>::OpRewritePattern;
