@@ -1598,6 +1598,86 @@ public:
   };
 };
 
+class LowerUnionRewrite : public OpRewritePattern<graphblas::UnionOp> {
+public:
+  using OpRewritePattern<graphblas::UnionOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::UnionOp op, PatternRewriter &rewriter) const override {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    // Inputs
+    Value a = op.a();
+    Value b = op.b();
+    std::string unionOperator = op.union_operator().str();
+
+    // Types
+    RankedTensorType aType = a.getType().dyn_cast<RankedTensorType>();
+
+    unsigned rank = aType.getRank();  // ranks guaranteed to be equal
+
+    Value output;
+    if (rank == 2) {
+      Value outputX = callEmptyLike(rewriter, module, loc, a);
+      computeMatrixElementWise(rewriter, module, a, b, outputX, unionOperator, /* intersect */ false);
+      // Convert to same ordering as inputs
+      if (typeIsCSR(aType)) {
+        output = convertToExternalCSR(rewriter, module, loc, outputX);
+      } else {
+        output = convertToExternalCSC(rewriter, module, loc, outputX);
+      }
+    } else {
+      output = callEmptyLike(rewriter, module, loc, a);
+      computeVectorElementWise(rewriter, module, a, b, output, unionOperator, /* intersect */ false);
+    }
+
+    rewriter.replaceOp(op, output);
+
+    cleanupIntermediateTensor(rewriter, module, loc, output);
+
+    return success();
+  };
+};
+
+class LowerIntersectRewrite : public OpRewritePattern<graphblas::IntersectOp> {
+public:
+  using OpRewritePattern<graphblas::IntersectOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::IntersectOp op, PatternRewriter &rewriter) const override {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    // Inputs
+    Value a = op.a();
+    Value b = op.b();
+    std::string intersectOperator = op.intersect_operator().str();
+
+    // Types
+    RankedTensorType aType = a.getType().dyn_cast<RankedTensorType>();
+
+    unsigned rank = aType.getRank();  // ranks guaranteed to be equal
+
+    Value output;
+    if (rank == 2) {
+      Value outputX = callEmptyLike(rewriter, module, loc, a);
+      computeMatrixElementWise(rewriter, module, a, b, outputX, intersectOperator, /* intersect */ true);
+      // Convert to same ordering as inputs
+      if (typeIsCSR(aType)) {
+        output = convertToExternalCSR(rewriter, module, loc, outputX);
+      } else {
+        output = convertToExternalCSC(rewriter, module, loc, outputX);
+      }
+    } else {
+      output = callEmptyLike(rewriter, module, loc, a);
+      computeVectorElementWise(rewriter, module, a, b, output, intersectOperator, /* intersect */ true);
+    }
+
+    rewriter.replaceOp(op, output);
+
+    cleanupIntermediateTensor(rewriter, module, loc, output);
+
+    return success();
+  };
+};
+
 class LowerUpdateRewrite : public OpRewritePattern<graphblas::UpdateOp> {
 public:
   using OpRewritePattern<graphblas::UpdateOp>::OpRewritePattern;
@@ -1694,6 +1774,8 @@ public:
 
     // TODO: figure out how to replace an op with no return type
     rewriter.replaceOp(op, c0);
+
+    return success();
   };
 };
 
@@ -1864,6 +1946,8 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
       LowerMatrixApplyGenericRewrite,
       LowerMatrixMultiplyReduceToScalarGenericRewrite,
       LowerMatrixMultiplyGenericRewrite,
+      LowerUnionRewrite,
+      LowerIntersectRewrite,
       LowerUpdateRewrite,
       LowerEqualRewrite,
       LowerVectorArgMinOpRewrite,

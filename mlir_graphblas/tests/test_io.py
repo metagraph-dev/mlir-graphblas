@@ -230,8 +230,11 @@ def test_empty_like():
     b = a.empty_like()
     assert a.ndim == b.ndim
     assert a.shape == b.shape
-    for val in b.pointers:
-        assert val.size == 0
+    # Pointers are the same size as original, but containing all zeros
+    for val, compare_val in zip(b.pointers, a.pointers):
+        assert val.size == compare_val.size
+        assert (val == 0).all()
+    # Indices and Values are empty
     for val in b.indices:
         assert val.size == 0
     assert b.values.size == 0

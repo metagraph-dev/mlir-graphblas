@@ -283,9 +283,15 @@ public:
     */
 
     // Used by `empty_like`
-    SparseTensorStorage(const std::vector<uint64_t> &other_sizes)
+    SparseTensorStorage(const std::vector<uint64_t> &other_sizes, void *other)
         : sizes(other_sizes), pointers(other_sizes.size()), indices(other_sizes.size())
-    {}
+    {
+        // Update pointers to have same size as original tensor, but filled with zeros
+        SparseTensorStorage<P, I, V> *tensor = static_cast<SparseTensorStorage<P, I, V>*>(other);
+        for (uint64_t dim = 0; dim < other_sizes.size(); dim++) {
+            pointers[dim].resize(tensor->pointers[dim].size());
+        }
+    }
 
     // Used by `empty`
     // Note that `len(pointers[0]) == 0`!
@@ -355,7 +361,7 @@ public:
     }
     // New tensor of same type with same shape
     void *empty_like() override {
-        SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(sizes);
+        SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(sizes, this);
         return tensor;
     }
     // New tensor of dimentions `ndims` (no shape; must use `resize_dim`)
