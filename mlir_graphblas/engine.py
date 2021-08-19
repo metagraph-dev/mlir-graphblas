@@ -155,7 +155,7 @@ def return_tensor_to_ctypes(
             "i64": "int64",
             "f32": "float32",
             "f64": "float64",
-        }[tensor_type.element_type.type.name]
+        }[tensor_type.element_type.dump()]
 
         def decoder(arg, ptype=pointer_type, itype=index_type, vtype=value_type) -> int:
             ptr = ctypes.cast(arg, ctypes.c_void_p).value
