@@ -14,6 +14,7 @@
 #include "llvm/ADT/None.h"
 
 #include "GraphBLAS/GraphBLASOpsEnums.cpp.inc"
+#include "GraphBLAS/GraphBLASOpsDialect.cpp.inc"
 #include "GraphBLAS/GraphBLASUtils.h"
 
 using namespace mlir;

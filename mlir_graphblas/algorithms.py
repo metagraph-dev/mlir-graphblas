@@ -23,6 +23,7 @@ graphblas_opt_passes = (
     "--finalizing-bufferize",
     "--convert-linalg-to-loops",
     "--convert-scf-to-std",
+    "--convert-memref-to-llvm",
     "--convert-std-to-llvm",
 )
 

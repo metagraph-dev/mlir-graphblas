@@ -41,7 +41,7 @@ public:
 
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value inputTensor = op.input();
-    Value size = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
+    Value size = rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
 
     rewriter.replaceOp(op, size);
     return success();
@@ -56,7 +56,7 @@ public:
 
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value inputTensor = op.input();
-    Value nrows = rewriter.create<memref::DimOp>(loc, inputTensor, c0);
+    Value nrows = rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
 
     rewriter.replaceOp(op, nrows);
     return success();
@@ -71,7 +71,7 @@ public:
 
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Value inputTensor = op.input();
-    Value ncols = rewriter.create<memref::DimOp>(loc, inputTensor, c1);
+    Value ncols = rewriter.create<tensor::DimOp>(loc, inputTensor, c1);
 
     rewriter.replaceOp(op, ncols);
     return success();
@@ -108,7 +108,7 @@ public:
         } else {
           dimForPointers = rewriter.create<ConstantIndexOp>(loc, 1);
         }
-        npointers = rewriter.create<memref::DimOp>(loc, inputTensor, dimForPointers);
+        npointers = rewriter.create<tensor::DimOp>(loc, inputTensor, dimForPointers);
     }
 
     // The last value from the pointers is the number of nonzero values
@@ -1449,7 +1449,7 @@ public:
     Value colEnd = rewriter.create<IndexCastOp>(loc, apEnd64, indexType);
     Value kvec = rewriter.create<memref::AllocOp>(loc, memref1DValueType, nk);
     Value kvec_i1 = rewriter.create<memref::AllocOp>(loc, memref1DBoolType, nk);
-    rewriter.create<linalg::FillOp>(loc, kvec_i1, cfalse);
+    rewriter.create<linalg::FillOp>(loc, cfalse, kvec_i1);
 
     scf::ParallelOp colLoop1 = rewriter.create<scf::ParallelOp>(loc, colStart, colEnd, c1);
     Value jj = colLoop1.getInductionVars()[0];

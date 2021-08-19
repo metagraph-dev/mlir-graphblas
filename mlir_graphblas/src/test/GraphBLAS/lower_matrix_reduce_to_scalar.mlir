@@ -13,7 +13,7 @@ module {
     // CHECK-DAG:       %[[VAL_1:.*]] = constant 0.000000e+00 : f64
     // CHECK-DAG:       %[[VAL_2:.*]] = constant 0 : index
     // CHECK-DAG:       %[[VAL_3:.*]] = constant 1 : index
-    // CHECK:           %[[VAL_4:.*]] = memref.dim %[[VAL_0]], %[[VAL_2]] : tensor<?x?xf64, [[CSR]]>
+    // CHECK:           %[[VAL_4:.*]] = tensor.dim %[[VAL_0]], %[[VAL_2]] : tensor<?x?xf64, [[CSR]]>
     // CHECK:           %[[VAL_5:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_3]] : tensor<?x?xf64, [[CSR]]> to memref<?xi64>
     // CHECK:           %[[VAL_6:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<?x?xf64, [[CSR]]> to memref<?xf64>
     // CHECK:           %[[VAL_7:.*]] = memref.load %[[VAL_5]]{{\[}}%[[VAL_4]]] : memref<?xi64>

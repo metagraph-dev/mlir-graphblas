@@ -31,8 +31,8 @@
 // CHECK-DAG:       %[[VAL_7:.*]] = constant true
 // CHECK-DAG:       %[[VAL_8:.*]] = constant false
 // CHECK-DAG:       %[[VAL_9:.*]] = constant 0.000000e+00 : f64
-// CHECK:           %[[VAL_10:.*]] = memref.dim %[[VAL_0]], %[[VAL_5]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           %[[VAL_11:.*]] = memref.dim %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:           %[[VAL_10:.*]] = tensor.dim %[[VAL_0]], %[[VAL_5]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:           %[[VAL_11:.*]] = tensor.dim %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           %[[VAL_12:.*]] = call @vector_empty_like(%[[VAL_1]]) : (tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           call @vector_resize_dim(%[[VAL_12]], %[[VAL_5]], %[[VAL_10]]) : (tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, index, index) -> ()
 // CHECK:           call @vector_resize_pointers(%[[VAL_12]], %[[VAL_5]], %[[VAL_2]]) : (tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, index, index) -> ()
@@ -50,7 +50,7 @@
 // CHECK:             scf.yield %[[VAL_3]] : i64
 // CHECK:           } else {
 // CHECK:             %[[VAL_24:.*]] = memref.alloc(%[[VAL_11]]) : memref<?xi1>
-// CHECK:             linalg.fill(%[[VAL_24]], %[[VAL_8]]) : memref<?xi1>, i1
+// CHECK:             linalg.fill(%[[VAL_8]], %[[VAL_24]]) : i1, memref<?xi1>
 // CHECK:             scf.parallel (%[[VAL_25:.*]]) = (%[[VAL_5]]) to (%[[VAL_21]]) step (%[[VAL_6]]) {
 // CHECK:               %[[VAL_26:.*]] = memref.load %[[VAL_17]]{{\[}}%[[VAL_25]]] : memref<?xi64>
 // CHECK:               %[[VAL_27:.*]] = index_cast %[[VAL_26]] : i64 to index
@@ -106,7 +106,7 @@
 // CHECK:           scf.if %[[VAL_58]] {
 // CHECK:             %[[VAL_59:.*]] = memref.alloc(%[[VAL_11]]) : memref<?xf64>
 // CHECK:             %[[VAL_60:.*]] = memref.alloc(%[[VAL_11]]) : memref<?xi1>
-// CHECK:             linalg.fill(%[[VAL_60]], %[[VAL_8]]) : memref<?xi1>, i1
+// CHECK:             linalg.fill(%[[VAL_8]], %[[VAL_60]]) : i1, memref<?xi1>
 // CHECK:             scf.parallel (%[[VAL_61:.*]]) = (%[[VAL_5]]) to (%[[VAL_21]]) step (%[[VAL_6]]) {
 // CHECK:               %[[VAL_62:.*]] = memref.load %[[VAL_17]]{{\[}}%[[VAL_61]]] : memref<?xi64>
 // CHECK:               %[[VAL_63:.*]] = index_cast %[[VAL_62]] : i64 to index

@@ -20,6 +20,7 @@ def GraphBLASLowering : Pass<"graphblas-lower", "ModuleOp"> {
     "linalg::LinalgDialect",
     "AffineDialect",
     "memref::MemRefDialect",
+    "tensor::TensorDialect",
     "scf::SCFDialect"
   ];
 }
