@@ -13,17 +13,17 @@ build:
 
 requirements:
   host:
-    - python ==3.8
+    - python
     - numpy >=1.19.2
     - cython >=0.29.23
-    - mlir >=13.0 # temp restriction to use metagraph dev label
+    - mlir >=14.0 # temp restriction to use metagraph dev label
     - cmake >=3.13.4
     - ninja
     - lit
 
   run:
-    - python ==3.8
-    - mlir >=13.0 # temp restriction to use metagraph dev label
+    - python
+    - mlir >=14.0 # temp restriction to use metagraph dev label
     - pymlir
     - llvmlite
     - pygments

@@ -56,7 +56,7 @@ jobs:
           coveralls --service=github
       - name: Conda Build
         run: |
-          conda build -c metagraph/label/dev -c conda-forge --python ${{ matrix.pyver }} continuous_integration/conda # temp restriction to use metagraph dev label
+          conda build -c metagraph/label/mlir14 -c metagraph/label/dev -c conda-forge --python ${{ matrix.pyver }} continuous_integration/conda # temp restriction to use metagraph dev label
           # This doesn't rebuild, but simply computes the name of the file that was previously built
           OUTPUT=$(conda build --output -c metagraph/label/dev -c conda-forge continuous_integration/conda) # temp restriction to use metagraph dev label
           echo $OUTPUT

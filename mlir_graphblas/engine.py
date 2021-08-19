@@ -509,6 +509,10 @@ def resolve_type_aliases(module: mlir.astnodes.Module) -> None:
     return
 
 
+# func may be written with an optional builtin dialect namespace
+FUNC_PATTERN = re.compile(r"\s*(builtin\.)?func ")
+
+
 def parse_mlir_functions(
     mlir_text: Union[str, bytes], cli: MlirOptCli
 ) -> mlir.astnodes.Module:
@@ -518,7 +522,9 @@ def parse_mlir_functions(
     mlir_text = cli.apply_passes(mlir_text, [])
     # Remove everything except function signatures
     func_lines = [
-        line.strip() for line in mlir_text.splitlines() if line.lstrip()[:5] == "func "
+        line.strip().replace("builtin.func ", "func ")
+        for line in mlir_text.splitlines()
+        if FUNC_PATTERN.match(line)
     ]
     # Add in trailing "}" to make defined functions valid
     func_lines = [line + "}" if line[-1] == "{" else line for line in func_lines]
@@ -804,7 +810,9 @@ class MlirJitEngine:
         ).encode()
         lowered_text = self._cli.apply_passes(dummy_declarations_string, passes)
         lowered_lines = list(filter(len, lowered_text.splitlines()))
-        assert lowered_lines[0] == 'module attributes {llvm.data_layout = ""}  {'
+        assert (
+            lowered_lines[0] == 'builtin.module attributes {llvm.data_layout = ""}  {'
+        )
         assert lowered_lines[-1] == "}"
         lowered_lines = lowered_lines[1:-1]
         assert all(

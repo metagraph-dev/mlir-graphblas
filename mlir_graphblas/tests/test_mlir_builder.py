@@ -30,7 +30,7 @@ def engine():
 
     jit_engine.add(
         """
-#trait_densify_csr = {
+#trait_densify = {
   indexing_maps = [
     affine_map<(i,j) -> (i,j)>,
     affine_map<(i,j) -> (i,j)>
@@ -47,7 +47,7 @@ def engine():
 
 func @csr_densify5x5(%argA: tensor<5x5xf64, #CSR64>) -> tensor<5x5xf64> {
   %output_storage = constant dense<0.0> : tensor<5x5xf64>
-  %0 = linalg.generic #trait_densify_csr
+  %0 = linalg.generic #trait_densify
     ins(%argA: tensor<5x5xf64, #CSR64>)
     outs(%output_storage: tensor<5x5xf64>) {
       ^bb(%A: f64, %x: f64):
@@ -58,21 +58,13 @@ func @csr_densify5x5(%argA: tensor<5x5xf64, #CSR64>) -> tensor<5x5xf64> {
 
 func @csr_densify8x8(%argA: tensor<8x8xf64, #CSR64>) -> tensor<8x8xf64> {
   %output_storage = constant dense<0.0> : tensor<8x8xf64>
-  %0 = linalg.generic #trait_densify_csr
+  %0 = linalg.generic #trait_densify
     ins(%argA: tensor<8x8xf64, #CSR64>)
     outs(%output_storage: tensor<8x8xf64>) {
       ^bb(%A: f64, %x: f64):
         linalg.yield %A : f64
     } -> tensor<8x8xf64>
   return %0 : tensor<8x8xf64>
-}
-
-#trait_densify_csc = {
-  indexing_maps = [
-    affine_map<(i,j) -> (j,i)>,
-    affine_map<(i,j) -> (i,j)>
-  ],
-  iterator_types = ["parallel", "parallel"]
 }
 
 #CSC64 = #sparse_tensor.encoding<{
@@ -84,7 +76,7 @@ func @csr_densify8x8(%argA: tensor<8x8xf64, #CSR64>) -> tensor<8x8xf64> {
 
 func @csc_densify8x8(%argA: tensor<8x8xf64, #CSC64>) -> tensor<8x8xf64> {
   %output_storage = constant dense<0.0> : tensor<8x8xf64>
-  %0 = linalg.generic #trait_densify_csc
+  %0 = linalg.generic #trait_densify
     ins(%argA: tensor<8x8xf64, #CSC64>)
     outs(%output_storage: tensor<8x8xf64>) {
       ^bb(%A: f64, %x: f64):
