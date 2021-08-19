@@ -229,3 +229,101 @@ def dense_neural_network_combined(
 
     Y = _dense_neural_network_compiled(W, Bias, len(W), Y0, ymax)
     return Y
+
+
+_sssp = None
+
+
+def sssp(graph: MLIRSparseTensor, vector: MLIRSparseTensor) -> MLIRSparseTensor:
+    global _sssp
+    if _sssp is None:
+        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
+        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+        cv64 = SparseEncodingType(["compressed"], None, 64, 64)
+        aliases = AliasMap()
+        aliases["CSR64"] = csr64
+        aliases["CSC64"] = csc64
+        aliases["CV64"] = cv64
+
+        irb = MLIRFunctionBuilder(
+            "sssp",
+            input_types=["tensor<?x?xf64, #CSR64>", "tensor<?xf64, #CV64>"],
+            return_types=["tensor<?xf64, #CV64>"],
+            aliases=aliases,
+        )
+        (m, v) = irb.inputs
+        ctrue = irb.constant(1, "i1")
+        cfalse = irb.constant(0, "i1")
+        c1 = irb.constant(1, "index")
+        m2 = irb.graphblas.convert_layout(m, "tensor<?x?xf64, #CSC64>")
+        w = irb.graphblas.dup(v)
+
+        irb.add_statement(f"scf.while (%continue = {ctrue}): ({ctrue.type}) -> () {{")
+        irb.add_statement(f"  scf.condition(%continue)")
+        irb.add_statement("} do {")
+        irb.add_statement("^bb0:")
+        w_old = irb.graphblas.dup(w)
+        tmp = irb.graphblas.matrix_multiply(w, m2, "min_plus")
+        irb.graphblas.update(tmp, w, "min")
+        no_change = irb.graphblas.equal(w, w_old)
+        cont = irb.select(no_change, cfalse, ctrue)
+        # irb.add_statement(f"call @delSparseVector({w_old}): ({w_old.type}) -> ()")
+        irb.add_statement(f"scf.yield {cont}: {cont.type}")
+        irb.add_statement("}")
+
+        irb.return_vars(w)
+
+        _sssp = irb.compile()
+
+    w = _sssp(graph, vector)
+    return w
+
+
+_mssp = None
+
+
+def mssp(graph: MLIRSparseTensor, matrix: MLIRSparseTensor) -> MLIRSparseTensor:
+    global _mssp
+    if _mssp is None:
+        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
+        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+        csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
+        cv64 = SparseEncodingType(["compressed"], None, 64, 64)
+        aliases = AliasMap()
+        aliases["CSR64"] = csr64
+        aliases["CSC64"] = csc64
+        aliases["CSX64"] = csx64
+        aliases["CV64"] = cv64
+
+        irb = MLIRFunctionBuilder(
+            "mssp",
+            input_types=["tensor<?x?xf64, #CSR64>", "tensor<?x?xf64, #CSR64>"],
+            return_types=["tensor<?x?xf64, #CSR64>"],
+            aliases=aliases,
+        )
+        (m, v) = irb.inputs
+        ctrue = irb.constant(1, "i1")
+        cfalse = irb.constant(0, "i1")
+        m2 = irb.graphblas.convert_layout(m, "tensor<?x?xf64, #CSC64>")
+        w = irb.graphblas.dup(v)
+
+        irb.add_statement(f"scf.while (%continue = {ctrue}): ({ctrue.type}) -> () {{")
+        irb.add_statement(f"  scf.condition(%continue)")
+        irb.add_statement("} do {")
+        irb.add_statement("^bb0:")
+        w_old = irb.graphblas.dup(w)
+        tmp = irb.graphblas.matrix_multiply(w, m2, "min_plus")
+        irb.graphblas.update(tmp, w, "min")
+        no_change = irb.graphblas.equal(w, w_old)
+        cont = irb.select(no_change, cfalse, ctrue)
+        # wx_old = irb.util.cast_csr_to_csx(w_old)
+        # irb.add_statement(f"call @delSparseMatrix({wx_old}): ({wx_old.type}) -> ()")
+        irb.add_statement(f"scf.yield {cont}: {cont.type}")
+        irb.add_statement("}")
+
+        irb.return_vars(w)
+
+        _mssp = irb.compile()
+
+    w = _mssp(graph, matrix)
+    return w

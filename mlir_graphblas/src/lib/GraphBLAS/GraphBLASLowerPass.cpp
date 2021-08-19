@@ -98,13 +98,18 @@ public:
     Value ptrs = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DPointerType, inputTensor, c_rank_minus_1);
 
     // Find length of pointer array
-    Value dimForPointers;
-    if (rank == 1 || typeIsCSR(inputType)) {
-      dimForPointers = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value npointers;
+    if (rank == 1) {
+        npointers = rewriter.create<ConstantIndexOp>(loc, 1);
     } else {
-      dimForPointers = rewriter.create<ConstantIndexOp>(loc, 1);
+        Value dimForPointers;
+        if (rank == 1 || typeIsCSR(inputType)) {
+          dimForPointers = rewriter.create<ConstantIndexOp>(loc, 0);
+        } else {
+          dimForPointers = rewriter.create<ConstantIndexOp>(loc, 1);
+        }
+        npointers = rewriter.create<tensor::DimOp>(loc, inputTensor, dimForPointers);
     }
-    Value npointers = rewriter.create<tensor::DimOp>(loc, inputTensor, dimForPointers);
 
     // The last value from the pointers is the number of nonzero values
     Value nnz_ptype = rewriter.create<memref::LoadOp>(loc, ptrs, npointers);
@@ -1610,7 +1615,36 @@ public:
     unsigned rank = outputType.getRank();  // ranks guaranteed to be equal
 
     if (rank == 2) {
-      return op.emitError("Matrix update is not yet supported.");
+      if (accumulateOperator) {
+        if (mask) {
+          if (replace) {
+            // input -> output(mask) { accumulate, replace }
+            return op.emitError("Update with mask+accumulate+replace is not supported yet");
+          } else {
+            // input -> output(mask) { accumulate }
+            return op.emitError("Update with mask+accumulate is not supported yet");
+          }
+        } else {
+          // input -> output { accumulate, replace? }
+          return rewriteUpdateMatrixAccumulate(op, rewriter);
+        }
+      } else {
+        if (mask) {
+          if (replace) {
+            // input -> output(mask) { replace }
+            // Inefficient; caller should apply mask when input is created
+            return op.emitError("Update with mask+replace is not supported yet");
+          } else {
+            // input -> output(mask)
+            // Merges input into output
+            return op.emitError("Update with mask and no accumulator is not supported yet");
+          }
+        } else {
+          // input -> output { replace? }
+          // Sort of pointless; caller should simply use input or call graphblas.dup if they want a copy
+          return op.emitError("Update with no accumulator or mask is not supported yet");
+        }
+      }
     } else {
       // Vector past this point
       if (accumulateOperator) {
@@ -1658,6 +1692,61 @@ private:
 
     // Types
     RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type valueType = outputType.getElementType();
+    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
+
+    // Initial constants
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+
+    // Create temp copy of output
+    Value temp = callDupTensor(rewriter, module, loc, output);
+
+    // Get sparse tensor info
+    Value Innz = rewriter.create<graphblas::NumValsOp>(loc, input);
+    Value Tnnz = rewriter.create<graphblas::NumValsOp>(loc, output);
+    Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c0);
+    Value Ix = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
+    Value Ti = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, temp, c0);
+    Value Tx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, temp);
+
+    Value unionSize = computeIndexOverlapSize(rewriter, /* intersect */ false, c0, Innz, Ii, c0, Tnnz, Ti);
+    Value unionSize64 = rewriter.create<IndexCastOp>(loc, unionSize, int64Type);
+
+    // Resize output to be unionSize
+    callResizeIndex(rewriter, module, loc, output, c0, unionSize);
+    callResizeValues(rewriter, module, loc, output, unionSize);
+
+    Value Op = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c0);
+    rewriter.create<memref::StoreOp>(loc, unionSize64, Op, c1);
+    Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c0);
+    Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
+
+    Value finalIndexPos = computeUnionAggregation(rewriter, /* intersect */ false, accumulateOperator, valueType,
+                                                  c0, Innz, Ii, Ix, c0, Tnnz, Ti, Tx, c0, Oi, Ox);
+
+    // Delete temporary copy
+    callDelSparseTensor(rewriter, module, loc, temp);
+
+    // TODO: figure out how to replace an op with no return type
+    rewriter.replaceOp(op, finalIndexPos);
+
+    return success();
+  }
+
+  LogicalResult rewriteUpdateMatrixAccumulate(graphblas::UpdateOp op, PatternRewriter &rewriter) const {
+    ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable for debugging */ (void)module;
+    Location loc = op->getLoc();
+
+    // Inputs
+    Value input = op.input();
+    Value output = op.output();
+    std::string accumulateOperator = op.accumulate_operator()->str();
+
+    // Types
+    RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
     Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
     Type valueType = outputType.getElementType();
@@ -1667,49 +1756,127 @@ private:
     // Initial constants
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-    Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
+    Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
 
-    Value size = rewriter.create<graphblas::SizeOp>(loc, output);
-
-    // Get sparse tensor info
-    Value Ip = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c0);
-    Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c0);
-    Value Ix = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
-    Value Op = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c0);
-    Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c0);
-    Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
-    Value Innz64 = rewriter.create<memref::LoadOp>(loc, Ip, c1);
-    Value Onnz64 = rewriter.create<memref::LoadOp>(loc, Op, c1);
-    Value Innz = rewriter.create<IndexCastOp>(loc, Innz64, indexType);
-    Value Onnz = rewriter.create<IndexCastOp>(loc, Onnz64, indexType);
-
-    Value unionSize = computeIndexOverlapSize(rewriter, /* intersect */ false, c0, Innz, Ii, c0, Onnz, Oi);
-    Value unionSize64 = rewriter.create<IndexCastOp>(loc, unionSize, int64Type);
+    Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, output);
 
     // Create temp copy of output
     Value temp = callDupTensor(rewriter, module, loc, output);
-    Value Ti = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, temp, c0);
+
+    // Get sparse tensor info
+    Value Ip = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c1);
+    Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
+    Value Ix = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
+    Value Tp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, temp, c1);
+    Value Ti = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, temp, c1);
     Value Tx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, temp);
+    Value Op = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c1);
 
-    // Resize output to be unionSize
-    callResizeDim(rewriter, module, loc, output, c0, size);
-    callResizePointers(rewriter, module, loc, output, c0, c2);
-    callResizeIndex(rewriter, module, loc, output, c0, unionSize);
-    callResizeValues(rewriter, module, loc, output, unionSize);
+    // 1st pass
+    //   Compute overlap size for each row
+    //   Store results in Op
+    scf::ParallelOp rowLoop1 = rewriter.create<scf::ParallelOp>(loc, c0, nrows, c1);
+    Value row = rowLoop1.getInductionVars()[0];
+    rewriter.setInsertionPointToStart(rowLoop1.getBody());
 
-    Op = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, output, c0);
-    rewriter.create<memref::StoreOp>(loc, unionSize64, Op, c1);
-    Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c0);
-    Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
+    Value rowPlus1 = rewriter.create<AddIOp>(loc, row, c1);
+    Value IcolStart64 = rewriter.create<memref::LoadOp>(loc, Ip, row);
+    Value IcolEnd64 = rewriter.create<memref::LoadOp>(loc, Ip, rowPlus1);
+    Value TcolStart64 = rewriter.create<memref::LoadOp>(loc, Tp, row);
+    Value TcolEnd64 = rewriter.create<memref::LoadOp>(loc, Tp, rowPlus1);
+    Value IcmpColSame = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, IcolStart64, IcolEnd64);
+    Value TcmpColSame = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, TcolStart64, TcolEnd64);
+    Value cmpColSame = rewriter.create<AndOp>(loc, IcmpColSame, TcmpColSame);
 
-    Value finalIndexPos = computeUnionAggregation(rewriter, /* intersect */ false, accumulateOperator, valueType,
-                                                  c0, Innz, Ii, Ix, c0, Onnz, Ti, Tx, c0, Oi, Ox);
+    scf::IfOp ifBlock_rowTotal = rewriter.create<scf::IfOp>(loc, int64Type, cmpColSame, true);
+    // if cmpColSame
+    rewriter.setInsertionPointToStart(ifBlock_rowTotal.thenBlock());
+    rewriter.create<scf::YieldOp>(loc, ci0);
+
+    // else
+    rewriter.setInsertionPointToStart(ifBlock_rowTotal.elseBlock());
+    Value IcolStart = rewriter.create<IndexCastOp>(loc, IcolStart64, indexType);
+    Value IcolEnd = rewriter.create<IndexCastOp>(loc, IcolEnd64, indexType);
+    Value TcolStart = rewriter.create<IndexCastOp>(loc, TcolStart64, indexType);
+    Value TcolEnd = rewriter.create<IndexCastOp>(loc, TcolEnd64, indexType);
+    Value unionSize = computeIndexOverlapSize(rewriter, /* intersect */ false, IcolStart, IcolEnd, Ii, TcolStart, TcolEnd, Ti);
+    Value unionSize64 = rewriter.create<IndexCastOp>(loc, unionSize, int64Type);
+    rewriter.create<scf::YieldOp>(loc, unionSize64);
+
+    // end if cmpColSame
+    rewriter.setInsertionPointAfter(ifBlock_rowTotal);
+    Value rowUnionSize = ifBlock_rowTotal.getResult(0);
+    rewriter.create<memref::StoreOp>(loc, rowUnionSize, Op, row);
+
+    // end row loop
+    rewriter.setInsertionPointAfter(rowLoop1);
+
+    // 2nd pass
+    //   Compute the cumsum of values in Op to build the final Op
+    //   Then resize output indices and values
+    rewriter.create<memref::StoreOp>(loc, ci0, Op, nrows);
+    scf::ForOp rowLoop2 = rewriter.create<scf::ForOp>(loc, c0, nrows, c1);
+    Value cs_i = rowLoop2.getInductionVar();
+    rewriter.setInsertionPointToStart(rowLoop2.getBody());
+
+    Value csTemp = rewriter.create<memref::LoadOp>(loc, Op, cs_i);
+    Value cumsum = rewriter.create<memref::LoadOp>(loc, Op, nrows);
+    rewriter.create<memref::StoreOp>(loc, cumsum, Op, cs_i);
+    Value cumsum2 = rewriter.create<AddIOp>(loc, cumsum, csTemp);
+    rewriter.create<memref::StoreOp>(loc, cumsum2, Op, nrows);
+
+    // end row loop
+    rewriter.setInsertionPointAfter(rowLoop2);
+
+    Value nnz = rewriter.create<graphblas::NumValsOp>(loc, output);
+    callResizeIndex(rewriter, module, loc, output, c1, nnz);
+    callResizeValues(rewriter, module, loc, output, nnz);
+
+    Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c1);
+    Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
+
+    // 3rd pass
+    //   In parallel over the rows,
+    //   compute the union aggregation
+    //   Store in Oi and Ox
+    scf::ParallelOp rowLoop3 = rewriter.create<scf::ParallelOp>(loc, c0, nrows, c1);
+    row = rowLoop3.getInductionVars()[0];
+    rewriter.setInsertionPointToStart(rowLoop3.getBody());
+
+    rowPlus1 = rewriter.create<AddIOp>(loc, row, c1);
+    Value opStart64 = rewriter.create<memref::LoadOp>(loc, Op, row);
+    Value opEnd64 = rewriter.create<memref::LoadOp>(loc, Op, rowPlus1);
+    Value cmp_opDifferent = rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, opStart64, opEnd64);
+    scf::IfOp ifBlock_cmpDiff = rewriter.create<scf::IfOp>(loc, cmp_opDifferent);
+    rewriter.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
+
+    Value OcolStart64 = rewriter.create<memref::LoadOp>(loc, Op, row);
+    Value OcolStart = rewriter.create<IndexCastOp>(loc, OcolStart64, indexType);
+
+    IcolStart64 = rewriter.create<memref::LoadOp>(loc, Ip, row);
+    IcolEnd64 = rewriter.create<memref::LoadOp>(loc, Ip, rowPlus1);
+    IcolStart = rewriter.create<IndexCastOp>(loc, IcolStart64, indexType);
+    IcolEnd = rewriter.create<IndexCastOp>(loc, IcolEnd64, indexType);
+    TcolStart64 = rewriter.create<memref::LoadOp>(loc, Tp, row);
+    TcolEnd64 = rewriter.create<memref::LoadOp>(loc, Tp, rowPlus1);
+    TcolStart = rewriter.create<IndexCastOp>(loc, TcolStart64, indexType);
+    TcolEnd = rewriter.create<IndexCastOp>(loc, TcolEnd64, indexType);
+
+    computeUnionAggregation(rewriter, /* intersect */ false, accumulateOperator, valueType,
+                            IcolStart, IcolEnd, Ii, Ix, TcolStart, TcolEnd, Ti, Tx, OcolStart, Oi, Ox);
+
+    // end if cmpDiff
+    rewriter.setInsertionPointAfter(ifBlock_cmpDiff);
+
+    // end row loop
+    rewriter.setInsertionPointAfter(rowLoop3);
+
 
     // Delete temporary copy
     callDelSparseTensor(rewriter, module, loc, temp);
 
     // TODO: figure out how to replace an op with no return type
-    rewriter.replaceOp(op, finalIndexPos);
+    rewriter.replaceOp(op, c0);
 
     return success();
   }
@@ -1728,7 +1895,6 @@ public:
 
     // Types
     Type boolType = rewriter.getI1Type();
-    Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
     Type valueType = aType.getElementType();
     MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
@@ -1742,79 +1908,87 @@ public:
 
     unsigned rank = aType.getRank();  // ranks guaranteed to be equal
 
+    Value dimIndex;
+    Value cmpShape;
     if (rank == 2) {
       // Matrix check
-      return op.emitError("Matrix equality check is not yet supported.");
+      dimIndex = c1;
+      Value aNrows = rewriter.create<graphblas::NumRowsOp>(loc, A);
+      Value bNrows = rewriter.create<graphblas::NumRowsOp>(loc, B);
+      Value aNcols = rewriter.create<graphblas::NumColsOp>(loc, A);
+      Value bNcols = rewriter.create<graphblas::NumColsOp>(loc, B);
+      Value cmpNrows = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aNrows, bNrows);
+      Value cmpNcols = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aNcols, bNcols);
+      cmpShape = rewriter.create<AndOp>(loc, cmpNrows, cmpNcols);
     } else {
       // Vector check
+      dimIndex = c0;
       // Check size
       Value aSize = rewriter.create<graphblas::SizeOp>(loc, A);
       Value bSize = rewriter.create<graphblas::SizeOp>(loc, B);
-      Value cmpSize = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aSize, bSize);
-      scf::IfOp ifOuter = rewriter.create<scf::IfOp>(loc, boolType, cmpSize, true);
-      // if cmpSize
-      rewriter.setInsertionPointToStart(ifOuter.thenBlock());
-
-      // Check number of non-zeros
-      Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, A, c0);
-      Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, B, c0);
-      Value aNnz = rewriter.create<memref::LoadOp>(loc, Ap, c1);
-      Value bNnz = rewriter.create<memref::LoadOp>(loc, Bp, c1);
-      Value cmpNnz = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aNnz, bNnz);
-      scf::IfOp ifNnz = rewriter.create<scf::IfOp>(loc, boolType, cmpNnz, true);
-      // if cmpNnz
-      rewriter.setInsertionPointToStart(ifNnz.thenBlock());
-
-      // Check index positions and values
-      Value nnz = rewriter.create<IndexCastOp>(loc, aNnz, indexType);
-      Value Ai = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, c0);
-      Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, c0);
-      Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, A);
-      Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
-
-      scf::ParallelOp indexLoop = rewriter.create<scf::ParallelOp>(loc, c0, nnz, c1, ctrue);
-      Value loopIdx = indexLoop.getInductionVars()[0];
-      rewriter.setInsertionPointToStart(indexLoop.getBody());
-
-      Value aIndex = rewriter.create<memref::LoadOp>(loc, Ai, loopIdx);
-      Value bIndex = rewriter.create<memref::LoadOp>(loc, Bi, loopIdx);
-      Value aValue = rewriter.create<memref::LoadOp>(loc, Ax, loopIdx);
-      Value bValue = rewriter.create<memref::LoadOp>(loc, Bx, loopIdx);
-      Value cmpIndex = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aIndex, bIndex);
-      Value cmpValue = llvm::TypeSwitch<Type, Value>(valueType)
-        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aValue, bValue); })
-        .Case<FloatType>([&](FloatType type) { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OEQ, aValue, bValue); });
-      Value cmpCombined = rewriter.create<AndOp>(loc, cmpIndex, cmpValue);
-
-      scf::ReduceOp reducer = rewriter.create<scf::ReduceOp>(loc, cmpCombined);
-      BlockArgument lhs = reducer.getRegion().getArgument(0);
-      BlockArgument rhs = reducer.getRegion().getArgument(1);
-      rewriter.setInsertionPointToStart(&reducer.getRegion().front());
-      Value cmpFinal = rewriter.create<AndOp>(loc, lhs, rhs);
-      rewriter.create<scf::ReduceReturnOp>(loc, cmpFinal);
-
-      rewriter.setInsertionPointAfter(indexLoop);
-      rewriter.create<scf::YieldOp>(loc, indexLoop.getResult(0));
-
-      // else cmpNnz
-      rewriter.setInsertionPointToStart(ifNnz.elseBlock());
-      rewriter.create<scf::YieldOp>(loc, cfalse);
-      // end cmpNnz
-      rewriter.setInsertionPointAfter(ifNnz);
-      Value nnzReturn = ifNnz.getResult(0);
-      rewriter.create<scf::YieldOp>(loc, nnzReturn);
-
-      // else cmpSize
-      rewriter.setInsertionPointToStart(ifOuter.elseBlock());
-      rewriter.create<scf::YieldOp>(loc, cfalse);
-      // end cmpSize
-      rewriter.setInsertionPointAfter(ifOuter);
-      Value isEqual = ifOuter.getResult(0);
-
-      rewriter.replaceOp(op, isEqual);
-
-      return success();
+      cmpShape = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aSize, bSize);
     }
+
+    scf::IfOp ifOuter = rewriter.create<scf::IfOp>(loc, boolType, cmpShape, true);
+    // if cmpSize
+    rewriter.setInsertionPointToStart(ifOuter.thenBlock());
+
+    // Check number of non-zeros
+    Value aNnz = rewriter.create<graphblas::NumValsOp>(loc, A);
+    Value bNnz = rewriter.create<graphblas::NumValsOp>(loc, B);
+    Value cmpNnz = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aNnz, bNnz);
+    scf::IfOp ifNnz = rewriter.create<scf::IfOp>(loc, boolType, cmpNnz, true);
+    // if cmpNnz
+    rewriter.setInsertionPointToStart(ifNnz.thenBlock());
+
+    // Check index positions and values
+    Value Ai = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, A, dimIndex);
+    Value Bi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, B, dimIndex);
+    Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, A);
+    Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
+
+    scf::ParallelOp indexLoop = rewriter.create<scf::ParallelOp>(loc, c0, aNnz, c1, ctrue);
+    Value loopIdx = indexLoop.getInductionVars()[0];
+    rewriter.setInsertionPointToStart(indexLoop.getBody());
+
+    Value aIndex = rewriter.create<memref::LoadOp>(loc, Ai, loopIdx);
+    Value bIndex = rewriter.create<memref::LoadOp>(loc, Bi, loopIdx);
+    Value aValue = rewriter.create<memref::LoadOp>(loc, Ax, loopIdx);
+    Value bValue = rewriter.create<memref::LoadOp>(loc, Bx, loopIdx);
+    Value cmpIndex = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aIndex, bIndex);
+    Value cmpValue = llvm::TypeSwitch<Type, Value>(valueType)
+      .Case<IntegerType>([&](IntegerType type) { return rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, aValue, bValue); })
+      .Case<FloatType>([&](FloatType type) { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OEQ, aValue, bValue); });
+    Value cmpCombined = rewriter.create<AndOp>(loc, cmpIndex, cmpValue);
+
+    scf::ReduceOp reducer = rewriter.create<scf::ReduceOp>(loc, cmpCombined);
+    BlockArgument lhs = reducer.getRegion().getArgument(0);
+    BlockArgument rhs = reducer.getRegion().getArgument(1);
+    rewriter.setInsertionPointToStart(&reducer.getRegion().front());
+    Value cmpFinal = rewriter.create<AndOp>(loc, lhs, rhs);
+    rewriter.create<scf::ReduceReturnOp>(loc, cmpFinal);
+
+    rewriter.setInsertionPointAfter(indexLoop);
+    rewriter.create<scf::YieldOp>(loc, indexLoop.getResult(0));
+
+    // else cmpNnz
+    rewriter.setInsertionPointToStart(ifNnz.elseBlock());
+    rewriter.create<scf::YieldOp>(loc, cfalse);
+    // end cmpNnz
+    rewriter.setInsertionPointAfter(ifNnz);
+    Value nnzReturn = ifNnz.getResult(0);
+    rewriter.create<scf::YieldOp>(loc, nnzReturn);
+
+    // else cmpSize
+    rewriter.setInsertionPointToStart(ifOuter.elseBlock());
+    rewriter.create<scf::YieldOp>(loc, cfalse);
+    // end cmpSize
+    rewriter.setInsertionPointAfter(ifOuter);
+    Value isEqual = ifOuter.getResult(0);
+
+    rewriter.replaceOp(op, isEqual);
+
+    return success();
   };
 };
 

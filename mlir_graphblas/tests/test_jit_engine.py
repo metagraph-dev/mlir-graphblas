@@ -424,12 +424,10 @@ def test_jit_engine_sequence_of_scalars_input(engine, mlir_type):
     mlir_template, args, expected_result = (  # sequence of scalars -> scalar
         """
 func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
+  %czero = constant {zero_str} : {mlir_type}
 
   %sum_memref = memref.alloc() : memref<{mlir_type}>
-  %sum_garbage = memref.load %sum_memref[] : memref<{mlir_type}>
-  // Not the best way to zero out garbage values but is easier to template for testing
-  %sum_init = {std_sub} %sum_garbage, %sum_garbage : {mlir_type}
-  memref.store %sum_init, %sum_memref[] : memref<{mlir_type}>
+  memref.store %czero, %sum_memref[] : memref<{mlir_type}>
   
   %c0 = constant 0 : index
   %c1 = constant 1 : index
@@ -477,8 +475,10 @@ func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
     else:
         raise ValueError(f"No MLIR type for {np_type}.")
 
+    zero_str = "0.0" if mlir_type[0] == "f" else "0"
+
     mlir_text = mlir_template.format(
-        func_name=func_name, mlir_type=mlir_type, **std_operations
+        func_name=func_name, mlir_type=mlir_type, zero_str=zero_str, **std_operations
     )
     args = [arg.astype(np_type) if isinstance(arg, np.ndarray) else arg for arg in args]
     expected_result = (
@@ -533,18 +533,21 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
   %c1 = constant 1 : index
   %ci0 = constant 0 : i64
   %ci1 = constant 1 : i64
+  %cf0 = constant 0.0 : f64
+
   %sum_memref = memref.alloc() : memref<f64>
+  memref.store %cf0, %sum_memref[] : memref<f64>
 
   scf.for %i = %c0 to %sequence_length step %c1 iter_args(%iter=%ci0) -> (i64) {
-    
+
     // llvm.getelementptr just does pointer arithmetic
     %sparse_tensor_ptr_ptr = llvm.getelementptr %sequence[%iter] : (!llvm.ptr<!llvm.ptr<i8>>, i64) -> !llvm.ptr<!llvm.ptr<i8>>
-    
+
     // dereference %sparse_tensor_ptr_ptr to get an !llvm.ptr<i8>
     %sparse_tensor_ptr = llvm.load %sparse_tensor_ptr_ptr : !llvm.ptr<!llvm.ptr<i8>>
-    
+
     %sparse_tensor = call @ptr8_to_matrix(%sparse_tensor_ptr) : (!llvm.ptr<i8>) -> tensor<2x3xf64, #sparseTensor>
-    
+
     %reduction = linalg.generic #trait_sum_reduction
         ins(%sparse_tensor: tensor<2x3xf64, #sparseTensor>)
         outs(%output_storage: tensor<f64>) {

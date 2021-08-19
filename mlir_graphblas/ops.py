@@ -3,7 +3,7 @@ Various ops written in MLIR which implement dialects or other utilities
 """
 from typing import Tuple, Sequence, Optional, Union
 from .mlir_builder import MLIRFunctionBuilder, MLIRVar
-from .types import MemrefType, TensorType, SparseEncodingType
+from .types import MemrefType, TensorType, SparseEncodingType, IntType
 
 
 class BaseOp:
@@ -112,6 +112,22 @@ class MulFOp(BaseOp):
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
         return ret_val, (f"{ret_val.assign} = mulf {lhs}, {rhs} : {lhs.type}")
+
+
+class SelectOp(BaseOp):
+    name = "select"
+
+    @classmethod
+    def call(cls, irbuilder, cond, lhs, rhs):
+        cls.ensure_mlirvar(cond, IntType)
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if cond.type.num != 1:
+            raise TypeError(f"Type of cond must be i1, not {cond.type}")
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var(lhs.type)
+        return ret_val, (f"{ret_val.assign} = select {cond}, {lhs}, {rhs}: {lhs.type}")
 
 
 ###########################################
@@ -288,6 +304,40 @@ class GraphBLAS_Transpose(BaseOp):
         )
 
 
+class GraphBLAS_Update(BaseOp):
+    dialect = "graphblas"
+    name = "update"
+    allowed_accumulators = {"plus", "min"}
+
+    @classmethod
+    def call(cls, irbuilder, input, output, accumulate="plus"):
+        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(output, TensorType)
+        if accumulate not in cls.allowed_accumulators:
+            raise TypeError(
+                f"Illegal accumulator: {accumulate}, must be one of {cls.allowed_accumulators}"
+            )
+        ret_val = irbuilder.new_var("index")
+        return ret_val, (
+            f'{ret_val.assign} = graphblas.update {input} -> {output} {{ accumulate_operator = "{accumulate}" }} :'
+            f"{input.type} -> {output.type}"
+        )
+
+
+class GraphBLAS_Equal(BaseOp):
+    dialect = "graphblas"
+    name = "equal"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        cls.ensure_mlirvar(lhs, TensorType)
+        cls.ensure_mlirvar(rhs, TensorType)
+        ret_val = irbuilder.new_var("i1")
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.equal {lhs}, {rhs} : {lhs.type}, {rhs.type}"
+        )
+
+
 class GraphBLAS_MatrixSelect(BaseOp):
     dialect = "graphblas"
     name = "matrix_select"
@@ -348,7 +398,7 @@ class GraphBLAS_MatrixApply(BaseOp):
 class GraphBLAS_MatrixMultiply(BaseOp):
     dialect = "graphblas"
     name = "matrix_multiply"
-    allowed_semirings = {"plus_plus", "plus_times", "plus_pair"}
+    allowed_semirings = {"plus_plus", "plus_times", "plus_pair", "min_plus"}
 
     @classmethod
     def call(cls, irbuilder, a, b, semiring, *, mask=None):
