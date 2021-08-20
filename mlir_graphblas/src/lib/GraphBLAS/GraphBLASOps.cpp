@@ -855,8 +855,6 @@ static LogicalResult verify(TransposeOp op) {
   ArrayRef<int64_t> inputShape = inputTensorType.getShape();
   ArrayRef<int64_t> resultShape = resultTensorType.getShape();
 
-  // TODO check the rank here
-
   mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
     mlir::sparse_tensor::getSparseTensorEncoding(inputType);
 

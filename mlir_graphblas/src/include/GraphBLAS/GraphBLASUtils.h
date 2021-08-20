@@ -19,6 +19,7 @@ int64_t getRank(mlir::Value inputValue);
 
 mlir::Value convertToExternalCSR(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value input);
 mlir::Value convertToExternalCSC(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value input);
+mlir::Value callEmpty(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value inputTensor, int64_t ndims);
 mlir::Value callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
 mlir::Value callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
 void callDelSparseTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
