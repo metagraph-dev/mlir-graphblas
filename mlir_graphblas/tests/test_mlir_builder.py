@@ -45,6 +45,29 @@ def engine():
   indexBitWidth = 64
 }>
 
+#SparseVec64 = #sparse_tensor.encoding<{ 
+    dimLevelType = [ "compressed" ], 
+    pointerBitWidth = 64, 
+    indexBitWidth = 64 
+}>
+
+func @sparse_vec_densify5(%argA: tensor<5xf64, #SparseVec64>) -> tensor<5xf64> {
+  %output_storage = constant dense<0.0> : tensor<5xf64>
+  %0 = linalg.generic {
+      indexing_maps = [
+         affine_map<(i) -> (i)>,
+         affine_map<(i) -> (i)>
+       ],
+       iterator_types = ["parallel"]
+    }
+    ins(%argA: tensor<5xf64, #SparseVec64>)
+    outs(%output_storage: tensor<5xf64>) {
+      ^bb(%A: f64, %x: f64):
+        linalg.yield %A : f64
+    } -> tensor<5xf64>
+  return %0 : tensor<5xf64>
+}
+
 func @csr_densify5x5(%argA: tensor<5x5xf64, #CSR64>) -> tensor<5x5xf64> {
   %output_storage = constant dense<0.0> : tensor<5x5xf64>
   %0 = linalg.generic #trait_densify
@@ -94,9 +117,11 @@ func @csc_densify8x8(%argA: tensor<8x8xf64, #CSC64>) -> tensor<8x8xf64> {
 def aliases() -> AliasMap:
     csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
     csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+    sparsevec64 = SparseEncodingType(["compressed"], None, 64, 64)
     aliases = AliasMap()
     aliases["CSR64"] = csr64
     aliases["CSC64"] = csc64
+    aliases["SparseVec64"] = sparsevec64
     return aliases
 
 
@@ -535,6 +560,46 @@ def test_ir_project_and_filter(engine: MlirJitEngine, aliases: AliasMap):
 
     expected_dense_result = dense_input_tensor @ dense_input_tensor.T
     expected_dense_result[expected_dense_result < 0] = 0
+
+    assert np.all(dense_result == expected_dense_result)
+
+    return
+
+
+def test_ir_row_reduce(engine: MlirJitEngine, aliases: AliasMap):
+    # TODO make this work with fixed-sized inputs and outputs
+
+    # build function
+    ir_builder = MLIRFunctionBuilder(
+        "reduce_rows",
+        input_types=["tensor<?x?xf64, #CSR64>"],
+        return_types=["tensor<?xf64, #SparseVec64>"],
+        aliases=aliases,
+    )
+    (matrix,) = ir_builder.inputs
+    vector = ir_builder.graphblas.matrix_reduce_to_vector(
+        matrix, "sum", 1, "tensor<?xf64, #SparseVec64>"
+    )
+    ir_builder.return_vars(vector)
+    reduce_rows = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [1, 0, 0, 0],
+            [-9, 1, 1, 0],
+            [0, 0, 0, 0],
+            [0, 0, 1, 1],
+            [0, 0, 0, -9],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    result = reduce_rows(input_tensor)
+    dense_result = engine.sparse_vec_densify5(result)
+
+    expected_dense_result = np.array([1, -7, 0, 2, -9], dtype=dense_input_tensor.dtype)
 
     assert np.all(dense_result == expected_dense_result)
 
