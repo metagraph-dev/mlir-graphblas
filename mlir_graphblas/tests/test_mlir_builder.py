@@ -94,9 +94,11 @@ func @csc_densify8x8(%argA: tensor<8x8xf64, #CSC64>) -> tensor<8x8xf64> {
 def aliases() -> AliasMap:
     csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
     csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+    sparsevec64 = SparseEncodingType(["compressed"], None, 64, 64)
     aliases = AliasMap()
     aliases["CSR64"] = csr64
     aliases["CSC64"] = csc64
+    aliases["SparseVec64"] = sparsevec64
     return aliases
 
 
@@ -537,5 +539,62 @@ def test_ir_project_and_filter(engine: MlirJitEngine, aliases: AliasMap):
     expected_dense_result[expected_dense_result < 0] = 0
 
     assert np.all(dense_result == expected_dense_result)
+
+    return
+
+
+ARGMINMAX_CASES = [
+    # np.array([0], dtype=np.int32), # TODO do we care about this case?
+    np.array([10, 15, 3, 11], dtype=np.int32),
+    np.array([0, 0, 10, 15, 0, 0, 3, 11, 0], dtype=np.int32),
+    np.array([0, 1, 0], dtype=np.int32),
+    np.array([1], dtype=np.int32),
+    np.array([-10, 15, 3, 11], dtype=np.int32),
+    np.array([0, 0, -10, 15, 0, 0, 3, 11, 0], dtype=np.int32),
+    np.array([0, -1, 0], dtype=np.int32),
+    np.array([-1], dtype=np.int32),
+]
+
+
+@pytest.mark.parametrize("dense_input_tensor", ARGMINMAX_CASES)
+def test_ir_builder_vector_argminmax(
+    dense_input_tensor: np.ndarray, engine: MlirJitEngine, aliases: AliasMap
+):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "vector_arg_min_and_max",
+        input_types=["tensor<?xi32, #SparseVec64>"],
+        return_types=["index", "index", "index", "index"],
+        aliases=aliases,
+    )
+    (vec,) = ir_builder.inputs
+    arg_minmax_min = ir_builder.graphblas.vector_argminmax(vec, "min")
+    arg_minmax_max = ir_builder.graphblas.vector_argminmax(vec, "max")
+    arg_min = ir_builder.graphblas.vector_argmin(vec)
+    arg_max = ir_builder.graphblas.vector_argmax(vec)
+    ir_builder.return_vars(arg_minmax_min, arg_minmax_max, arg_min, arg_max)
+    vector_arg_min_and_max = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    input_tensor = sparsify_array(dense_input_tensor, [True])
+    (
+        result_arg_minmax_min,
+        result_arg_minmax_max,
+        result_arg_min,
+        result_arg_max,
+    ) = vector_arg_min_and_max(input_tensor)
+
+    minimum = np.min(dense_input_tensor)
+    maximum = np.max(dense_input_tensor)
+
+    dwimmed_dense_input_tensor = np.copy(dense_input_tensor)
+    dwimmed_dense_input_tensor[dwimmed_dense_input_tensor == 0] = maximum + 1
+    assert result_arg_minmax_min == np.argmin(dwimmed_dense_input_tensor)
+    assert result_arg_min == np.argmin(dwimmed_dense_input_tensor)
+
+    dwimmed_dense_input_tensor = np.copy(dense_input_tensor)
+    dwimmed_dense_input_tensor[dwimmed_dense_input_tensor == 0] = minimum - 1
+    assert result_arg_minmax_max == np.argmax(dwimmed_dense_input_tensor)
+    assert result_arg_max == np.argmax(dwimmed_dense_input_tensor)
 
     return
