@@ -991,8 +991,6 @@ static LogicalResult verify(TransposeOp op) {
 
   // TODO check the rank here
 
-  // TODO check the rank here
-
   mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
     mlir::sparse_tensor::getSparseTensorEncoding(inputType);
 

@@ -18,6 +18,8 @@
 #include "GraphBLAS/GraphBLASUtils.h"
 #include "GraphBLAS/GraphBLASArrayUtils.h"
 
+#include <iostream> // TODO remove this
+
 using namespace ::mlir;
 
 namespace {
@@ -566,6 +568,58 @@ public:
       cleanupIntermediateTensor(rewriter, module, loc, output);
     }
 
+    return success();
+  };
+};
+
+class LowerMatrixReduceToVectorRewrite : public OpRewritePattern<graphblas::MatrixReduceToVectorOp>
+{
+public:
+  using OpRewritePattern<graphblas::MatrixReduceToVectorOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToVectorOp op, PatternRewriter &rewriter) const override
+  {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+    
+    Value matrix = op.input();
+    // StringRef aggregator = op.aggregator();
+    // int axis = op.axis();
+    
+    // RankedTensorType matrixType = op.input().getType().dyn_cast<RankedTensorType>();
+    // Type elementType = matrixType.getElementType();
+    
+    // Value c0_elementType = llvm::TypeSwitch<Type, Value>(elementType)
+    //                           .Case<IntegerType>([&](IntegerType type)
+    //                                              { return rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(elementType, 0)); })
+    //                           .Case<FloatType>([&](FloatType type)
+    //                                              { return rewriter.create<ConstantOp>(loc, rewriter.getFloatAttr(valueType, 0.0)); })
+    // Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    // Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    // Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
+    
+    // Value nrows = rewriter.create<tensor::DimOp>(loc, matrix, c0);
+    
+    // sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+    //   sparse_tensor::getSparseTensorEncoding(matrixType);
+    // unsigned pointerBitWidth = sparseEncoding.getPointerBitWidth();
+    // Type pointerType = rewriter.getIntegerType(pointerBitWidth);
+    // Type memref1DPointerType = MemRefType::get({-1}, pointerType);
+    // Value matrixPointers =
+    //   rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DPointerType, matrix, c1);
+    
+    // Type memref1DValueType = MemRefType::get({-1}, elementType);
+    // Value matrixValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, matrix);
+    
+    Value output = callEmpty(rewriter, module, loc, matrix, 1);
+    
+    std::string resultString = "     ";
+    llvm::raw_string_ostream stream(resultString);
+    op.print(stream);
+    stream.flush();
+    std::cout << "resultString: " << resultString << std::endl;
+    
+    rewriter.replaceOp(op, output);
+    
     return success();
   };
 };
@@ -2016,6 +2070,7 @@ public:
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
       LowerMatrixSelectRewrite,
+      LowerMatrixReduceToVectorRewrite,
       LowerMatrixReduceToScalarRewrite,
       LowerMatrixReduceToScalarGenericRewrite,
       LowerMatrixMultiplyRewrite,
