@@ -1905,56 +1905,51 @@ public:
     Type int64Type = rewriter.getIntegerType(64);
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     int64_t inputLength = inputShape[0];
-    Value endPosition;
-    if (inputLength == -1) {
-      Type indexType = rewriter.getIndexType();
-      Value pointers = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c0);
-      Value endPosition64 = rewriter.create<memref::LoadOp>(loc, pointers, c1);
-      endPosition = rewriter.create<IndexCastOp>(loc, endPosition64, indexType);
-    } else {
-      endPosition = rewriter.create<ConstantIndexOp>(loc, inputLength);
-    }
+    
+    Value pointers = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c0);
+    Value endPosition64 = rewriter.create<memref::LoadOp>(loc, pointers, c1);
+    Value endPosition = rewriter.create<IndexCastOp>(loc, endPosition64, indexType);
 
     Type inputElementType = inputType.getElementType();
     Type memref1DValueType = MemRefType::get({-1}, inputElementType);
     Value values = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
     
-    Value initialMax = rewriter.create<memref::LoadOp>(loc, values, c0);
+    Value initialExtremum = rewriter.create<memref::LoadOp>(loc, values, c0);
     
-    scf::ForOp loop = rewriter.create<scf::ForOp>(loc, c1, endPosition, c1, ValueRange{initialMax, c0});
+    scf::ForOp loop = rewriter.create<scf::ForOp>(loc, c1, endPosition, c1, ValueRange{initialExtremum, c0});
     Value currentValuePosition = loop.getInductionVar();
-    Value currentMax = loop.getLoopBody().getArgument(1);
-    Value currentMaxPosition = loop.getLoopBody().getArgument(2);
+    Value currentExtremum = loop.getLoopBody().getArgument(1);
+    Value currentExtremumPosition = loop.getLoopBody().getArgument(2);
     rewriter.setInsertionPointToStart(loop.getBody());
     
     Value currentValue = rewriter.create<memref::LoadOp>(loc, values, currentValuePosition);
     bool useMinimum = op.minmax().str() == "min";
     Value replace = llvm::TypeSwitch<Type, Value>(inputElementType)
       .Case<IntegerType>([&](IntegerType type) {
-			   return rewriter.create<CmpIOp>(loc, useMinimum ? CmpIPredicate::slt : CmpIPredicate::sgt, currentValue, currentMax);
+			   return rewriter.create<CmpIOp>(loc, useMinimum ? CmpIPredicate::slt : CmpIPredicate::sgt, currentValue, currentExtremum);
 			 })
       .Case<FloatType>([&](FloatType type) {
-			 return rewriter.create<CmpFOp>(loc, useMinimum ? CmpFPredicate::OLT : CmpFPredicate::OGT, currentValue, currentMax);
+			 return rewriter.create<CmpFOp>(loc, useMinimum ? CmpFPredicate::OLT : CmpFPredicate::OGT, currentValue, currentExtremum);
 		       });
 
     scf::IfOp ifBlock = rewriter.create<scf::IfOp>(loc, TypeRange{inputElementType, indexType}, replace, true);
     rewriter.setInsertionPointToStart(ifBlock.thenBlock());
     rewriter.create<scf::YieldOp>(loc, ValueRange{currentValue, currentValuePosition});
     rewriter.setInsertionPointToStart(ifBlock.elseBlock());
-    rewriter.create<scf::YieldOp>(loc, ValueRange{currentMax, currentMaxPosition});
+    rewriter.create<scf::YieldOp>(loc, ValueRange{currentExtremum, currentExtremumPosition});
     rewriter.setInsertionPointAfter(ifBlock);
 
-    Value nextMax = ifBlock.getResult(0);
-    Value nextMaxPosition = ifBlock.getResult(1);
-    rewriter.create<scf::YieldOp>(loc, ValueRange{nextMax, nextMaxPosition});
+    Value nextExtremum = ifBlock.getResult(0);
+    Value nextExtremumPosition = ifBlock.getResult(1);
+    rewriter.create<scf::YieldOp>(loc, ValueRange{nextExtremum, nextExtremumPosition});
     
     rewriter.setInsertionPointAfter(loop);
 
-    Value finalMaxPosition = loop.getResult(1);
+    Value finalExtremumPosition = loop.getResult(1);
     Value indices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c0);
-    Value argmax64 = rewriter.create<memref::LoadOp>(loc, indices, finalMaxPosition);
-    Value argmax = rewriter.create<IndexCastOp>(loc, argmax64, indexType);
-    rewriter.replaceOp(op, argmax);
+    Value argExtremum64 = rewriter.create<memref::LoadOp>(loc, indices, finalExtremumPosition);
+    Value argExtremum = rewriter.create<IndexCastOp>(loc, argExtremum64, indexType);
+    rewriter.replaceOp(op, argExtremum);
     
     return success();
   };
