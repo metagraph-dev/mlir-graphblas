@@ -34,4 +34,9 @@ Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect, std::st
                               Value bPosStart, Value bPosEnd, Value Bi, Value Bx,
                               Value oPosStart, Value Oi, Value Ox);
 
+void computeVectorElementWise(PatternRewriter &rewriter, ModuleOp module,
+                              Value lhs, Value rhs, Value output, std::string op, bool intersect);
+void computeMatrixElementWise(PatternRewriter &rewriter, ModuleOp module,
+                              Value lhs, Value rhs, Value output, std::string op, bool intersect);
+
 #endif // GRAPHBLAS_GRAPHBLASARRAYUTILS_H

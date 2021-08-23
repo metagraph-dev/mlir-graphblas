@@ -202,8 +202,8 @@ def GraphBLAS_MatrixReduceToVectorOp : GraphBLAS_Op<"matrix_reduce_to_vector", [
 
         Example:
         ```mlir
-        %vec1 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
-        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
+        %vec1 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
+        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
         ```
     }];
 
@@ -224,7 +224,7 @@ def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [
         The resulting scalar's type will depend on the type of the input tensor.
 
         Example:
-        ```%answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xi64, #CSR64> to i64```
+        ```%answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xi64, #CSR64> to i64```
     }];
 
     let arguments = (ins AnyTensor:$input, StrAttr:$aggregator);
@@ -378,6 +378,47 @@ def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp : GraphBLAS_Op<"matrix_multi
 
     let assemblyFormat = [{
            $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) $extensions
+    }];
+}
+
+def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
+    let summary = "element-wise union operation";
+    let description = [{
+        Performs an element-wise union between two matrices or two vectors.
+        The resulting sparse structure with be the union of the two input structures.
+        When either object has a non-overlapping element, it is copied to the output.
+        When both objects have an overlapping element in a cell, an operation combines the result.
+
+        Example:
+        ```%combined = graphblas.union %A, %B { union_operator = "plus" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>```
+
+    }];
+
+    let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$union_operator);
+    let results = (outs AnyTensor:$output);
+
+    let assemblyFormat = [{
+           $a `,` $b attr-dict `:` `(` type($a) `,` type($b)  `)` `to` type($output)
+    }];
+}
+
+def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
+    let summary = "element-wise intersection operation";
+    let description = [{
+        Performs an element-wise intersection between two matrices or two vectors.
+        The resulting sparse structure with be the intersection of the two input structures.
+        Overlapping elements are combined using an operation passed in.
+
+        Example:
+        ```%combined = graphblas.intersect %A, %B { intersect_operator = "mult" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>```
+
+    }];
+
+    let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$intersect_operator);
+    let results = (outs AnyTensor:$output);
+
+    let assemblyFormat = [{
+           $a `,` $b attr-dict `:` `(` type($a) `,` type($b)  `)` `to` type($output)
     }];
 }
 

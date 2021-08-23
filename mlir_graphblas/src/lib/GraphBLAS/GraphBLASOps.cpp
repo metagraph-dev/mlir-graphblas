@@ -502,6 +502,10 @@ static LogicalResult verify(VectorArgMinMaxOp op) {
   if (vecCompressionErrorMessage)
     return op.emitError(vecCompressionErrorMessage.getValue());
 
+  std::string  minmax = op.minmax().str();
+  if (minmax != "min" && minmax != "max")
+    return op.emitError("The minmax attribute is expected to be \"min\" or \"max\"; got \""+minmax+"\" instead.");
+  
   return success();
 }
 
@@ -598,6 +602,79 @@ static LogicalResult verify(UpdateOp op) {
   return success();
 }
 
+template <class T>
+static LogicalResult verifyEwise(T op) {
+  Type aType = op.a().getType();
+  Type bType = op.b().getType();
+
+  int64_t aRank = getRank(aType);
+  int64_t bRank = getRank(bType);
+
+  if (aRank < 1 || aRank > 2)
+    return op.emitError("Input a must be a sparse vector or sparse matrix.");
+  if (bRank < 1 || bRank > 2)
+    return op.emitError("Input b must be a sparse vector or sparse matrix.");
+
+  if (failed(verifyCompatibleShape(aType, bType)))
+    return op.emitError("Inputs must have compatible shapes.");
+
+  llvm::Optional<std::string> errMsg;
+  if (aRank == 1) {
+    errMsg = checkCompressedVector(aType, 0);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+    errMsg = checkCompressedVector(bType, 1);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+  } else if (aRank == 2) {
+    errMsg = checkCompressedMatrix(aType, 0, EITHER);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+    // Determine output sparse encoding
+    CompressionType sparseEncoding = CSR;
+    if (typeIsCSC(aType)) {
+      sparseEncoding = CSC;
+    }
+    errMsg = checkCompressedMatrix(bType, 1, sparseEncoding);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+  }
+
+  return success();
+}
+
+static const std::vector<std::string> supportedUnionOperators{"plus", "min", "times"};
+
+static LogicalResult verify(UnionOp op) {
+  llvm::Optional<llvm::StringRef> unionOperator = op.union_operator();
+  if (unionOperator) {
+    bool operatorSupported = std::find(supportedUnionOperators.begin(),
+                                       supportedUnionOperators.end(),
+                                       unionOperator->str())
+      != supportedUnionOperators.end();
+    if (!operatorSupported)
+      return op.emitError("\""+unionOperator->str()+"\" is not a supported union operator.");
+  }
+
+  return verifyEwise(op);
+}
+
+static const std::vector<std::string> supportedIntersectOperators{"plus", "min", "times"};
+
+static LogicalResult verify(IntersectOp op) {
+  llvm::Optional<llvm::StringRef> intersectOperator = op.intersect_operator();
+  if (intersectOperator) {
+    bool operatorSupported = std::find(supportedIntersectOperators.begin(),
+                                       supportedIntersectOperators.end(),
+                                       intersectOperator->str())
+      != supportedIntersectOperators.end();
+    if (!operatorSupported)
+      return op.emitError("\""+intersectOperator->str()+"\" is not a supported intersect operator.");
+  }
+
+  return verifyEwise(op);
+}
+
 static LogicalResult verify(EqualOp op) {
   Type aType = op.a().getType();
   Type bType = op.b().getType();
@@ -671,7 +748,7 @@ static LogicalResult verifyMatrixReduceToVectorArgs(T op)
     return op.emitError("The axis attribute is expected to be 0 or 1.");
   }
   
-  static const std::vector<std::string> supportedAggregators{"sum"};
+  static const std::vector<std::string> supportedAggregators{"plus"};
   std::string aggregator = op.aggregator().str();
   bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
     != supportedAggregators.end();
@@ -692,7 +769,7 @@ static LogicalResult verify(MatrixReduceToVectorOp op) {
   if (argResult.failed())
     return argResult;
 
-  static const std::vector<std::string> supportedAggregators{"sum"};
+  static const std::vector<std::string> supportedAggregators{"plus"};
   std::string aggregator = op.aggregator().str();
   bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
     != supportedAggregators.end();
@@ -725,7 +802,7 @@ static LogicalResult verify(MatrixReduceToScalarOp op) {
   if (argResult.failed())
     return argResult;
 
-  static const std::vector<std::string> supportedAggregators{"sum"};
+  static const std::vector<std::string> supportedAggregators{"plus"};
   std::string aggregator = op.aggregator().str();
   bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
     != supportedAggregators.end();
