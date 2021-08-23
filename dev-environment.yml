@@ -10,6 +10,7 @@ dependencies:
   - coverage
   - pytest
   - pytest-cov
+  - pytest-xdist
   - black
 
 # documentation

@@ -80,7 +80,8 @@ module  {
     {{ body }}
 
 }
-        """
+        """,
+        undefined=jinja2.StrictUndefined,
     )
 
     def get_mlir_module(self, make_private=False):
@@ -170,7 +171,8 @@ class ConvertLayout(BaseFunction):
 
       {% endif %}
       }
-    """
+    """,
+        undefined=jinja2.StrictUndefined,
     )
 
 
@@ -209,7 +211,8 @@ class MatrixSelect(BaseFunction):
         %output = graphblas.matrix_select %input { selectors = ["{{ selector }}"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
         return %output : tensor<?x?xf64, #CSR64>
       }
-    """
+    """,
+        undefined=jinja2.StrictUndefined,
     )
 
 
@@ -251,7 +254,8 @@ class MatrixReduceToScalar(BaseFunction):
 
         return %total : f64
       }
-    """
+    """,
+        undefined=jinja2.StrictUndefined,
     )
 
 
@@ -289,7 +293,8 @@ class MatrixApply(BaseFunction):
 
         return %output : tensor<?x?xf64, #CSR64>
       }
-    """
+    """,
+        undefined=jinja2.StrictUndefined,
     )
 
 
@@ -349,5 +354,6 @@ class MatrixMultiply(BaseFunction):
 
         return %output : tensor<?x?xf64, #CSR64>
       }
-    """
+    """,
+        undefined=jinja2.StrictUndefined,
     )
