@@ -54,4 +54,8 @@ struct ExtensionBlocks {
                                       const std::set<mlir::graphblas::YieldKind> &optional);
 };
 
+mlir::LogicalResult populateSemiringRegions(mlir::OpBuilder &builder, mlir::Location loc,
+                                            mlir::StringRef semiring, mlir::Type valueType,
+                                            mlir::RegionRange regions);
+
 #endif // GRAPHBLAS_GRAPHBLASUTILS_H

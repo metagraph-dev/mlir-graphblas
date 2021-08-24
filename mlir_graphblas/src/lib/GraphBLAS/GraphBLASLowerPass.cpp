@@ -805,82 +805,11 @@ public:
     graphblas::MatrixMultiplyGenericOp newMultOp = rewriter.create<graphblas::MatrixMultiplyGenericOp>(
       loc, op->getResultTypes(), operands, attributes, 3);
 
-    // Insert additive identity
-    Region &addIdentityRegion = newMultOp.getRegion(0);
-    Value addIdentity;
-    /*Block *addIdentityBlock = */ rewriter.createBlock(&addIdentityRegion, {}, {});
-    if (semiring == "plus_pair" || semiring == "plus_times" || semiring == "plus_plus") {
-      // Add identity
-      addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
-                              .Case<IntegerType>([&](IntegerType type)
-                                                 { return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth()); })
-                              .Case<FloatType>([&](FloatType type)
-                                               { return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
-    } else if (semiring == "min_plus") {
-      addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
-                              .Case<IntegerType>([&](IntegerType type)
-                                                 { return rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(valueType, APInt::getSignedMaxValue(type.getWidth()))); })
-                              .Case<FloatType>([&](FloatType type)
-                                                 { return rewriter.create<ConstantOp>(loc, rewriter.getFloatAttr(valueType, APFloat::getLargest(type.getFloatSemantics(), false))); });
-    } else {
-      return op.emitError("\"" + semiring + "\" is not a supported semiring.");
-    }
-    rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD_IDENTITY, addIdentity);
+    LogicalResult result = populateSemiringRegions(rewriter, loc, semiring, valueType, 
+                                                   newMultOp.getRegions().slice(0, 3));
 
-    // Insert additive operation
-    Region &addRegion = newMultOp.getRegion(1);
-    Block *addBlock = rewriter.createBlock(&addRegion, {}, {valueType, valueType});
-    Value addBlockArg0 = addBlock->getArgument(0);
-    Value addBlockArg1 = addBlock->getArgument(1);
-    Value addResult;
-    if (semiring == "plus_pair" || semiring == "plus_times" || semiring == "plus_plus") {
-      // Insert add operation
-      addResult = llvm::TypeSwitch<Type, Value>(valueType)
-                      .Case<IntegerType>([&](IntegerType type)
-                                         { return rewriter.create<AddIOp>(loc, addBlockArg0, addBlockArg1); })
-                      .Case<FloatType>([&](FloatType type)
-                                       { return rewriter.create<AddFOp>(loc, addBlockArg0, addBlockArg1); });
-    } else if (semiring == "min_plus") {
-      Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
-                      .Case<IntegerType>([&](IntegerType type)
-                                         { return rewriter.create<CmpIOp>(loc, CmpIPredicate::slt, addBlockArg0, addBlockArg1); })
-                      .Case<FloatType>([&](FloatType type)
-                                         { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OLT, addBlockArg0, addBlockArg1); });
-      addResult = rewriter.create<SelectOp>(loc, cmp, addBlockArg0, addBlockArg1);
-    } else {
-      return op.emitError("\"" + semiring + "\" is not a supported semiring.");
-    }
-    rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD, addResult);
-
-    // Insert multiplicative operation
-    Region &multRegion = newMultOp.getRegion(2);
-    Block *multBlock = rewriter.createBlock(&multRegion, {}, {valueType, valueType});
-    Value multBlockArg0 = multBlock->getArgument(0);
-    Value multBlockArg1 = multBlock->getArgument(1);
-    Value multResult;
-
-    if (semiring == "plus_pair") {
-      multResult = llvm::TypeSwitch<Type, Value>(valueType)
-                       .Case<IntegerType>([&](IntegerType type)
-                                          { return rewriter.create<ConstantIntOp>(loc, 1, type.getWidth()); })
-                       .Case<FloatType>([&](FloatType type)
-                                        { return rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
-    } else if (semiring == "plus_times") {
-      multResult = llvm::TypeSwitch<Type, Value>(valueType)
-                       .Case<IntegerType>([&](IntegerType type)
-                                          { return rewriter.create<MulIOp>(loc, multBlockArg0, multBlockArg1); })
-                       .Case<FloatType>([&](FloatType type)
-                                        { return rewriter.create<MulFOp>(loc, multBlockArg0, multBlockArg1); });
-    } else if (semiring == "plus_plus" || semiring == "min_plus") {
-      multResult = llvm::TypeSwitch<Type, Value>(valueType)
-                       .Case<IntegerType>([&](IntegerType type)
-                                          { return rewriter.create<AddIOp>(loc, multBlockArg0, multBlockArg1); })
-                       .Case<FloatType>([&](FloatType type)
-                                        { return rewriter.create<AddFOp>(loc, multBlockArg0, multBlockArg1); });
-    } else {
-      return op.emitError("\"" + semiring + "\" is not a supported semiring.");
-    }
-    rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::MULT, multResult);
+    if (result.failed())
+      return result;
 
     rewriter.setInsertionPointAfter(newMultOp);
 
