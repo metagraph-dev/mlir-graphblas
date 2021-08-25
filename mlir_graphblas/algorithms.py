@@ -30,7 +30,7 @@ graphblas_opt_passes = (
 csr_to_csc = ConvertLayout()
 matrix_select_triu = MatrixSelect("TRIU")
 matrix_select_tril = MatrixSelect("TRIL")
-matrix_select_gt0 = MatrixSelect("gt0")
+matrix_select_gt = MatrixSelect("gt")
 matrix_reduce = MatrixReduceToScalar()
 matrix_apply_min = MatrixApply("min")
 mxm_plus_pair = MatrixMultiply("plus_pair", mask=True)
@@ -71,8 +71,8 @@ def triangle_count_combined(A: MLIRSparseTensor) -> int:
             aliases=aliases,
         )
         (inp,) = irb.inputs
-        U = irb.graphblas.matrix_select(inp, "triu")
-        L = irb.graphblas.matrix_select(inp, "tril")
+        U = irb.graphblas.matrix_select(inp, [], ["triu"])
+        L = irb.graphblas.matrix_select(inp, [], ["tril"])
         U_csc = irb.graphblas.convert_layout(U, "tensor<?x?xf64, #CSC64>")
         C = irb.graphblas.matrix_multiply(L, U_csc, "plus_pair", mask=L)
 
@@ -101,7 +101,7 @@ def dense_neural_network(
         # Normally, I would need to transpose this, but I know these are purely diagonal matrices
         Y = mxm_plus_plus.compile()(Y, Bias[layer])
 
-        Y = matrix_select_gt0.compile()(Y)
+        Y = matrix_select_gt.compile()(Y, 0.0)
         Y = matrix_apply_min.compile()(Y, ymax)
 
     return Y
@@ -141,6 +141,7 @@ def dense_neural_network_combined(
             aliases=aliases,
         )
         weights, biases, Y, threshold = irb_inner.inputs
+        zero_f64 = irb_inner.constant(0.0, "f64")
         # Perform inference
         W_csc = irb_inner.graphblas.convert_layout(weights, "tensor<?x?xf64, #CSC64>")
         matmul_result = irb_inner.graphblas.matrix_multiply(Y, W_csc, "plus_times")
@@ -150,7 +151,9 @@ def dense_neural_network_combined(
         clamp_result = irb_inner.graphblas.matrix_apply(
             add_bias_result, "min", threshold
         )
-        relu_result = irb_inner.graphblas.matrix_select(clamp_result, "gt0")
+        relu_result = irb_inner.graphblas.matrix_select(
+            clamp_result, [zero_f64], ["gt"]
+        )
 
         irb_inner.util.del_sparse_tensor(Y)
 

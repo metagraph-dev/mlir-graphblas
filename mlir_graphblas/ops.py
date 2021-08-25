@@ -343,12 +343,21 @@ class GraphBLAS_MatrixSelect(BaseOp):
     name = "matrix_select"
 
     @classmethod
-    def call(cls, irbuilder, input, selector):
+    def call(
+        cls, irbuilder, input, thunks: Sequence[MLIRVar], selectors: Sequence[str]
+    ):
         cls.ensure_mlirvar(input, TensorType)
+        for thunk in thunks:
+            cls.ensure_mlirvar(thunk)
         ret_val = irbuilder.new_var(input.type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_select {input} "
-            f'{{ selectors = ["{selector}"] }} : {input.type} to {input.type}'
+            + "".join(f", {thunk}" for thunk in thunks)
+            + f"{{ selectors = ["
+            + ", ".join(f'"{selector}"' for selector in selectors)
+            + f"] }} : {input.type}"
+            + "".join(f", {thunk.type}" for thunk in thunks)
+            + f" to {input.type}"
         )
 
 

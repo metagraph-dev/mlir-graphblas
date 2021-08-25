@@ -17,6 +17,8 @@
 #include "GraphBLAS/GraphBLASOpsDialect.cpp.inc"
 #include "GraphBLAS/GraphBLASUtils.h"
 
+#include <numeric>
+
 using namespace mlir;
 using namespace mlir::graphblas;
 
@@ -456,7 +458,7 @@ static LogicalResult verify(MatrixMultiplyOp op) {
     return op.emitError("\""+semiring+"\" is not a supported semiring.");
 
   Region &body = op.body();
-  auto numBlocks = body.getBlocks().size();
+  size_t numBlocks = body.getBlocks().size();
   if (numBlocks > 0) {
     return op.emitError("graphblas.matrix_multiply should have no blocks.  Did you mean graphblas.matrix_multiply_generic?");
   }
@@ -766,23 +768,77 @@ static LogicalResult verify(MatrixReduceToScalarGenericOp op)
 }
 
 static LogicalResult verify(MatrixSelectOp op) {
-  // input and result types are already guaranteed to be the same
-  for (auto result : op.getResults()) {
+  Type inputType = op.input().getType();
+  
+  for (OpResult result : op.getResults()) {
     Type resultType = result.getType();
 
     llvm::Optional<std::string> resultCompressionErrorMessage = checkCompressedMatrix(resultType, -1, EITHER);
     if (resultCompressionErrorMessage)
       return op.emitError(resultCompressionErrorMessage.getValue());
+
+    if (inputType != resultType)
+      return op.emitError("At least 1 result type does not match that of the input matrix.");
   }
 
-  static const std::vector<std::string> supportedSelectors{"triu", "tril", "gt0"};
-  for (auto selectorAttr : op.selectors()) {
+  // TODO sweep this file for these static constants and move them to GraphBLASUtils.cpp
+  static const std::vector<std::string> supportedSelectors{"triu", "tril", "gt"};
+  static const std::vector<std::string> supportedThunkNeedingSelectors{"gt"};
+  
+  std::vector<std::string> selectorsNeedingThunk;
+  ArrayAttr selectors = op.selectors();
+  
+  for (Attribute selectorAttr : selectors) {
     std::string selector = selectorAttr.dyn_cast_or_null<StringAttr>().getValue().str();
     bool selectorSupported = std::find(supportedSelectors.begin(), supportedSelectors.end(), selector)
       != supportedSelectors.end();
     if (!selectorSupported)
       return op.emitError("\""+selector+"\" is not a supported selector.");
+
+    bool selectorNeedsThunk = // TODO we need a "vector_contains helper function
+      std::find(supportedThunkNeedingSelectors.begin(), supportedThunkNeedingSelectors.end(), selector)
+      != supportedThunkNeedingSelectors.end();
+    if (selectorNeedsThunk) 
+      selectorsNeedingThunk.push_back(selector);
   }
+
+  OperandRange thunks = op.thunks();
+
+  if (thunks.size() != selectorsNeedingThunk.size()) {
+    if (selectorsNeedingThunk.size() == 0) {
+      return op.emitError() << "No selectors need thunks, but "
+			    << std::to_string(thunks.size())
+			    << " thunks were given.";
+    } else {
+      return op.emitError() << "Some selectors (" 
+			    << std::accumulate(++selectorsNeedingThunk.begin(),
+					       selectorsNeedingThunk.end(),
+					       "\"" + selectorsNeedingThunk[0] + "\"",
+					       [](const std::string& a, std::string b){
+						 return a + ", \"" + b + "\"";
+					       })
+			    << ") need thunks, but "
+			    << std::to_string(thunks.size())
+			    << " thunks were given.";
+    }
+  }
+  
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  for (auto indexed_pair : llvm::enumerate(llvm::zip(selectorsNeedingThunk, thunks))) {
+    std::tuple<std::string, Value> pair = indexed_pair.value();
+    std::string selector = std::get<0>(pair);
+    if (selector == "gt") {
+      Value thunk = std::get<1>(pair);
+      Type thunkType = thunk.getType();
+      if (thunkType != inputTensorType.getElementType()) {
+	return op.emitError() << "Operand #" << indexed_pair.index() + 1
+			      << " is associated with the selector "
+			      << "\"" << selector << "\""
+			      << ", but has a different type than the input tensor's element type.";
+      }
+    }
+  }
+
   return success();
 }
 
