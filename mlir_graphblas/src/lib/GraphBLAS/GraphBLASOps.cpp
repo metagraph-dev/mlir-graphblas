@@ -110,13 +110,9 @@ static llvm::Optional<std::string> checkCompressedVector(
 // GraphBLAS Ops Methods
 //===--------------------------------------------------------------------===//
 
+// TODO: remove me. Cannot do now as all the ops require a verifier (see:
+// GraphBLAS_Op) a follow-up commit will address this issue.
 static LogicalResult verify(SizeOp op) {
-  Type inputType = op.input().getType();
-  int64_t rank = getRank(inputType);
-
-  if (rank != 1)
-    return op.emitError("Input must be a vector (rank 1 tensor).");
-
   return success();
 }
 
@@ -125,19 +121,10 @@ void SizeOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
   build(builder, result, indexType, tensor);
 }
 
+// TODO: originally this verifier was calling 'checkCompressedMatrix'
+// why do we need to check the sparse attribute? This ops should work
+// also without passing the sparese encoding attribute.
 static LogicalResult verify(NumRowsOp op) {
-  Type inputType = op.input().getType();
-
-  llvm::Optional<std::string> inputCompressionErrorMessage = checkCompressedMatrix(inputType, 0, EITHER);
-  if (inputCompressionErrorMessage)
-    return op.emitError(inputCompressionErrorMessage.getValue());
-
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  int64_t rank = inputTensorType.getRank();
-
-  if (rank != 2)
-    return op.emitError("Input must be a matrix (rank 2 tensor).");
-
   return success();
 }
 
@@ -146,13 +133,8 @@ void NumRowsOp::build(OpBuilder &builder, OperationState &result, Value tensor) 
   build(builder, result, indexType, tensor);
 }
 
+// TODO: remove me. see SizeOp.
 static LogicalResult verify(NumColsOp op) {
-  Type inputType = op.input().getType();
-  int64_t rank = getRank(inputType);
-
-  if (rank != 2)
-    return op.emitError("Input must be a matrix (rank 2 tensor).");
-
   return success();
 }
 
@@ -180,17 +162,39 @@ void NumValsOp::build(OpBuilder &builder, OperationState &result, Value tensor) 
   build(builder, result, indexType, tensor);
 }
 
-static LogicalResult verify(DupOp op) {
-  Type inputType = op.input().getType();
-  int64_t rank = getRank(inputType);
+/// Utility function to check encoding attribute.
+static LogicalResult hasSparseEncodingAttr(RankedTensorType t) {
+  if (!sparse_tensor::getSparseTensorEncoding(t))
+    return failure();
+  return success();
+}
 
-  // Require sparse matrices to be either CSR or CSC
-  if (rank == 2) {
-    llvm::Optional<std::string> inputCompressionErrorMessage = checkCompressedMatrix(inputType, 0, EITHER);
-    if (inputCompressionErrorMessage)
-      return op.emitError(inputCompressionErrorMessage.getValue());
+/// Utility function to check if a 2d-tensor is in CSR or
+/// CSC format.
+static LogicalResult hasCSRorCSCEncoding(RankedTensorType t) {
+  assert(t.getRank() == 2 && "expect a 2d ranked tensor");
+  if (auto encoding = sparse_tensor::getSparseTensorEncoding(t)) {
+    auto compression = encoding.getDimLevelType();
+    if (((compression[0] ==
+          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense) &&
+         (compression[1] ==
+          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)) ||
+        ((compression[0] ==
+          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed) &&
+         (compression[1] ==
+          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense)))
+      return success();
   }
+  return failure();
+}
 
+static LogicalResult verify(DupOp op) {
+  auto inputType = op.input().getType().cast<RankedTensorType>();
+  auto rank = inputType.getRank();
+  if (failed(hasSparseEncodingAttr(inputType)))
+    return op.emitError("operand #0 must have sparse tensor attribute");
+  if (rank == 2 && failed(hasCSRorCSCEncoding(inputType)))
+    return op.emitError("operand #0 must be in CSR or in CSC compression");
   return success();
 }
 
@@ -246,11 +250,8 @@ static LogicalResult verify(MatrixApplyOp op) {
     // TODO this is not always correct, e.g. matrix_apply_less_than(tensor<f64>, 2.3) -> tensor<i1>.
     return op.emitError("Element type of result tensor does not match type of thunk.");
 
-  static const std::vector<std::string> supportedOperators{"min"};
   std::string applyOperator = op.apply_operator().str();
-  bool operatorSupported = std::find(supportedOperators.begin(), supportedOperators.end(), applyOperator)
-    != supportedOperators.end();
-  if (!operatorSupported)
+  if (!supportedApplyOperators.contains(applyOperator))
     return op.emitError("\""+applyOperator+"\" is not a supported operator.");
 
   return success();
@@ -443,8 +444,6 @@ static LogicalResult verifyMatrixMultiplyArgs(T op, bool checkResultTensorType)
   return success();
 }
 
-static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus", "min_plus"};
-
 static LogicalResult verify(MatrixMultiplyOp op) {
   LogicalResult argResult = verifyMatrixMultiplyArgs(op, true);
 
@@ -452,9 +451,7 @@ static LogicalResult verify(MatrixMultiplyOp op) {
     return argResult;
 
   std::string semiring = op.semiring().str();
-  bool semiringSupported = std::find(supportedSemirings.begin(), supportedSemirings.end(), semiring)
-    != supportedSemirings.end();
-  if (!semiringSupported)
+  if (!supportedSemirings.contains(semiring))
     return op.emitError("\""+semiring+"\" is not a supported semiring.");
 
   Region &body = op.body();
@@ -548,8 +545,6 @@ static LogicalResult verifyMatrixReduceToScalarArgs(T op)
   return success();
 }
 
-static const std::vector<std::string> supportedUpdateAccumulateOperators{"plus", "min"};
-
 static LogicalResult verify(UpdateOp op) {
   Type iType = op.input().getType();
   Type oType = op.output().getType();
@@ -610,11 +605,7 @@ static LogicalResult verify(UpdateOp op) {
 
   llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
   if (accumulateOperator) {
-    bool operatorSupported = std::find(supportedUpdateAccumulateOperators.begin(),
-                                       supportedUpdateAccumulateOperators.end(),
-                                       accumulateOperator->str())
-      != supportedUpdateAccumulateOperators.end();
-    if (!operatorSupported)
+    if (!supportedUpdateAccumulateOperators.contains(accumulateOperator->str()))
       return op.emitError("\""+accumulateOperator->str()+"\" is not a supported accumulate operator.");
   }
 
@@ -662,32 +653,20 @@ static LogicalResult verifyEwise(T op) {
   return success();
 }
 
-static const std::vector<std::string> supportedUnionOperators{"plus", "min", "times"};
-
 static LogicalResult verify(UnionOp op) {
   llvm::Optional<llvm::StringRef> unionOperator = op.union_operator();
   if (unionOperator) {
-    bool operatorSupported = std::find(supportedUnionOperators.begin(),
-                                       supportedUnionOperators.end(),
-                                       unionOperator->str())
-      != supportedUnionOperators.end();
-    if (!operatorSupported)
+    if (!supportedUnionOperators.contains(unionOperator->str()))
       return op.emitError("\""+unionOperator->str()+"\" is not a supported union operator.");
   }
 
   return verifyEwise(op);
 }
 
-static const std::vector<std::string> supportedIntersectOperators{"plus", "min", "times"};
-
 static LogicalResult verify(IntersectOp op) {
   llvm::Optional<llvm::StringRef> intersectOperator = op.intersect_operator();
   if (intersectOperator) {
-    bool operatorSupported = std::find(supportedIntersectOperators.begin(),
-                                       supportedIntersectOperators.end(),
-                                       intersectOperator->str())
-      != supportedIntersectOperators.end();
-    if (!operatorSupported)
+    if (!supportedIntersectOperators.contains(intersectOperator->str()))
       return op.emitError("\""+intersectOperator->str()+"\" is not a supported intersect operator.");
   }
 
@@ -741,11 +720,8 @@ static LogicalResult verify(MatrixReduceToScalarOp op) {
   if (argResult.failed())
     return argResult;
 
-  static const std::vector<std::string> supportedAggregators{"sum"};
   std::string aggregator = op.aggregator().str();
-  bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
-    != supportedAggregators.end();
-  if (!aggregatorSupported)
+  if (!supportedReduceAggregators.contains(aggregator))
     return op.emitError("\""+aggregator+"\" is not a supported aggregator.");
 
   return success();
@@ -781,24 +757,15 @@ static LogicalResult verify(MatrixSelectOp op) {
       return op.emitError("At least 1 result type does not match that of the input matrix.");
   }
 
-  // TODO sweep this file for these static constants and move them to GraphBLASUtils.cpp
-  static const std::vector<std::string> supportedSelectors{"triu", "tril", "gt"};
-  static const std::vector<std::string> supportedThunkNeedingSelectors{"gt"};
-  
   std::vector<std::string> selectorsNeedingThunk;
   ArrayAttr selectors = op.selectors();
   
   for (Attribute selectorAttr : selectors) {
     std::string selector = selectorAttr.dyn_cast_or_null<StringAttr>().getValue().str();
-    bool selectorSupported = std::find(supportedSelectors.begin(), supportedSelectors.end(), selector)
-      != supportedSelectors.end();
-    if (!selectorSupported)
+    if (!supportedSelectors.contains(selector))
       return op.emitError("\""+selector+"\" is not a supported selector.");
 
-    bool selectorNeedsThunk = // TODO we need a "vector_contains helper function
-      std::find(supportedThunkNeedingSelectors.begin(), supportedThunkNeedingSelectors.end(), selector)
-      != supportedThunkNeedingSelectors.end();
-    if (selectorNeedsThunk) 
+    if (supportedThunkNeedingSelectors.contains(selector))
       selectorsNeedingThunk.push_back(selector);
   }
 
@@ -903,27 +870,26 @@ static LogicalResult verify(ConvertLayoutOp op) {
 }
 
 static LogicalResult verify(TransposeOp op) {
-  Type inputType = op.input().getType();
-  Type resultType = op.getResult().getType();
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+  RankedTensorType resultType =
+      op.getResult().getType().cast<RankedTensorType>();
 
-  llvm::Optional<std::string> inputCompressionErrorMessage = checkCompressedMatrix(inputType, 0, EITHER);
-  if (inputCompressionErrorMessage)
-    return op.emitError(inputCompressionErrorMessage.getValue());
+  if (failed(hasSparseEncodingAttr(inputType)) ||
+      failed(hasCSRorCSCEncoding(inputType)))
+    return op.emitError("input: Missing sparse tensor encoding or 2d-tensor "
+                        "not in CSR or CSC form");
 
-  llvm::Optional<std::string> resultCompressionErrorMessage = checkCompressedMatrix(resultType, -1, EITHER);
-  if (resultCompressionErrorMessage)
-    return op.emitError(resultCompressionErrorMessage.getValue());
+  if (failed(hasSparseEncodingAttr(resultType)) ||
+      failed(hasCSRorCSCEncoding(resultType)))
+    return op.emitError("result: Missing sparse tensor encoding or 2d-tensor "
+                        "not in CSR or CSC form");
 
   // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with shapes using "?"
-
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
-
-  if (inputTensorType.getElementType() != resultTensorType.getElementType())
+  if (inputType.getElementType() != resultType.getElementType())
     return op.emitError("Input and output tensors have different element types.");
 
-  ArrayRef<int64_t> inputShape = inputTensorType.getShape();
-  ArrayRef<int64_t> resultShape = resultTensorType.getShape();
+  ArrayRef<int64_t> inputShape = inputType.getShape();
+  ArrayRef<int64_t> resultShape = resultType.getShape();
 
   mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
     mlir::sparse_tensor::getSparseTensorEncoding(inputType);

@@ -37,8 +37,8 @@ class FuseMatrixSelectRewrite : public OpRewritePattern<graphblas::MatrixSelectO
 {
 public:
   using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const
-  {
+  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op,
+                                PatternRewriter &rewriter) const override {
     Value input = op.input();
     Location loc = op.getLoc();
 
@@ -93,8 +93,8 @@ class FuseMatrixMultiplyReduceRewrite : public OpRewritePattern<graphblas::Matri
 {
 public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op, PatternRewriter &rewriter) const
-  {
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op,
+                                PatternRewriter &rewriter) const override {
     Value input = op.input();
     graphblas::MatrixMultiplyGenericOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyGenericOp>();
     if (predecessor != nullptr && predecessor->hasOneUse()) {
@@ -157,8 +157,8 @@ class FuseMatrixMultiplyApplyRewrite : public OpRewritePattern<graphblas::Matrix
 {
 public:
   using OpRewritePattern<graphblas::MatrixApplyGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op, PatternRewriter &rewriter) const
-  {
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op,
+                                PatternRewriter &rewriter) const override {
     Value input = op.input();
     graphblas::MatrixMultiplyGenericOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyGenericOp>();
 

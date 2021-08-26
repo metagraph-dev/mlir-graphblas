@@ -4,6 +4,7 @@ from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from typing import Sequence
 
 GRAPHBLAS_PASSES = [
+    "--graphblas-optimize",
     "--graphblas-lower",
     "--sparsification",
     "--sparse-tensor-conversion",

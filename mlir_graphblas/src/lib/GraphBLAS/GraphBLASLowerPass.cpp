@@ -8,11 +8,11 @@
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/IR/Region.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/None.h"
-#include "mlir/IR/Region.h"
 
 #include "GraphBLAS/GraphBLASPasses.h"
 #include "GraphBLAS/GraphBLASUtils.h"
@@ -304,7 +304,8 @@ public:
 class LowerTransposeRewrite : public OpRewritePattern<graphblas::TransposeOp> {
 public:
   using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::TransposeOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::TransposeOp op,
+                                PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -500,19 +501,14 @@ public:
     Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
 
-    // TODO this should be in GraphBLASUtils.cpp
-    static const std::vector<std::string> supportedThunkNeedingSelectors{"gt"};
     int thunkIndex = 0;
     
     SmallVector<MatrixSelectOutputWriter*, 3> outputs;
     for (Attribute selectorAttr : selectors) {
       StringRef selector = selectorAttr.dyn_cast_or_null<StringAttr>().getValue();
 
-      bool selectorNeedsThunk = // TODO we need a "vector_contains helper function
-	std::find(supportedThunkNeedingSelectors.begin(), supportedThunkNeedingSelectors.end(), selector)
-	!= supportedThunkNeedingSelectors.end();
       llvm::Optional<Value> thunk;
-      if (selectorNeedsThunk) {
+      if (supportedThunkNeedingSelectors.contains(selector)) {
         thunk = thunks[thunkIndex++];
       } else {
         thunk = llvm::None;
@@ -2010,7 +2006,8 @@ public:
 class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
 public:
   using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::CommentOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::CommentOp op,
+                                PatternRewriter &rewriter) const override {
     rewriter.eraseOp(op);
     return success();
   };
