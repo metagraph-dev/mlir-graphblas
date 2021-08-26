@@ -281,3 +281,17 @@ module {
     }
 
 }
+
+module {
+
+    // CHECK: func @matrix_reduce_to_vector_wrapper(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]]) -> ([[RETURN_TYPE_0:tensor<.*>]], [[RETURN_TYPE_1:tensor<.*>]]) {
+    func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #CSR64>) -> (tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>) {
+        // CHECK-NEXT: %[[ANSWER_0:.*]] = graphblas.matrix_reduce_to_vector %[[MATRIX]] {aggregator = "sum", axis = 0 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_0]]
+        %vec1 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
+        // CHECK-NEXT: %[[ANSWER_1:.*]] = graphblas.matrix_reduce_to_vector %[[MATRIX]] {aggregator = "sum", axis = 1 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_1]]
+        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
+	// CHECK-NEXT: return %[[ANSWER_0]], %[[ANSWER_1]] : [[RETURN_TYPE_0]], [[RETURN_TYPE_1]]
+        return %vec1, %vec2 : tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>
+    }
+
+}
