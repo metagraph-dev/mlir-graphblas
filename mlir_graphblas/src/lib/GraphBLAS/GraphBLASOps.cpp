@@ -731,7 +731,7 @@ static LogicalResult verifyMatrixReduceToVectorArgs(T op)
     return op.emitError("The axis attribute is expected to be 0 or 1.");
   }
   
-  static const std::vector<std::string> supportedAggregators{"sum"};
+  static const std::vector<std::string> supportedAggregators{"plus"};
   std::string aggregator = op.aggregator().str();
   bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
     != supportedAggregators.end();
@@ -752,7 +752,7 @@ static LogicalResult verify(MatrixReduceToVectorOp op) {
   if (argResult.failed())
     return argResult;
 
-  static const std::vector<std::string> supportedAggregators{"sum"};
+  static const std::vector<std::string> supportedAggregators{"plus"};
   std::string aggregator = op.aggregator().str();
   bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
     != supportedAggregators.end();
@@ -785,7 +785,7 @@ static LogicalResult verify(MatrixReduceToScalarOp op) {
   if (argResult.failed())
     return argResult;
 
-  static const std::vector<std::string> supportedAggregators{"sum"};
+  static const std::vector<std::string> supportedAggregators{"plus"};
   std::string aggregator = op.aggregator().str();
   bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
     != supportedAggregators.end();

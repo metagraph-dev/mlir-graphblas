@@ -585,15 +585,39 @@ public:
     
     RankedTensorType matrixType = op.input().getType().dyn_cast<RankedTensorType>();
     Type elementType = matrixType.getElementType();
-
     ArrayRef<int64_t> matrixShape = matrixType.getShape();
+
+    bool matrixTypeIsCSR = typeIsCSR(matrixType);
+    if ((axis == 0 && matrixTypeIsCSR) || (axis == 1 && !matrixTypeIsCSR)) {
+      // TODO consider moving this out to its own rewrite pattern
+      
+      MLIRContext* context = op.getContext();
+      
+      RankedTensorType newMatrixType = matrixTypeIsCSR ?
+        getCSCTensorType(context, matrixShape, elementType) :
+        getCSRTensorType(context, matrixShape, elementType);
+      graphblas::ConvertLayoutOp newConvertLayoutOp =
+        rewriter.create<graphblas::ConvertLayoutOp>(loc, newMatrixType, matrix);
+      Value newLayoutInputTensor = newConvertLayoutOp.getResult();
+      Type originalVectorType = op->getResultTypes()[0];
+      graphblas::MatrixReduceToVectorOp newReduceOp =
+        rewriter.create<graphblas::MatrixReduceToVectorOp>(loc, originalVectorType, newLayoutInputTensor, aggregator, axis);
+      
+      rewriter.replaceOp(op, newReduceOp.getResult());
+      
+      return success();
+    }
+
     if (matrixShape[0] != -1 || matrixShape[1] != -1) {
       // TODO consider moving this out to its own rewrite pattern
+
+      // TODO this casting doesn't actually safely lower down to the LLVM dialect
+      // since it doesn't survive the --sparse-tensor-conversion pass
+      
       MLIRContext* context = op.getContext();
       
       static const ArrayRef<int64_t> newMatrixShape = {-1, -1};
-      bool inputTypeIsCSR = typeIsCSR(matrixType);
-      RankedTensorType newMatrixType = inputTypeIsCSR ?
+      RankedTensorType newMatrixType = matrixTypeIsCSR ?
         getCSRTensorType(context, newMatrixShape, elementType) :
         getCSCTensorType(context, newMatrixShape, elementType);
       
@@ -633,7 +657,7 @@ public:
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
-    
+
     Value nrows = rewriter.create<tensor::DimOp>(loc, matrix, c0);
     
     Value matrixPointers =
@@ -755,7 +779,7 @@ public:
     graphblas::MatrixReduceToScalarGenericOp newReduceOp = rewriter.create<graphblas::MatrixReduceToScalarGenericOp>(
         loc, op->getResultTypes(), input, 2);
 
-    if (aggregator == "sum")
+    if (aggregator == "plus")
     {
       // Insert agg identity block
       Region &aggIdentityRegion = newReduceOp.getRegion(0);

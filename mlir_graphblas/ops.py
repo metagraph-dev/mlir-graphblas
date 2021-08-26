@@ -382,10 +382,31 @@ class GraphBLAS_MatrixReduceToVector(BaseOp):
         )
 
 
+class GraphBLAS_MatrixReduceToVector(BaseOp):
+    dialect = "graphblas"
+    name = "matrix_reduce_to_vector"
+    allowed_aggregators = {"plus"}
+
+    @classmethod
+    def call(cls, irbuilder, input, aggregator, axis, return_type):
+        cls.ensure_mlirvar(input, TensorType)
+        if aggregator not in cls.allowed_aggregators:
+            raise TypeError(
+                f"Illegal aggregator: {aggregator}, must be one of {cls.allowed_aggregators}"
+            )
+        elif axis not in (0, 1):
+            raise TypeError(f"Illegal axis: {axis}, must be 0 or 1")
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.matrix_reduce_to_vector {input} "
+            f'{{ aggregator = "{aggregator}" , axis = {axis} }} : {input.type} to {ret_val.type}'
+        )
+
+
 class GraphBLAS_MatrixReduceToScalar(BaseOp):
     dialect = "graphblas"
     name = "matrix_reduce_to_scalar"
-    allowed_aggregators = {"sum"}
+    allowed_aggregators = {"plus"}
 
     @classmethod
     def call(cls, irbuilder, input, aggregator):

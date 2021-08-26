@@ -8,7 +8,7 @@
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<*xi32>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 0 } : tensor<*xi32> to tensor<9xi32, #SparseVec64> // expected-error {{Operand #0 must be a sparse tensor.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<*xi32> to tensor<9xi32, #SparseVec64> // expected-error {{Operand #0 must be a sparse tensor.}}
         return %vec : tensor<9xi32, #SparseVec64>
     }
 }
@@ -23,7 +23,7 @@ module {
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<?x?xi32>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 0 } : tensor<?x?xi32> to tensor<9xi32, #SparseVec64> // expected-error {{Operand #0 must be a sparse tensor.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<?x?xi32> to tensor<9xi32, #SparseVec64> // expected-error {{Operand #0 must be a sparse tensor.}}
         return %vec : tensor<9xi32, #SparseVec64>
     }
 }
@@ -45,7 +45,7 @@ module {
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x9x1xi32, #BADENCODING>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 0 } : tensor<7x9x1xi32, #BADENCODING> to tensor<9xi32, #SparseVec64> // expected-error {{Operand #0 must have rank 2.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9x1xi32, #BADENCODING> to tensor<9xi32, #SparseVec64> // expected-error {{Operand #0 must have rank 2.}}
         return %vec : tensor<9xi32, #SparseVec64>
     }
 }
@@ -61,7 +61,7 @@ module {
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #CSR64>) -> tensor<7x9xi32, #CSR64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<7x9xi32, #CSR64> // expected-error {{Return value must have rank 1.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<7x9xi32, #CSR64> // expected-error {{Return value must have rank 1.}}
         return %vec : tensor<7x9xi32, #CSR64>
     }
 }
@@ -85,7 +85,7 @@ module {
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #BADENCODING>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 0 } : tensor<7x9xi32, #BADENCODING> to tensor<9xi32, #SparseVec64> // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #BADENCODING> to tensor<9xi32, #SparseVec64> // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
         return %vec : tensor<9xi32, #SparseVec64>
     }
 }
@@ -109,7 +109,7 @@ module {
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #CSR64>) -> tensor<9xi32, #BADENCODING> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #BADENCODING> // expected-error {{Return value must be sparse, i.e. must have dimLevelType = [ "compressed" ] in the sparse encoding.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #BADENCODING> // expected-error {{Return value must be sparse, i.e. must have dimLevelType = [ "compressed" ] in the sparse encoding.}}
         return %vec : tensor<9xi32, #BADENCODING>
     }
 }
@@ -153,7 +153,7 @@ module {
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x9xf64, #CSR64>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 0 } : tensor<7x9xf64, #CSR64> to tensor<9xi32, #SparseVec64> // expected-error {{Operand and output types are incompatible.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xf64, #CSR64> to tensor<9xi32, #SparseVec64> // expected-error {{Operand and output types are incompatible.}}
         return %vec : tensor<9xi32, #SparseVec64>
     }
 }
@@ -175,7 +175,7 @@ module {
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #CSR64>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 3 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64> // expected-error {{The axis attribute is expected to be 0 or 1.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 3 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64> // expected-error {{The axis attribute is expected to be 0 or 1.}}
         return %vec : tensor<9xi32, #SparseVec64>
     }
 }
@@ -197,7 +197,7 @@ module {
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x5xi32, #CSR64>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "sum", axis = 0 } : tensor<7x5xi32, #CSR64> to tensor<9xi32, #SparseVec64> // expected-error {{Operand and output shapes are incompatible.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x5xi32, #CSR64> to tensor<9xi32, #SparseVec64> // expected-error {{Operand and output shapes are incompatible.}}
         return %vec : tensor<9xi32, #SparseVec64>
     }
 }
