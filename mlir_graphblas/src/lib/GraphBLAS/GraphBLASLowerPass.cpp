@@ -18,8 +18,6 @@
 #include "GraphBLAS/GraphBLASUtils.h"
 #include "GraphBLAS/GraphBLASArrayUtils.h"
 
-#include <iostream> // TODO remove this
-
 using namespace ::mlir;
 
 namespace {
@@ -582,42 +580,158 @@ public:
     Location loc = op->getLoc();
     
     Value matrix = op.input();
-    // StringRef aggregator = op.aggregator();
-    // int axis = op.axis();
+    StringRef aggregator = op.aggregator();
+    int axis = op.axis();
     
-    // RankedTensorType matrixType = op.input().getType().dyn_cast<RankedTensorType>();
-    // Type elementType = matrixType.getElementType();
+    RankedTensorType matrixType = op.input().getType().dyn_cast<RankedTensorType>();
+    Type elementType = matrixType.getElementType();
+
+    ArrayRef<int64_t> matrixShape = matrixType.getShape();
+    if (matrixShape[0] != -1 || matrixShape[1] != -1) {
+      // TODO consider moving this out to its own rewrite pattern
+      MLIRContext* context = op.getContext();
+      
+      static const ArrayRef<int64_t> newMatrixShape = {-1, -1};
+      bool inputTypeIsCSR = typeIsCSR(matrixType);
+      RankedTensorType newMatrixType = inputTypeIsCSR ?
+        getCSRTensorType(context, newMatrixShape, elementType) :
+        getCSCTensorType(context, newMatrixShape, elementType);
+      
+      Value castMatrix = rewriter.create<tensor::CastOp>(loc, newMatrixType, matrix);
+
+      static const ArrayRef<int64_t> newVectorShape = {-1};
+      Type resultVectorType = getCompressedVectorType(context, newVectorShape, elementType);
+      Value resultVector =
+	rewriter.create<graphblas::MatrixReduceToVectorOp>(loc, resultVectorType, castMatrix, aggregator, axis);
+      
+      Type originalVectorType = op->getResultTypes()[0];
+      Value castVector = rewriter.create<tensor::CastOp>(loc, originalVectorType, resultVector);
+      
+      rewriter.replaceOp(op, castVector);
+      
+      return success();
+    }
+
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+
+    Type memref1DValueType = MemRefType::get({-1}, elementType);
+    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
     
-    // Value c0_elementType = llvm::TypeSwitch<Type, Value>(elementType)
-    //                           .Case<IntegerType>([&](IntegerType type)
-    //                                              { return rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(elementType, 0)); })
-    //                           .Case<FloatType>([&](FloatType type)
-    //                                              { return rewriter.create<ConstantOp>(loc, rewriter.getFloatAttr(valueType, 0.0)); })
-    // Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-    // Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-    // Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
+    sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(matrixType);
+    unsigned pointerBitWidth = sparseEncoding.getPointerBitWidth();
+    Type pointerType = rewriter.getIntegerType(pointerBitWidth);
+    Type memref1DPointerType = MemRefType::get({-1}, pointerType);
     
-    // Value nrows = rewriter.create<tensor::DimOp>(loc, matrix, c0);
+    Value c0_elementType =
+      llvm::TypeSwitch<Type, Value>(elementType)
+      .Case<IntegerType>([&](IntegerType type)
+			 { return rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(elementType, 0)); })
+      .Case<FloatType>([&](FloatType type)
+		       { return rewriter.create<ConstantOp>(loc, rewriter.getFloatAttr(elementType, 0.0)); });
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
     
-    // sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
-    //   sparse_tensor::getSparseTensorEncoding(matrixType);
-    // unsigned pointerBitWidth = sparseEncoding.getPointerBitWidth();
-    // Type pointerType = rewriter.getIntegerType(pointerBitWidth);
-    // Type memref1DPointerType = MemRefType::get({-1}, pointerType);
-    // Value matrixPointers =
-    //   rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DPointerType, matrix, c1);
+    Value nrows = rewriter.create<tensor::DimOp>(loc, matrix, c0);
     
-    // Type memref1DValueType = MemRefType::get({-1}, elementType);
-    // Value matrixValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, matrix);
+    Value matrixPointers =
+      rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DPointerType, matrix, c1);
     
-    Value output = callEmpty(rewriter, module, loc, matrix, 1);
+    Value matrixValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, matrix);
+
+    int64_t outputLength = (axis == 1) ? matrixShape[0] : matrixShape[1];
+    ArrayRef<int64_t> outputShape = {outputLength};
+    Value output = callEmpty(rewriter, module, loc, matrix, outputShape);
+
+    callResizeDim(rewriter, module, loc, output, c0, nrows);
     
-    std::string resultString = "     ";
-    llvm::raw_string_ostream stream(resultString);
-    op.print(stream);
-    stream.flush();
-    std::cout << "resultString: " << resultString << std::endl;
+    scf::ForOp nnzLoop = rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
+    {
+      rewriter.setInsertionPointToStart(nnzLoop.getBody());
+      Value numNonEmptyRows = nnzLoop.getLoopBody().getArgument(1);
+      Value matrixRowIndex = nnzLoop.getInductionVar();
+      Value nextMatrixRowIndex = rewriter.create<AddIOp>(loc, matrixRowIndex, c1).getResult();
+      Value firstPtr64 = rewriter.create<memref::LoadOp>(loc, matrixPointers, matrixRowIndex);
+      Value secondPtr64 = rewriter.create<memref::LoadOp>(loc, matrixPointers, nextMatrixRowIndex);
+      Value rowIsEmpty = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, firstPtr64, secondPtr64);
+      scf::IfOp ifRowIsEmptyBlock = rewriter.create<scf::IfOp>(loc, TypeRange{indexType}, rowIsEmpty, true);
+      rewriter.setInsertionPointToStart(ifRowIsEmptyBlock.thenBlock());
+      rewriter.create<scf::YieldOp>(loc, ValueRange{numNonEmptyRows});
+      rewriter.setInsertionPointToStart(ifRowIsEmptyBlock.elseBlock());
+      Value incrementedNumNonEmptyRows = rewriter.create<AddIOp>(loc, numNonEmptyRows, c1).getResult();
+      rewriter.create<scf::YieldOp>(loc, ValueRange{incrementedNumNonEmptyRows});
+      rewriter.setInsertionPointAfter(ifRowIsEmptyBlock);
+      Value updatedNumNonEmptyRows = ifRowIsEmptyBlock.getResult(0);
+      rewriter.create<scf::YieldOp>(loc, ValueRange{updatedNumNonEmptyRows});
+      rewriter.setInsertionPointAfter(nnzLoop);
+    }
+    Value outputNNZ = nnzLoop.getResult(0);
     
+    callResizePointers(rewriter, module, loc, output, c0, c2);
+    callResizeIndex(rewriter, module, loc, output, c0, outputNNZ);
+    callResizeValues(rewriter, module, loc, output, outputNNZ);
+    
+    Value outputPointers =
+      rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DPointerType, output, c0);
+    Value outputNNZ_i64 = rewriter.create<IndexCastOp>(loc, outputNNZ, int64Type);
+    rewriter.create<memref::StoreOp>(loc, outputNNZ_i64, outputPointers, c1);
+
+    Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c0);
+    Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
+    
+    scf::ForOp reduceLoop = rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
+    {
+      rewriter.setInsertionPointToStart(reduceLoop.getBody());
+      Value outputValuesPosition = reduceLoop.getLoopBody().getArgument(1);
+      Value rowIndex = reduceLoop.getInductionVar();
+      Value ptr64 = rewriter.create<memref::LoadOp>(loc, matrixPointers, rowIndex);
+      Value nextRowIndex = rewriter.create<AddIOp>(loc, rowIndex, c1).getResult();
+      Value nextPtr64 = rewriter.create<memref::LoadOp>(loc, matrixPointers, nextRowIndex);
+      Value rowIsNonEmpty = rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, ptr64, nextPtr64);
+      scf::IfOp ifRowIsNonEmptyBlock = rewriter.create<scf::IfOp>(loc, TypeRange{indexType}, rowIsNonEmpty, true);
+      {
+	rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.thenBlock());
+	{
+	  Value ptr = rewriter.create<IndexCastOp>(loc, ptr64, indexType);
+	  Value nextPtr = rewriter.create<IndexCastOp>(loc, nextPtr64, indexType);
+	  scf::ForOp rowSumLoop = rewriter.create<scf::ForOp>(loc, ptr, nextPtr, c1, ValueRange{c0_elementType});
+	  {
+	    rewriter.setInsertionPointToStart(rowSumLoop.getBody());
+	    Value currentSum = rowSumLoop.getLoopBody().getArgument(1);
+	    Value currentPtr = rowSumLoop.getInductionVar();
+	    Value rowValue = rewriter.create<memref::LoadOp>(loc, matrixValues, currentPtr);
+	    Value updatedSum = llvm::TypeSwitch<Type, Value>(elementType)
+	      .Case<IntegerType>([&](IntegerType type)
+				 { return rewriter.create<AddIOp>(loc, rowValue, currentSum).getResult(); })
+	      .Case<FloatType>([&](FloatType type)
+			       { return rewriter.create<AddFOp>(loc, rowValue, currentSum).getResult(); });
+	    rewriter.create<scf::YieldOp>(loc, ValueRange{updatedSum});
+	    rewriter.setInsertionPointAfter(rowSumLoop);
+	  }
+	  Value rowSum = rowSumLoop.getResult(0);
+	  rewriter.create<memref::StoreOp>(loc, rowSum, outputValues, outputValuesPosition);
+	  Value rowIndex64 = rewriter.create<IndexCastOp>(loc, rowIndex, int64Type);
+	  rewriter.create<memref::StoreOp>(loc, rowIndex64, outputIndices, outputValuesPosition);
+	  Value updatedOutputValuesPosition = rewriter.create<AddIOp>(loc, outputValuesPosition, c1).getResult();
+	  rewriter.create<scf::YieldOp>(loc, ValueRange{updatedOutputValuesPosition});
+	}
+	
+	rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.elseBlock());
+	{
+	  rewriter.create<scf::YieldOp>(loc, ValueRange{outputValuesPosition});
+	}
+	
+	rewriter.setInsertionPointAfter(ifRowIsNonEmptyBlock);
+      }
+      
+      Value nextOutputValuesPosition = ifRowIsNonEmptyBlock.getResult(0);
+      rewriter.create<scf::YieldOp>(loc, ValueRange{nextOutputValuesPosition});
+
+      rewriter.setInsertionPointAfter(reduceLoop);
+    }
+
     rewriter.replaceOp(op, output);
     
     return success();

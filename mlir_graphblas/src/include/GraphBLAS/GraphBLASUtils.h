@@ -26,6 +26,7 @@ static const llvm::StringSet<> supportedApplyOperators{"min"};
 
 bool typeIsCSR(mlir::Type inputType);
 bool typeIsCSC(mlir::Type inputType);
+mlir::RankedTensorType getCompressedVectorType(mlir::MLIRContext *context, mlir::ArrayRef<int64_t> shape, mlir::Type valueType);
 mlir::RankedTensorType getCSRTensorType(mlir::MLIRContext *context, llvm::ArrayRef<int64_t> shape, mlir::Type valueType);
 mlir::RankedTensorType getCSCTensorType(mlir::MLIRContext *context, llvm::ArrayRef<int64_t> shape, mlir::Type valueType);
 
@@ -34,7 +35,7 @@ int64_t getRank(mlir::Value inputValue);
 
 mlir::Value convertToExternalCSR(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value input);
 mlir::Value convertToExternalCSC(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value input);
-mlir::Value callEmpty(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value inputTensor, int64_t ndims);
+mlir::Value callEmpty(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value inputTensor, llvm::ArrayRef<int64_t> resultShape);
 mlir::Value callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
 mlir::Value callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
 void callDelSparseTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod, mlir::Location loc, mlir::Value tensor);
