@@ -552,7 +552,7 @@ LogicalResult populateSemiringAdd(OpBuilder &builder, Location loc,
   Region *addIdentityRegion = regions[0];
   Value addIdentity;
   /*Block *addIdentityBlock = */ builder.createBlock(addIdentityRegion, {}, {});
-  if (addName == "plus")
+  if (addName == "plus" || addName == "any")
   {
     // Add identity
     addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
@@ -599,6 +599,12 @@ LogicalResult populateSemiringAdd(OpBuilder &builder, Location loc,
                                      { return builder.create<CmpFOp>(loc, CmpFPredicate::OLT, addBlockArg0, addBlockArg1); });
     addResult = builder.create<SelectOp>(loc, cmp, addBlockArg0, addBlockArg1);
   }
+  else if (addName == "any")
+  {
+    // Same as "second" for multiplicative op?
+    // https://github.com/DrTimothyAldenDavis/SuiteSparse/blob/master/GraphBLAS/Source/Template/GB_binop_factory.c#L243-L244
+    addResult = addBlockArg1;
+  }
   else
   {
     return addRegion->getParentOp()->emitError("\"" + addName + "\" is not a supported semiring add.");
@@ -644,6 +650,14 @@ LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
                                         { return builder.create<AddIOp>(loc, multBlockArg0, multBlockArg1); })
                      .Case<FloatType>([&](FloatType type)
                                       { return builder.create<AddFOp>(loc, multBlockArg0, multBlockArg1); });
+  }
+  else if (multiplyName == "first")
+  {
+    multResult = multBlockArg0;
+  }
+  else if (multiplyName == "second")
+  {
+    multResult = multBlockArg1;
   }
   else
   {
