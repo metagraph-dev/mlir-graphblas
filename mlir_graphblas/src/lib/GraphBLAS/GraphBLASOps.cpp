@@ -12,6 +12,7 @@
 #include "mlir/IR/TypeUtilities.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/None.h"
+#include "llvm/ADT/StringSet.h"
 
 #include "GraphBLAS/GraphBLASOpsEnums.cpp.inc"
 #include "GraphBLAS/GraphBLASOpsDialect.cpp.inc"
@@ -101,6 +102,40 @@ static llvm::Optional<std::string> checkCompressedVector(
     return inputName+" must be sparse, i.e. must have "
       "dimLevelType = [ \"dense\", \"compressed\" ] in the sparse encoding.";
   
+  return llvm::None;
+}
+
+static llvm::Optional<std::string> checkSemiringAdd(StringRef addName)
+{
+  // This must match the options supported by GraphBLASUtils.cpp::populateSemiringAdd()
+  llvm::StringSet<> allowed = {"plus", "min"};
+  if (!allowed.contains(addName))
+    return "\"" + addName.str() + "\" is not a supported semiring add.";
+  else
+    return llvm::None;
+}
+
+static llvm::Optional<std::string> checkSemiringMultiply(StringRef multiplyName)
+{
+  // This must match the options supported by GraphBLASUtils.cpp::populateSemiringMultiply()
+  llvm::StringSet<> allowed = {"pair", "times", "plus"};
+  if (!allowed.contains(multiplyName))
+    return "\"" + multiplyName.str() + "\" is not a supported semiring multiply.";
+  else
+    return llvm::None;
+}
+
+static llvm::Optional<std::string> checkSemiring(StringRef semiring)
+{
+  auto semiringParts = semiring.split('_');
+  auto addCheck = checkSemiringAdd(semiringParts.first);
+  if (addCheck != llvm::None)
+    return addCheck;
+  
+  auto multiplyCheck = checkSemiringMultiply(semiringParts.second);
+  if (multiplyCheck != llvm::None)
+    return multiplyCheck;
+
   return llvm::None;
 }
 
@@ -441,19 +476,16 @@ static LogicalResult verifyMatrixMultiplyArgs(T op, bool checkResultTensorType)
   return success();
 }
 
-static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus", "min_plus"};
-
 static LogicalResult verify(MatrixMultiplyOp op) {
   LogicalResult argResult = verifyMatrixMultiplyArgs(op, true);
 
   if (argResult.failed())
     return argResult;
 
-  std::string semiring = op.semiring().str();
-  bool semiringSupported = std::find(supportedSemirings.begin(), supportedSemirings.end(), semiring)
-    != supportedSemirings.end();
-  if (!semiringSupported)
-    return op.emitError("\""+semiring+"\" is not a supported semiring.");
+  llvm::Optional<std::string> semiringError = checkSemiring(op.semiring());
+  if (semiringError != llvm::None) {
+    return op.emitError(semiringError.getValue());
+  }
 
   Region &body = op.body();
   auto numBlocks = body.getBlocks().size();

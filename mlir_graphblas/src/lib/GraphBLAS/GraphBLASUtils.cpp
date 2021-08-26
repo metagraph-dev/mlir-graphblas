@@ -542,15 +542,17 @@ LogicalResult ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions
   return success();
 };
 
-LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
-                                      StringRef semiring, Type valueType,
-                                      RegionRange regions)
+LogicalResult populateSemiringAdd(OpBuilder &builder, Location loc,
+                                  StringRef addName, Type valueType,
+                                  RegionRange regions)
 {
+  // This function must match the options supported by GraphBLASOps.cpp::checkSemiringAdd()
+
   // Insert additive identity
   Region *addIdentityRegion = regions[0];
   Value addIdentity;
   /*Block *addIdentityBlock = */ builder.createBlock(addIdentityRegion, {}, {});
-  if (semiring == "plus_pair" || semiring == "plus_times" || semiring == "plus_plus")
+  if (addName == "plus")
   {
     // Add identity
     addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
@@ -559,7 +561,7 @@ LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
                       .Case<FloatType>([&](FloatType type)
                                        { return builder.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
   }
-  else if (semiring == "min_plus")
+  else if (addName == "min")
   {
     addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
                       .Case<IntegerType>([&](IntegerType type)
@@ -569,7 +571,7 @@ LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
   }
   else
   {
-    return addIdentityRegion->getParentOp()->emitError("\"" + semiring + "\" is not a supported semiring.");
+    return addIdentityRegion->getParentOp()->emitError("\"" + addName + "\" is not a supported semiring add.");
   }
   builder.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD_IDENTITY, addIdentity);
 
@@ -579,7 +581,7 @@ LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
   Value addBlockArg0 = addBlock->getArgument(0);
   Value addBlockArg1 = addBlock->getArgument(1);
   Value addResult;
-  if (semiring == "plus_pair" || semiring == "plus_times" || semiring == "plus_plus")
+  if (addName == "plus")
   {
     // Insert add operation
     addResult = llvm::TypeSwitch<Type, Value>(valueType)
@@ -588,7 +590,7 @@ LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
                     .Case<FloatType>([&](FloatType type)
                                      { return builder.create<AddFOp>(loc, addBlockArg0, addBlockArg1); });
   }
-  else if (semiring == "min_plus")
+  else if (addName == "min")
   {
     Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
                     .Case<IntegerType>([&](IntegerType type)
@@ -599,18 +601,27 @@ LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
   }
   else
   {
-    return addRegion->getParentOp()->emitError("\"" + semiring + "\" is not a supported semiring.");
+    return addRegion->getParentOp()->emitError("\"" + addName + "\" is not a supported semiring add.");
   }
   builder.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD, addResult);
 
+  return success();
+}
+
+LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
+                                      StringRef multiplyName, Type valueType,
+                                      RegionRange regions)
+{
+  // This function must match the options supported by GraphBLASOps.cpp::checkSemiringMultiply()
+
   // Insert multiplicative operation
-  Region *multRegion = regions[2];
+  Region *multRegion = regions[0];
   Block *multBlock = builder.createBlock(multRegion, {}, {valueType, valueType});
   Value multBlockArg0 = multBlock->getArgument(0);
   Value multBlockArg1 = multBlock->getArgument(1);
   Value multResult;
 
-  if (semiring == "plus_pair")
+  if (multiplyName == "pair")
   {
     multResult = llvm::TypeSwitch<Type, Value>(valueType)
                      .Case<IntegerType>([&](IntegerType type)
@@ -618,7 +629,7 @@ LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
                      .Case<FloatType>([&](FloatType type)
                                       { return builder.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
   }
-  else if (semiring == "plus_times")
+  else if (multiplyName == "times")
   {
     multResult = llvm::TypeSwitch<Type, Value>(valueType)
                      .Case<IntegerType>([&](IntegerType type)
@@ -626,7 +637,7 @@ LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
                      .Case<FloatType>([&](FloatType type)
                                       { return builder.create<MulFOp>(loc, multBlockArg0, multBlockArg1); });
   }
-  else if (semiring == "plus_plus" || semiring == "min_plus")
+  else if (multiplyName == "plus")
   {
     multResult = llvm::TypeSwitch<Type, Value>(valueType)
                      .Case<IntegerType>([&](IntegerType type)
@@ -636,9 +647,28 @@ LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
   }
   else
   {
-    return multRegion->getParentOp()->emitError("\"" + semiring + "\" is not a supported semiring.");
+    return multRegion->getParentOp()->emitError("\"" + multiplyName + "\" is not a supported semiring multiply.");
   }
   builder.create<graphblas::YieldOp>(loc, graphblas::YieldKind::MULT, multResult);
 
   return success();
+}
+
+LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
+                                      StringRef semiring, Type valueType,
+                                      RegionRange regions)
+{
+  auto semiringParts = semiring.split('_');
+
+  if (failed(populateSemiringAdd(builder, loc,
+                                 semiringParts.first, valueType,
+                                 regions.slice(0, 2))))
+    return failure();
+
+  if (failed(populateSemiringMultiply(builder, loc,
+                                     semiringParts.second, valueType,
+                                     regions.slice(2, 1) /* no multiply identity block currently */)))
+    return failure();
+
+  return success();                 
 }

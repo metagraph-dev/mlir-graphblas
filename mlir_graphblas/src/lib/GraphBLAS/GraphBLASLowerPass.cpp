@@ -805,11 +805,9 @@ public:
     graphblas::MatrixMultiplyGenericOp newMultOp = rewriter.create<graphblas::MatrixMultiplyGenericOp>(
       loc, op->getResultTypes(), operands, attributes, 3);
 
-    LogicalResult result = populateSemiringRegions(rewriter, loc, semiring, valueType, 
-                                                   newMultOp.getRegions().slice(0, 3));
-
-    if (result.failed())
-      return result;
+    if(failed(populateSemiringRegions(rewriter, loc, semiring, valueType, 
+                                      newMultOp.getRegions().slice(0, 3))))
+      return failure();
 
     rewriter.setInsertionPointAfter(newMultOp);
 
