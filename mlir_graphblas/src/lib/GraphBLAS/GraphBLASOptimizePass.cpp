@@ -52,13 +52,16 @@ public:
     }
 
     if (selectOps.size() > 1) {
-      // time for some fusion
       SmallVector<StringRef, 3> selectors;
+      SmallVector<Value, 3> fusedOpInputs{input};
       SmallVector<Type, 3> resultTypes;
 
       for (graphblas::MatrixSelectOp selectOp : selectOps) {
         for (Attribute selectorStr : selectOp.selectors()) {
           selectors.push_back(selectorStr.dyn_cast<StringAttr>().getValue());
+        }
+        for (Value thunk : selectOp.thunks()) {
+          fusedOpInputs.push_back(thunk);
         }
 
         ValueTypeRange<ResultRange> opResultTypes = selectOp.getResultTypes();
@@ -67,7 +70,7 @@ public:
 
       NamedAttrList attrs;
       attrs.set("selectors", rewriter.getStrArrayAttr(selectors));
-      graphblas::MatrixSelectOp fusedOp = rewriter.create<graphblas::MatrixSelectOp>(loc, resultTypes, input, attrs);
+      graphblas::MatrixSelectOp fusedOp = rewriter.create<graphblas::MatrixSelectOp>(loc, resultTypes, fusedOpInputs, attrs);
       ValueRange fusedResults = fusedOp.getResults();
 
       unsigned i = 0;

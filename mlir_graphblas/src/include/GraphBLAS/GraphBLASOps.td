@@ -180,36 +180,42 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
     }];
 }
 
-def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect, SameOperandsAndResultType]> {
+def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
     let summary = "matrix select operation";
     let description = [{
-        Returns new sparse tensor(s) with a subset of element from the given
-        matrix.  The elements included in the resulting sparse tensor vary depending on
-        the selectors given (one of "triu", "tril", or "gt0").  Multiple selectors may
-        be given, in which case multiple results will be returned The given sparse
-        tensor must be a matrix, i.e. have rank 2.  The given tensor must have a CSR
-        sparsity or a CSC sparsity.  The resulting sparse tensors will have the same
-        sparsity as the given sparse tensor.
+        Returns new sparse tensors, each with a subset of elements from the given matrix.
+        The elements included in the resulting sparse tensor vary depending on the selectors given (one of "triu", "tril", or "gt").
+        Multiple selectors may be given, in which case multiple results will be returned.
+        Some selectors, e.g. "gt", require a thunk. The thunks should be passed as extra operands to the op.
+        The number of given thunks must match the number of thunk-requiring selectors.
+        The ordering of the thunks/selectors determines which thunk is used for which selector, i.e. the nth thunk is used for the nth thunk-requiring selector.
+        The given sparse tensor must be a matrix, i.e. have rank 2.
+        The given tensor must have a CSR sparsity or a CSC sparsity.
+        The resulting sparse tensors will have the same sparsity as the given sparse tensor.
 
         Single Selector Example:
         ```mlir
-          %answer = 
-            graphblas.matrix_select %sparse_tensor { selectors = ["triu"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+        %answer = graphblas.matrix_select %sparse_tensor { selectors = ["triu"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
         ```
 
         Multiple Selector Example:
         ```mlir
-          %answers = 
-            graphblas.matrix_select %sparse_tensor { selectors = ["triu", "tril"] } :         
-              tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>
+        %answers = graphblas.matrix_select %sparse_tensor { selectors = ["triu", "tril"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>
+        ```
+
+        Thunk-Requiring Selector Example:
+        ```mlir
+        %thunk_a = constant 0.0 : f64 // used for the first "gt"
+        %thunk_b = constant 9.9 : f64 // used for the second "gt"
+        %answers = graphblas.matrix_select %sparse_tensor, %thunk_a, %thunk_b { selectors = ["triu", "gt", "tril", "gt"] } : tensor<?x?xf64, #CSR64>, f64, f64 to tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input, StrArrayAttr:$selectors);
+    let arguments = (ins AnyTensor:$input, Variadic<AnyType>:$thunks, StrArrayAttr:$selectors);
     let results = (outs Variadic<AnyTensor>:$outputs);
     
     let assemblyFormat = [{
-           $input attr-dict `:` type($input) `to` type($outputs)
+           $input (`,` $thunks^)? attr-dict `:` type($input) (`,` type($thunks)^)? `to` type($outputs)
     }];
 }
 
@@ -400,7 +406,9 @@ def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
         When both objects have an overlapping element in a cell, an operation combines the result.
 
         Example:
-        ```%combined = graphblas.union %A, %B { union_operator = "plus" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>```
+        ```mlir
+        %combined = graphblas.union %A, %B { union_operator = "plus" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+        ```
 
     }];
 
@@ -420,7 +428,9 @@ def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
         Overlapping elements are combined using an operation passed in.
 
         Example:
-        ```%combined = graphblas.intersect %A, %B { intersect_operator = "mult" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>```
+        ```mlir
+        %combined = graphblas.intersect %A, %B { intersect_operator = "mult" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+        ```
 
     }];
 

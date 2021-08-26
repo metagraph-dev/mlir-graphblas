@@ -17,6 +17,8 @@
 #include "GraphBLAS/GraphBLASOpsDialect.cpp.inc"
 #include "GraphBLAS/GraphBLASUtils.h"
 
+#include <numeric>
+
 using namespace mlir;
 using namespace mlir::graphblas;
 
@@ -248,11 +250,8 @@ static LogicalResult verify(MatrixApplyOp op) {
     // TODO this is not always correct, e.g. matrix_apply_less_than(tensor<f64>, 2.3) -> tensor<i1>.
     return op.emitError("Element type of result tensor does not match type of thunk.");
 
-  static const std::vector<std::string> supportedOperators{"min"};
   std::string applyOperator = op.apply_operator().str();
-  bool operatorSupported = std::find(supportedOperators.begin(), supportedOperators.end(), applyOperator)
-    != supportedOperators.end();
-  if (!operatorSupported)
+  if (!supportedApplyOperators.contains(applyOperator))
     return op.emitError("\""+applyOperator+"\" is not a supported operator.");
 
   return success();
@@ -445,8 +444,6 @@ static LogicalResult verifyMatrixMultiplyArgs(T op, bool checkResultTensorType)
   return success();
 }
 
-static const std::vector<std::string> supportedSemirings{"plus_times", "plus_pair", "plus_plus", "min_plus"};
-
 static LogicalResult verify(MatrixMultiplyOp op) {
   LogicalResult argResult = verifyMatrixMultiplyArgs(op, true);
 
@@ -454,13 +451,11 @@ static LogicalResult verify(MatrixMultiplyOp op) {
     return argResult;
 
   std::string semiring = op.semiring().str();
-  bool semiringSupported = std::find(supportedSemirings.begin(), supportedSemirings.end(), semiring)
-    != supportedSemirings.end();
-  if (!semiringSupported)
+  if (!supportedSemirings.contains(semiring))
     return op.emitError("\""+semiring+"\" is not a supported semiring.");
 
   Region &body = op.body();
-  auto numBlocks = body.getBlocks().size();
+  size_t numBlocks = body.getBlocks().size();
   if (numBlocks > 0) {
     return op.emitError("graphblas.matrix_multiply should have no blocks.  Did you mean graphblas.matrix_multiply_generic?");
   }
@@ -550,8 +545,6 @@ static LogicalResult verifyMatrixReduceToScalarArgs(T op)
   return success();
 }
 
-static const std::vector<std::string> supportedUpdateAccumulateOperators{"plus", "min"};
-
 static LogicalResult verify(UpdateOp op) {
   Type iType = op.input().getType();
   Type oType = op.output().getType();
@@ -612,11 +605,7 @@ static LogicalResult verify(UpdateOp op) {
 
   llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
   if (accumulateOperator) {
-    bool operatorSupported = std::find(supportedUpdateAccumulateOperators.begin(),
-                                       supportedUpdateAccumulateOperators.end(),
-                                       accumulateOperator->str())
-      != supportedUpdateAccumulateOperators.end();
-    if (!operatorSupported)
+    if (!supportedUpdateAccumulateOperators.contains(accumulateOperator->str()))
       return op.emitError("\""+accumulateOperator->str()+"\" is not a supported accumulate operator.");
   }
 
@@ -664,32 +653,20 @@ static LogicalResult verifyEwise(T op) {
   return success();
 }
 
-static const std::vector<std::string> supportedUnionOperators{"plus", "min", "times"};
-
 static LogicalResult verify(UnionOp op) {
   llvm::Optional<llvm::StringRef> unionOperator = op.union_operator();
   if (unionOperator) {
-    bool operatorSupported = std::find(supportedUnionOperators.begin(),
-                                       supportedUnionOperators.end(),
-                                       unionOperator->str())
-      != supportedUnionOperators.end();
-    if (!operatorSupported)
+    if (!supportedUnionOperators.contains(unionOperator->str()))
       return op.emitError("\""+unionOperator->str()+"\" is not a supported union operator.");
   }
 
   return verifyEwise(op);
 }
 
-static const std::vector<std::string> supportedIntersectOperators{"plus", "min", "times"};
-
 static LogicalResult verify(IntersectOp op) {
   llvm::Optional<llvm::StringRef> intersectOperator = op.intersect_operator();
   if (intersectOperator) {
-    bool operatorSupported = std::find(supportedIntersectOperators.begin(),
-                                       supportedIntersectOperators.end(),
-                                       intersectOperator->str())
-      != supportedIntersectOperators.end();
-    if (!operatorSupported)
+    if (!supportedIntersectOperators.contains(intersectOperator->str()))
       return op.emitError("\""+intersectOperator->str()+"\" is not a supported intersect operator.");
   }
 
@@ -743,11 +720,8 @@ static LogicalResult verify(MatrixReduceToScalarOp op) {
   if (argResult.failed())
     return argResult;
 
-  static const std::vector<std::string> supportedAggregators{"sum"};
   std::string aggregator = op.aggregator().str();
-  bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
-    != supportedAggregators.end();
-  if (!aggregatorSupported)
+  if (!supportedReduceAggregators.contains(aggregator))
     return op.emitError("\""+aggregator+"\" is not a supported aggregator.");
 
   return success();
@@ -770,23 +744,68 @@ static LogicalResult verify(MatrixReduceToScalarGenericOp op)
 }
 
 static LogicalResult verify(MatrixSelectOp op) {
-  // input and result types are already guaranteed to be the same
-  for (auto result : op.getResults()) {
+  Type inputType = op.input().getType();
+  
+  for (OpResult result : op.getResults()) {
     Type resultType = result.getType();
 
     llvm::Optional<std::string> resultCompressionErrorMessage = checkCompressedMatrix(resultType, -1, EITHER);
     if (resultCompressionErrorMessage)
       return op.emitError(resultCompressionErrorMessage.getValue());
+
+    if (inputType != resultType)
+      return op.emitError("At least 1 result type does not match that of the input matrix.");
   }
 
-  static const std::vector<std::string> supportedSelectors{"triu", "tril", "gt0"};
-  for (auto selectorAttr : op.selectors()) {
+  std::vector<std::string> selectorsNeedingThunk;
+  ArrayAttr selectors = op.selectors();
+  
+  for (Attribute selectorAttr : selectors) {
     std::string selector = selectorAttr.dyn_cast_or_null<StringAttr>().getValue().str();
-    bool selectorSupported = std::find(supportedSelectors.begin(), supportedSelectors.end(), selector)
-      != supportedSelectors.end();
-    if (!selectorSupported)
+    if (!supportedSelectors.contains(selector))
       return op.emitError("\""+selector+"\" is not a supported selector.");
+
+    if (supportedThunkNeedingSelectors.contains(selector))
+      selectorsNeedingThunk.push_back(selector);
   }
+
+  OperandRange thunks = op.thunks();
+
+  if (thunks.size() != selectorsNeedingThunk.size()) {
+    if (selectorsNeedingThunk.size() == 0) {
+      return op.emitError() << "No selectors need thunks, but "
+			    << std::to_string(thunks.size())
+			    << " thunks were given.";
+    } else {
+      return op.emitError() << "Some selectors (" 
+			    << std::accumulate(++selectorsNeedingThunk.begin(),
+					       selectorsNeedingThunk.end(),
+					       "\"" + selectorsNeedingThunk[0] + "\"",
+					       [](const std::string& a, std::string b){
+						 return a + ", \"" + b + "\"";
+					       })
+			    << ") need thunks, but "
+			    << std::to_string(thunks.size())
+			    << " thunks were given.";
+    }
+  }
+  
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  for (auto indexed_pair : llvm::enumerate(llvm::zip(selectorsNeedingThunk, thunks))) {
+    std::tuple<std::string, Value> pair = indexed_pair.value();
+    std::string selector = std::get<0>(pair);
+    if (selector == "gt") {
+      Value thunk = std::get<1>(pair);
+      Type thunkType = thunk.getType();
+      if (thunkType != inputTensorType.getElementType()) {
+	return op.emitError() << "Operand #" << indexed_pair.index() + 1
+			      << " is associated with the selector "
+			      << "\"" << selector << "\""
+			      << ", but has a different type than the input tensor's element type.";
+      }
+    }
+  }
+
   return success();
 }
 

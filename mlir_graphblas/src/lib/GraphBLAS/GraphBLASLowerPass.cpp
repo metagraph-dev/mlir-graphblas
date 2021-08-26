@@ -8,11 +8,11 @@
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/IR/Region.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/None.h"
-#include "mlir/IR/Region.h"
 
 #include "GraphBLAS/GraphBLASPasses.h"
 #include "GraphBLAS/GraphBLASUtils.h"
@@ -192,13 +192,13 @@ public:
     callResizePointers(rewriter, module, loc, duplicate, c1, ncols_plus_one);
     callResizeIndex(rewriter, module, loc, duplicate, c1, nnz);
     callResizeValues(rewriter, module, loc, duplicate, nnz);
-    
+
     // verify function will ensure that this is CSR->CSC or CSC->CSR
     Value output;
     if (typeIsCSR(outputType)) {
       output = convertToExternalCSR(rewriter, module, loc, duplicate);
     } else if (typeIsCSC(outputType)) {
-      output = convertToExternalCSC(rewriter, module, loc, duplicate); 
+      output = convertToExternalCSC(rewriter, module, loc, duplicate);
     } else {
       assert(false && "Output type must be CSC or CSR.");
     }
@@ -312,7 +312,7 @@ public:
     Value inputTensor = op.input();
     RankedTensorType inputType = inputTensor.getType().dyn_cast<RankedTensorType>();
     RankedTensorType outputType = op->getResultTypes()[0].dyn_cast<RankedTensorType>();
-    
+
     bool inputTypeIsCSR = typeIsCSR(inputType);
     bool outputTypeIsCSR = typeIsCSR(outputType);
 
@@ -330,9 +330,9 @@ public:
       Value newLayOutInputTensor = newConvertLayoutOp.getResult();
       graphblas::TransposeOp newTransposeOp =
         rewriter.create<graphblas::TransposeOp>(loc, outputType, newLayOutInputTensor);
-      
-      rewriter.replaceOp(op, newTransposeOp.getResult()); 
-      
+
+      rewriter.replaceOp(op, newTransposeOp.getResult());
+
       return success();
     }
 
@@ -354,19 +354,21 @@ public:
     rewriter.setInsertionPointToStart(&ifOp.thenRegion().front());
     callResizeDim(rewriter, module, loc, output, c0, ncol);
     callResizeDim(rewriter, module, loc, output, c1, nrow);
-    
+
     // TODO we get an error when we have hard-coded/known sizes at compile time.
 
     rewriter.replaceOp(op, output);
 
     cleanupIntermediateTensor(rewriter, module, loc, output);
-    
+
     return success();
   };
 };
-  
+
 struct MatrixSelectOutputWriter {
-  MatrixSelectOutputWriter(StringRef _selector) : selector(_selector)
+  MatrixSelectOutputWriter(StringRef _selector, llvm::Optional<Value> _thunk)
+    : selector(_selector)
+    , thunk(_thunk)
   {
   };
 
@@ -418,9 +420,9 @@ struct MatrixSelectOutputWriter {
     {
       keep = rewriter.create<mlir::CmpIOp>(loc, mlir::CmpIPredicate::ult, col, row);
     }
-    else if (selector == "gt0")
+    else if (selector == "gt")
     {
-      keep = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OGT, val, cf0);
+      keep = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OGT, val, thunk.getValue());
     }
     else
     {
@@ -456,6 +458,7 @@ struct MatrixSelectOutputWriter {
   };
 
   StringRef selector;
+  llvm::Optional<Value> thunk;
 
   // frequently used values
   Value tensor;
@@ -485,6 +488,7 @@ public:
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
+    OperandRange thunks = op.thunks();
     ArrayAttr selectors = op.selectors();
 
     // Initial constants
@@ -497,11 +501,20 @@ public:
     Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
 
+    int thunkIndex = 0;
+    
     SmallVector<MatrixSelectOutputWriter*, 3> outputs;
-    for (Attribute selectorAttr : selectors)
-    {
+    for (Attribute selectorAttr : selectors) {
       StringRef selector = selectorAttr.dyn_cast_or_null<StringAttr>().getValue();
-      MatrixSelectOutputWriter *output = new MatrixSelectOutputWriter(selector);
+
+      llvm::Optional<Value> thunk;
+      if (supportedThunkNeedingSelectors.contains(selector)) {
+        thunk = thunks[thunkIndex++];
+      } else {
+        thunk = llvm::None;
+      }
+      
+      MatrixSelectOutputWriter *output = new MatrixSelectOutputWriter(selector, thunk);
       outputs.push_back(output);
 
       output->createConstants(rewriter, loc);
@@ -771,7 +784,7 @@ public:
     rewriter.mergeBlockBefore(extBlocks.transformOut, scfYield, {val});
     Value result = transformOutYield.values().front();
     rewriter.eraseOp(transformOutYield);
-    
+
     rewriter.create<memref::StoreOp>(loc, result, outputValues, valueLoopIdx);
 
     // end value loop
@@ -1898,15 +1911,13 @@ public:
 
     Value input = op.vec();
     RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
-    ArrayRef<int64_t> inputShape = inputType.getShape();
-    
+
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
-    int64_t inputLength = inputShape[0];
-    
+
     Value pointers = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c0);
     Value endPosition64 = rewriter.create<memref::LoadOp>(loc, pointers, c1);
     Value endPosition = rewriter.create<IndexCastOp>(loc, endPosition64, indexType);
@@ -1914,15 +1925,15 @@ public:
     Type inputElementType = inputType.getElementType();
     Type memref1DValueType = MemRefType::get({-1}, inputElementType);
     Value values = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
-    
+
     Value initialExtremum = rewriter.create<memref::LoadOp>(loc, values, c0);
-    
+
     scf::ForOp loop = rewriter.create<scf::ForOp>(loc, c1, endPosition, c1, ValueRange{initialExtremum, c0});
     Value currentValuePosition = loop.getInductionVar();
     Value currentExtremum = loop.getLoopBody().getArgument(1);
     Value currentExtremumPosition = loop.getLoopBody().getArgument(2);
     rewriter.setInsertionPointToStart(loop.getBody());
-    
+
     Value currentValue = rewriter.create<memref::LoadOp>(loc, values, currentValuePosition);
     bool useMinimum = op.minmax().str() == "min";
     Value replace = llvm::TypeSwitch<Type, Value>(inputElementType)
@@ -1943,7 +1954,7 @@ public:
     Value nextExtremum = ifBlock.getResult(0);
     Value nextExtremumPosition = ifBlock.getResult(1);
     rewriter.create<scf::YieldOp>(loc, ValueRange{nextExtremum, nextExtremumPosition});
-    
+
     rewriter.setInsertionPointAfter(loop);
 
     Value finalExtremumPosition = loop.getResult(1);
@@ -1951,7 +1962,7 @@ public:
     Value argExtremum64 = rewriter.create<memref::LoadOp>(loc, indices, finalExtremumPosition);
     Value argExtremum = rewriter.create<IndexCastOp>(loc, argExtremum64, indexType);
     rewriter.replaceOp(op, argExtremum);
-    
+
     return success();
   };
 };

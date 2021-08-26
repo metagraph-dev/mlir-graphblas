@@ -507,7 +507,8 @@ def test_ir_project_and_filter(engine: MlirJitEngine, aliases: AliasMap):
     (M,) = ir_builder.inputs
     M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSC64>")
     left_projection = ir_builder.graphblas.matrix_multiply(M, M_T, "plus_times")
-    filtered = ir_builder.graphblas.matrix_select(left_projection, "gt0")
+    zero_f64 = ir_builder.constant(0.0, "f64")
+    filtered = ir_builder.graphblas.matrix_select(left_projection, [zero_f64], ["gt"])
     ir_builder.return_vars(filtered)
     left_project_and_filter = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
@@ -596,5 +597,46 @@ def test_ir_builder_vector_argminmax(
     dwimmed_dense_input_tensor[dwimmed_dense_input_tensor == 0] = minimum - 1
     assert result_arg_minmax_max == np.argmax(dwimmed_dense_input_tensor)
     assert result_arg_max == np.argmax(dwimmed_dense_input_tensor)
+
+    return
+
+
+def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "gt_thunk",
+        input_types=["tensor<?x?xf64, #CSR64>", "f64"],
+        return_types=["tensor<?x?xf64, #CSR64>"],
+        aliases=aliases,
+    )
+    M, threshold = ir_builder.inputs
+    filtered = ir_builder.graphblas.matrix_select(M, [threshold], ["gt"])
+    ir_builder.return_vars(filtered)
+    gt_thunk = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [1, 0, 0, 0, 0],
+            [-9, 2, 3, 0, 0],
+            [0, 0, 4, 0, 0],
+            [0, 0, 5, 6, 0],
+            [0, 0, 0, -9, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    for threshold in np.unique(dense_input_tensor):
+        result = gt_thunk(input_tensor, threshold)
+        dense_result = engine.csr_densify5x5(result)
+
+        expected_dense_result = np.copy(dense_input_tensor)
+        expected_dense_result[expected_dense_result <= threshold] = 0
+
+        if not np.all(dense_result == expected_dense_result):
+            breakpoint()
+
+        assert np.all(dense_result == expected_dense_result)
 
     return
