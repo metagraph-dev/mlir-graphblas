@@ -643,6 +643,7 @@ def test_ir_builder_vector_argminmax(
 
     return
 
+
 def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
     # Build Function
     ir_builder = MLIRFunctionBuilder(
@@ -752,10 +753,9 @@ def test_ir_reduce_to_scalar(
         dtype=np.float64,
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
-    input_type_is_csc = TensorType.parse(input_type, aliases).encoding.ordering == [
-        1,
-        0,
-    ]
+    input_type_is_csc = [1, 0] == TensorType.parse(
+        input_type, aliases
+    ).encoding.ordering
     if input_type_is_csc:
         input_tensor = engine.csr_to_csc(input_tensor)
 

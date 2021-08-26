@@ -528,8 +528,6 @@ static LogicalResult verify(VectorArgMaxOp op) {
   return success();
 }
 
-static const std::vector<std::string> supportedUpdateAccumulateOperators{"plus", "min"};
-
 static LogicalResult verify(UpdateOp op) {
   Type iType = op.input().getType();
   Type oType = op.output().getType();
@@ -731,11 +729,8 @@ static LogicalResult verifyMatrixReduceToVectorArgs(T op)
     return op.emitError("The axis attribute is expected to be 0 or 1.");
   }
   
-  static const std::vector<std::string> supportedAggregators{"plus"};
   std::string aggregator = op.aggregator().str();
-  bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
-    != supportedAggregators.end();
-  if (!aggregatorSupported)
+  if (!supportedReduceAggregators.contains(aggregator))
     return op.emitError("\""+aggregator+"\" is not a supported aggregator.");
 
   ArrayRef<int64_t> resultShape = resultTensorType.getShape();
@@ -752,44 +747,8 @@ static LogicalResult verify(MatrixReduceToVectorOp op) {
   if (argResult.failed())
     return argResult;
 
-  static const std::vector<std::string> supportedAggregators{"plus"};
   std::string aggregator = op.aggregator().str();
-  bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
-    != supportedAggregators.end();
-  if (!aggregatorSupported)
-    return op.emitError("\""+aggregator+"\" is not a supported aggregator.");
-
-  return success();
-}
-
-template <class T>
-static LogicalResult verifyMatrixReduceToScalarArgs(T op)
-{
-  Type operandType = op.input().getType();
-
-  llvm::Optional<std::string> compressionErrorMessage = checkCompressedMatrix(operandType, 0, EITHER);
-  if (compressionErrorMessage)
-    return op.emitError(compressionErrorMessage.getValue());
-
-  Type resultType = op.getResult().getType();
-  RankedTensorType operandTensorType = operandType.dyn_cast<RankedTensorType>();
-  if (resultType != operandTensorType.getElementType())
-    return op.emitError("Operand and output types are incompatible.");
-
-  return success();
-}
-
-static LogicalResult verify(MatrixReduceToScalarOp op) {
-  LogicalResult argResult = verifyMatrixReduceToScalarArgs(op);
-
-  if (argResult.failed())
-    return argResult;
-
-  static const std::vector<std::string> supportedAggregators{"plus"};
-  std::string aggregator = op.aggregator().str();
-  bool aggregatorSupported = std::find(supportedAggregators.begin(), supportedAggregators.end(), aggregator)
-    != supportedAggregators.end();
-  if (!aggregatorSupported)
+  if (!supportedReduceAggregators.contains(aggregator))
     return op.emitError("\""+aggregator+"\" is not a supported aggregator.");
 
   return success();
@@ -988,8 +947,6 @@ static LogicalResult verify(TransposeOp op) {
 
   ArrayRef<int64_t> inputShape = inputType.getShape();
   ArrayRef<int64_t> resultShape = resultType.getShape();
-
-  // TODO check the rank here
 
   mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
     mlir::sparse_tensor::getSparseTensorEncoding(inputType);

@@ -17,7 +17,7 @@ static const llvm::StringSet<> supportedUpdateAccumulateOperators{"plus", "min"}
 
 static const llvm::StringSet<> supportedSemirings{"plus_times", "plus_pair", "plus_plus", "min_plus"};
 
-static const llvm::StringSet<> supportedReduceAggregators{"sum"};
+static const llvm::StringSet<> supportedReduceAggregators{"plus"};
 
 static const llvm::StringSet<> supportedSelectors{"triu", "tril", "gt"};
 static const llvm::StringSet<> supportedThunkNeedingSelectors{"gt"};
