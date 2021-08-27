@@ -9,7 +9,7 @@ Here, we'll go over the ``graphblas.matrix_multiply_reduce_to_scalar`` op.
 
 Here's an example use of the ``graphblas.matrix_multiply_reduce_to_scalar`` op::
 
-  %answer = graphblas.matrix_multiply_reduce_to_scalar %a, %b { semiring = "plus_times", aggregator = "sum" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to f64
+  %answer = graphblas.matrix_multiply_reduce_to_scalar %a, %b { semiring = "plus_times", aggregator = "plus" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to f64
 
 
 The options for the ``semiring`` and ``aggregator`` attributes are the same as those for ``graphblas.matrix_multiply`` and ``graphblas.matrix_reduce_to_scalar``, respectively.

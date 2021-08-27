@@ -8,11 +8,11 @@
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/IR/Region.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/None.h"
-#include "mlir/IR/Region.h"
 
 #include "GraphBLAS/GraphBLASPasses.h"
 #include "GraphBLAS/GraphBLASUtils.h"
@@ -192,13 +192,13 @@ public:
     callResizePointers(rewriter, module, loc, duplicate, c1, ncols_plus_one);
     callResizeIndex(rewriter, module, loc, duplicate, c1, nnz);
     callResizeValues(rewriter, module, loc, duplicate, nnz);
-    
+
     // verify function will ensure that this is CSR->CSC or CSC->CSR
     Value output;
     if (typeIsCSR(outputType)) {
       output = convertToExternalCSR(rewriter, module, loc, duplicate);
     } else if (typeIsCSC(outputType)) {
-      output = convertToExternalCSC(rewriter, module, loc, duplicate); 
+      output = convertToExternalCSC(rewriter, module, loc, duplicate);
     } else {
       assert(false && "Output type must be CSC or CSR.");
     }
@@ -304,14 +304,15 @@ public:
 class LowerTransposeRewrite : public OpRewritePattern<graphblas::TransposeOp> {
 public:
   using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::TransposeOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::TransposeOp op,
+                                PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     Value inputTensor = op.input();
     RankedTensorType inputType = inputTensor.getType().dyn_cast<RankedTensorType>();
     RankedTensorType outputType = op->getResultTypes()[0].dyn_cast<RankedTensorType>();
-    
+
     bool inputTypeIsCSR = typeIsCSR(inputType);
     bool outputTypeIsCSR = typeIsCSR(outputType);
 
@@ -329,9 +330,9 @@ public:
       Value newLayOutInputTensor = newConvertLayoutOp.getResult();
       graphblas::TransposeOp newTransposeOp =
         rewriter.create<graphblas::TransposeOp>(loc, outputType, newLayOutInputTensor);
-      
-      rewriter.replaceOp(op, newTransposeOp.getResult()); 
-      
+
+      rewriter.replaceOp(op, newTransposeOp.getResult());
+
       return success();
     }
 
@@ -353,19 +354,21 @@ public:
     rewriter.setInsertionPointToStart(&ifOp.thenRegion().front());
     callResizeDim(rewriter, module, loc, output, c0, ncol);
     callResizeDim(rewriter, module, loc, output, c1, nrow);
-    
+
     // TODO we get an error when we have hard-coded/known sizes at compile time.
 
     rewriter.replaceOp(op, output);
 
     cleanupIntermediateTensor(rewriter, module, loc, output);
-    
+
     return success();
   };
 };
-  
+
 struct MatrixSelectOutputWriter {
-  MatrixSelectOutputWriter(StringRef _selector) : selector(_selector)
+  MatrixSelectOutputWriter(StringRef _selector, llvm::Optional<Value> _thunk)
+    : selector(_selector)
+    , thunk(_thunk)
   {
   };
 
@@ -417,9 +420,9 @@ struct MatrixSelectOutputWriter {
     {
       keep = rewriter.create<mlir::CmpIOp>(loc, mlir::CmpIPredicate::ult, col, row);
     }
-    else if (selector == "gt0")
+    else if (selector == "gt")
     {
-      keep = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OGT, val, cf0);
+      keep = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OGT, val, thunk.getValue());
     }
     else
     {
@@ -455,6 +458,7 @@ struct MatrixSelectOutputWriter {
   };
 
   StringRef selector;
+  llvm::Optional<Value> thunk;
 
   // frequently used values
   Value tensor;
@@ -484,6 +488,7 @@ public:
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
+    OperandRange thunks = op.thunks();
     ArrayAttr selectors = op.selectors();
 
     // Initial constants
@@ -496,11 +501,20 @@ public:
     Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, input, c1);
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
 
+    int thunkIndex = 0;
+    
     SmallVector<MatrixSelectOutputWriter*, 3> outputs;
-    for (Attribute selectorAttr : selectors)
-    {
+    for (Attribute selectorAttr : selectors) {
       StringRef selector = selectorAttr.dyn_cast_or_null<StringAttr>().getValue();
-      MatrixSelectOutputWriter *output = new MatrixSelectOutputWriter(selector);
+
+      llvm::Optional<Value> thunk;
+      if (supportedThunkNeedingSelectors.contains(selector)) {
+        thunk = thunks[thunkIndex++];
+      } else {
+        thunk = llvm::None;
+      }
+      
+      MatrixSelectOutputWriter *output = new MatrixSelectOutputWriter(selector, thunk);
       outputs.push_back(output);
 
       output->createConstants(rewriter, loc);
@@ -556,6 +570,198 @@ public:
   };
 };
 
+class LowerMatrixReduceToVectorRewrite : public OpRewritePattern<graphblas::MatrixReduceToVectorOp>
+{
+public:
+  using OpRewritePattern<graphblas::MatrixReduceToVectorOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToVectorOp op, PatternRewriter &rewriter) const override
+  {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+    
+    Value matrix = op.input();
+    StringRef aggregator = op.aggregator();
+    int axis = op.axis();
+    
+    RankedTensorType matrixType = op.input().getType().dyn_cast<RankedTensorType>();
+    Type elementType = matrixType.getElementType();
+    ArrayRef<int64_t> matrixShape = matrixType.getShape();
+
+    bool matrixTypeIsCSR = typeIsCSR(matrixType);
+    if ((axis == 0 && matrixTypeIsCSR) || (axis == 1 && !matrixTypeIsCSR)) {
+      // TODO consider moving this out to its own rewrite pattern
+      
+      MLIRContext* context = op.getContext();
+      
+      RankedTensorType newMatrixType = matrixTypeIsCSR ?
+        getCSCTensorType(context, matrixShape, elementType) :
+        getCSRTensorType(context, matrixShape, elementType);
+      graphblas::ConvertLayoutOp newConvertLayoutOp =
+        rewriter.create<graphblas::ConvertLayoutOp>(loc, newMatrixType, matrix);
+      Value newLayoutInputTensor = newConvertLayoutOp.getResult();
+      Type originalVectorType = op->getResultTypes()[0];
+      graphblas::MatrixReduceToVectorOp newReduceOp =
+        rewriter.create<graphblas::MatrixReduceToVectorOp>(loc, originalVectorType, newLayoutInputTensor, aggregator, axis);
+      
+      rewriter.replaceOp(op, newReduceOp.getResult());
+      
+      return success();
+    }
+
+    if (matrixShape[0] != -1 || matrixShape[1] != -1) {
+      // TODO consider moving this out to its own rewrite pattern
+
+      // TODO this casting doesn't actually safely lower down to the LLVM dialect
+      // since it doesn't survive the --sparse-tensor-conversion pass
+      
+      MLIRContext* context = op.getContext();
+      
+      static const ArrayRef<int64_t> newMatrixShape = {-1, -1};
+      RankedTensorType newMatrixType = matrixTypeIsCSR ?
+        getCSRTensorType(context, newMatrixShape, elementType) :
+        getCSCTensorType(context, newMatrixShape, elementType);
+      
+      Value castMatrix = rewriter.create<tensor::CastOp>(loc, newMatrixType, matrix);
+
+      static const ArrayRef<int64_t> newVectorShape = {-1};
+      Type resultVectorType = getCompressedVectorType(context, newVectorShape, elementType);
+      Value resultVector =
+	rewriter.create<graphblas::MatrixReduceToVectorOp>(loc, resultVectorType, castMatrix, aggregator, axis);
+      
+      Type originalVectorType = op->getResultTypes()[0];
+      Value castVector = rewriter.create<tensor::CastOp>(loc, originalVectorType, resultVector);
+      
+      rewriter.replaceOp(op, castVector);
+      
+      return success();
+    }
+
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+
+    Type memref1DValueType = MemRefType::get({-1}, elementType);
+    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+    
+    sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(matrixType);
+    unsigned pointerBitWidth = sparseEncoding.getPointerBitWidth();
+    Type pointerType = rewriter.getIntegerType(pointerBitWidth);
+    Type memref1DPointerType = MemRefType::get({-1}, pointerType);
+    
+    Value c0_elementType =
+      llvm::TypeSwitch<Type, Value>(elementType)
+      .Case<IntegerType>([&](IntegerType type)
+			 { return rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(elementType, 0)); })
+      .Case<FloatType>([&](FloatType type)
+		       { return rewriter.create<ConstantOp>(loc, rewriter.getFloatAttr(elementType, 0.0)); });
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
+
+    Value nrows = rewriter.create<tensor::DimOp>(loc, matrix, c0);
+    
+    Value matrixPointers =
+      rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DPointerType, matrix, c1);
+    
+    Value matrixValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, matrix);
+
+    int64_t outputLength = (axis == 1) ? matrixShape[0] : matrixShape[1];
+    ArrayRef<int64_t> outputShape = {outputLength};
+    Value output = callEmpty(rewriter, module, loc, matrix, outputShape);
+
+    callResizeDim(rewriter, module, loc, output, c0, nrows);
+    
+    scf::ForOp nnzLoop = rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
+    {
+      rewriter.setInsertionPointToStart(nnzLoop.getBody());
+      Value numNonEmptyRows = nnzLoop.getLoopBody().getArgument(1);
+      Value matrixRowIndex = nnzLoop.getInductionVar();
+      Value nextMatrixRowIndex = rewriter.create<AddIOp>(loc, matrixRowIndex, c1).getResult();
+      Value firstPtr64 = rewriter.create<memref::LoadOp>(loc, matrixPointers, matrixRowIndex);
+      Value secondPtr64 = rewriter.create<memref::LoadOp>(loc, matrixPointers, nextMatrixRowIndex);
+      Value rowIsEmpty = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, firstPtr64, secondPtr64);
+      scf::IfOp ifRowIsEmptyBlock = rewriter.create<scf::IfOp>(loc, TypeRange{indexType}, rowIsEmpty, true);
+      rewriter.setInsertionPointToStart(ifRowIsEmptyBlock.thenBlock());
+      rewriter.create<scf::YieldOp>(loc, ValueRange{numNonEmptyRows});
+      rewriter.setInsertionPointToStart(ifRowIsEmptyBlock.elseBlock());
+      Value incrementedNumNonEmptyRows = rewriter.create<AddIOp>(loc, numNonEmptyRows, c1).getResult();
+      rewriter.create<scf::YieldOp>(loc, ValueRange{incrementedNumNonEmptyRows});
+      rewriter.setInsertionPointAfter(ifRowIsEmptyBlock);
+      Value updatedNumNonEmptyRows = ifRowIsEmptyBlock.getResult(0);
+      rewriter.create<scf::YieldOp>(loc, ValueRange{updatedNumNonEmptyRows});
+      rewriter.setInsertionPointAfter(nnzLoop);
+    }
+    Value outputNNZ = nnzLoop.getResult(0);
+    
+    callResizePointers(rewriter, module, loc, output, c0, c2);
+    callResizeIndex(rewriter, module, loc, output, c0, outputNNZ);
+    callResizeValues(rewriter, module, loc, output, outputNNZ);
+    
+    Value outputPointers =
+      rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DPointerType, output, c0);
+    Value outputNNZ_i64 = rewriter.create<IndexCastOp>(loc, outputNNZ, int64Type);
+    rewriter.create<memref::StoreOp>(loc, outputNNZ_i64, outputPointers, c1);
+
+    Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type, output, c0);
+    Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, output);
+    
+    scf::ForOp reduceLoop = rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
+    {
+      rewriter.setInsertionPointToStart(reduceLoop.getBody());
+      Value outputValuesPosition = reduceLoop.getLoopBody().getArgument(1);
+      Value rowIndex = reduceLoop.getInductionVar();
+      Value ptr64 = rewriter.create<memref::LoadOp>(loc, matrixPointers, rowIndex);
+      Value nextRowIndex = rewriter.create<AddIOp>(loc, rowIndex, c1).getResult();
+      Value nextPtr64 = rewriter.create<memref::LoadOp>(loc, matrixPointers, nextRowIndex);
+      Value rowIsNonEmpty = rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, ptr64, nextPtr64);
+      scf::IfOp ifRowIsNonEmptyBlock = rewriter.create<scf::IfOp>(loc, TypeRange{indexType}, rowIsNonEmpty, true);
+      {
+	rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.thenBlock());
+	{
+	  Value ptr = rewriter.create<IndexCastOp>(loc, ptr64, indexType);
+	  Value nextPtr = rewriter.create<IndexCastOp>(loc, nextPtr64, indexType);
+	  scf::ForOp rowSumLoop = rewriter.create<scf::ForOp>(loc, ptr, nextPtr, c1, ValueRange{c0_elementType});
+	  {
+	    rewriter.setInsertionPointToStart(rowSumLoop.getBody());
+	    Value currentSum = rowSumLoop.getLoopBody().getArgument(1);
+	    Value currentPtr = rowSumLoop.getInductionVar();
+	    Value rowValue = rewriter.create<memref::LoadOp>(loc, matrixValues, currentPtr);
+	    Value updatedSum = llvm::TypeSwitch<Type, Value>(elementType)
+	      .Case<IntegerType>([&](IntegerType type)
+				 { return rewriter.create<AddIOp>(loc, rowValue, currentSum).getResult(); })
+	      .Case<FloatType>([&](FloatType type)
+			       { return rewriter.create<AddFOp>(loc, rowValue, currentSum).getResult(); });
+	    rewriter.create<scf::YieldOp>(loc, ValueRange{updatedSum});
+	    rewriter.setInsertionPointAfter(rowSumLoop);
+	  }
+	  Value rowSum = rowSumLoop.getResult(0);
+	  rewriter.create<memref::StoreOp>(loc, rowSum, outputValues, outputValuesPosition);
+	  Value rowIndex64 = rewriter.create<IndexCastOp>(loc, rowIndex, int64Type);
+	  rewriter.create<memref::StoreOp>(loc, rowIndex64, outputIndices, outputValuesPosition);
+	  Value updatedOutputValuesPosition = rewriter.create<AddIOp>(loc, outputValuesPosition, c1).getResult();
+	  rewriter.create<scf::YieldOp>(loc, ValueRange{updatedOutputValuesPosition});
+	}
+	
+	rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.elseBlock());
+	{
+	  rewriter.create<scf::YieldOp>(loc, ValueRange{outputValuesPosition});
+	}
+	
+	rewriter.setInsertionPointAfter(ifRowIsNonEmptyBlock);
+      }
+      
+      Value nextOutputValuesPosition = ifRowIsNonEmptyBlock.getResult(0);
+      rewriter.create<scf::YieldOp>(loc, ValueRange{nextOutputValuesPosition});
+
+      rewriter.setInsertionPointAfter(reduceLoop);
+    }
+
+    rewriter.replaceOp(op, output);
+    
+    return success();
+  };
+};
+
 class LowerMatrixReduceToScalarRewrite : public OpRewritePattern<graphblas::MatrixReduceToScalarOp>
 {
 public:
@@ -573,7 +779,7 @@ public:
     graphblas::MatrixReduceToScalarGenericOp newReduceOp = rewriter.create<graphblas::MatrixReduceToScalarGenericOp>(
         loc, op->getResultTypes(), input, 2);
 
-    if (aggregator == "sum")
+    if (aggregator == "plus")
     {
       // Insert agg identity block
       Region &aggIdentityRegion = newReduceOp.getRegion(0);
@@ -770,7 +976,7 @@ public:
     rewriter.mergeBlockBefore(extBlocks.transformOut, scfYield, {val});
     Value result = transformOutYield.values().front();
     rewriter.eraseOp(transformOutYield);
-    
+
     rewriter.create<memref::StoreOp>(loc, result, outputValues, valueLoopIdx);
 
     // end value loop
@@ -1824,15 +2030,13 @@ public:
 
     Value input = op.vec();
     RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
-    ArrayRef<int64_t> inputShape = inputType.getShape();
-    
+
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
-    int64_t inputLength = inputShape[0];
-    
+
     Value pointers = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type, input, c0);
     Value endPosition64 = rewriter.create<memref::LoadOp>(loc, pointers, c1);
     Value endPosition = rewriter.create<IndexCastOp>(loc, endPosition64, indexType);
@@ -1840,15 +2044,15 @@ public:
     Type inputElementType = inputType.getElementType();
     Type memref1DValueType = MemRefType::get({-1}, inputElementType);
     Value values = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, input);
-    
+
     Value initialExtremum = rewriter.create<memref::LoadOp>(loc, values, c0);
-    
+
     scf::ForOp loop = rewriter.create<scf::ForOp>(loc, c1, endPosition, c1, ValueRange{initialExtremum, c0});
     Value currentValuePosition = loop.getInductionVar();
     Value currentExtremum = loop.getLoopBody().getArgument(1);
     Value currentExtremumPosition = loop.getLoopBody().getArgument(2);
     rewriter.setInsertionPointToStart(loop.getBody());
-    
+
     Value currentValue = rewriter.create<memref::LoadOp>(loc, values, currentValuePosition);
     bool useMinimum = op.minmax().str() == "min";
     Value replace = llvm::TypeSwitch<Type, Value>(inputElementType)
@@ -1869,7 +2073,7 @@ public:
     Value nextExtremum = ifBlock.getResult(0);
     Value nextExtremumPosition = ifBlock.getResult(1);
     rewriter.create<scf::YieldOp>(loc, ValueRange{nextExtremum, nextExtremumPosition});
-    
+
     rewriter.setInsertionPointAfter(loop);
 
     Value finalExtremumPosition = loop.getResult(1);
@@ -1877,7 +2081,7 @@ public:
     Value argExtremum64 = rewriter.create<memref::LoadOp>(loc, indices, finalExtremumPosition);
     Value argExtremum = rewriter.create<IndexCastOp>(loc, argExtremum64, indexType);
     rewriter.replaceOp(op, argExtremum);
-    
+
     return success();
   };
 };
@@ -1921,7 +2125,8 @@ public:
 class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
 public:
   using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::CommentOp op, PatternRewriter &rewriter) const {
+  LogicalResult matchAndRewrite(graphblas::CommentOp op,
+                                PatternRewriter &rewriter) const override {
     rewriter.eraseOp(op);
     return success();
   };
@@ -1930,6 +2135,7 @@ public:
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
       LowerMatrixSelectRewrite,
+      LowerMatrixReduceToVectorRewrite,
       LowerMatrixReduceToScalarRewrite,
       LowerMatrixReduceToScalarGenericRewrite,
       LowerMatrixMultiplyRewrite,

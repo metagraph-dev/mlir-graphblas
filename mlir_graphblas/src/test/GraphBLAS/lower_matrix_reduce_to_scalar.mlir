@@ -30,7 +30,7 @@ module {
     // CHECK:           return %[[VAL_15:.*]] : f64
     // CHECK:         }
     func @matrix_reduce_to_scalar_f64(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64, #CSR64> to f64
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #CSR64> to f64
         return %answer : f64
     }
 }

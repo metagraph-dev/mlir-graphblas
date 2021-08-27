@@ -48,7 +48,7 @@ module {
 
     // CHECK: func @matrix_select_triu(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[CSR_TYPE]] {
     func @matrix_select_triu(%sparse_tensor: tensor<100x100xf64, #CSR64>) -> tensor<100x100xf64, #CSR64> {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_select %[[ARG0]] {selectors = ["triu"]} : [[CSR_TYPE]]
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_select %[[ARG0]] {selectors = ["triu"]} : [[CSR_TYPE]] to [[CSR_TYPE]]
         %answer = graphblas.matrix_select %sparse_tensor { selectors = ["triu"] } : tensor<100x100xf64, #CSR64> to tensor<100x100xf64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[CSR_TYPE]]
         return %answer : tensor<100x100xf64, #CSR64>
@@ -56,28 +56,30 @@ module {
 
     // CHECK: func @matrix_select_tril(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[CSR_TYPE]] {
     func @matrix_select_tril(%sparse_tensor: tensor<100x100xf64, #CSR64>) -> tensor<100x100xf64, #CSR64> {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_select %[[ARG0]] {selectors = ["tril"]} : [[CSR_TYPE]]
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_select %[[ARG0]] {selectors = ["tril"]} : [[CSR_TYPE]] to [[CSR_TYPE]]
         %answer = graphblas.matrix_select %sparse_tensor { selectors = ["tril"] } : tensor<100x100xf64, #CSR64> to tensor<100x100xf64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[CSR_TYPE]]
         return %answer : tensor<100x100xf64, #CSR64>
     }
 
-    // CHECK: func @matrix_select_gt0(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[CSR_TYPE]] {
-    func @matrix_select_gt0(%sparse_tensor: tensor<100x100xf64, #CSR64>) -> tensor<100x100xf64, #CSR64> {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_select %[[ARG0]] {selectors = ["gt0"]} : [[CSR_TYPE]]
-        %answer = graphblas.matrix_select %sparse_tensor { selectors = ["gt0"] } : tensor<100x100xf64, #CSR64> to tensor<100x100xf64, #CSR64>
+    // CHECK: func @matrix_select_gt_thunk(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[CSR_TYPE]] {
+    func @matrix_select_gt_thunk(%sparse_tensor: tensor<100x100xf64, #CSR64>) -> tensor<100x100xf64, #CSR64> {
+        // CHECK-NEXT: %[[THUNK:.*]] = constant 0.000000e+00 : [[THUNK_TYPE:.*]]
+        %thunk = constant 0.0 : f64
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_select %[[ARG0]], %[[THUNK]] {selectors = ["gt"]} : [[CSR_TYPE]], [[THUNK_TYPE]] to [[CSR_TYPE]]
+        %answer = graphblas.matrix_select %sparse_tensor, %thunk { selectors = ["gt"] } : tensor<100x100xf64, #CSR64>, f64 to tensor<100x100xf64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[CSR_TYPE]]
         return %answer : tensor<100x100xf64, #CSR64>
     }
-
+ 
 }
 
 module {
 
     // CHECK: func @matrix_reduce_to_scalar(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
     func @matrix_reduce_to_scalar(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> i64 {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_reduce_to_scalar %[[ARG0]] {aggregator = "sum"} : [[CSR_TYPE]] to [[RETURN_TYPE]]
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<2x3xi64, #CSR64> to i64
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_reduce_to_scalar %[[ARG0]] {aggregator = "plus"} : [[CSR_TYPE]] to [[RETURN_TYPE]]
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<2x3xi64, #CSR64> to i64
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : i64
     }
@@ -276,6 +278,20 @@ module {
         %answer = graphblas.vector_argmax %vec : tensor<3xi64, #SparseVec64>
 	// CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : index
+    }
+
+}
+
+module {
+
+    // CHECK: func @matrix_reduce_to_vector_wrapper(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]]) -> ([[RETURN_TYPE_0:tensor<.*>]], [[RETURN_TYPE_1:tensor<.*>]]) {
+    func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #CSR64>) -> (tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>) {
+        // CHECK-NEXT: %[[ANSWER_0:.*]] = graphblas.matrix_reduce_to_vector %[[MATRIX]] {aggregator = "plus", axis = 0 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_0]]
+        %vec1 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
+        // CHECK-NEXT: %[[ANSWER_1:.*]] = graphblas.matrix_reduce_to_vector %[[MATRIX]] {aggregator = "plus", axis = 1 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_1]]
+        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
+	// CHECK-NEXT: return %[[ANSWER_0]], %[[ANSWER_1]] : [[RETURN_TYPE_0]], [[RETURN_TYPE_1]]
+        return %vec1, %vec2 : tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>
     }
 
 }

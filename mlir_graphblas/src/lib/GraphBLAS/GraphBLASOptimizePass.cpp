@@ -37,8 +37,8 @@ class FuseMatrixSelectRewrite : public OpRewritePattern<graphblas::MatrixSelectO
 {
 public:
   using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op, PatternRewriter &rewriter) const
-  {
+  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op,
+                                PatternRewriter &rewriter) const override {
     Value input = op.input();
     Location loc = op.getLoc();
 
@@ -52,13 +52,16 @@ public:
     }
 
     if (selectOps.size() > 1) {
-      // time for some fusion
       SmallVector<StringRef, 3> selectors;
+      SmallVector<Value, 3> fusedOpInputs{input};
       SmallVector<Type, 3> resultTypes;
 
       for (graphblas::MatrixSelectOp selectOp : selectOps) {
         for (Attribute selectorStr : selectOp.selectors()) {
           selectors.push_back(selectorStr.dyn_cast<StringAttr>().getValue());
+        }
+        for (Value thunk : selectOp.thunks()) {
+          fusedOpInputs.push_back(thunk);
         }
 
         ValueTypeRange<ResultRange> opResultTypes = selectOp.getResultTypes();
@@ -67,7 +70,7 @@ public:
 
       NamedAttrList attrs;
       attrs.set("selectors", rewriter.getStrArrayAttr(selectors));
-      graphblas::MatrixSelectOp fusedOp = rewriter.create<graphblas::MatrixSelectOp>(loc, resultTypes, input, attrs);
+      graphblas::MatrixSelectOp fusedOp = rewriter.create<graphblas::MatrixSelectOp>(loc, resultTypes, fusedOpInputs, attrs);
       ValueRange fusedResults = fusedOp.getResults();
 
       unsigned i = 0;
@@ -90,8 +93,8 @@ class FuseMatrixMultiplyReduceRewrite : public OpRewritePattern<graphblas::Matri
 {
 public:
   using OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op, PatternRewriter &rewriter) const
-  {
+  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op,
+                                PatternRewriter &rewriter) const override {
     Value input = op.input();
     graphblas::MatrixMultiplyGenericOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyGenericOp>();
     if (predecessor != nullptr && predecessor->hasOneUse()) {
@@ -154,8 +157,8 @@ class FuseMatrixMultiplyApplyRewrite : public OpRewritePattern<graphblas::Matrix
 {
 public:
   using OpRewritePattern<graphblas::MatrixApplyGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op, PatternRewriter &rewriter) const
-  {
+  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op,
+                                PatternRewriter &rewriter) const override {
     Value input = op.input();
     graphblas::MatrixMultiplyGenericOp predecessor = input.getDefiningOp<graphblas::MatrixMultiplyGenericOp>();
 

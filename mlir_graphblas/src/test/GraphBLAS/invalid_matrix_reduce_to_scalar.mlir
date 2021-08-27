@@ -2,7 +2,7 @@
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<*xf64>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<*xf64> to f64 // expected-error {{Operand #0 must be a sparse tensor.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<*xf64> to f64 // expected-error {{Operand #0 must be a sparse tensor.}}
         return %answer : f64
     }
 }
@@ -11,7 +11,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64> to f64 // expected-error {{Operand #0 must be a sparse tensor.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64> to f64 // expected-error {{Operand #0 must be a sparse tensor.}}
         return %answer : f64
     }
 }
@@ -27,7 +27,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?x?xf64, #BADENCODING>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have rank 2.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have rank 2.}}
         return %answer : f64
     }
 }
@@ -43,7 +43,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #BADENCODING>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
         return %answer : f64
     }
 }
@@ -59,7 +59,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #BADENCODING>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
         return %answer : f64
     }
 }
@@ -75,7 +75,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #BADENCODING>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
         return %answer : f64
     }
 }
@@ -91,7 +91,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #BADENCODING>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
         return %answer : f64
     }
 }
@@ -107,7 +107,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #BADENCODING>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
         return %answer : f64
     }
 }
@@ -123,7 +123,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #BADENCODING>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
         return %answer : f64
     }
 }
@@ -139,7 +139,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #BADENCODING>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
         return %answer : f64
     }
 }
@@ -155,7 +155,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #BADENCODING>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
         return %answer : f64
     }
 }
@@ -187,7 +187,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> index {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xf64, #CSR64> to index // expected-error {{Operand and output types are incompatible.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #CSR64> to index // expected-error {{Operand and output types are incompatible.}}
         return %answer : index
     }
 }

@@ -100,12 +100,15 @@ Results:
 ``graphblas.matrix_select``
 ---------------------------
 
-Returns new sparse tensor(s) with a subset of element from the given matrix.  
+Returns new sparse tensor(s) with a subset of element from the given matrix. 
 The elements included in the resulting sparse tensor vary depending on the
-selectors given (one of "triu", "tril", or "gt0"). Multiple selectors may be
-given, in which case multiple results will be returned The given sparse tensor
-must be a matrix, i.e. have rank 2. The input tensor must have a CSR sparsity
-or a CSC sparsity. The resulting sparse tensors will have the same sparsity as
+selectors given (one of "triu", "tril", or "gt"). Some selectors, e.g. "gt",
+require a thunk value. The ordering of the thunks/selectors determines which
+thunk is used for which selector, i.e. the n\ :sup:`th` thunk is used for the
+n\ :sup:`th` thunk-requiring selector. Multiple selectors may be given, in
+which case multiple results will be returned The given sparse tensor must
+be a matrix, i.e. have rank 2. The input tensor must have a CSR sparsity or
+a CSC sparsity. The resulting sparse tensors will have the same sparsity as
 the given sparse tensor.
 
 Example:
@@ -113,14 +116,18 @@ Example:
 
 .. code-block::  text
 
-    %answer = graphblas.matrix_select %sparse_tensor { selectors = ["triu"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+    %answer_triu = graphblas.matrix_select %sparse_tensor { selectors = ["triu"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+    
+    %thunk_a = constant 0.0 : f64 // used for the first "gt"
+    %thunk_b = constant 9.9 : f64 // used for the second "gt"
+    %answers = graphblas.matrix_select %sparse_tensor, %thunk_a, %thunk_b { selectors = ["triu", "gt", "tril", "gt"] } : tensor<?x?xf64, #CSR64>, f64, f64 to tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>
 
 Syntax:
 ^^^^^^^
 
 .. code-block::  text
 
-    operation ::= `graphblas.matrix_select` $input attr-dict `:` type($input) `to` type($outputs)
+    operation ::= `graphblas.matrix_select` $input (`,` $thunks^)? attr-dict `:` type($input) (`,` type($thunks)^)? `to` type($outputs)
 
 Attributes:
 ^^^^^^^^^^^
@@ -134,7 +141,7 @@ Attributes:
      - Description
    * - ``selectors``
      - ``::mlir::ArrayAttr`` (of string)
-     - List of selectors.  Allowed: "triu" (upper triangle), "tril" (lower triangle), and "gt0" (values greater than 0)
+     - List of selectors.  Allowed: "triu" (upper triangle), "tril" (lower triangle), and "gt" (values greater than the given thunk)
 
 Operands:
 ^^^^^^^^^
@@ -147,6 +154,8 @@ Operands:
      - Description
    * - ``input``
      - Input tensor (CSR or CSC)
+   * - ``thunks``
+     - Variadic list of thunk values, matching number of thunk-requiring selectors.
 
 
 Results:
@@ -165,7 +174,7 @@ Results:
 ``graphblas.matrix_reduce_to_scalar``
 -------------------------------------
 
-Reduces a sparse tensor to a scalar according to the given aggregator. Currently, the only available aggregator is "sum".
+Reduces a sparse tensor to a scalar according to the given aggregator. Currently, the only available aggregator is "plus".
 
 
 Example:
@@ -173,7 +182,7 @@ Example:
 
 .. code-block::  text
 
-    %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xi64, #CSR64> to i64
+    %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xi64, #CSR64> to i64
 
 Syntax:
 ^^^^^^^
@@ -194,7 +203,7 @@ Attributes:
      - Description
    * - ``aggregator``
      - ``::mlir::StringAttr``
-     - Aggregation method.  Allowed: "sum"
+     - Aggregation method.  Allowed: "plus"
 
 Operands:
 ^^^^^^^^^
@@ -375,7 +384,7 @@ Performs a matrix multiply followed by a reduction to scalar.
 The multiplication is done according to the given semiring and optional structural mask.
 The semiring must be one of "plus_times", "plus_pair", or "plus_plus".
 The reduction to scalar is done according to the given aggregator.
-The aggregator must be "sum".
+The aggregator must be "plus".
 Unlike ``graphblas.matrix_multiply``, ``graphblas.matrix_multiply_reduce_to_scalar`` does not
 accept a region.
 
@@ -384,11 +393,11 @@ Example:
 
 .. code-block:: text
 
-    %answer = graphblas.matrix_multiply_reduce_to_scalar %argA, %argB { semiring = "plus_plus", aggregator = "sum" } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to f64
+    %answer = graphblas.matrix_multiply_reduce_to_scalar %argA, %argB { semiring = "plus_plus", aggregator = "plus" } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to f64
 
 .. code-block:: text
 
-    %answer = graphblas.matrix_multiply_reduce_to_scalar %argA, %argB, %mask { semiring = "plus_times", aggregator = "sum" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>, tensor<?x?xf64, #CSR64>) to f64
+    %answer = graphblas.matrix_multiply_reduce_to_scalar %argA, %argB, %mask { semiring = "plus_times", aggregator = "plus" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>, tensor<?x?xf64, #CSR64>) to f64
 
 Syntax:
 ^^^^^^^
@@ -412,7 +421,7 @@ Attributes:
      - Semiring.  Allowed: "plus_times", "plus_pair", and "plus_plus"
    * - ``aggregator``
      - ``::mlir::StringAttr``
-     - Aggregation method.  Allowed: "sum"
+     - Aggregation method.  Allowed: "plus"
 
 Operands:
 ^^^^^^^^^

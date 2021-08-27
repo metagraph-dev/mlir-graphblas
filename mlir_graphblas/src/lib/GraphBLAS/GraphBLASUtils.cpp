@@ -327,6 +327,42 @@ mlir::Value callEmptyLike(OpBuilder &builder, ModuleOp &mod, Location loc, Value
   return result;
 }
 
+mlir::Value callEmpty(OpBuilder &builder, ModuleOp &mod, Location loc, Value inputTensor,
+		      ArrayRef<int64_t> resultShape) {
+  Type inputType = inputTensor.getType();
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  int64_t inputTensorRank = inputTensorType.getRank();
+  if (inputTensorRank == 2) {
+    inputTensor = convertToExternalCSX(builder, mod, loc, inputTensor);
+    inputType = inputTensor.getType();
+  }
+  
+  int64_t ndims = resultShape.size();
+  std::string funcName;
+  if (ndims == 2) {
+    funcName = "matrix_empty";
+  } else {
+    funcName = "vector_empty";
+  }
+  
+  MLIRContext *context = mod.getContext();
+  Type indexType = builder.getIndexType();
+  
+  Type elementType = inputTensorType.getElementType();
+  Type outputTensorType = getCompressedVectorType(context, resultShape, elementType);
+  
+  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, TypeRange{outputTensorType},
+				   TypeRange{inputType, indexType});
+
+  Value c_ndims = builder.create<ConstantIndexOp>(loc, ndims);
+  mlir::CallOp callOpResult =
+    builder.create<mlir::CallOp>(loc, func, outputTensorType, ArrayRef<Value>({inputTensor, c_ndims}));
+    
+  Value result = callOpResult->getResult(0);
+
+  return result;
+}
+
 mlir::Value callDupTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
   RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
   int64_t rank = inputTensorType.getRank();
