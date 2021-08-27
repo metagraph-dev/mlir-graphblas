@@ -231,7 +231,7 @@ Results:
      - Scalar resulting from aggregation.
 
 
-``graphblas.matrix_apply``
+``graphblas.apply``
 --------------------------
 
 Applies in an element-wise fashion the function indicated by the ``apply_operator`` attribute to each element and the thunk. Currently, the only valid operator is "min".
@@ -243,14 +243,15 @@ Example:
 .. code-block:: text
 
     %thunk = constant 100 : i64
-    %answer = graphblas.matrix_apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
+    %matrix_answer = graphblas.apply %sparse_matrix, %thunk { apply_operator = "min" } : (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
+    %vector_answer = graphblas.apply %sparse_vector, %thunk { apply_operator = "min" } : (tensor<?xi64, #SparseVec64>, i64) to tensor<?xi64, #SparseVec64>
 
 Syntax:
 ^^^^^^^
 
 .. code-block:: text
 
-    operation ::= `graphblas.matrix_apply` $input `,` $thunk attr-dict `:` `(` type($input) `,` type($thunk) `)` `to` type($output)
+    operation ::= `graphblas.apply` $input `,` $thunk attr-dict `:` `(` type($input) `,` type($thunk) `)` `to` type($output)
 
 Attributes:
 ^^^^^^^^^^^

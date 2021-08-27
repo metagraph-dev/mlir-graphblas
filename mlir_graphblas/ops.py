@@ -403,9 +403,9 @@ class GraphBLAS_MatrixReduceToScalar(BaseOp):
         )
 
 
-class GraphBLAS_MatrixApply(BaseOp):
+class GraphBLAS_Apply(BaseOp):
     dialect = "graphblas"
-    name = "matrix_apply"
+    name = "apply"
     allowed_ops = {"min"}
 
     @classmethod
@@ -420,7 +420,7 @@ class GraphBLAS_MatrixApply(BaseOp):
         # TODO: return_type might be influenced by future allowable ops
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{ret_val.assign} = graphblas.matrix_apply {input}, {thunk} "
+            f"{ret_val.assign} = graphblas.apply {input}, {thunk} "
             f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {thunk.type}) to {ret_val.type}'
         )
 

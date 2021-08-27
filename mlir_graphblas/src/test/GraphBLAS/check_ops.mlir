@@ -88,14 +88,24 @@ module {
 
 module {
 
-    // CHECK: func @matrix_apply(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
-    func @matrix_apply(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
+    // CHECK: func @apply_matrix(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @apply_matrix(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
         // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
         %thunk = constant 100 : i64
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_apply %[[ARG0]], %[[THUNK]] {apply_operator = "min"} : ([[CSR_TYPE]], [[THUNK_TYPE]]) to [[CSR_TYPE]]
-        %answer = graphblas.matrix_apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<2x3xi64, #CSR64>, i64) to tensor<2x3xi64, #CSR64>
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]], %[[THUNK]] {apply_operator = "min"} : ([[CSR_TYPE]], [[THUNK_TYPE]]) to [[CSR_TYPE]]
+        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<2x3xi64, #CSR64>, i64) to tensor<2x3xi64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : tensor<2x3xi64, #CSR64>
+    }
+   
+    // CHECK: func @apply_vector(%[[ARG0:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @apply_vector(%sparse_tensor: tensor<3xi64, #SparseVec64>) -> tensor<3xi64, #SparseVec64> {
+        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]], %[[THUNK]] {apply_operator = "min"} : ([[VECTOR_TYPE]], [[THUNK_TYPE]]) to [[VECTOR_TYPE]]
+        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<3xi64, #SparseVec64>, i64) to tensor<3xi64, #SparseVec64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<3xi64, #SparseVec64>
     }
 
 }

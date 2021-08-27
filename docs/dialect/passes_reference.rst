@@ -26,7 +26,7 @@ The optimization pass performs three transformations:
 
 * Combine ``graphblas.matrix_select`` ops on the same input sparse tensor
   into a single loop with multiple output tensors.
-* Combine ``graphblas.matrix_multiply`` followed by ``graphblas.matrix_apply``
+* Combine ``graphblas.matrix_multiply`` followed by ``graphblas.apply``
   into a single ``graphblas.matrix_multiply`` with an additional scalar 
   transformation of the output elements as they are written to memory.
 * Combine ``graphblas.matrix_multiply`` followed by ``graphblas.matrix_reduce_to_scalar``

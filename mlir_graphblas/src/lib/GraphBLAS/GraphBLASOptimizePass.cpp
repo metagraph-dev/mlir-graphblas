@@ -158,10 +158,10 @@ public:
 };
 
 class FuseMatrixMultiplyApplyRewrite
-    : public OpRewritePattern<graphblas::MatrixApplyGenericOp> {
+    : public OpRewritePattern<graphblas::ApplyGenericOp> {
 public:
-  using OpRewritePattern<graphblas::MatrixApplyGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op,
+  using OpRewritePattern<graphblas::ApplyGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ApplyGenericOp op,
                                 PatternRewriter &rewriter) const override {
     Value input = op.input();
     graphblas::MatrixMultiplyGenericOp predecessor =
