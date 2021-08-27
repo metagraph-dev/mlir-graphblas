@@ -110,7 +110,7 @@ static llvm::Optional<std::string> checkCompressedVector(
 static llvm::Optional<std::string> checkSemiringAdd(StringRef addName)
 {
   // This must match the options supported by GraphBLASUtils.cpp::populateSemiringAdd()
-  llvm::StringSet<> allowed = {"plus", "min"};
+  llvm::StringSet<> allowed = {"plus", "any", "min"};
   if (!allowed.contains(addName))
     return "\"" + addName.str() + "\" is not a supported semiring add.";
   else
@@ -120,7 +120,7 @@ static llvm::Optional<std::string> checkSemiringAdd(StringRef addName)
 static llvm::Optional<std::string> checkSemiringMultiply(StringRef multiplyName)
 {
   // This must match the options supported by GraphBLASUtils.cpp::populateSemiringMultiply()
-  llvm::StringSet<> allowed = {"pair", "times", "plus"};
+  llvm::StringSet<> allowed = {"pair", "times", "plus", "first", "second"};
   if (!allowed.contains(multiplyName))
     return "\"" + multiplyName.str() + "\" is not a supported semiring multiply.";
   else
