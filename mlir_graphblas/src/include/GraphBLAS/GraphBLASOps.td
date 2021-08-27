@@ -11,9 +11,7 @@ include "GraphBLASDialect.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 
-class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Dialect, mnemonic, traits> {
-    let verifier = [{ return ::verify(*this); }];
-}
+class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Dialect, mnemonic, traits> {}
 
 def GraphBlasMatrixOrVectorOperand : TensorRankOf<[AnyType], [1,2]>;
 def GraphBlasVectorOperand : 1DTensorOf<[AnyType]>;
@@ -109,6 +107,8 @@ def GraphBLAS_NumValsOp : GraphBLAS_Op<"num_vals", [NoSideEffect]> {
     let builders = [
       OpBuilder<(ins "Value":$tensor)>
     ];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input", "output"]>]> {
@@ -132,6 +132,8 @@ def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input",
     let builders = [
       OpBuilder<(ins "Value":$tensor)>
     ];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 // TODO: Is this op still needed (see sparse_tensor.convert)
@@ -155,6 +157,8 @@ def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
@@ -178,6 +182,8 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
@@ -217,6 +223,8 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
     let assemblyFormat = [{
            $input (`,` $thunks^)? attr-dict `:` type($input) (`,` type($thunks)^)? `to` type($outputs)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixReduceToVectorOp : GraphBLAS_Op<"matrix_reduce_to_vector", [NoSideEffect]> {
@@ -238,21 +246,22 @@ def GraphBLAS_MatrixReduceToVectorOp : GraphBLAS_Op<"matrix_reduce_to_vector", [
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input, StrAttr:$aggregator, I64Attr:$axis);
-    let results = (outs AnyTensor:$output);
+    let arguments = (ins GraphBlasMatrixOperand:$input, StrAttr:$aggregator, I64Attr:$axis);
+    let results = (outs GraphBlasVectorOperand:$output);
     
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [NoSideEffect]> {
     let summary = "matrix reduce to scalar operation";
     let description = [{
-        Reduces a sparse tensor to a scalar according to the given aggregator.
-        The given sparse tensor must be a matrix, i.e. have rank 2.  The given tensor
-        must have a CSR sparsity or a CSC sparsity.  The resulting scalar's type will
-        depend on the type of the input tensor.
+        Reduces a sparse matrix to a scalar according to the given aggregator.
+        The given tensor must have a CSR sparsity or a CSC sparsity.  The resulting
+        scalar's type will depend on the type of the input tensor.
 
         Example:
         ```mlir
@@ -260,12 +269,14 @@ def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input, StrAttr:$aggregator);
+    let arguments = (ins GraphBlasMatrixOperand:$input, StrAttr:$aggregator);
     let results = (outs AnyType:$output);
     
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixReduceToScalarGenericOp : GraphBLAS_Op<"matrix_reduce_to_scalar_generic", [NoSideEffect]> {
@@ -286,13 +297,15 @@ def GraphBLAS_MatrixReduceToScalarGenericOp : GraphBLAS_Op<"matrix_reduce_to_sca
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input);
+    let arguments = (ins GraphBlasMatrixOperand:$input);
     let results = (outs AnyType:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
     
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output) $extensions
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
@@ -312,12 +325,14 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input, AnyType:$thunk, StrAttr:$apply_operator);
+    let arguments = (ins GraphBlasMatrixOperand:$input, AnyType:$thunk, StrAttr:$apply_operator);
     let results = (outs AnyTensor:$output);
     
     let assemblyFormat = [{
            $input `,` $thunk attr-dict `:` `(` type($input) `,` type($thunk) `)` `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixApplyGenericOp : GraphBLAS_Op<"matrix_apply_generic", [NoSideEffect]> {
@@ -326,13 +341,15 @@ def GraphBLAS_MatrixApplyGenericOp : GraphBLAS_Op<"matrix_apply_generic", [NoSid
         Applies an arbitrary transformation to every element of a matrix.
     }];
 
-    let arguments = (ins AnyTensor:$input);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
     let results = (outs AnyTensor:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
     
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output) $extensions
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]> {
@@ -376,13 +393,16 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
 
     }];
 
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask, StrAttr:$semiring);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a, 
+                         GraphBlasMatrixOrVectorOperand:$b, Optional<AnyTensor>:$mask, StrAttr:$semiring);
     let results = (outs AnyType:$output);
     let regions = (region AnyRegion:$body);
     
     let assemblyFormat = [{
            $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) ($body^)?
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", [NoSideEffect]> {
@@ -401,27 +421,32 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
     let assemblyFormat = [{
            $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) $extensions
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
-def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp : GraphBLAS_Op<"matrix_multiply_reduce_to_scalar_generic", [NoSideEffect]> {
+def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp : 
+  GraphBLAS_Op<"matrix_multiply_reduce_to_scalar_generic", [NoSideEffect]> {
     let summary = "matrix multiply followed by reduction to a scalar with an optional structural mask";
     let description = [{
         Performs a matrix multiply followed by a reduction to scalar.  Supports
         same extension blocks as matrix_multiply_generic, and also requires binary
         aggregation block (aggregation assumes same identity as semiring add).
 
-        The given sparse tensors must be a matrix, i.e. have rank 2.  The first
+        The given sparse tensors must be a matrix, i.e., have rank 2.  The first
         input tensors must be CSR format, while the second input tensor must be CSC
         format.  The mask (if provided) must be CSR format.
     }];
 
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b, Optional<AnyTensor>:$mask);
+    let arguments = (ins GraphBlasMatrixOperand:$a, GraphBlasMatrixOperand:$b, Optional<AnyTensor>:$mask);
     let results = (outs AnyType:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
 
     let assemblyFormat = [{
-           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) $extensions
+      $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) $extensions
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
@@ -434,17 +459,21 @@ def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
 
         Example:
         ```mlir
-        %combined = graphblas.union %A, %B { union_operator = "plus" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+        %combined = graphblas.union %A, %B { union_operator = "plus" } : (
+            tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
         ```
 
     }];
 
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$union_operator);
-    let results = (outs AnyTensor:$output);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a, 
+                         GraphBlasMatrixOrVectorOperand:$b, StrAttr:$union_operator);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
 
     let assemblyFormat = [{
            $a `,` $b attr-dict `:` `(` type($a) `,` type($b)  `)` `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
@@ -461,12 +490,15 @@ def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
 
     }];
 
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b, StrAttr:$intersect_operator);
-    let results = (outs AnyTensor:$output);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a, 
+                         GraphBlasMatrixOrVectorOperand:$b, StrAttr:$intersect_operator);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
 
     let assemblyFormat = [{
            $a `,` $b attr-dict `:` `(` type($a) `,` type($b)  `)` `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
@@ -491,17 +523,17 @@ def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
     }];
 
     let arguments = (ins
-     AnyTensor:$input,
-     AnyTensor:$output,
-     Optional<AnyTensor>:$mask,
-     OptionalAttr<StrAttr>:$accumulate_operator,
-     DefaultValuedAttr<BoolAttr, "false">:$replace,
-     DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
+     GraphBlasMatrixOrVectorOperand:$input,
+     GraphBlasMatrixOrVectorOperand:$output,
+     Optional<AnyTensor>:$mask, OptionalAttr<StrAttr>:$accumulate_operator,
+     DefaultValuedAttr<BoolAttr, "false">:$replace, DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
     let results = (outs Index:$fake_output);
     
     let assemblyFormat = [{
            $input `->` $output (`(` $mask^ `)`)? attr-dict `:` type($input) `->` type($output) (`(` type($mask)^ `)`)?
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
@@ -517,12 +549,14 @@ def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
 
     }];
 
-    let arguments = (ins AnyTensor:$a, AnyTensor:$b);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a, GraphBlasMatrixOrVectorOperand:$b);
     let results = (outs I1:$output);
     
     let assemblyFormat = [{
            $a `,` $b attr-dict `:` type($a) `,` type($b)
     }];
+  
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_VectorArgMinMaxOp : GraphBLAS_Op<"vector_argminmax", [NoSideEffect]> {
@@ -541,19 +575,21 @@ def GraphBLAS_VectorArgMinMaxOp : GraphBLAS_Op<"vector_argminmax", [NoSideEffect
 
     }];
 
-    let arguments = (ins AnyTensor:$vec, StrAttr:$minmax);
+    let arguments = (ins GraphBlasVectorOperand:$vec, StrAttr:$minmax);
     let results = (outs Index:$output);
     
     let assemblyFormat = [{
            $vec attr-dict `:` type($vec)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_VectorArgMinOp : GraphBLAS_Op<"vector_argmin", [NoSideEffect]> {
     let summary = "vector argmin operation";
     let description = [{
         Determines the argmin of a vector.  If there are multiple values that
-        can be the argmin or argmax, an arbitrary one is chosen from them.  The given
+        can be the argmin, an arbitrary one is chosen from them.  The given
         sparse vector must have rank 1 and must be sparse.
 
         Example:
@@ -563,19 +599,21 @@ def GraphBLAS_VectorArgMinOp : GraphBLAS_Op<"vector_argmin", [NoSideEffect]> {
 
     }];
 
-    let arguments = (ins AnyTensor:$vec);
+    let arguments = (ins GraphBlasVectorOperand:$vec);
     let results = (outs Index:$output);
     
     let assemblyFormat = [{
            $vec attr-dict `:` type($vec)
     }];
+  
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_VectorArgMaxOp : GraphBLAS_Op<"vector_argmax", [NoSideEffect]> {
     let summary = "vector argmax operation";
     let description = [{
         Determaxes the argmax of a vector.  If there are multiple values that
-        can be the argmax or argmax, an arbitrary one is chosen from them.  The given
+        can be the argmax, an arbitrary one is chosen from them.  The given
         sparse vector must have rank 1 and must be sparse.
 
         Example:
@@ -585,12 +623,14 @@ def GraphBLAS_VectorArgMaxOp : GraphBLAS_Op<"vector_argmax", [NoSideEffect]> {
 
     }];
 
-    let arguments = (ins AnyTensor:$vec);
+    let arguments = (ins GraphBlasVectorOperand:$vec);
     let results = (outs Index:$output);
     
     let assemblyFormat = [{
            $vec attr-dict `:` type($vec)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 // Generic ops

@@ -151,28 +151,16 @@ static llvm::Optional<std::string> checkSemiring(StringRef semiring) {
 // GraphBLAS Ops Methods
 //===--------------------------------------------------------------------===//
 
-// TODO: remove me. Cannot do now as all the ops require a verifier (see:
-// GraphBLAS_Op) a follow-up commit will address this issue.
-static LogicalResult verify(SizeOp op) { return success(); }
-
 void SizeOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
   Type indexType = builder.getIndexType();
   build(builder, result, indexType, tensor);
 }
-
-// TODO: originally this verifier was calling 'checkCompressedMatrix'
-// why do we need to check the sparse attribute? This ops should work
-// also without passing the sparese encoding attribute.
-static LogicalResult verify(NumRowsOp op) { return success(); }
 
 void NumRowsOp::build(OpBuilder &builder, OperationState &result,
                       Value tensor) {
   Type indexType = builder.getIndexType();
   build(builder, result, indexType, tensor);
 }
-
-// TODO: remove me. see SizeOp.
-static LogicalResult verify(NumColsOp op) { return success(); }
 
 void NumColsOp::build(OpBuilder &builder, OperationState &result,
                       Value tensor) {
