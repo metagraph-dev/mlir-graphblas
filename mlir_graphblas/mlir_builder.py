@@ -135,7 +135,8 @@ class MLIRFunctionBuilder(BaseFunction):
         + "{{statements}}"
         + "\n"
         + (" " * default_indentation_size)
-        + "}"
+        + "}",
+        undefined=jinja2.StrictUndefined,
     )
 
     def __init__(

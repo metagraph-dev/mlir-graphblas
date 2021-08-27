@@ -219,6 +219,33 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
     }];
 }
 
+def GraphBLAS_MatrixReduceToVectorOp : GraphBLAS_Op<"matrix_reduce_to_vector", [NoSideEffect]> {
+    let summary = "matrix reduce to vector operation";
+    let description = [{
+        Reduces a sparse tensor to a vector according to the given aggregator.
+        The given sparse tensor must be a matrix, i.e. have rank 2.
+        The given tensor must have a CSR sparsity or a CSC sparsity.
+        The resulting sparse vector's element type must be the same as the element type of the input tensor.
+        If the axis attribute is 0, the input tensor will be reduced column-wise, so the resulting
+        vector's size must be the  number of rows in the input tensor. 
+        If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
+        vector's size must be the  number of columns in the input tensor. 
+
+        Example:
+        ```mlir
+        %vec1 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
+        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
+        ```
+    }];
+
+    let arguments = (ins AnyTensor:$input, StrAttr:$aggregator, I64Attr:$axis);
+    let results = (outs AnyTensor:$output);
+    
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($output)
+    }];
+}
+
 def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [NoSideEffect]> {
     let summary = "matrix reduce to scalar operation";
     let description = [{
@@ -229,7 +256,7 @@ def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [
 
         Example:
         ```mlir
-          %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "sum" } : tensor<?x?xi64, #CSR64> to i64
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xi64, #CSR64> to i64
         ```
     }];
 
