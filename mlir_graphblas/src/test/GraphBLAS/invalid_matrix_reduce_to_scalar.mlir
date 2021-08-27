@@ -2,7 +2,7 @@
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<*xf64>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<*xf64> to f64 // expected-error {{Operand #0 must be a sparse tensor.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<*xf64> to f64 // expected-error {{op operand #0 must be 2D tensor of any type values, but got 'tensor<*xf64>'}}
         return %answer : f64
     }
 }
@@ -27,7 +27,7 @@ module {
 
 module {
     func @matrix_reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?x?xf64, #BADENCODING>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?x?xf64, #BADENCODING> to f64 // expected-error {{Operand #0 must have rank 2.}}
+        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?x?xf64, #BADENCODING> to f64 // expected-error {{op operand #0 must be 2D tensor of any type values, but got 'tensor<?x?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed", "dense" ], dimOrdering = affine_map<(d0, d1, d2) -> (d0, d1, d2)>, pointerBitWidth = 64, indexBitWidth = 64 }>>'}}
         return %answer : f64
     }
 }

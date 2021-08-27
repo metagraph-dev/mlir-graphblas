@@ -8,7 +8,7 @@
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<*xi32>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<*xi32> to tensor<9xi32, #SparseVec64> // expected-error {{Operand #0 must be a sparse tensor.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<*xi32> to tensor<9xi32, #SparseVec64> // expected-error {{operand #0 must be 2D tensor of any type values, but got 'tensor<*xi32>'}}
         return %vec : tensor<9xi32, #SparseVec64>
     }
 }
@@ -45,7 +45,7 @@ module {
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x9x1xi32, #BADENCODING>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9x1xi32, #BADENCODING> to tensor<9xi32, #SparseVec64> // expected-error {{Operand #0 must have rank 2.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9x1xi32, #BADENCODING> to tensor<9xi32, #SparseVec64> // expected-error {{operand #0 must be 2D tensor of any type values, but got 'tensor<7x9x1xi32, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed", "dense" ], dimOrdering = affine_map<(d0, d1, d2) -> (d0, d1, d2)>, pointerBitWidth = 64, indexBitWidth = 64 }>>}}
         return %vec : tensor<9xi32, #SparseVec64>
     }
 }
@@ -61,7 +61,7 @@ module {
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #CSR64>) -> tensor<7x9xi32, #CSR64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<7x9xi32, #CSR64> // expected-error {{Return value must have rank 1.}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<7x9xi32, #CSR64> // expected-error {{ op result #0 must be 1D tensor of any type values, but got 'tensor<7x9xi32, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>'}}
         return %vec : tensor<7x9xi32, #CSR64>
     }
 }
