@@ -11,9 +11,7 @@ include "GraphBLASDialect.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 
-class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Dialect, mnemonic, traits> {
-    let verifier = [{ return ::verify(*this); }];
-}
+class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Dialect, mnemonic, traits> {}
 
 def GraphBlasMatrixOrVectorOperand : TensorRankOf<[AnyType], [1,2]>;
 def GraphBlasVectorOperand : 1DTensorOf<[AnyType]>;
@@ -109,6 +107,8 @@ def GraphBLAS_NumValsOp : GraphBLAS_Op<"num_vals", [NoSideEffect]> {
     let builders = [
       OpBuilder<(ins "Value":$tensor)>
     ];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input", "output"]>]> {
@@ -132,6 +132,8 @@ def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input",
     let builders = [
       OpBuilder<(ins "Value":$tensor)>
     ];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 // TODO: Is this op still needed (see sparse_tensor.convert)
@@ -155,6 +157,8 @@ def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
@@ -178,6 +182,8 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
@@ -217,6 +223,8 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
     let assemblyFormat = [{
            $input (`,` $thunks^)? attr-dict `:` type($input) (`,` type($thunks)^)? `to` type($outputs)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixReduceToVectorOp : GraphBLAS_Op<"matrix_reduce_to_vector", [NoSideEffect]> {
@@ -244,6 +252,8 @@ def GraphBLAS_MatrixReduceToVectorOp : GraphBLAS_Op<"matrix_reduce_to_vector", [
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [NoSideEffect]> {
@@ -265,6 +275,8 @@ def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixReduceToScalarGenericOp : GraphBLAS_Op<"matrix_reduce_to_scalar_generic", [NoSideEffect]> {
@@ -292,6 +304,8 @@ def GraphBLAS_MatrixReduceToScalarGenericOp : GraphBLAS_Op<"matrix_reduce_to_sca
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output) $extensions
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
@@ -317,6 +331,8 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
     let assemblyFormat = [{
            $input `,` $thunk attr-dict `:` `(` type($input) `,` type($thunk) `)` `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixApplyGenericOp : GraphBLAS_Op<"matrix_apply_generic", [NoSideEffect]> {
@@ -332,6 +348,8 @@ def GraphBLAS_MatrixApplyGenericOp : GraphBLAS_Op<"matrix_apply_generic", [NoSid
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output) $extensions
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]> {
@@ -383,6 +401,8 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
     let assemblyFormat = [{
            $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) ($body^)?
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", [NoSideEffect]> {
@@ -401,6 +421,8 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
     let assemblyFormat = [{
            $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) $extensions
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp : 
@@ -423,6 +445,8 @@ def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp :
     let assemblyFormat = [{
       $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) $extensions
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
@@ -448,6 +472,8 @@ def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
     let assemblyFormat = [{
            $a `,` $b attr-dict `:` `(` type($a) `,` type($b)  `)` `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
@@ -471,6 +497,8 @@ def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
     let assemblyFormat = [{
            $a `,` $b attr-dict `:` `(` type($a) `,` type($b)  `)` `to` type($output)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
@@ -504,6 +532,8 @@ def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
     let assemblyFormat = [{
            $input `->` $output (`(` $mask^ `)`)? attr-dict `:` type($input) `->` type($output) (`(` type($mask)^ `)`)?
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
@@ -525,6 +555,8 @@ def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
     let assemblyFormat = [{
            $a `,` $b attr-dict `:` type($a) `,` type($b)
     }];
+  
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_VectorArgMinMaxOp : GraphBLAS_Op<"vector_argminmax", [NoSideEffect]> {
@@ -549,6 +581,8 @@ def GraphBLAS_VectorArgMinMaxOp : GraphBLAS_Op<"vector_argminmax", [NoSideEffect
     let assemblyFormat = [{
            $vec attr-dict `:` type($vec)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_VectorArgMinOp : GraphBLAS_Op<"vector_argmin", [NoSideEffect]> {
@@ -571,6 +605,8 @@ def GraphBLAS_VectorArgMinOp : GraphBLAS_Op<"vector_argmin", [NoSideEffect]> {
     let assemblyFormat = [{
            $vec attr-dict `:` type($vec)
     }];
+  
+    let verifier = [{ return ::verify(*this); }];
 }
 
 def GraphBLAS_VectorArgMaxOp : GraphBLAS_Op<"vector_argmax", [NoSideEffect]> {
@@ -593,6 +629,8 @@ def GraphBLAS_VectorArgMaxOp : GraphBLAS_Op<"vector_argmax", [NoSideEffect]> {
     let assemblyFormat = [{
            $vec attr-dict `:` type($vec)
     }];
+
+    let verifier = [{ return ::verify(*this); }];
 }
 
 // Generic ops
