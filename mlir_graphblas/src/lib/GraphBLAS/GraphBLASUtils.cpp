@@ -4,6 +4,9 @@
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "llvm/ADT/TypeSwitch.h"
+#include "llvm/ADT/Optional.h"
+#include "llvm/ADT/None.h"
 
 #include "GraphBLAS/GraphBLASOps.h"
 #include "GraphBLAS/GraphBLASUtils.h"
@@ -574,3 +577,134 @@ LogicalResult ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions
 
   return success();
 };
+
+LogicalResult populateSemiringAdd(OpBuilder &builder, Location loc,
+                                  StringRef addName, Type valueType,
+                                  RegionRange regions)
+{
+  // This function must match the options supported by GraphBLASOps.cpp::checkSemiringAdd()
+
+  // Insert additive identity
+  Region *addIdentityRegion = regions[0];
+  Value addIdentity;
+  /*Block *addIdentityBlock = */ builder.createBlock(addIdentityRegion, {}, {});
+  if (addName == "plus")
+  {
+    // Add identity
+    addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
+                      .Case<IntegerType>([&](IntegerType type)
+                                         { return builder.create<ConstantIntOp>(loc, 0, type.getWidth()); })
+                      .Case<FloatType>([&](FloatType type)
+                                       { return builder.create<ConstantFloatOp>(loc, APFloat(0.0), type); });
+  }
+  else if (addName == "min")
+  {
+    addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
+                      .Case<IntegerType>([&](IntegerType type)
+                                         { return builder.create<ConstantOp>(loc, builder.getIntegerAttr(valueType, APInt::getSignedMaxValue(type.getWidth()))); })
+                      .Case<FloatType>([&](FloatType type)
+                                       { return builder.create<ConstantOp>(loc, builder.getFloatAttr(valueType, APFloat::getLargest(type.getFloatSemantics(), false))); });
+  }
+  else
+  {
+    return addIdentityRegion->getParentOp()->emitError("\"" + addName + "\" is not a supported semiring add.");
+  }
+  builder.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD_IDENTITY, addIdentity);
+
+  // Insert additive operation
+  Region *addRegion = regions[1];
+  Block *addBlock = builder.createBlock(addRegion, {}, {valueType, valueType});
+  Value addBlockArg0 = addBlock->getArgument(0);
+  Value addBlockArg1 = addBlock->getArgument(1);
+  Value addResult;
+  if (addName == "plus")
+  {
+    // Insert add operation
+    addResult = llvm::TypeSwitch<Type, Value>(valueType)
+                    .Case<IntegerType>([&](IntegerType type)
+                                       { return builder.create<AddIOp>(loc, addBlockArg0, addBlockArg1); })
+                    .Case<FloatType>([&](FloatType type)
+                                     { return builder.create<AddFOp>(loc, addBlockArg0, addBlockArg1); });
+  }
+  else if (addName == "min")
+  {
+    Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+                    .Case<IntegerType>([&](IntegerType type)
+                                       { return builder.create<CmpIOp>(loc, CmpIPredicate::slt, addBlockArg0, addBlockArg1); })
+                    .Case<FloatType>([&](FloatType type)
+                                     { return builder.create<CmpFOp>(loc, CmpFPredicate::OLT, addBlockArg0, addBlockArg1); });
+    addResult = builder.create<SelectOp>(loc, cmp, addBlockArg0, addBlockArg1);
+  }
+  else
+  {
+    return addRegion->getParentOp()->emitError("\"" + addName + "\" is not a supported semiring add.");
+  }
+  builder.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD, addResult);
+
+  return success();
+}
+
+LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
+                                      StringRef multiplyName, Type valueType,
+                                      RegionRange regions)
+{
+  // This function must match the options supported by GraphBLASOps.cpp::checkSemiringMultiply()
+
+  // Insert multiplicative operation
+  Region *multRegion = regions[0];
+  Block *multBlock = builder.createBlock(multRegion, {}, {valueType, valueType});
+  Value multBlockArg0 = multBlock->getArgument(0);
+  Value multBlockArg1 = multBlock->getArgument(1);
+  Value multResult;
+
+  if (multiplyName == "pair")
+  {
+    multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                     .Case<IntegerType>([&](IntegerType type)
+                                        { return builder.create<ConstantIntOp>(loc, 1, type.getWidth()); })
+                     .Case<FloatType>([&](FloatType type)
+                                      { return builder.create<ConstantFloatOp>(loc, APFloat(1.0), type); });
+  }
+  else if (multiplyName == "times")
+  {
+    multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                     .Case<IntegerType>([&](IntegerType type)
+                                        { return builder.create<MulIOp>(loc, multBlockArg0, multBlockArg1); })
+                     .Case<FloatType>([&](FloatType type)
+                                      { return builder.create<MulFOp>(loc, multBlockArg0, multBlockArg1); });
+  }
+  else if (multiplyName == "plus")
+  {
+    multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                     .Case<IntegerType>([&](IntegerType type)
+                                        { return builder.create<AddIOp>(loc, multBlockArg0, multBlockArg1); })
+                     .Case<FloatType>([&](FloatType type)
+                                      { return builder.create<AddFOp>(loc, multBlockArg0, multBlockArg1); });
+  }
+  else
+  {
+    return multRegion->getParentOp()->emitError("\"" + multiplyName + "\" is not a supported semiring multiply.");
+  }
+  builder.create<graphblas::YieldOp>(loc, graphblas::YieldKind::MULT, multResult);
+
+  return success();
+}
+
+LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
+                                      StringRef semiring, Type valueType,
+                                      RegionRange regions)
+{
+  auto semiringParts = semiring.split('_');
+
+  if (failed(populateSemiringAdd(builder, loc,
+                                 semiringParts.first, valueType,
+                                 regions.slice(0, 2))))
+    return failure();
+
+  if (failed(populateSemiringMultiply(builder, loc,
+                                     semiringParts.second, valueType,
+                                     regions.slice(2, 1) /* no multiply identity block currently */)))
+    return failure();
+
+  return success();                 
+}
