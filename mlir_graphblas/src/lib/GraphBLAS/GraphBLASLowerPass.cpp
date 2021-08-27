@@ -987,11 +987,11 @@ public:
   };
 };
 
-class LowerMatrixApplyRewrite
-    : public OpRewritePattern<graphblas::MatrixApplyOp> {
+class LowerApplyRewrite
+    : public OpRewritePattern<graphblas::ApplyOp> {
 public:
-  using OpRewritePattern<graphblas::MatrixApplyOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyOp op,
+  using OpRewritePattern<graphblas::ApplyOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ApplyOp op,
                                 PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable
                                                           for debugging */
@@ -1006,8 +1006,8 @@ public:
     StringRef apply_operator = op.apply_operator();
 
     // New op
-    graphblas::MatrixApplyGenericOp newApplyOp =
-        rewriter.create<graphblas::MatrixApplyGenericOp>(
+    graphblas::ApplyGenericOp newApplyOp =
+        rewriter.create<graphblas::ApplyGenericOp>(
             loc, op->getResultTypes(), input, 1);
 
     // Insert transformOut block
@@ -1035,11 +1035,11 @@ public:
   };
 };
 
-class LowerMatrixApplyGenericRewrite
-    : public OpRewritePattern<graphblas::MatrixApplyGenericOp> {
+class LowerApplyGenericRewrite
+    : public OpRewritePattern<graphblas::ApplyGenericOp> {
 public:
-  using OpRewritePattern<graphblas::MatrixApplyGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixApplyGenericOp op,
+  using OpRewritePattern<graphblas::ApplyGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ApplyGenericOp op,
                                 PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
@@ -2462,7 +2462,7 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
            LowerMatrixReduceToScalarRewrite,
            LowerMatrixReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
            LowerConvertLayoutRewrite, LowerTransposeRewrite,
-           LowerMatrixApplyRewrite, LowerMatrixApplyGenericRewrite,
+           LowerApplyRewrite, LowerApplyGenericRewrite,
            LowerMatrixMultiplyReduceToScalarGenericRewrite,
            LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
            LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
@@ -2485,7 +2485,7 @@ struct GraphBLASLoweringPass
 };
 
 void populateGraphBLASStructuralizePatterns(RewritePatternSet &patterns) {
-  patterns.add<LowerMatrixMultiplyRewrite, LowerMatrixApplyRewrite,
+  patterns.add<LowerMatrixMultiplyRewrite, LowerApplyRewrite,
                LowerMatrixReduceToScalarRewrite>(patterns.getContext());
 }
 

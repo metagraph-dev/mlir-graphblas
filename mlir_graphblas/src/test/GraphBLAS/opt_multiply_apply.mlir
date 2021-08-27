@@ -40,7 +40,7 @@
 // CHECK:         }
 func @fuse_adjacent(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #CSC64>, %thunk: f64) -> tensor<?x?xf64, #CSR64> {
     %C = graphblas.matrix_multiply %A, %B { semiring = "plus_plus" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> 
-    %apply_result = graphblas.matrix_apply %C, %thunk { apply_operator = "min" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
+    %apply_result = graphblas.apply %C, %thunk { apply_operator = "min" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
     return %apply_result : tensor<?x?xf64, #CSR64>
 }
 
@@ -69,7 +69,7 @@ func @fuse_adjacent(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #CSC64>, %t
 // CHECK:         }
 func @fuse_adjacent_with_mask(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #CSC64>, %thunk: f64) -> tensor<?x?xf64, #CSR64> {
     %C = graphblas.matrix_multiply %A, %B, %A { semiring = "plus_pair" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64> 
-    %apply_result = graphblas.matrix_apply %C, %thunk { apply_operator = "min" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
+    %apply_result = graphblas.apply %C, %thunk { apply_operator = "min" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
     return %apply_result : tensor<?x?xf64, #CSR64>
 }
 
@@ -90,7 +90,7 @@ func @fuse_adjacent_with_mask(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #
 // CHECK:             %[[VAL_10:.*]] = addf %[[VAL_8]], %[[VAL_9]] : f64
 // CHECK:             graphblas.yield mult %[[VAL_10]] : f64
 // CHECK:           }
-// CHECK:           %[[VAL_11:.*]] = graphblas.matrix_apply_generic %[[VAL_12:.*]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
+// CHECK:           %[[VAL_11:.*]] = graphblas.apply_generic %[[VAL_12:.*]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:           ^bb0(%[[VAL_13:.*]]: f64):
 // CHECK:             %[[VAL_14:.*]] = cmpf olt, %[[VAL_13]], %[[VAL_2]] : f64
 // CHECK:             %[[VAL_15:.*]] = select %[[VAL_14]], %[[VAL_13]], %[[VAL_2]] : f64
@@ -100,6 +100,6 @@ func @fuse_adjacent_with_mask(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #
 // CHECK:         }
 func @nofuse_multi_use(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #CSC64>, %thunk: f64) -> (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) {
     %C = graphblas.matrix_multiply %A, %B { semiring = "plus_plus" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> 
-    %apply_result = graphblas.matrix_apply %C, %thunk { apply_operator = "min" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
+    %apply_result = graphblas.apply %C, %thunk { apply_operator = "min" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
     return %apply_result, %C : tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>
 }

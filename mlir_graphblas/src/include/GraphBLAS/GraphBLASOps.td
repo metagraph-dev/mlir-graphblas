@@ -295,20 +295,23 @@ def GraphBLAS_MatrixReduceToScalarGenericOp : GraphBLAS_Op<"matrix_reduce_to_sca
     }];
 }
 
-def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
-    let summary = "matrix apply operation";
+def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
+    let summary = "tensor apply operation";
     let description = [{
-        Applies an operator to all elements of the given sparse matrix.  How
+        Applies an operator to all elements of the given sparse tensor.  How
         the thunk is used depends on the chosen operator.  Currently, the only valid
-        operator is "min".  The given sparse tensor must be a matrix, i.e. have rank 2.
-        The given tensor must have a CSR sparsity or a CSC sparsity.
+        operator is "min".  The given sparse tensor must either be a CSR matrix, CSC
+        matrix, or a sparse vector.
 
         Example:
         ```mlir
         %thunk = constant 100 : i64
-        %answer = 
-          graphblas.matrix_apply %sparse_tensor, %thunk { apply_operator = "min" } : 
+        %matrix_answer = 
+          graphblas.apply %sparse_matrix, %thunk { apply_operator = "min" } : 
             (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
+        %vector_answer = 
+          graphblas.apply %sparse_vector, %thunk { apply_operator = "min" } : 
+            (tensor<?xi64, #SparseVec64>, i64) to tensor<?xi64, #SparseVec64>
         ```
     }];
 
@@ -320,10 +323,10 @@ def GraphBLAS_MatrixApplyOp : GraphBLAS_Op<"matrix_apply", [NoSideEffect]> {
     }];
 }
 
-def GraphBLAS_MatrixApplyGenericOp : GraphBLAS_Op<"matrix_apply_generic", [NoSideEffect]> {
-    let summary = "generic matrix apply operation";
+def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
+    let summary = "generic tensor apply operation";
     let description = [{
-        Applies an arbitrary transformation to every element of a matrix.
+        Applies an arbitrary transformation to every element of a matrix or vector.
     }];
 
     let arguments = (ins AnyTensor:$input);

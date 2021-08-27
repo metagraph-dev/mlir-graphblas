@@ -3,7 +3,7 @@ from .functions import (
     ConvertLayout,
     MatrixSelect,
     MatrixReduceToScalar,
-    MatrixApply,
+    Apply,
     MatrixMultiply,
 )
 from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
@@ -32,7 +32,7 @@ matrix_select_triu = MatrixSelect("TRIU")
 matrix_select_tril = MatrixSelect("TRIL")
 matrix_select_gt = MatrixSelect("gt")
 matrix_reduce = MatrixReduceToScalar()
-matrix_apply_min = MatrixApply("min")
+apply_min = Apply("min")
 mxm_plus_pair = MatrixMultiply("plus_pair", mask=True)
 mxm_plus_times = MatrixMultiply("plus_times")
 mxm_plus_plus = MatrixMultiply("plus_plus")
@@ -102,7 +102,7 @@ def dense_neural_network(
         Y = mxm_plus_plus.compile()(Y, Bias[layer])
 
         Y = matrix_select_gt.compile()(Y, 0.0)
-        Y = matrix_apply_min.compile()(Y, ymax)
+        Y = apply_min.compile()(Y, ymax)
 
     return Y
 
@@ -148,9 +148,7 @@ def dense_neural_network_combined(
         add_bias_result = irb_inner.graphblas.matrix_multiply(
             matmul_result, biases, "plus_plus"
         )
-        clamp_result = irb_inner.graphblas.matrix_apply(
-            add_bias_result, "min", threshold
-        )
+        clamp_result = irb_inner.graphblas.apply(add_bias_result, "min", threshold)
         relu_result = irb_inner.graphblas.matrix_select(
             clamp_result, [zero_f64], ["gt"]
         )

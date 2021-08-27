@@ -271,10 +271,10 @@ class MatrixReduceToScalar(BaseFunction):
     )
 
 
-class MatrixApply(BaseFunction):
+class Apply(BaseFunction):
     """
     Call signature:
-      matrix_apply(input: MLIRSparseTensor, thunk: f64) -> MLIRSparseTensor
+      apply(input: MLIRSparseTensor, thunk: f64) -> MLIRSparseTensor
     """
 
     _valid_operators = {"min"}
@@ -288,7 +288,7 @@ class MatrixApply(BaseFunction):
                 f"Invalid operator: {operator}, must be one of {list(self._valid_operators)}"
             )
 
-        self.func_name = f"matrix_apply_{op}"
+        self.func_name = f"apply_{op}"
         self.op = op
 
     def get_mlir(self, *, make_private=True):
@@ -301,7 +301,7 @@ class MatrixApply(BaseFunction):
     mlir_template = jinja2.Template(
         """
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>, %thunk: f64) -> tensor<?x?xf64, #CSR64> {
-        %output = graphblas.matrix_apply %input, %thunk { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
+        %output = graphblas.apply %input, %thunk { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
 
         return %output : tensor<?x?xf64, #CSR64>
       }

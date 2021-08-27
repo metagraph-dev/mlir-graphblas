@@ -243,19 +243,9 @@ void DupOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
 }
 
 template <class T>
-static LogicalResult verifyMatrixApplyArgs(T op) {
+static LogicalResult verifyApplyArgs(T op) {
   Type inputType = op.input().getType();
   Type resultType = op.getResult().getType();
-
-  llvm::Optional<std::string> inputCompressionErrorMessage =
-      checkCompressedMatrix(inputType, 0, EITHER);
-  if (inputCompressionErrorMessage)
-    return op.emitError(inputCompressionErrorMessage.getValue());
-
-  llvm::Optional<std::string> resultCompressionErrorMessage =
-      checkCompressedMatrix(resultType, -1, EITHER);
-  if (resultCompressionErrorMessage)
-    return op.emitError(resultCompressionErrorMessage.getValue());
 
   RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
   RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
@@ -265,14 +255,41 @@ static LogicalResult verifyMatrixApplyArgs(T op) {
 
   // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
   // shapes using "?"
-  if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
-    return op.emitError("Input shape does not match output shape.");
+  if (resultTensorType.getRank() == 2) {
+    llvm::Optional<std::string> inputCompressionErrorMessage =
+      checkCompressedMatrix(inputType, 0, EITHER);
+    if (inputCompressionErrorMessage)
+      return op.emitError(inputCompressionErrorMessage.getValue());
 
+    llvm::Optional<std::string> resultCompressionErrorMessage =
+      checkCompressedMatrix(resultType, -1, EITHER);
+    if (resultCompressionErrorMessage)
+      return op.emitError(resultCompressionErrorMessage.getValue());
+
+    if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
+      return op.emitError("Input shape does not match output shape.");
+  } else if (resultTensorType.getRank() == 1) {
+    llvm::Optional<std::string> inputCompressionErrorMessage =
+      checkCompressedVector(inputType, 0);
+    if (inputCompressionErrorMessage)
+      return op.emitError(inputCompressionErrorMessage.getValue()); // TODO test this
+
+    llvm::Optional<std::string> resultCompressionErrorMessage =
+      checkCompressedVector(resultType, -1);
+    if (resultCompressionErrorMessage)
+      return op.emitError(resultCompressionErrorMessage.getValue()); // TODO test this
+
+    if (inputShape[0] != resultShape[0])
+      return op.emitError("Input shape does not match output shape.");
+  } else {
+    return op.emitError("Input must be a matrix or vector."); // TODO test this
+  }
+  
   return success();
 }
 
-static LogicalResult verify(MatrixApplyOp op) {
-  LogicalResult argResult = verifyMatrixApplyArgs(op);
+static LogicalResult verify(ApplyOp op) {
+  LogicalResult argResult = verifyApplyArgs(op);
 
   if (argResult.failed())
     return argResult;
@@ -290,7 +307,7 @@ static LogicalResult verify(MatrixApplyOp op) {
 
   if (resultTensorType.getElementType() != thunkType)
     // TODO this is not always correct, e.g.
-    // matrix_apply_less_than(tensor<f64>, 2.3) -> tensor<i1>.
+    // apply_less_than(tensor<f64>, 2.3) -> tensor<i1>.
     return op.emitError(
         "Element type of result tensor does not match type of thunk.");
 
@@ -302,8 +319,8 @@ static LogicalResult verify(MatrixApplyOp op) {
   return success();
 }
 
-static LogicalResult verify(MatrixApplyGenericOp op) {
-  LogicalResult argResult = verifyMatrixApplyArgs(op);
+static LogicalResult verify(ApplyGenericOp op) {
+  LogicalResult argResult = verifyApplyArgs(op);
 
   if (argResult.failed())
     return argResult;

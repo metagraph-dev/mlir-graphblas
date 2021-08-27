@@ -13,6 +13,6 @@ The content of the tutorials are somewhat sequentially dependent as some later t
    graphblas_convert_layout
    graphblas_matrix_select
    graphblas_matrix_reduce_to_scalar
-   graphblas_matrix_apply
+   graphblas_apply
    graphblas_matrix_multiply
    graphblas_matrix_multiply_reduce_to_scalar

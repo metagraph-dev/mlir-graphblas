@@ -685,7 +685,7 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
     return
 
 
-REDUCE_TO_SCALAR_CASES = [
+REDUCE_TO_VECTOR_CASES = [
     # pytest.param(
     #     "tensor<5x4xf64, #CSR64>",
     #     "tensor<5xf64, #SparseVec64>",
@@ -715,9 +715,9 @@ REDUCE_TO_SCALAR_CASES = [
 
 @pytest.mark.parametrize(
     "input_type, reduce_rows_output_type, reduce_columns_output_type",
-    REDUCE_TO_SCALAR_CASES,
+    REDUCE_TO_VECTOR_CASES,
 )
-def test_ir_reduce_to_scalar(
+def test_ir_reduce_to_vector(
     input_type: str,
     reduce_rows_output_type: str,
     reduce_columns_output_type: str,
@@ -726,20 +726,35 @@ def test_ir_reduce_to_scalar(
 ):
     # build functions
     ir_builder = MLIRFunctionBuilder(
-        "reduce_rows",
+        "reduce_func",
         input_types=[input_type],
-        return_types=[reduce_rows_output_type, reduce_columns_output_type],
+        return_types=[
+            reduce_rows_output_type,
+            reduce_columns_output_type,
+            reduce_rows_output_type,
+            reduce_columns_output_type,
+        ],
         aliases=aliases,
     )
     (matrix,) = ir_builder.inputs
+
     reduced_rows = ir_builder.graphblas.matrix_reduce_to_vector(
         matrix, "plus", 1, reduce_rows_output_type
     )
     reduced_columns = ir_builder.graphblas.matrix_reduce_to_vector(
         matrix, "plus", 0, reduce_columns_output_type
     )
-    ir_builder.return_vars(reduced_rows, reduced_columns)
-    reduce_rows = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    zero_f64 = ir_builder.constant(0.0, "f64")
+    reduced_rows_clamped = ir_builder.graphblas.apply(reduced_rows, "min", zero_f64)
+    reduced_columns_clamped = ir_builder.graphblas.apply(
+        reduced_columns, "min", zero_f64
+    )
+
+    ir_builder.return_vars(
+        reduced_rows, reduced_columns, reduced_rows_clamped, reduced_columns_clamped
+    )
+    reduce_func = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
     # Test Results
     dense_input_tensor = np.array(
@@ -759,14 +774,29 @@ def test_ir_reduce_to_scalar(
     if input_type_is_csc:
         input_tensor = engine.csr_to_csc(input_tensor)
 
-    reduced_rows, reduced_columns = reduce_rows(input_tensor)
+    (
+        reduced_rows,
+        reduced_columns,
+        reduced_rows_clamped,
+        reduced_columns_clamped,
+    ) = reduce_func(input_tensor)
     reduced_rows = engine.sparse_vec_densify5(reduced_rows)
     reduced_columns = engine.sparse_vec_densify4(reduced_columns)
+    reduced_rows_clamped = engine.sparse_vec_densify5(reduced_rows_clamped)
+    reduced_columns_clamped = engine.sparse_vec_densify4(reduced_columns_clamped)
 
     expected_reduced_rows = np.array([1, -7, 0, 2, -9], dtype=dense_input_tensor.dtype)
     expected_reduced_columns = np.array([-8, 0, 2, -7], dtype=dense_input_tensor.dtype)
+    expected_reduced_rows_clamped = np.array(
+        [0, -7, 0, 0, -9], dtype=dense_input_tensor.dtype
+    )
+    expected_reduced_columns_clamped = np.array(
+        [-8, 0, 0, -7], dtype=dense_input_tensor.dtype
+    )
 
     assert np.all(reduced_rows == expected_reduced_rows)
     assert np.all(reduced_columns == expected_reduced_columns)
+    assert np.all(reduced_rows_clamped == expected_reduced_rows_clamped)
+    assert np.all(reduced_columns_clamped == expected_reduced_columns_clamped)
 
     return
