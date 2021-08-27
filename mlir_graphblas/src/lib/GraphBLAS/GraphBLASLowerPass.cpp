@@ -194,26 +194,34 @@ public:
         loc, memref1DValueType, inputTensor);
     Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
     Value ncol = rewriter.create<graphblas::NumColsOp>(loc, inputTensor);
-    Value ncols_plus_one = rewriter.create<mlir::AddIOp>(loc, ncol, c1);
     Value nnz = rewriter.create<graphblas::NumValsOp>(loc, inputTensor);
 
     Value duplicate = callEmptyLike(rewriter, module, loc, inputTensor);
+
+    // Set dimensions in absolute terms of nrow x ncol
     callResizeDim(rewriter, module, loc, duplicate, c0, nrow);
     callResizeDim(rewriter, module, loc, duplicate, c1, ncol);
 
+    // Beyond this point, the algorithm assumes csr->csc,
+    // so swap nrow/ncol for csc->csr
+    bool csr2csc = typeIsCSC(outputType);
+    if (!csr2csc) {
+      Value tmp = nrow;
+      nrow = ncol;
+      ncol = tmp;
+    }
+
+    Value ncols_plus_one = rewriter.create<mlir::AddIOp>(loc, ncol, c1);
     callResizePointers(rewriter, module, loc, duplicate, c1, ncols_plus_one);
     callResizeIndex(rewriter, module, loc, duplicate, c1, nnz);
     callResizeValues(rewriter, module, loc, duplicate, nnz);
 
     // verify function will ensure that this is CSR->CSC or CSC->CSR
     Value output;
-    if (typeIsCSR(outputType)) {
-      output = convertToExternalCSR(rewriter, module, loc, duplicate);
-    } else if (typeIsCSC(outputType)) {
+    if (csr2csc)
       output = convertToExternalCSC(rewriter, module, loc, duplicate);
-    } else {
-      assert(false && "Output type must be CSC or CSR.");
-    }
+    else
+      output = convertToExternalCSR(rewriter, module, loc, duplicate);
 
     Value outputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memref1DI64Type, output, c1);
