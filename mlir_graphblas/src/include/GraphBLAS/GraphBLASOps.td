@@ -328,7 +328,7 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOperand:$input, AnyType:$thunk, StrAttr:$apply_operator);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, AnyType:$thunk, StrAttr:$apply_operator);
     let results = (outs AnyTensor:$output);
     
     let assemblyFormat = [{
