@@ -1132,6 +1132,7 @@ public:
     // Inputs
     ValueRange operands = op.getOperands();
     StringRef semiring = op.semiring();
+    bool maskComplement = op.mask_complement();
 
     // Types
     // Can't use result here because it might be a scalar (vector-vector)
@@ -1139,10 +1140,11 @@ public:
         op.a().getType().dyn_cast<RankedTensorType>().getElementType();
 
     // New op
-    ArrayRef<NamedAttribute> attributes;
+    NamedAttrList attributes = {};
+    attributes.append(StringRef("mask_complement"), rewriter.getBoolAttr(maskComplement));
     graphblas::MatrixMultiplyGenericOp newMultOp =
         rewriter.create<graphblas::MatrixMultiplyGenericOp>(
-            loc, op->getResultTypes(), operands, attributes, 3);
+            loc, op->getResultTypes(), operands, attributes.getAttrs(), 3);
 
     if (failed(populateSemiringRegions(rewriter, loc, semiring, valueType,
                                        newMultOp.getRegions().slice(0, 3))))
@@ -2106,6 +2108,7 @@ public:
       accumulateString = accumulateOperator->str();
     }
     Value mask = op.mask();
+    // bool maskComplement = op.mask_complement();
     bool replace = op.replace();
 
     // Types
