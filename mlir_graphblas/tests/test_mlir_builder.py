@@ -704,12 +704,12 @@ REDUCE_TO_VECTOR_CASES = [
         "tensor<?xf64, #SparseVec64>",
         id="csr_arbitrary",
     ),
-    # pytest.param(
-    #     "tensor<?x?xf64, #CSC64>",
-    #     "tensor<?xf64, #SparseVec64>",
-    #     "tensor<?xf64, #SparseVec64>",
-    #     id="csc_arbitrary",
-    # ), # TODO make this work
+    pytest.param(
+        "tensor<?x?xf64, #CSC64>",
+        "tensor<?xf64, #SparseVec64>",
+        "tensor<?xf64, #SparseVec64>",
+        id="csc_arbitrary",
+    ),
 ]
 
 
@@ -780,6 +780,12 @@ def test_ir_reduce_to_vector(
         reduced_rows_clamped,
         reduced_columns_clamped,
     ) = reduce_func(input_tensor)
+
+    assert reduced_rows.shape == (5,)
+    assert reduced_columns.shape == (4,)
+    assert reduced_rows_clamped.shape == (5,)
+    assert reduced_columns_clamped.shape == (4,)
+
     reduced_rows = engine.sparse_vec_densify5(reduced_rows)
     reduced_columns = engine.sparse_vec_densify4(reduced_columns)
     reduced_rows_clamped = engine.sparse_vec_densify5(reduced_rows_clamped)

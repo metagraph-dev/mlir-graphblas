@@ -54,6 +54,7 @@ jobs:
         run: |
           conda install -c conda-forge coveralls
           coveralls --service=github
+        continue-on-error: true
       - name: Conda Build
         run: |
           conda build -c metagraph/label/dev -c conda-forge --python ${{ matrix.pyver }} continuous_integration/conda # temp restriction to use metagraph dev label

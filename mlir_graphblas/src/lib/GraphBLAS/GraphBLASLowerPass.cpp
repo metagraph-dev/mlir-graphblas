@@ -707,7 +707,7 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
 
-    Value nrows = rewriter.create<tensor::DimOp>(loc, matrix, c0);
+    Value len_dense_dim = rewriter.create<tensor::DimOp>(loc, matrix, (axis == 1) ? c0 : c1);
 
     Value matrixPointers = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memref1DPointerType, matrix, c1);
@@ -719,10 +719,10 @@ public:
     ArrayRef<int64_t> outputShape = {outputLength};
     Value output = callEmpty(rewriter, module, loc, matrix, outputShape);
 
-    callResizeDim(rewriter, module, loc, output, c0, nrows);
+    callResizeDim(rewriter, module, loc, output, c0, len_dense_dim);
 
     scf::ForOp nnzLoop =
-        rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
+        rewriter.create<scf::ForOp>(loc, c0, len_dense_dim, c1, ValueRange{c0});
     {
       rewriter.setInsertionPointToStart(nnzLoop.getBody());
       Value numNonEmptyRows = nnzLoop.getLoopBody().getArgument(1);
@@ -767,7 +767,7 @@ public:
         loc, memref1DValueType, output);
 
     scf::ForOp reduceLoop =
-        rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
+        rewriter.create<scf::ForOp>(loc, c0, len_dense_dim, c1, ValueRange{c0});
     {
       rewriter.setInsertionPointToStart(reduceLoop.getBody());
       Value outputValuesPosition = reduceLoop.getLoopBody().getArgument(1);
