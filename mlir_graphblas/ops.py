@@ -431,7 +431,7 @@ class GraphBLAS_MatrixMultiply(BaseOp):
     allowed_semirings = {"plus_plus", "plus_times", "plus_pair", "min_plus"}
 
     @classmethod
-    def call(cls, irbuilder, a, b, semiring, *, mask=None):
+    def call(cls, irbuilder, a, b, semiring, *, mask=None, mask_complement=False):
         cls.ensure_mlirvar(a, TensorType)
         cls.ensure_mlirvar(b, TensorType)
         if semiring not in cls.allowed_semirings:
@@ -444,9 +444,9 @@ class GraphBLAS_MatrixMultiply(BaseOp):
         if mask:
             cls.ensure_mlirvar(mask)
             mlir = (
-                f"{ret_val.assign} = graphblas.matrix_multiply {a}, {b}, "
-                f"{mask} "
-                f'{{ semiring = "{semiring}" }} : ({a.type}, {b.type}, {mask.type}) to {ret_val.type}'
+                f"{ret_val.assign} = graphblas.matrix_multiply {a}, {b}, {mask} "
+                f'{{ semiring = "{semiring}", mask_complement = {"true" if mask_complement else "false"} }}'
+                f": ({a.type}, {b.type}, {mask.type}) to {ret_val.type}"
             )
         else:
             mlir = (

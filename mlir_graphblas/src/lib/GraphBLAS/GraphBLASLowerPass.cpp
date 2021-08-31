@@ -1141,7 +1141,8 @@ public:
 
     // New op
     NamedAttrList attributes = {};
-    attributes.append(StringRef("mask_complement"), rewriter.getBoolAttr(maskComplement));
+    attributes.append(StringRef("mask_complement"),
+                      rewriter.getBoolAttr(maskComplement));
     graphblas::MatrixMultiplyGenericOp newMultOp =
         rewriter.create<graphblas::MatrixMultiplyGenericOp>(
             loc, op->getResultTypes(), operands, attributes.getAttrs(), 3);
@@ -1292,15 +1293,16 @@ private:
           rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
       if (isMaskComplement) {
-        ValueRange mcResult = buildMaskComplement(rewriter, ncol, Mj, mcolStart, mcolEnd);
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, ncol, Mj, mcolStart, mcolEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
         total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi,
                                    maskComplement, c0, mcSize, valueType);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
-        total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi, Mj,
-                                   mcolStart, mcolEnd, valueType);
+        total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi,
+                                   Mj, mcolStart, mcolEnd, valueType);
       }
     } else {
       total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi,
@@ -1376,17 +1378,18 @@ private:
           rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
       if (isMaskComplement) {
-        ValueRange mcResult = buildMaskComplement(rewriter, ncol, Mj, mcolStart, mcolEnd);
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, ncol, Mj, mcolStart, mcolEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
         computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx,
-                            maskComplement, c0, mcSize, valueType, extBlocks, Cj, Cx,
-                            baseIndex);
+                            maskComplement, c0, mcSize, valueType, extBlocks,
+                            Cj, Cx, baseIndex);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
         computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx,
-                            Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj, Cx,
-                            baseIndex);
+                            Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj,
+                            Cx, baseIndex);
       }
     } else {
       computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx,
@@ -1492,7 +1495,8 @@ private:
     Value total;
     if (mask) {
       if (isMaskComplement) {
-        ValueRange mcResult = buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
         total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj,
@@ -1534,17 +1538,18 @@ private:
 
     if (mask) {
       if (isMaskComplement) {
-        ValueRange mcResult = buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
         computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
-                            maskComplement, c0, mcSize, valueType, extBlocks, Ci, Cx,
-                            c0);
+                            maskComplement, c0, mcSize, valueType, extBlocks,
+                            Ci, Cx, c0);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
         computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
-                            Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx,
-                            c0);
+                            Mi, maskStart, maskEnd, valueType, extBlocks, Ci,
+                            Cx, c0);
       }
     } else {
       computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
@@ -1645,7 +1650,8 @@ private:
     Value total;
     if (mask) {
       if (isMaskComplement) {
-        ValueRange mcResult = buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
         total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi,
@@ -1687,17 +1693,18 @@ private:
 
     if (mask) {
       if (isMaskComplement) {
-        ValueRange mcResult = buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
         computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
-                            maskComplement, c0, mcSize, valueType, extBlocks, Ci, Cx,
-                            c0);
+                            maskComplement, c0, mcSize, valueType, extBlocks,
+                            Ci, Cx, c0);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
         computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
-                            Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx,
-                            c0);
+                            Mi, maskStart, maskEnd, valueType, extBlocks, Ci,
+                            Cx, c0);
       }
     } else {
       computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
