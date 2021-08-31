@@ -150,12 +150,11 @@ def return_tensor_to_ctypes(
         else:
             pointer_type = "uint64"
             index_type = "uint64"
-        value_type = {
-            "i32": "int32",
-            "i64": "int64",
-            "f32": "float32",
-            "f64": "float64",
-        }[tensor_type.element_type.dump()]
+
+        if isinstance(tensor_type.element_type, mlir.astnodes.IntegerType):
+            value_type = f"int{tensor_type.element_type.width}"
+        else:
+            value_type = f"float{tensor_type.element_type.type.name[1:]}"
 
         def decoder(arg, ptype=pointer_type, itype=index_type, vtype=value_type) -> int:
             ptr = ctypes.cast(arg, ctypes.c_void_p).value

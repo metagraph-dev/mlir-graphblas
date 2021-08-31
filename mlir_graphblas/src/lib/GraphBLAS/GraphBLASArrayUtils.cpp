@@ -620,12 +620,20 @@ Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect,
   Value aggVal;
   if (agg == "plus") {
     aggVal = llvm::TypeSwitch<Type, Value>(valueType)
-                 .Case<IntegerType>([&](IntegerType type) {
-                   return rewriter.create<AddIOp>(loc, newValA, newValB);
-                 })
-                 .Case<FloatType>([&](FloatType type) {
-                   return rewriter.create<AddFOp>(loc, newValA, newValB);
-                 });
+        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<AddIOp>(loc, newValA, newValB); })
+        .Case<FloatType>([&](FloatType type) { return rewriter.create<AddFOp>(loc, newValA, newValB); });
+  } else if (agg == "minus") {
+    aggVal = llvm::TypeSwitch<Type, Value>(valueType)
+        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<SubIOp>(loc, newValA, newValB); })
+        .Case<FloatType>([&](FloatType type) { return rewriter.create<SubFOp>(loc, newValA, newValB); });
+  } else if (agg == "times") {
+    aggVal = llvm::TypeSwitch<Type, Value>(valueType)
+        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<MulIOp>(loc, newValA, newValB); })
+        .Case<FloatType>([&](FloatType type) { return rewriter.create<MulFOp>(loc, newValA, newValB); });
+  } else if (agg == "div") {
+    aggVal = llvm::TypeSwitch<Type, Value>(valueType)
+        .Case<IntegerType>([&](IntegerType type) { return rewriter.create<SignedDivIOp>(loc, newValA, newValB); })
+        .Case<FloatType>([&](FloatType type) { return rewriter.create<DivFOp>(loc, newValA, newValB); });
   } else if (agg == "min") {
     Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
                     .Case<IntegerType>([&](IntegerType type) {
@@ -637,15 +645,55 @@ Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect,
                                                      newValA, newValB);
                     });
     aggVal = rewriter.create<SelectOp>(loc, cmp, newValA, newValB);
-  } else if (agg == "times") {
+  } else if (agg == "max") {
+    Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+                    .Case<IntegerType>([&](IntegerType type)
+                                       { return rewriter.create<CmpIOp>(loc, CmpIPredicate::sgt, newValA, newValB); })
+                    .Case<FloatType>([&](FloatType type)
+                                       { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OGT, newValA, newValB); });
+    aggVal = rewriter.create<SelectOp>(loc, cmp, newValA, newValB);
+  } else if (agg == "first") {
+    aggVal = newValA;
+  } else if (agg == "second") {
+    aggVal = newValB;
+  } else if (agg == "eq") {
     aggVal = llvm::TypeSwitch<Type, Value>(valueType)
-                 .Case<IntegerType>([&](IntegerType type) {
-                   return rewriter.create<MulIOp>(loc, newValA, newValB);
-                 })
-                 .Case<FloatType>([&](FloatType type) {
-                   return rewriter.create<MulFOp>(loc, newValA, newValB);
-                 });
+                 .Case<IntegerType>([&](IntegerType type)
+                                    { return rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, newValA, newValB); })
+                 .Case<FloatType>([&](FloatType type)
+                                    { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OEQ, newValA, newValB); });
+  } else if (agg == "ne") {
+    aggVal = llvm::TypeSwitch<Type, Value>(valueType)
+                 .Case<IntegerType>([&](IntegerType type)
+                                    { return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, newValA, newValB); })
+                 .Case<FloatType>([&](FloatType type)
+                                    { return rewriter.create<CmpFOp>(loc, CmpFPredicate::ONE, newValA, newValB); });
+  } else if (agg == "lt") {
+    aggVal = llvm::TypeSwitch<Type, Value>(valueType)
+                 .Case<IntegerType>([&](IntegerType type)
+                                    { return rewriter.create<CmpIOp>(loc, CmpIPredicate::slt, newValA, newValB); })
+                 .Case<FloatType>([&](FloatType type)
+                                    { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OLT, newValA, newValB); });
+  } else if (agg == "le") {
+    aggVal = llvm::TypeSwitch<Type, Value>(valueType)
+                 .Case<IntegerType>([&](IntegerType type)
+                                    { return rewriter.create<CmpIOp>(loc, CmpIPredicate::sle, newValA, newValB); })
+                 .Case<FloatType>([&](FloatType type)
+                                    { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OLE, newValA, newValB); });
+  } else if (agg == "gt") {
+    aggVal = llvm::TypeSwitch<Type, Value>(valueType)
+                 .Case<IntegerType>([&](IntegerType type)
+                                    { return rewriter.create<CmpIOp>(loc, CmpIPredicate::sgt, newValA, newValB); })
+                 .Case<FloatType>([&](FloatType type)
+                                    { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OGT, newValA, newValB); });
+  } else if (agg == "ge") {
+    aggVal = llvm::TypeSwitch<Type, Value>(valueType)
+                 .Case<IntegerType>([&](IntegerType type)
+                                    { return rewriter.create<CmpIOp>(loc, CmpIPredicate::sge, newValA, newValB); })
+                 .Case<FloatType>([&](FloatType type)
+                                    { return rewriter.create<CmpFOp>(loc, CmpFPredicate::OGE, newValA, newValB); });
   }
+
   rewriter.create<memref::StoreOp>(loc, aggVal, Ox, posO);
   rewriter.create<scf::YieldOp>(
       loc, ValueRange{posAplus1, posBplus1, posOplus1, ctrue, ctrue});

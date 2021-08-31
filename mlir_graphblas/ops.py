@@ -307,7 +307,7 @@ class GraphBLAS_Transpose(BaseOp):
 class GraphBLAS_Update(BaseOp):
     dialect = "graphblas"
     name = "update"
-    allowed_accumulators = {"plus", "min"}
+    allowed_accumulators = {"plus", "times", "min", "max"}
 
     @classmethod
     def call(cls, irbuilder, input, output, accumulate="plus"):
