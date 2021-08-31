@@ -245,12 +245,12 @@ static LogicalResult verifyApplyArgs(T op) {
   // shapes using "?"
   if (resultTensorType.getRank() == 2) {
     llvm::Optional<std::string> inputCompressionErrorMessage =
-      checkCompressedMatrix(inputType, 0, EITHER);
+        checkCompressedMatrix(inputType, 0, EITHER);
     if (inputCompressionErrorMessage)
       return op.emitError(inputCompressionErrorMessage.getValue());
 
     llvm::Optional<std::string> resultCompressionErrorMessage =
-      checkCompressedMatrix(resultType, -1, EITHER);
+        checkCompressedMatrix(resultType, -1, EITHER);
     if (resultCompressionErrorMessage)
       return op.emitError(resultCompressionErrorMessage.getValue());
 
@@ -258,21 +258,23 @@ static LogicalResult verifyApplyArgs(T op) {
       return op.emitError("Input shape does not match output shape.");
   } else if (resultTensorType.getRank() == 1) {
     llvm::Optional<std::string> inputCompressionErrorMessage =
-      checkCompressedVector(inputType, 0);
+        checkCompressedVector(inputType, 0);
     if (inputCompressionErrorMessage)
-      return op.emitError(inputCompressionErrorMessage.getValue()); // TODO test this
+      return op.emitError(
+          inputCompressionErrorMessage.getValue()); // TODO test this
 
     llvm::Optional<std::string> resultCompressionErrorMessage =
-      checkCompressedVector(resultType, -1);
+        checkCompressedVector(resultType, -1);
     if (resultCompressionErrorMessage)
-      return op.emitError(resultCompressionErrorMessage.getValue()); // TODO test this
+      return op.emitError(
+          resultCompressionErrorMessage.getValue()); // TODO test this
 
     if (inputShape[0] != resultShape[0])
       return op.emitError("Input shape does not match output shape.");
   } else {
     return op.emitError("Input must be a matrix or vector."); // TODO test this
   }
-  
+
   return success();
 }
 
