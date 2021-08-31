@@ -236,7 +236,7 @@ class MatrixReduceToScalar(BaseFunction):
 
     _valid_aggregators = {"plus"}
     _agg_aliases = {
-        "plus": "plus",
+        "sum": "plus",
     }
 
     def __init__(self, aggregator="plus"):

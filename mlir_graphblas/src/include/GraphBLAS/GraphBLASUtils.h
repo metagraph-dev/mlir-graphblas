@@ -10,13 +10,15 @@
 #include <set>
 #include <string>
 
-static const llvm::StringSet<> supportedIntersectOperators{"plus", "min",
-                                                           "times"};
+static const llvm::StringSet<> supportedIntersectOperators{
+    "plus", "minus", "times", "div", "min", "max", "first", "second"};
+//"eq", "ne", "lt", "le", "gt", "ge"};
 
-static const llvm::StringSet<> supportedUnionOperators{"plus", "min", "times"};
+static const llvm::StringSet<> supportedUnionOperators{
+    "plus", "times", "min", "max", "first", "second"};
 
-static const llvm::StringSet<> supportedUpdateAccumulateOperators{"plus",
-                                                                  "min"};
+static const llvm::StringSet<> supportedUpdateAccumulateOperators{
+    "plus", "times", "min", "max"};
 
 // These must match the options supported by
 // GraphBLASUtils.cpp::populateSemiringAdd()
