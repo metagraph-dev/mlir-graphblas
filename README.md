@@ -10,3 +10,15 @@ In order to build `graphblas-opt`, run `python3 build.py` from `mlir_graphblas/s
 
 `build.py` does not rebuild from scratch by default. To perform a clean build, run  `python3 build.py -build-clean`. 
 
+## Linting with clang-format
+
+Ensure that `clang-format` is available (install the `clang-tools` conda package) and run:
+
+```
+./run-clang-format.py -r mlir_graphblas/src/
+```
+
+If changes required, can make changes in place with
+```
+./run-clang-format.py -i -r mlir_graphblas/src/
+```
