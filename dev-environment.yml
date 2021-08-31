@@ -11,6 +11,7 @@ dependencies:
   - pytest
   - pytest-cov
   - black
+  - clang-tools
 
 # documentation
   - sphinx=3.0.4
