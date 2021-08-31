@@ -1132,6 +1132,7 @@ public:
     // Inputs
     ValueRange operands = op.getOperands();
     StringRef semiring = op.semiring();
+    bool maskComplement = op.mask_complement();
 
     // Types
     // Can't use result here because it might be a scalar (vector-vector)
@@ -1139,10 +1140,12 @@ public:
         op.a().getType().dyn_cast<RankedTensorType>().getElementType();
 
     // New op
-    ArrayRef<NamedAttribute> attributes;
+    NamedAttrList attributes = {};
+    attributes.append(StringRef("mask_complement"),
+                      rewriter.getBoolAttr(maskComplement));
     graphblas::MatrixMultiplyGenericOp newMultOp =
         rewriter.create<graphblas::MatrixMultiplyGenericOp>(
-            loc, op->getResultTypes(), operands, attributes, 3);
+            loc, op->getResultTypes(), operands, attributes.getAttrs(), 3);
 
     if (failed(populateSemiringRegions(rewriter, loc, semiring, valueType,
                                        newMultOp.getRegions().slice(0, 3))))
@@ -1206,6 +1209,7 @@ private:
     Value A = op.a();
     Value B = op.b();
     Value mask = op.mask();
+    bool isMaskComplement = op.mask_complement();
 
     // Types
     Type indexType = rewriter.getIndexType();
@@ -1288,8 +1292,18 @@ private:
       Value mcolStart =
           rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
-      total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi, Mj,
-                                 mcolStart, mcolEnd, valueType);
+      if (isMaskComplement) {
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, ncol, Mj, mcolStart, mcolEnd);
+        Value maskComplement = mcResult[0];
+        Value mcSize = mcResult[1];
+        total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi,
+                                   maskComplement, c0, mcSize, valueType);
+        rewriter.create<memref::DeallocOp>(loc, maskComplement);
+      } else {
+        total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi,
+                                   Mj, mcolStart, mcolEnd, valueType);
+      }
     } else {
       total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi,
                                  nullptr, c0, ncol, valueType);
@@ -1363,9 +1377,20 @@ private:
       Value mcolStart =
           rewriter.create<IndexCastOp>(loc, mcolStart64, indexType);
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
-      computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx,
-                          Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj, Cx,
-                          baseIndex);
+      if (isMaskComplement) {
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, ncol, Mj, mcolStart, mcolEnd);
+        Value maskComplement = mcResult[0];
+        Value mcSize = mcResult[1];
+        computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx,
+                            maskComplement, c0, mcSize, valueType, extBlocks,
+                            Cj, Cx, baseIndex);
+        rewriter.create<memref::DeallocOp>(loc, maskComplement);
+      } else {
+        computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx,
+                            Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj,
+                            Cx, baseIndex);
+      }
     } else {
       computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx,
                           nullptr, c0, ncol, valueType, extBlocks, Cj, Cx,
@@ -1396,6 +1421,7 @@ private:
     Value A = op.a();
     Value B = op.b();
     Value mask = op.mask();
+    bool isMaskComplement = op.mask_complement();
 
     // Types
     Type indexType = rewriter.getIndexType();
@@ -1468,8 +1494,18 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_rowTotal.elseBlock());
     Value total;
     if (mask) {
-      total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj,
-                                 Mi, maskStart, maskEnd, valueType);
+      if (isMaskComplement) {
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+        Value maskComplement = mcResult[0];
+        Value mcSize = mcResult[1];
+        total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj,
+                                   maskComplement, c0, mcSize, valueType);
+        rewriter.create<memref::DeallocOp>(loc, maskComplement);
+      } else {
+        total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj,
+                                   Mi, maskStart, maskEnd, valueType);
+      }
     } else {
       total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj,
                                  nullptr, c0, size, valueType);
@@ -1501,9 +1537,20 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
 
     if (mask) {
-      computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
-                          Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx,
-                          c0);
+      if (isMaskComplement) {
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+        Value maskComplement = mcResult[0];
+        Value mcSize = mcResult[1];
+        computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
+                            maskComplement, c0, mcSize, valueType, extBlocks,
+                            Ci, Cx, c0);
+        rewriter.create<memref::DeallocOp>(loc, maskComplement);
+      } else {
+        computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
+                            Mi, maskStart, maskEnd, valueType, extBlocks, Ci,
+                            Cx, c0);
+      }
     } else {
       computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
                           nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
@@ -1530,6 +1577,7 @@ private:
     Value A = op.a();
     Value B = op.b();
     Value mask = op.mask();
+    bool isMaskComplement = op.mask_complement();
 
     // Types
     Type indexType = rewriter.getIndexType();
@@ -1601,8 +1649,18 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_rowTotal.elseBlock());
     Value total;
     if (mask) {
-      total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi,
-                                 Mi, maskStart, maskEnd, valueType);
+      if (isMaskComplement) {
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+        Value maskComplement = mcResult[0];
+        Value mcSize = mcResult[1];
+        total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi,
+                                   maskComplement, c0, mcSize, valueType);
+        rewriter.create<memref::DeallocOp>(loc, maskComplement);
+      } else {
+        total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi,
+                                   Mi, maskStart, maskEnd, valueType);
+      }
     } else {
       total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi,
                                  nullptr, c0, size, valueType);
@@ -1634,9 +1692,20 @@ private:
     rewriter.setInsertionPointToStart(ifBlock_cmpDiff.thenBlock());
 
     if (mask) {
-      computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
-                          Mi, maskStart, maskEnd, valueType, extBlocks, Ci, Cx,
-                          c0);
+      if (isMaskComplement) {
+        ValueRange mcResult =
+            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+        Value maskComplement = mcResult[0];
+        Value mcSize = mcResult[1];
+        computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
+                            maskComplement, c0, mcSize, valueType, extBlocks,
+                            Ci, Cx, c0);
+        rewriter.create<memref::DeallocOp>(loc, maskComplement);
+      } else {
+        computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
+                            Mi, maskStart, maskEnd, valueType, extBlocks, Ci,
+                            Cx, c0);
+      }
     } else {
       computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
                           nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0);
@@ -2106,6 +2175,7 @@ public:
       accumulateString = accumulateOperator->str();
     }
     Value mask = op.mask();
+    // bool maskComplement = op.mask_complement();
     bool replace = op.replace();
 
     // Types
