@@ -15,6 +15,78 @@
 
 using namespace ::mlir;
 
+ValueRange buildMaskComplement(PatternRewriter &rewriter, Value fullSize,
+                               Value maskIndices, Value maskStart, Value maskEnd) {
+  // Returns:
+  // 1. a memref containing the indices of the mask complement
+  // 2. the size of the memref
+  Location loc = rewriter.getUnknownLoc();
+
+  // Types used in this function
+  Type indexType = rewriter.getIndexType();
+  Type int64Type = rewriter.getIntegerType(64);
+  MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+
+  // Initial constants
+  Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+  Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+
+  // Compute the size of the complemented mask
+  Value maskSize = rewriter.create<SubIOp>(loc, maskEnd, maskStart);
+  Value compSize = rewriter.create<SubIOp>(loc, fullSize, maskSize);
+
+  // Allocate memref
+  Value compIndices = rewriter.create<memref::AllocOp>(loc, memref1DI64Type, compSize);
+
+  // Populate memref
+  Value firstMaskIndex64 = rewriter.create<memref::LoadOp>(loc, maskIndices, maskStart);
+  Value firstMaskIndex = rewriter.create<IndexCastOp>(loc, firstMaskIndex64, indexType);
+  scf::ForOp loop = rewriter.create<scf::ForOp>(loc, c0, fullSize, c1, ValueRange{c0, maskStart, firstMaskIndex});
+  Value idx = loop.getInductionVar();
+  Value compPos = loop.getLoopBody().getArgument(1);
+  Value maskPos = loop.getLoopBody().getArgument(2);
+  Value maskIndex = loop.getLoopBody().getArgument(3);
+  {
+    rewriter.setInsertionPointToStart(loop.getBody());
+    Value maskMatch = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, idx, maskIndex);
+    scf::IfOp if_match = rewriter.create<scf::IfOp>(loc, TypeRange{indexType, indexType, indexType}, maskMatch, true);
+    {
+      rewriter.setInsertionPointToStart(if_match.thenBlock());
+      // Increment maskPos
+      Value nextMaskPos = rewriter.create<AddIOp>(loc, maskPos, c1);
+      // Update maskIndex (unless we're at the end)
+      Value isAtEnd = rewriter.create<CmpIOp>(loc, CmpIPredicate::uge, nextMaskPos, maskEnd);
+      scf::IfOp if_atEnd = rewriter.create<scf::IfOp>(loc, indexType, isAtEnd, true);
+      {
+        rewriter.setInsertionPointToStart(if_atEnd.thenBlock());
+        rewriter.create<scf::YieldOp>(loc, maskIndex);
+      }
+      {
+        rewriter.setInsertionPointToStart(if_atEnd.elseBlock());
+        Value newMaskIndex64 = rewriter.create<memref::LoadOp>(loc, maskIndices, nextMaskPos);
+        Value newMaskIndex = rewriter.create<IndexCastOp>(loc, newMaskIndex64, indexType);
+        rewriter.create<scf::YieldOp>(loc, newMaskIndex);
+        rewriter.setInsertionPointAfter(if_atEnd);
+      }
+      rewriter.create<scf::YieldOp>(loc, ValueRange{compPos, nextMaskPos, if_atEnd.getResult(0)});
+    }
+    {
+      rewriter.setInsertionPointToStart(if_match.elseBlock());
+      // Add i to compIndices
+      Value idx64 = rewriter.create<IndexCastOp>(loc, idx, int64Type);
+      rewriter.create<memref::StoreOp>(loc, idx64, compIndices, compPos);
+      // Increment compPos
+      Value nextCompPos = rewriter.create<AddIOp>(loc, compPos, c1);
+      rewriter.create<scf::YieldOp>(loc, ValueRange{nextCompPos, maskPos, maskIndex});
+      rewriter.setInsertionPointAfter(if_match);
+    }
+    rewriter.create<scf::YieldOp>(loc, if_match.getResults());
+    rewriter.setInsertionPointAfter(loop);
+  }
+
+  return ValueRange{compIndices, compSize};
+}
+
 Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
                          Value fixedIndices, Value fixedIndexStart,
                          Value fixedIndexEnd, Value iterPointers,

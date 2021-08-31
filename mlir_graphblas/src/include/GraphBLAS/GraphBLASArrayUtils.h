@@ -11,6 +11,9 @@
 
 using namespace mlir;
 
+ValueRange buildMaskComplement(PatternRewriter &rewriter, Value fullSize,
+                               Value maskIndices, Value maskStart, Value maskEnd);
+
 Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
                          Value fixedIndices, Value fixedIndexStart,
                          Value fixedIndexEnd, Value iterPointers,
