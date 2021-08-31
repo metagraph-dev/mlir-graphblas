@@ -707,7 +707,8 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
 
-    Value nrows = rewriter.create<tensor::DimOp>(loc, matrix, c0);
+    Value len_dense_dim =
+        rewriter.create<tensor::DimOp>(loc, matrix, (axis == 1) ? c0 : c1);
 
     Value matrixPointers = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memref1DPointerType, matrix, c1);
@@ -719,10 +720,10 @@ public:
     ArrayRef<int64_t> outputShape = {outputLength};
     Value output = callEmpty(rewriter, module, loc, matrix, outputShape);
 
-    callResizeDim(rewriter, module, loc, output, c0, nrows);
+    callResizeDim(rewriter, module, loc, output, c0, len_dense_dim);
 
     scf::ForOp nnzLoop =
-        rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
+        rewriter.create<scf::ForOp>(loc, c0, len_dense_dim, c1, ValueRange{c0});
     {
       rewriter.setInsertionPointToStart(nnzLoop.getBody());
       Value numNonEmptyRows = nnzLoop.getLoopBody().getArgument(1);
@@ -767,7 +768,7 @@ public:
         loc, memref1DValueType, output);
 
     scf::ForOp reduceLoop =
-        rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
+        rewriter.create<scf::ForOp>(loc, c0, len_dense_dim, c1, ValueRange{c0});
     {
       rewriter.setInsertionPointToStart(reduceLoop.getBody());
       Value outputValuesPosition = reduceLoop.getLoopBody().getArgument(1);
@@ -995,8 +996,7 @@ public:
   };
 };
 
-class LowerApplyRewrite
-    : public OpRewritePattern<graphblas::ApplyOp> {
+class LowerApplyRewrite : public OpRewritePattern<graphblas::ApplyOp> {
 public:
   using OpRewritePattern<graphblas::ApplyOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::ApplyOp op,
@@ -1015,8 +1015,8 @@ public:
 
     // New op
     graphblas::ApplyGenericOp newApplyOp =
-        rewriter.create<graphblas::ApplyGenericOp>(
-            loc, op->getResultTypes(), input, 1);
+        rewriter.create<graphblas::ApplyGenericOp>(loc, op->getResultTypes(),
+                                                   input, 1);
 
     // Insert transformOut block
     Region &transformOutRegion = newApplyOp.getRegion(0);
@@ -2528,19 +2528,18 @@ public:
 };
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
-  patterns
-      .add<LowerMatrixSelectRewrite, LowerMatrixReduceToVectorRewrite,
-           LowerMatrixReduceToScalarRewrite,
-           LowerMatrixReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
-           LowerConvertLayoutRewrite, LowerTransposeRewrite,
-           LowerApplyRewrite, LowerApplyGenericRewrite,
-           LowerMatrixMultiplyReduceToScalarGenericRewrite,
-           LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
-           LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
-           LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
-           LowerVectorArgMaxOpRewrite, LowerCommentRewrite, LowerSizeRewrite,
-           LowerNumRowsRewrite, LowerNumColsRewrite, LowerNumValsRewrite,
-           LowerDupRewrite>(patterns.getContext());
+  patterns.add<
+      LowerMatrixSelectRewrite, LowerMatrixReduceToVectorRewrite,
+      LowerMatrixReduceToScalarRewrite, LowerMatrixReduceToScalarGenericRewrite,
+      LowerMatrixMultiplyRewrite, LowerConvertLayoutRewrite,
+      LowerTransposeRewrite, LowerApplyRewrite, LowerApplyGenericRewrite,
+      LowerMatrixMultiplyReduceToScalarGenericRewrite,
+      LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
+      LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
+      LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
+      LowerVectorArgMaxOpRewrite, LowerCommentRewrite, LowerSizeRewrite,
+      LowerNumRowsRewrite, LowerNumColsRewrite, LowerNumValsRewrite,
+      LowerDupRewrite>(patterns.getContext());
 }
 
 struct GraphBLASLoweringPass

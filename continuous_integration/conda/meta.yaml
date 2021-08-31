@@ -30,6 +30,7 @@ requirements:
     - donfig
     - panel
     - numpy
+    - scipy
     - jinja2
     - bokeh<2.3  # temp restriction until panel/bokeh bugs are worked out
 

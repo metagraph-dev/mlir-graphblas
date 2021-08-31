@@ -2,7 +2,6 @@ import datetime
 import mlir
 import itertools
 import pytest
-import jinja2
 import numpy as np
 
 from mlir_graphblas import MlirJitEngine
@@ -16,7 +15,13 @@ from mlir_graphblas.algorithms import (
     dense_neural_network_combined,
 )
 
-from .jit_engine_test_utils import sparsify_array, GRAPHBLAS_PASSES
+from .jit_engine_test_utils import (
+    sparsify_array,
+    densify_csr,
+    densify_csc,
+    densify_vector,
+    GRAPHBLAS_PASSES,
+)
 
 from typing import List, Callable
 
@@ -28,82 +33,6 @@ from typing import List, Callable
 @pytest.fixture(scope="module")
 def engine():
     jit_engine = MlirJitEngine()
-
-    for dim in range(2, 9):
-        mlir_template = jinja2.Template(
-            """
-#trait_densify = {
-  indexing_maps = [
-    affine_map<(i,j) -> (i,j)>,
-    affine_map<(i,j) -> (i,j)>
-  ],
-  iterator_types = ["parallel", "parallel"]
-}
-
-#CSR64 = #sparse_tensor.encoding<{
-  dimLevelType = [ "dense", "compressed" ],
-  dimOrdering = affine_map<(i,j) -> (i,j)>,
-  pointerBitWidth = 64,
-  indexBitWidth = 64
-}>
-
-#CSC64 = #sparse_tensor.encoding<{
-  dimLevelType = [ "dense", "compressed" ],
-  dimOrdering = affine_map<(i,j) -> (j,i)>,
-  pointerBitWidth = 64,
-  indexBitWidth = 64
-}>
-
-#SparseVec64 = #sparse_tensor.encoding<{ 
-    dimLevelType = [ "compressed" ], 
-    pointerBitWidth = 64, 
-    indexBitWidth = 64 
-}>
-
-func @sparse_vec_densify{{dim}}(%argA: tensor<{{dim}}xf64, #SparseVec64>) -> tensor<{{dim}}xf64> {
-  %output_storage = constant dense<0.0> : tensor<{{dim}}xf64>
-  %0 = linalg.generic {
-      indexing_maps = [
-         affine_map<(i) -> (i)>,
-         affine_map<(i) -> (i)>
-       ],
-       iterator_types = ["parallel"]
-    }
-    ins(%argA: tensor<{{dim}}xf64, #SparseVec64>)
-    outs(%output_storage: tensor<{{dim}}xf64>) {
-      ^bb(%A: f64, %x: f64):
-        linalg.yield %A : f64
-    } -> tensor<{{dim}}xf64>
-  return %0 : tensor<{{dim}}xf64>
-}
-
-func @csr_densify{{dim}}x{{dim}}(%argA: tensor<{{dim}}x{{dim}}xf64, #CSR64>) -> tensor<{{dim}}x{{dim}}xf64> {
-  %output_storage = constant dense<0.0> : tensor<{{dim}}x{{dim}}xf64>
-  %0 = linalg.generic #trait_densify
-    ins(%argA: tensor<{{dim}}x{{dim}}xf64, #CSR64>)
-    outs(%output_storage: tensor<{{dim}}x{{dim}}xf64>) {
-      ^bb(%A: f64, %x: f64):
-        linalg.yield %A : f64
-    } -> tensor<{{dim}}x{{dim}}xf64>
-  return %0 : tensor<{{dim}}x{{dim}}xf64>
-}
-
-func @csc_densify{{dim}}x{{dim}}(%argA: tensor<{{dim}}x{{dim}}xf64, #CSC64>) -> tensor<{{dim}}x{{dim}}xf64> {
-  %output_storage = constant dense<0.0> : tensor<{{dim}}x{{dim}}xf64>
-  %0 = linalg.generic #trait_densify
-    ins(%argA: tensor<{{dim}}x{{dim}}xf64, #CSC64>)
-    outs(%output_storage: tensor<{{dim}}x{{dim}}xf64>) {
-      ^bb(%A: f64, %x: f64):
-        linalg.yield %A : f64
-    } -> tensor<{{dim}}x{{dim}}xf64>
-  return %0 : tensor<{{dim}}x{{dim}}xf64>
-}
-
-""",
-            undefined=jinja2.StrictUndefined,
-        )
-        mlir_text = mlir_template.render(dim=dim)
-        jit_engine.add(mlir_text, GRAPHBLAS_PASSES)
 
     jit_engine.add(
         """
@@ -182,11 +111,10 @@ def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine, aliases: Alias
     dense_input_tensor = np.zeros([8, 8], dtype=np.float64)
     dense_input_tensor[1, 2] = 1.2
     dense_input_tensor[4, 3] = 4.3
-    assert np.isclose(dense_input_tensor, engine.csr_densify8x8(input_tensor)).all()
-
+    assert np.isclose(dense_input_tensor, densify_csr(input_tensor)).all()
     output_tensor = convert_layout_wrapper_callable(input_tensor)
 
-    assert np.isclose(dense_input_tensor, engine.csc_densify8x8(output_tensor)).all()
+    assert np.isclose(dense_input_tensor, densify_csc(output_tensor)).all()
 
 
 def test_ir_builder_triple_convert_layout(engine: MlirJitEngine, aliases: AliasMap):
@@ -241,11 +169,11 @@ def test_ir_builder_triple_convert_layout(engine: MlirJitEngine, aliases: AliasM
     dense_input_tensor = np.zeros([8, 8], dtype=np.float64)
     dense_input_tensor[1, 2] = 1.2
     dense_input_tensor[4, 3] = 4.3
-    assert np.isclose(dense_input_tensor, engine.csr_densify8x8(input_tensor)).all()
+    assert np.isclose(dense_input_tensor, densify_csr(input_tensor)).all()
 
     output_tensor = triple_convert_layout_callable(input_tensor)
 
-    assert np.isclose(dense_input_tensor, engine.csc_densify8x8(output_tensor)).all()
+    assert np.isclose(dense_input_tensor, densify_csc(output_tensor)).all()
 
     return
 
@@ -514,7 +442,7 @@ def test_ir_builder_dnn(
             sparse_input_tensor,
             clamp_threshold,
         )
-        dense_result = engine.csr_densify8x8(sparse_result)
+        dense_result = densify_csr(sparse_result)
 
         with np.printoptions(suppress=True):
             assert np.isclose(
@@ -577,7 +505,7 @@ def test_ir_project_and_filter(engine: MlirJitEngine, aliases: AliasMap):
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
 
     result = left_project_and_filter(input_tensor)
-    dense_result = engine.csr_densify5x5(result)
+    dense_result = densify_csr(result)
 
     expected_dense_result = dense_input_tensor @ dense_input_tensor.T
     expected_dense_result[expected_dense_result < 0] = 0
@@ -672,7 +600,7 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
 
     for threshold in np.unique(dense_input_tensor):
         result = gt_thunk(input_tensor, threshold)
-        dense_result = engine.csr_densify5x5(result)
+        dense_result = densify_csr(result)
 
         expected_dense_result = np.copy(dense_input_tensor)
         expected_dense_result[expected_dense_result <= threshold] = 0
@@ -704,12 +632,12 @@ REDUCE_TO_VECTOR_CASES = [
         "tensor<?xf64, #SparseVec64>",
         id="csr_arbitrary",
     ),
-    # pytest.param(
-    #     "tensor<?x?xf64, #CSC64>",
-    #     "tensor<?xf64, #SparseVec64>",
-    #     "tensor<?xf64, #SparseVec64>",
-    #     id="csc_arbitrary",
-    # ), # TODO make this work
+    pytest.param(
+        "tensor<?x?xf64, #CSC64>",
+        "tensor<?xf64, #SparseVec64>",
+        "tensor<?xf64, #SparseVec64>",
+        id="csc_arbitrary",
+    ),
 ]
 
 
@@ -780,10 +708,11 @@ def test_ir_reduce_to_vector(
         reduced_rows_clamped,
         reduced_columns_clamped,
     ) = reduce_func(input_tensor)
-    reduced_rows = engine.sparse_vec_densify5(reduced_rows)
-    reduced_columns = engine.sparse_vec_densify4(reduced_columns)
-    reduced_rows_clamped = engine.sparse_vec_densify5(reduced_rows_clamped)
-    reduced_columns_clamped = engine.sparse_vec_densify4(reduced_columns_clamped)
+
+    reduced_rows = densify_vector(reduced_rows)
+    reduced_columns = densify_vector(reduced_columns)
+    reduced_rows_clamped = densify_vector(reduced_rows_clamped)
+    reduced_columns_clamped = densify_vector(reduced_columns_clamped)
 
     expected_reduced_rows = np.array([1, -7, 0, 2, -9], dtype=dense_input_tensor.dtype)
     expected_reduced_columns = np.array([-8, 0, 2, -7], dtype=dense_input_tensor.dtype)

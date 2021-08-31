@@ -44,7 +44,11 @@ jobs:
       - name: Lint with Black
         run: |
           black --version
-          black mlir_graphblas *.py --check --diff
+          black mlir_graphblas . --check --diff
+      - name: Lint with clang-format
+        run: |
+          clang-format --version
+          ./run-clang-format.py -r mlir_graphblas/src/
       - name: Pytest
         run: |
           pytest mlir_graphblas
@@ -54,6 +58,7 @@ jobs:
         run: |
           conda install -c conda-forge coveralls
           coveralls --service=github
+        continue-on-error: true
       - name: Conda Build
         run: |
           conda build -c metagraph/label/dev -c conda-forge --python ${{ matrix.pyver }} continuous_integration/conda # temp restriction to use metagraph dev label

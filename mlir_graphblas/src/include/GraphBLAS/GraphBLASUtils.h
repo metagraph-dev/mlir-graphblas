@@ -18,8 +18,13 @@ static const llvm::StringSet<> supportedUnionOperators{"plus", "min", "times"};
 static const llvm::StringSet<> supportedUpdateAccumulateOperators{"plus",
                                                                   "min"};
 
-static const llvm::StringSet<> supportedSemirings{"plus_times", "plus_pair",
-                                                  "plus_plus", "min_plus"};
+// These must match the options supported by
+// GraphBLASUtils.cpp::populateSemiringAdd()
+static const llvm::StringSet<> supportedSemiringAddNames{"plus", "any", "min"};
+// These must match the options supported by
+// GraphBLASUtils.cpp::populateSemiringMultiply()
+static const llvm::StringSet<> supportedSemiringMultiplyNames{
+    "pair", "times", "plus", "first", "second"};
 
 static const llvm::StringSet<> supportedReduceAggregators{"plus"};
 

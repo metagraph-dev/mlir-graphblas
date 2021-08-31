@@ -14,6 +14,8 @@
   indexBitWidth = 64
 }>
 
+// COM: TODO as part of https://github.com/metagraph-dev/mlir-graphblas/issues/66 , handle all posssible semirings here.
+
 // additive operations
 
 // CHECK-LABEL:   builtin.func @matrix_multiply_plus_X(
