@@ -311,10 +311,11 @@ def GraphBLAS_MatrixReduceToScalarGenericOp : GraphBLAS_Op<"matrix_reduce_to_sca
 def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
     let summary = "tensor apply operation";
     let description = [{
-        Applies an operator to all elements of the given sparse tensor.  How
-        the thunk is used depends on the chosen operator.  Currently, the only valid
-        operator is "min".  The given sparse tensor must either be a CSR matrix, CSC
-        matrix, or a sparse vector.
+        Applies an operator to all elements of the given sparse tensor.  The operator
+        can be unary or binary. Binary operators require a thunk. The only supported
+        binary operator is "min". Unary operators cannot take a thunk. The only
+        supported unary operator is "abs".  The given sparse tensor must either
+        be a CSR matrix, CSC matrix, or a sparse vector.
 
         Example:
         ```mlir
@@ -323,16 +324,16 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
           graphblas.apply %sparse_matrix, %thunk { apply_operator = "min" } : 
             (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
         %vector_answer = 
-          graphblas.apply %sparse_vector, %thunk { apply_operator = "min" } : 
-            (tensor<?xi64, #SparseVec64>, i64) to tensor<?xi64, #SparseVec64>
+          graphblas.apply %sparse_vector { apply_operator = "abs" } : 
+            (tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
         ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, AnyType:$thunk, StrAttr:$apply_operator);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, Optional<AnyType>:$thunk, StrAttr:$apply_operator);
     let results = (outs AnyTensor:$output);
     
     let assemblyFormat = [{
-           $input `,` $thunk attr-dict `:` `(` type($input) `,` type($thunk) `)` `to` type($output)
+           $input (`,` $thunk^)? attr-dict `:` `(` type($input) (`,` type($thunk)^)? `)` `to` type($output)
     }];
 
     let verifier = [{ return ::verify(*this); }];

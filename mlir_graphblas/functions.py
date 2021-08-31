@@ -274,10 +274,13 @@ class MatrixReduceToScalar(BaseFunction):
 class Apply(BaseFunction):
     """
     Call signature:
-      apply(input: MLIRSparseTensor, thunk: f64) -> MLIRSparseTensor
+      If using a thunk-requiring operator:
+        apply(input: MLIRSparseTensor, thunk: f64) -> MLIRSparseTensor
     """
 
-    _valid_operators = {"min"}
+    _unary_operators = {"abs"}
+    _binary_operators = {"min"}
+    _valid_operators = _unary_operators | _binary_operators
 
     def __init__(self, operator="min"):
         super().__init__()
@@ -296,12 +299,18 @@ class Apply(BaseFunction):
             func_name=self.func_name,
             private_func=make_private,
             op=self.op,
+            needs_thunk=self.op in self._binary_operators,
         )
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>, %thunk: f64) -> tensor<?x?xf64, #CSR64> {
-        %output = graphblas.apply %input, %thunk { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
+      func {% if private_func %}private {% endif %}@{{ func_name }}(
+          %input: tensor<?x?xf64, #CSR64>
+          {%- if needs_thunk -%}
+          , %thunk: f64
+          {%- endif -%}
+      ) -> tensor<?x?xf64, #CSR64> {
+        %output = graphblas.apply %input{% if needs_thunk %}, %thunk{% endif %} { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>{% if needs_thunk %}, f64{% endif %}) to tensor<?x?xf64, #CSR64>
 
         return %output : tensor<?x?xf64, #CSR64>
       }

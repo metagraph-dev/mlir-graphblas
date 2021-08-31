@@ -20,6 +20,7 @@ from .jit_engine_test_utils import (
     densify_csr,
     densify_csc,
     densify_vector,
+    MLIR_TYPE_TO_NP_TYPE,
     GRAPHBLAS_PASSES,
 )
 
@@ -615,44 +616,55 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
 
 REDUCE_TO_VECTOR_CASES = [
     # pytest.param(
-    #     "tensor<5x4xf64, #CSR64>",
-    #     "tensor<5xf64, #SparseVec64>",
-    #     "tensor<4xf64, #SparseVec64>"
+    #     "tensor<5x4x{scalar_type}, #CSR64>",
+    #     "tensor<5x{scalar_type}, #SparseVec64>",
+    #     "tensor<4x{scalar_type}, #SparseVec64>"
     #     id="csr_fixed"
     # ), # TODO make this work
     # pytest.param(
-    #     "tensor<5x4xf64, #CSC64>",
-    #     "tensor<5xf64, #SparseVec64>",
-    #     "tensor<4xf64, #SparseVec64>"
+    #     "tensor<5x4x{scalar_type}, #CSC64>",
+    #     "tensor<5x{scalar_type}, #SparseVec64>",
+    #     "tensor<4x{scalar_type}, #SparseVec64>"
     #     id="csc_fixed"
     # ), # TODO make this work
     pytest.param(
-        "tensor<?x?xf64, #CSR64>",
-        "tensor<?xf64, #SparseVec64>",
-        "tensor<?xf64, #SparseVec64>",
+        "tensor<?x?x{scalar_type}, #CSR64>",
+        "tensor<?x{scalar_type}, #SparseVec64>",
+        "tensor<?x{scalar_type}, #SparseVec64>",
         id="csr_arbitrary",
     ),
     pytest.param(
-        "tensor<?x?xf64, #CSC64>",
-        "tensor<?xf64, #SparseVec64>",
-        "tensor<?xf64, #SparseVec64>",
+        "tensor<?x?x{scalar_type}, #CSC64>",
+        "tensor<?x{scalar_type}, #SparseVec64>",
+        "tensor<?x{scalar_type}, #SparseVec64>",
         id="csc_arbitrary",
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    "input_type, reduce_rows_output_type, reduce_columns_output_type",
+    "input_type_template, reduce_rows_output_type_template, reduce_columns_output_type_template",
     REDUCE_TO_VECTOR_CASES,
 )
+@pytest.mark.parametrize("mlir_type", ["f64"])  # TODO make this work for other types
 def test_ir_reduce_to_vector(
-    input_type: str,
-    reduce_rows_output_type: str,
-    reduce_columns_output_type: str,
+    input_type_template: str,
+    reduce_rows_output_type_template: str,
+    reduce_columns_output_type_template: str,
+    mlir_type: str,
     engine: MlirJitEngine,
     aliases: AliasMap,
 ):
-    # build functions
+    input_type = input_type_template.format(scalar_type=mlir_type)
+    reduce_rows_output_type = reduce_rows_output_type_template.format(
+        scalar_type=mlir_type
+    )
+    reduce_columns_output_type = reduce_columns_output_type_template.format(
+        scalar_type=mlir_type
+    )
+    np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
+
+    # Build Functions
     ir_builder = MLIRFunctionBuilder(
         "reduce_func",
         input_types=[input_type],
@@ -673,14 +685,12 @@ def test_ir_reduce_to_vector(
         matrix, "plus", 0, reduce_columns_output_type
     )
 
-    zero_f64 = ir_builder.constant(0.0, "f64")
-    reduced_rows_clamped = ir_builder.graphblas.apply(reduced_rows, "min", zero_f64)
-    reduced_columns_clamped = ir_builder.graphblas.apply(
-        reduced_columns, "min", zero_f64
-    )
+    zero_scalar = ir_builder.constant(0, mlir_type)
+    reduced_rows_clamped = ir_builder.graphblas.apply(reduced_rows, "min", zero_scalar)
+    reduced_columns_abs = ir_builder.graphblas.apply(reduced_columns, "abs")
 
     ir_builder.return_vars(
-        reduced_rows, reduced_columns, reduced_rows_clamped, reduced_columns_clamped
+        reduced_rows, reduced_columns, reduced_rows_clamped, reduced_columns_abs
     )
     reduce_func = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
@@ -693,7 +703,7 @@ def test_ir_reduce_to_vector(
             [0, 0, 1, 1],
             [0, 0, 0, -9],
         ],
-        dtype=np.float64,
+        dtype=np_type,
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
     input_type_is_csc = [1, 0] == TensorType.parse(
@@ -706,26 +716,25 @@ def test_ir_reduce_to_vector(
         reduced_rows,
         reduced_columns,
         reduced_rows_clamped,
-        reduced_columns_clamped,
+        reduced_columns_abs,
     ) = reduce_func(input_tensor)
 
     reduced_rows = densify_vector(reduced_rows)
     reduced_columns = densify_vector(reduced_columns)
     reduced_rows_clamped = densify_vector(reduced_rows_clamped)
-    reduced_columns_clamped = densify_vector(reduced_columns_clamped)
+    reduced_columns_abs = densify_vector(reduced_columns_abs)
 
-    expected_reduced_rows = np.array([1, -7, 0, 2, -9], dtype=dense_input_tensor.dtype)
-    expected_reduced_columns = np.array([-8, 0, 2, -7], dtype=dense_input_tensor.dtype)
-    expected_reduced_rows_clamped = np.array(
-        [0, -7, 0, 0, -9], dtype=dense_input_tensor.dtype
-    )
-    expected_reduced_columns_clamped = np.array(
-        [-8, 0, 0, -7], dtype=dense_input_tensor.dtype
-    )
+    expected_reduced_rows = np.sum(dense_input_tensor, axis=1)
+    expected_reduced_columns = np.sum(dense_input_tensor, axis=0)
+
+    expected_reduced_rows_clamped = np.copy(expected_reduced_rows)
+    expected_reduced_rows_clamped[expected_reduced_rows_clamped > 0] = 0
+
+    expected_reduced_columns_abs = np.abs(expected_reduced_columns)
 
     assert np.all(reduced_rows == expected_reduced_rows)
     assert np.all(reduced_columns == expected_reduced_columns)
     assert np.all(reduced_rows_clamped == expected_reduced_rows_clamped)
-    assert np.all(reduced_columns_clamped == expected_reduced_columns_clamped)
+    assert np.all(reduced_columns_abs == expected_reduced_columns_abs)
 
     return

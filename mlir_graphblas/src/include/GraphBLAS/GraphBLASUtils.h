@@ -33,7 +33,8 @@ static const llvm::StringSet<> supportedReduceAggregators{"plus"};
 static const llvm::StringSet<> supportedSelectors{"triu", "tril", "gt"};
 static const llvm::StringSet<> supportedThunkNeedingSelectors{"gt"};
 
-static const llvm::StringSet<> supportedApplyOperators{"min"};
+static const llvm::StringSet<> supportedBinaryApplyOperators{"min"};
+static const llvm::StringSet<> supportedUnaryApplyOperators{"abs"};
 
 bool typeIsCSR(mlir::Type inputType);
 bool typeIsCSC(mlir::Type inputType);

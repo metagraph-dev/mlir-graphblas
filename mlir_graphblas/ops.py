@@ -406,23 +406,37 @@ class GraphBLAS_MatrixReduceToScalar(BaseOp):
 class GraphBLAS_Apply(BaseOp):
     dialect = "graphblas"
     name = "apply"
-    allowed_ops = {"min"}
+    allowed_unary_ops = {"abs"}
+    allowed_binary_ops = {"min"}
+    allowed_ops = allowed_unary_ops | allowed_binary_ops
 
     @classmethod
-    def call(cls, irbuilder, input, apply_op, thunk):
+    def call(cls, irbuilder, input, apply_op, thunk=None):
         cls.ensure_mlirvar(input, TensorType)
-        cls.ensure_mlirvar(thunk)
         if apply_op not in cls.allowed_ops:
             raise TypeError(
                 f"Illegal apply_op: {apply_op}, must be one of {cls.allowed_ops}"
             )
-        return_type = input.type
+
         # TODO: return_type might be influenced by future allowable ops
+        return_type = input.type
         ret_val = irbuilder.new_var(return_type)
-        return ret_val, (
-            f"{ret_val.assign} = graphblas.apply {input}, {thunk} "
-            f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {thunk.type}) to {ret_val.type}'
-        )
+
+        if apply_op in cls.allowed_binary_ops:
+            cls.ensure_mlirvar(thunk)
+            code = (
+                f"{ret_val.assign} = graphblas.apply {input}, {thunk} "
+                f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {thunk.type}) to {ret_val.type}'
+            )
+        elif apply_op in cls.allowed_unary_ops:
+            if thunk is not None:
+                raise TypeError(f"apply_op misuse: {apply_op} cannot take a thunk.")
+            code = (
+                f"{ret_val.assign} = graphblas.apply {input} "
+                f'{{ apply_operator = "{apply_op}" }} : ({input.type}) to {ret_val.type}'
+            )
+
+        return ret_val, code
 
 
 class GraphBLAS_MatrixMultiply(BaseOp):
