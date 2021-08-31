@@ -359,16 +359,18 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
     let summary = "matrix multiply operation with an optional structural mask";
     let description = [{
         Performs a matrix multiply according to the given semiring and optional
-        structural mask.  The semiring must be one of "plus_times", "plus_pair", or
-        "plus_plus".  The given sparse tensors must be a matrix (i.e. rank 2) or a
-        vector (i.e. rank 1).  If the first input is a matrix, it must be CSR format.
-        If the second input is a matrix, it must be CSC format.  Matrix times vector
-        will return a vector.  Vector times matrix will return a vector.  Matrix times
-        matrix will return a CSR matrix.  The mask (if provided) must be the same
-        format as the returned object.  This operation also accepts an optional region
-        that specifies element-wise postprocessing to be done on the result of the
-        matrix multiplication.  The region must use `graphblas.yield` to indicate the
-        result of the element-wise postprocessing.
+        structural mask.  The semiring must be a string of the form "<ADD_NAME>_<MUL_NAME>",
+        e.g. "plus_times". The options for "<ADD_NAME>" are "plus", "any", and "min". The
+        options for "<MUL_NAME>" are "pair", "times", "plus", "first", and "second". The
+        given sparse tensors must be a matrix (i.e. rank 2) or a vector (i.e. rank 1).
+        If the first input is a matrix, it must be CSR format. If the second input
+        is a matrix, it must be CSC format.  Matrix times vector will return a vector.
+        Vector times matrix will return a vector.  Matrix times matrix will return
+        a CSR matrix.  The mask (if provided) must be the same format as the returned
+        object.  This operation also accepts an optional region that specifies
+        element-wise postprocessing to be done on the result of the matrix multiplication.
+        The region must use `graphblas.yield` to indicate the result of the element-wise
+        postprocessing.
 
         No Mask Example:
         ```mlir
