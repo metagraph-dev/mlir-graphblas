@@ -279,26 +279,43 @@ static LogicalResult verify(ApplyOp op) {
     return argResult;
 
   Type inputType = op.input().getType();
-  Type thunkType = op.thunk().getType();
+  Value thunk = op.thunk();
   Type resultType = op.getResult().getType();
 
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
-
-  if (inputTensorType.getElementType() != thunkType)
-    return op.emitError(
-        "Element type of input tensor does not match type of thunk.");
-
-  if (resultTensorType.getElementType() != thunkType)
-    // TODO this is not always correct, e.g.
-    // apply_less_than(tensor<f64>, 2.3) -> tensor<i1>.
-    return op.emitError(
-        "Element type of result tensor does not match type of thunk.");
-
   std::string applyOperator = op.apply_operator().str();
-  if (!supportedApplyOperators.contains(applyOperator))
+  if (supportedBinaryApplyOperators.contains(applyOperator)) {
+
+    if (!thunk)
+      return op.emitError("\"" + applyOperator +
+                          "\""
+                          " requires a thunk.");
+
+    RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+    RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
+
+    Type thunkType = thunk.getType();
+
+    if (inputTensorType.getElementType() != thunkType)
+      return op.emitError(
+          "Element type of input tensor does not match type of thunk.");
+
+    if (resultTensorType.getElementType() != thunkType)
+      // TODO this is not always correct, e.g.
+      // apply_less_than(tensor<f64>, 2.3) -> tensor<i1>.
+      return op.emitError(
+          "Element type of result tensor does not match type of thunk.");
+
+  } else if (supportedUnaryApplyOperators.contains(applyOperator)) {
+
+    if (thunk)
+      return op.emitError("\"" + applyOperator +
+                          "\""
+                          " is a unary opertator, but was given a thunk.");
+
+  } else {
     return op.emitError("\"" + applyOperator +
                         "\" is not a supported operator.");
+  }
 
   return success();
 }

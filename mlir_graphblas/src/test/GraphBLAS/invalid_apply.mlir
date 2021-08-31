@@ -183,3 +183,35 @@ module {
         return %answer : tensor<6xi8, #SparseVec64>
     }
 }
+
+// -----
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @apply_wrapper(%sparse_tensor: tensor<2x3xbf16, #CSR64>, %thunk: bf16) -> tensor<2x3xbf16, #CSR64> {
+        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "abs" } : (tensor<2x3xbf16, #CSR64>, bf16) to tensor<2x3xbf16, #CSR64> // expected-error {{"abs" is a unary opertator, but was given a thunk.}}
+        return %answer : tensor<2x3xbf16, #CSR64>
+    }
+}
+
+// -----
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @apply_wrapper(%sparse_tensor: tensor<2x3xbf16, #CSR64>) -> tensor<2x3xbf16, #CSR64> {
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "min" } : (tensor<2x3xbf16, #CSR64>) to tensor<2x3xbf16, #CSR64> // expected-error {{"min" requires a thunk.}}
+        return %answer : tensor<2x3xbf16, #CSR64>
+    }
+}

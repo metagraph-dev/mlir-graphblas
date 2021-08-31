@@ -1006,12 +1006,11 @@ public:
     (void)module;
     Location loc = op->getLoc();
 
-    Type valueType =
-        op.input().getType().dyn_cast<RankedTensorType>().getElementType();
-
     Value input = op.input();
-    Value thunk = op.thunk();
     StringRef apply_operator = op.apply_operator();
+
+    Type valueType =
+        input.getType().dyn_cast<RankedTensorType>().getElementType();
 
     // New op
     graphblas::ApplyGenericOp newApplyOp =
@@ -1023,12 +1022,43 @@ public:
     Block *transformOutBlock =
         rewriter.createBlock(&transformOutRegion, {}, {valueType});
 
+    Value val = transformOutBlock->getArgument(0);
+
     Value transformResult;
     if (apply_operator == "min") {
-      Value val = transformOutBlock->getArgument(0);
-      Value cmp = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OLT,
-                                                val, thunk);
+
+      Value thunk = op.thunk();
+
+      Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+                      .Case<IntegerType>([&](IntegerType type) {
+                        return rewriter.create<mlir::CmpIOp>(
+                            loc, mlir::CmpIPredicate::slt, val, thunk);
+                      })
+                      .Case<FloatType>([&](FloatType type) {
+                        return rewriter.create<mlir::CmpFOp>(
+                            loc, mlir::CmpFPredicate::OLT, val, thunk);
+                      });
       transformResult = rewriter.create<mlir::SelectOp>(loc, cmp, val, thunk);
+
+    } else if (apply_operator == "abs") {
+
+      transformResult =
+          llvm::TypeSwitch<Type, Value>(valueType)
+              .Case<IntegerType>([&](IntegerType type) {
+                // http://graphics.stanford.edu/~seander/bithacks.html#IntegerAbs
+                unsigned bitWidth = type.getWidth();
+                Value shiftAmount = rewriter.create<ConstantOp>(
+                    loc, rewriter.getIntegerAttr(type, bitWidth - 1));
+                Value mask =
+                    rewriter.create<SignedShiftRightOp>(loc, val, shiftAmount);
+                Value maskPlusVal = rewriter.create<AddIOp>(loc, mask, val);
+                Value absVal = rewriter.create<XOrOp>(loc, mask, maskPlusVal);
+                return absVal;
+              })
+              .Case<FloatType>([&](FloatType type) {
+                return rewriter.create<AbsFOp>(loc, val);
+              });
+
     } else {
       return op.emitError("\"" + apply_operator +
                           "\" is not a supported apply_operator.");

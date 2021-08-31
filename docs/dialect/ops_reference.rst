@@ -234,7 +234,10 @@ Results:
 ``graphblas.apply``
 --------------------------
 
-Applies in an element-wise fashion the function indicated by the ``apply_operator`` attribute to each element and the thunk. Currently, the only valid operator is "min".
+Applies in an element-wise fashion the function indicated by the ``apply_operator``
+attribute to each element. The operator can be unary or binary. Binary operators
+require a thunk. The only supported binary operator is "min". Unary operators
+cannot take a thunk. The only supported unary operator is "abs".
 
 
 Example:
@@ -244,7 +247,7 @@ Example:
 
     %thunk = constant 100 : i64
     %matrix_answer = graphblas.apply %sparse_matrix, %thunk { apply_operator = "min" } : (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
-    %vector_answer = graphblas.apply %sparse_vector, %thunk { apply_operator = "min" } : (tensor<?xi64, #SparseVec64>, i64) to tensor<?xi64, #SparseVec64>
+    %vector_answer = graphblas.apply %sparse_vector { apply_operator = "abs" } : (tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
 
 Syntax:
 ^^^^^^^
@@ -265,7 +268,7 @@ Attributes:
      - Description
    * - ``apply_operator``
      - ``::mlir::StringAttr``
-     - Operator to apply.  Allowed: "min"
+     - Operator to apply.  Allowed: "min", "abs"
 
 Operands:
 ^^^^^^^^^
