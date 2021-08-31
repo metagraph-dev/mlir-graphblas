@@ -45,6 +45,10 @@ jobs:
         run: |
           black --version
           black mlir_graphblas *.py --check --diff
+      - name: Lint with clang-format
+        run: |
+	  clang-format --version
+	  ./run-clang-format.py -r mlir_graphblas/src/
       - name: Pytest
         run: |
           pytest mlir_graphblas

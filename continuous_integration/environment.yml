@@ -11,6 +11,7 @@ dependencies:
   - pytest
   - pytest-cov
   - black
+  - clang-tools
 
 
 # dependencies (so setup.py develop doesn't pip install them)
