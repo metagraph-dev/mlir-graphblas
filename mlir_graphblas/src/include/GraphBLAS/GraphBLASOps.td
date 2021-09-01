@@ -313,9 +313,13 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
     let description = [{
         Applies an operator to all elements of the given sparse tensor.  The operator
         can be unary or binary. Binary operators require a thunk. The only supported
-        binary operator is "min". Unary operators cannot take a thunk. The only
-        supported unary operator is "abs".  The given sparse tensor must either
-        be a CSR matrix, CSC matrix, or a sparse vector.
+        binary operator is "min". Unary operators cannot take a thunk.  The supported
+        unary operators are "abs" and "minv" (i.e. multiplicative inverse or 1/x).
+        The given sparse tensor must either be a CSR matrix, CSC matrix, or a sparse
+        vector.
+
+        Using "minv" with integer types uses signed integer division and rounds towards
+        zero. For example, minv(-2) == 1 / -2 == 0.
 
         Example:
         ```mlir

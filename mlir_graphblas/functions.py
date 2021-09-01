@@ -278,7 +278,7 @@ class Apply(BaseFunction):
         apply(input: MLIRSparseTensor, thunk: f64) -> MLIRSparseTensor
     """
 
-    _unary_operators = {"abs"}
+    _unary_operators = {"abs", "minv"}
     _binary_operators = {"min"}
     _valid_operators = _unary_operators | _binary_operators
 
