@@ -34,7 +34,7 @@ static const llvm::StringSet<> supportedSelectors{"triu", "tril", "gt"};
 static const llvm::StringSet<> supportedThunkNeedingSelectors{"gt"};
 
 static const llvm::StringSet<> supportedBinaryApplyOperators{"min"};
-static const llvm::StringSet<> supportedUnaryApplyOperators{"abs"};
+static const llvm::StringSet<> supportedUnaryApplyOperators{"abs", "minv"};
 
 bool typeIsCSR(mlir::Type inputType);
 bool typeIsCSC(mlir::Type inputType);

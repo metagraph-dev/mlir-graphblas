@@ -237,7 +237,11 @@ Results:
 Applies in an element-wise fashion the function indicated by the ``apply_operator``
 attribute to each element. The operator can be unary or binary. Binary operators
 require a thunk. The only supported binary operator is "min". Unary operators
-cannot take a thunk. The only supported unary operator is "abs".
+cannot take a thunk. The supported unary operators are "abs" and "minv" (i.e.
+multiplicative inverse or `1/x`).
+
+Using "minv" with integer types uses signed integer division and rounds towards
+zero. For example, `minv(-2) == 1 / -2 == 0`.
 
 
 Example:
@@ -268,7 +272,7 @@ Attributes:
      - Description
    * - ``apply_operator``
      - ``::mlir::StringAttr``
-     - Operator to apply.  Allowed: "min", "abs"
+     - Operator to apply.  Allowed: "min", "abs", "minv"
 
 Operands:
 ^^^^^^^^^

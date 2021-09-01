@@ -45,7 +45,7 @@ module {
         return %answer : tensor<8xf64, #SparseVec64>
     }
 
-// CHECK:           builtin.func @apply_abs__floatmatrix(%[[VAL_14:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           builtin.func @apply_abs_float_matrix(%[[VAL_14:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_15:.*]] = graphblas.apply_generic %[[VAL_14]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_16:.*]]: f64):
 // CHECK:               %[[VAL_17:.*]] = absf %[[VAL_16]] : f64
@@ -54,12 +54,12 @@ module {
 // CHECK:             return %[[VAL_18:.*]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @apply_abs__floatmatrix(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
+    func @apply_abs_float_matrix(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
         %answer = graphblas.apply %sparse_tensor { apply_operator = "abs" } : (tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
         return %answer : tensor<?x?xf64, #CSR64>
     }
 
-// CHECK:           builtin.func @apply_abs__floatvector(%[[VAL_19:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           builtin.func @apply_abs_float_vector(%[[VAL_19:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_20:.*]] = graphblas.apply_generic %[[VAL_19]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_21:.*]]: f64):
 // CHECK:               %[[VAL_22:.*]] = absf %[[VAL_21]] : f64
@@ -68,8 +68,40 @@ module {
 // CHECK:             return %[[VAL_23:.*]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @apply_abs__floatvector(%sparse_tensor: tensor<8xf64, #SparseVec64>) -> tensor<8xf64, #SparseVec64> {
+    func @apply_abs_float_vector(%sparse_tensor: tensor<8xf64, #SparseVec64>) -> tensor<8xf64, #SparseVec64> {
         %answer = graphblas.apply %sparse_tensor { apply_operator = "abs" } : (tensor<8xf64, #SparseVec64>) to tensor<8xf64, #SparseVec64>
+        return %answer : tensor<8xf64, #SparseVec64>
+    }
+
+// CHECK-LABEL:   builtin.func @apply_minv_float_matrix(
+// CHECK-SAME:                                          %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           %[[VAL_1:.*]] = constant 1.000000e+00 : f64
+// CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
+// CHECK:           ^bb0(%[[VAL_3:.*]]: f64):
+// CHECK:             %[[VAL_4:.*]] = divf %[[VAL_1]], %[[VAL_3]] : f64
+// CHECK:             graphblas.yield transform_out %[[VAL_4]] : f64
+// CHECK:           }
+// CHECK:           return %[[VAL_5:.*]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:         }
+
+    func @apply_minv_float_matrix(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "minv" } : (tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+        return %answer : tensor<?x?xf64, #CSR64>
+    }
+    
+// CHECK-LABEL:   builtin.func @apply_minv_float_vector(
+// CHECK-SAME:                                          %[[VAL_0:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           %[[VAL_1:.*]] = constant 1.000000e+00 : f64
+// CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
+// CHECK:           ^bb0(%[[VAL_3:.*]]: f64):
+// CHECK:             %[[VAL_4:.*]] = divf %[[VAL_1]], %[[VAL_3]] : f64
+// CHECK:             graphblas.yield transform_out %[[VAL_4]] : f64
+// CHECK:           }
+// CHECK:           return %[[VAL_5:.*]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:         }
+
+    func @apply_minv_float_vector(%sparse_tensor: tensor<8xf64, #SparseVec64>) -> tensor<8xf64, #SparseVec64> {
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "minv" } : (tensor<8xf64, #SparseVec64>) to tensor<8xf64, #SparseVec64>
         return %answer : tensor<8xf64, #SparseVec64>
     }
 
@@ -138,6 +170,38 @@ module {
 
     func @apply_abs_int_vector(%sparse_tensor: tensor<8xi8, #SparseVec64>) -> tensor<8xi8, #SparseVec64> {
         %answer = graphblas.apply %sparse_tensor { apply_operator = "abs" } : (tensor<8xi8, #SparseVec64>) to tensor<8xi8, #SparseVec64>
+        return %answer : tensor<8xi8, #SparseVec64>
+    }
+
+// CHECK-LABEL:   builtin.func @apply_minv_int_matrix(
+// CHECK-SAME:                                        %[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           %[[VAL_1:.*]] = constant 1 : i8
+// CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
+// CHECK:           ^bb0(%[[VAL_3:.*]]: i8):
+// CHECK:             %[[VAL_4:.*]] = divi_signed %[[VAL_1]], %[[VAL_3]] : i8
+// CHECK:             graphblas.yield transform_out %[[VAL_4]] : i8
+// CHECK:           }
+// CHECK:           return %[[VAL_5:.*]] : tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:         }
+
+    func @apply_minv_int_matrix(%sparse_tensor: tensor<?x?xi8, #CSR64>) -> tensor<?x?xi8, #CSR64> {
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "minv" } : (tensor<?x?xi8, #CSR64>) to tensor<?x?xi8, #CSR64>
+        return %answer : tensor<?x?xi8, #CSR64>
+    }
+
+// CHECK-LABEL:   builtin.func @apply_minv_int_vector(
+// CHECK-SAME:                                        %[[VAL_0:.*]]: tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           %[[VAL_1:.*]] = constant 1 : i8
+// CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
+// CHECK:           ^bb0(%[[VAL_3:.*]]: i8):
+// CHECK:             %[[VAL_4:.*]] = divi_signed %[[VAL_1]], %[[VAL_3]] : i8
+// CHECK:             graphblas.yield transform_out %[[VAL_4]] : i8
+// CHECK:           }
+// CHECK:           return %[[VAL_5:.*]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:         }
+
+    func @apply_minv_int_vector(%sparse_tensor: tensor<8xi8, #SparseVec64>) -> tensor<8xi8, #SparseVec64> {
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "minv" } : (tensor<8xi8, #SparseVec64>) to tensor<8xi8, #SparseVec64>
         return %answer : tensor<8xi8, #SparseVec64>
     }
 

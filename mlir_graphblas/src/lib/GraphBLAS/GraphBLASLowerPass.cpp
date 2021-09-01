@@ -1040,6 +1040,32 @@ public:
                       });
       transformResult = rewriter.create<mlir::SelectOp>(loc, cmp, val, thunk);
 
+    } else if (apply_operator == "minv") {
+
+      transformResult =
+          llvm::TypeSwitch<Type, Value>(valueType)
+              .Case<IntegerType>([&](IntegerType type) {
+                // TODO is there a bit hack we can do here?
+                //   x <  -1  => 0
+                //   x == -1  => -1
+                //   x ==  1  => 1
+                //   x >   1  => 0
+                Value c1_type = rewriter.create<ConstantOp>(
+                    loc, rewriter.getIntegerAttr(type, 1));
+                Value multipicativeInverse =
+                    rewriter.create<SignedDivIOp>(loc, c1_type, val);
+                return multipicativeInverse;
+              })
+              .Case<FloatType>([&](FloatType type) {
+                // TODO is there a faster way? e.g. magic with logs or
+                // exponents?
+                Value c1_type =
+                    rewriter.create<ConstantFloatOp>(loc, APFloat(1.0), type);
+                Value multipicativeInverse =
+                    rewriter.create<DivFOp>(loc, c1_type, val);
+                return multipicativeInverse;
+              });
+
     } else if (apply_operator == "abs") {
 
       transformResult =
