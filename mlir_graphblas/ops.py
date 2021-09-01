@@ -364,7 +364,7 @@ class GraphBLAS_MatrixSelect(BaseOp):
 class GraphBLAS_MatrixReduceToVector(BaseOp):
     dialect = "graphblas"
     name = "matrix_reduce_to_vector"
-    allowed_aggregators = {"plus"}
+    allowed_aggregators = {"plus", "count"}
 
     @classmethod
     def call(cls, irbuilder, input, aggregator, axis, return_type):
@@ -385,7 +385,7 @@ class GraphBLAS_MatrixReduceToVector(BaseOp):
 class GraphBLAS_MatrixReduceToScalar(BaseOp):
     dialect = "graphblas"
     name = "matrix_reduce_to_scalar"
-    allowed_aggregators = {"plus"}
+    allowed_aggregators = {"plus", "count"}
 
     @classmethod
     def call(cls, irbuilder, input, aggregator):

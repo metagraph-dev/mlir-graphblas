@@ -235,14 +235,15 @@ def GraphBLAS_MatrixReduceToVectorOp : GraphBLAS_Op<"matrix_reduce_to_vector", [
         The given tensor must have a CSR sparsity or a CSC sparsity.
         The resulting sparse vector's element type must be the same as the element type of the input tensor.
         If the axis attribute is 0, the input tensor will be reduced column-wise, so the resulting
-        vector's size must be the  number of rows in the input tensor. 
-        If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
         vector's size must be the  number of columns in the input tensor. 
+        If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
+        vector's size must be the  number of rows in the input tensor.
+        The supported aggregators are "plus" and "count".
 
         Example:
         ```mlir
         %vec1 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
-        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
+        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "count", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
         ```
     }];
 
