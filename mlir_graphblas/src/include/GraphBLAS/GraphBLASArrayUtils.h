@@ -28,7 +28,8 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
                          Value iterValues, Value maskIndices, Value maskStart,
                          Value maskEnd, Type valueType,
                          ExtensionBlocks extBlocks, Value outputIndices,
-                         Value outputValues, Value indexOffset, bool swapMultOps);
+                         Value outputValues, Value indexOffset,
+                         bool swapMultOps);
 
 Value computeIndexOverlapSize(PatternRewriter &rewriter, bool intersect,
                               Value aPosStart, Value aPosEnd, Value Ai,

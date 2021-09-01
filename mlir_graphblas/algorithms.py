@@ -335,7 +335,9 @@ def mssp(graph: MLIRSparseTensor, matrix: MLIRSparseTensor) -> MLIRSparseTensor:
 _vertex_nomination = None
 
 
-def vertex_nomination(graph: MLIRSparseTensor, nodes_of_interest: MLIRSparseTensor) -> int:
+def vertex_nomination(
+    graph: MLIRSparseTensor, nodes_of_interest: MLIRSparseTensor
+) -> int:
     global _vertex_nomination
     if _vertex_nomination is None:
         csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
@@ -356,7 +358,9 @@ def vertex_nomination(graph: MLIRSparseTensor, nodes_of_interest: MLIRSparseTens
         )
         (m, v) = irb.inputs
         mT = irb.graphblas.transpose(m, "tensor<?x?xf64, #CSR64>")
-        v2 = irb.graphblas.matrix_multiply(mT, v, semiring="min_first", mask=v, mask_complement=True)
+        v2 = irb.graphblas.matrix_multiply(
+            mT, v, semiring="min_first", mask=v, mask_complement=True
+        )
         result = irb.graphblas.vector_argmin(v2)
 
         irb.return_vars(result)

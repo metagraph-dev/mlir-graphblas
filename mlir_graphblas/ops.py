@@ -443,9 +443,11 @@ class GraphBLAS_MatrixMultiply(BaseOp):
     dialect = "graphblas"
     name = "matrix_multiply"
 
-    allowed_semirings = {f"{addop}_{mulop}"
-                         for addop in ("plus", "any", "min")
-                         for mulop in ("pair", "times", "plus", "first", "second")}
+    allowed_semirings = {
+        f"{addop}_{mulop}"
+        for addop in ("plus", "any", "min")
+        for mulop in ("pair", "times", "plus", "first", "second")
+    }
 
     @classmethod
     def call(cls, irbuilder, a, b, semiring, *, mask=None, mask_complement=False):

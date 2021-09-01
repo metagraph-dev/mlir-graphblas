@@ -1583,7 +1583,8 @@ private:
       }
     } else {
       computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
-                          nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0, true);
+                          nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0,
+                          true);
     }
 
     // end if cmpDiff
@@ -1738,7 +1739,8 @@ private:
       }
     } else {
       computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
-                          nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0, false);
+                          nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0,
+                          false);
     }
 
     // end if cmpDiff
@@ -1812,7 +1814,8 @@ private:
         rewriter.create<IndexCastOp>(loc, fixedIndexEnd64, indexType);
 
     computeInnerProduct(rewriter, size, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
-                        nullptr, c0, c1, valueType, extBlocks, Ci, Cx, c0, false);
+                        nullptr, c0, c1, valueType, extBlocks, Ci, Cx, c0,
+                        false);
 
     // extract scalar from C
     Value cScalar = rewriter.create<memref::LoadOp>(loc, Cx, c0);
