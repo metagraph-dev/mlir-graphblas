@@ -225,7 +225,7 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
                          Value maskIndices, Value maskStart, Value maskEnd,
                          Type valueType, ExtensionBlocks extBlocks,
                          Value outputIndices, Value outputValues,
-                         Value indexOffset) {
+                         Value indexOffset, bool swapMultOps) {
   Location loc = rewriter.getUnknownLoc();
 
   // Types used in this function
@@ -311,7 +311,10 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
       extBlocks.mult->getTerminator());
   Value multResult = multYield.values().front();
   rewriter.eraseOp(multYield);
-  rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
+  if (swapMultOps)
+    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {bVal, aVal});
+  else
+    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
 
   // insert add operation block
   graphblas::YieldOp addYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(

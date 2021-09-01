@@ -95,7 +95,9 @@ func @matrix_multiply_X_plus(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #C
 // CHECK-LABEL:   builtin.func @matrix_multiply_X_first(
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_6:.*]]: f64, %[[VAL_7:.*]]: f64):
-// CHECK:             graphblas.yield mult %[[VAL_6]] : f64
+// Note: the following line is due to a hack
+// CHECK:             %[[VAL_0:.*]] = addf %[[VAL_6]], %cst : f64
+// CHECK:             graphblas.yield mult %[[VAL_0]] : f64
 // CHECK:           }
 func @matrix_multiply_X_first(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSR64> {
     %answer = graphblas.matrix_multiply %a, %b { semiring = "any_first" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64>
@@ -105,7 +107,9 @@ func @matrix_multiply_X_first(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #
 // CHECK-LABEL:   builtin.func @matrix_multiply_X_second(
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_6:.*]]: f64, %[[VAL_7:.*]]: f64):
-// CHECK:             graphblas.yield mult %[[VAL_7]] : f64
+// Note: the following line is due to a hack
+// CHECK:             %[[VAL_0:.*]] = addf %[[VAL_7]], %cst : f64
+// CHECK:             graphblas.yield mult %[[VAL_0]] : f64
 // CHECK:           }
 func @matrix_multiply_X_second(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSR64> {
     %answer = graphblas.matrix_multiply %a, %b { semiring = "any_second" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64>

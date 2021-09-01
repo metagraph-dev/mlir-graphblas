@@ -129,7 +129,7 @@
 // CHECK:                 %[[VAL_81:.*]]:2 = scf.if %[[VAL_80]] -> (f64, i1) {
 // CHECK:                   %[[VAL_82:.*]] = memref.load %[[VAL_59]]{{\[}}%[[VAL_79]]] : memref<?xf64>
 // CHECK:                   %[[VAL_83:.*]] = memref.load %[[VAL_15]]{{\[}}%[[VAL_75]]] : memref<?xf64>
-// CHECK:                   %[[VAL_84:.*]] = mulf %[[VAL_82]], %[[VAL_83]] : f64
+// CHECK:                   %[[VAL_84:.*]] = mulf %[[VAL_83]], %[[VAL_82]] : f64
 // CHECK:                   %[[VAL_85:.*]] = addf %[[VAL_76]], %[[VAL_84]] : f64
 // CHECK:                   scf.yield %[[VAL_85]], %[[VAL_7]] : f64, i1
 // CHECK:                 } else {

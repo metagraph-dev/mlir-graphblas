@@ -709,9 +709,33 @@ LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
               return builder.create<AddFOp>(loc, multBlockArg0, multBlockArg1);
             });
   } else if (multiplyName == "first") {
-    multResult = multBlockArg0;
+    //multResult = multBlockArg0;
+    // TODO: remove this hack once we understand the crash
+    //       see https://github.com/metagraph-dev/mlir-graphblas/issues/146
+    multResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              Value izero = builder.create<ConstantIntOp>(loc, 0, type.getWidth());
+              return builder.create<AddIOp>(loc, multBlockArg0, izero);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              Value fzero = builder.create<ConstantFloatOp>(loc, APFloat(0.0), type);
+              return builder.create<AddFOp>(loc, multBlockArg0, fzero);
+            });
   } else if (multiplyName == "second") {
-    multResult = multBlockArg1;
+    //multResult = multBlockArg1;
+    // TODO: remove this hack once we understand the crash
+    //       see https://github.com/metagraph-dev/mlir-graphblas/issues/146
+    multResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              Value izero = builder.create<ConstantIntOp>(loc, 0, type.getWidth());
+              return builder.create<AddIOp>(loc, multBlockArg1, izero);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              Value fzero = builder.create<ConstantFloatOp>(loc, APFloat(0.0), type);
+              return builder.create<AddFOp>(loc, multBlockArg1, fzero);
+            });
   } else {
     return multRegion->getParentOp()->emitError(
         "\"" + multiplyName + "\" is not a supported semiring multiply.");

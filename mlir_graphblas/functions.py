@@ -13,6 +13,8 @@ class MLIRCompileError(Exception):
 _default_engine = MlirJitEngine()
 
 _standard_passes = (
+    "--graphblas-structuralize",
+    "--graphblas-optimize",
     "--graphblas-lower",
     "--sparsification",
     "--sparse-tensor-conversion",
