@@ -234,7 +234,7 @@ class MatrixReduceToScalar(BaseFunction):
       matrix_reduce_to_scalar(input: MLIRSparseTensor) -> float64
     """
 
-    _valid_aggregators = {"plus"}
+    _valid_aggregators = {"plus", "count"}
     _agg_aliases = {
         "sum": "plus",
     }

@@ -8,7 +8,7 @@
 
 module {
     func @matrix_reduce_to_vector_wrapper(%matrix: tensor<*xi32>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<*xi32> to tensor<9xi32, #SparseVec64> // expected-error {{operand #0 must be 2D tensor of any type values, but got 'tensor<*xi32>'}}
+        %vec = graphblas.matrix_reduce_to_vector %matrix { aggregator = "count", axis = 0 } : tensor<*xi32> to tensor<9xi32, #SparseVec64> // expected-error {{operand #0 must be 2D tensor of any type values, but got 'tensor<*xi32>'}}
         return %vec : tensor<9xi32, #SparseVec64>
     }
 }

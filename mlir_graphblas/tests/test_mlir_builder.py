@@ -682,7 +682,7 @@ def test_ir_reduce_to_vector(
         matrix, "plus", 1, reduce_rows_output_type
     )
     reduced_columns = ir_builder.graphblas.matrix_reduce_to_vector(
-        matrix, "plus", 0, reduce_columns_output_type
+        matrix, "count", 0, reduce_columns_output_type
     )
 
     zero_scalar = ir_builder.constant(0, mlir_type)
@@ -724,8 +724,10 @@ def test_ir_reduce_to_vector(
     reduced_rows_clamped = densify_vector(reduced_rows_clamped)
     reduced_columns_abs = densify_vector(reduced_columns_abs)
 
-    expected_reduced_rows = np.sum(dense_input_tensor, axis=1)
-    expected_reduced_columns = np.sum(dense_input_tensor, axis=0)
+    expected_reduced_rows = dense_input_tensor.sum(axis=1)
+    expected_reduced_columns = (
+        dense_input_tensor.astype(bool).sum(axis=0).astype(np_type)
+    )
 
     expected_reduced_rows_clamped = np.copy(expected_reduced_rows)
     expected_reduced_rows_clamped[expected_reduced_rows_clamped > 0] = 0
