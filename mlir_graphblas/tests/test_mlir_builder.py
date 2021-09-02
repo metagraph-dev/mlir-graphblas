@@ -516,6 +516,51 @@ def test_ir_project_and_filter(engine: MlirJitEngine, aliases: AliasMap):
     return
 
 
+def test_ir_scan_statistics(engine: MlirJitEngine, aliases: AliasMap):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "scan_statistics",
+        input_types=["tensor<?x?xf64, #CSR64>"],
+        return_types=["index"],
+        aliases=aliases,
+    )
+    (A,) = ir_builder.inputs
+    L = ir_builder.graphblas.matrix_select(A, [], ["tril"])
+    L_T = ir_builder.graphblas.transpose(L, "tensor<?x?xf64, #CSC64>")
+    A_triangles = ir_builder.graphblas.matrix_multiply(A, L_T, "plus_pair", mask=A)
+    tri = ir_builder.graphblas.matrix_reduce_to_vector(
+        A_triangles, "plus", 1, "tensor<?xf64, #SparseVec64>"
+    )
+    answer = ir_builder.graphblas.vector_argmax(tri)
+    ir_builder.return_vars(answer)
+    scan_statistics = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [0, 1, 0, 1, 1, 0, 0, 0],
+            [1, 0, 0, 1, 1, 0, 0, 0],
+            [0, 0, 0, 0, 1, 1, 1, 1],
+            [1, 1, 0, 0, 1, 0, 0, 0],
+            [1, 1, 1, 1, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0, 0, 0, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    result = scan_statistics(input_tensor)
+
+    # valid results are in {0, 1, 3, 4}, but we choose the lowest index
+    expected_result = 0
+
+    assert result == expected_result
+
+    return
+
+
 ARGMINMAX_CASES = [
     # np.array([0], dtype=np.int32), # TODO do we care about this case?
     np.array([10, 15, 3, 11], dtype=np.int32),
