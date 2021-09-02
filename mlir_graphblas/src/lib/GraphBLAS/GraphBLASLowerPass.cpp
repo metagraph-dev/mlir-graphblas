@@ -1003,10 +1003,10 @@ public:
     }
 
     // insert agg identity
+    rewriter.mergeBlocks(extBlocks.aggIdentity, rewriter.getBlock(), {});
     graphblas::YieldOp aggIdentityYield =
         llvm::dyn_cast_or_null<graphblas::YieldOp>(
-            extBlocks.aggIdentity->getTerminator());
-    rewriter.mergeBlocks(extBlocks.aggIdentity, rewriter.getBlock(), {});
+            rewriter.getBlock()->getTerminator());
     Value c0Accumulator = aggIdentityYield.values().front();
     rewriter.eraseOp(aggIdentityYield);
 
@@ -1044,9 +1044,9 @@ public:
 
     rewriter.setInsertionPointToStart(&reducer.getRegion().front());
 
-    graphblas::YieldOp aggYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
-        extBlocks.agg->getTerminator());
     rewriter.mergeBlocks(extBlocks.agg, rewriter.getBlock(), {lhs, rhs});
+    graphblas::YieldOp aggYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
+        rewriter.getBlock()->getTerminator());
     Value result = aggYield.values().front();
     rewriter.eraseOp(aggYield);
 
@@ -2072,10 +2072,10 @@ public:
     Value iEnd = rewriter.create<IndexCastOp>(loc, iEnd64, indexType);
 
     // insert add identity block
+    rewriter.mergeBlocks(extBlocks.addIdentity, rewriter.getBlock(), {});
     graphblas::YieldOp addIdentityYield =
         llvm::dyn_cast_or_null<graphblas::YieldOp>(
-            extBlocks.addIdentity->getTerminator());
-    rewriter.mergeBlocks(extBlocks.addIdentity, rewriter.getBlock(), {});
+            rewriter.getBlock()->getTerminator());
     Value addIdentity = addIdentityYield.values().front();
     rewriter.eraseOp(addIdentityYield);
 
@@ -2097,19 +2097,19 @@ public:
     Value bVal = rewriter.create<memref::LoadOp>(loc, Bx, ii);
 
     // insert multiply operation block
+    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
     graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
-        extBlocks.mult->getTerminator());
+        rewriter.getBlock()->getTerminator());
     Value multResult = multYield.values().front();
     rewriter.eraseOp(multYield);
-    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
 
     // insert add operation block
-    graphblas::YieldOp addYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
-        extBlocks.add->getTerminator());
-    Value addResult = addYield.values().front();
-    rewriter.eraseOp(addYield);
     rewriter.mergeBlocks(extBlocks.add, rewriter.getBlock(),
                          {curr, multResult});
+    graphblas::YieldOp addYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
+        rewriter.getBlock()->getTerminator());
+    Value addResult = addYield.values().front();
+    rewriter.eraseOp(addYield);
 
     rewriter.create<scf::YieldOp>(loc, addResult);
 
