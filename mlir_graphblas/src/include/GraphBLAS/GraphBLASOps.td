@@ -330,7 +330,7 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
     }];
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, Optional<AnyType>:$thunk, StrAttr:$apply_operator);
-    let results = (outs AnyTensor:$output);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
     
     let assemblyFormat = [{
            $input (`,` $thunk^)? attr-dict `:` `(` type($input) (`,` type($thunk)^)? `)` `to` type($output)
@@ -346,7 +346,7 @@ def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
     }];
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
-    let results = (outs AnyTensor:$output);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
     
     let assemblyFormat = [{

@@ -29,6 +29,7 @@ using namespace mlir::graphblas;
 
 enum CompressionType { CSR, CSC, EITHER };
 
+// TODO: now redundant remove when possible
 static llvm::Optional<std::string>
 checkCompressedMatrix(Type inputType, int inputIndex,
                       CompressionType compressionType) {
@@ -85,6 +86,7 @@ checkCompressedMatrix(Type inputType, int inputIndex,
   return llvm::None;
 }
 
+// TODO: now redundant remove me when possible.
 static llvm::Optional<std::string> checkCompressedVector(Type inputType,
                                                          int inputIndex) {
 
@@ -167,6 +169,18 @@ static LogicalResult hasCSRorCSCEncoding(RankedTensorType t) {
   return failure();
 }
 
+/// Utility function to check if a 1-d tensor is compressed.
+static LogicalResult hasCompressedEncoding(RankedTensorType t) {
+  assert(t.getRank() == 1 && "expect a 1d ranked tensor");
+  if (auto encoding = sparse_tensor::getSparseTensorEncoding(t)) {
+    auto compression = encoding.getDimLevelType();
+    if (compression[0] ==
+        sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
+      return success();
+  }
+  return failure();
+}
+
 //===--------------------------------------------------------------------===//
 // GraphBLAS Ops Methods
 //===--------------------------------------------------------------------===//
@@ -224,46 +238,39 @@ static LogicalResult verifyApplyArgs(T op) {
   Type inputType = op.input().getType();
   Type resultType = op.getResult().getType();
 
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
+  RankedTensorType resultTensorType = resultType.cast<RankedTensorType>();
 
   ArrayRef<int64_t> inputShape = inputTensorType.getShape();
   ArrayRef<int64_t> resultShape = resultTensorType.getShape();
+  assert(inputShape.size() == resultShape.size() && "must be same size");
+
+  if (failed(hasSparseEncodingAttr(inputTensorType)))
+    return op.emitError("operand #0 must have sparse tensor attribute");
+  if (failed(hasSparseEncodingAttr(resultTensorType)))
+    return op.emitError("result #0 must have sparse tensor attribute");
 
   // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
   // shapes using "?"
   if (resultTensorType.getRank() == 2) {
-    llvm::Optional<std::string> inputCompressionErrorMessage =
-        checkCompressedMatrix(inputType, 0, EITHER);
-    if (inputCompressionErrorMessage)
-      return op.emitError(inputCompressionErrorMessage.getValue());
+    if (failed(hasCSRorCSCEncoding(inputTensorType)))
+      return op.emitError("operand #0 must be in CSR or in CSC compression");
 
-    llvm::Optional<std::string> resultCompressionErrorMessage =
-        checkCompressedMatrix(resultType, -1, EITHER);
-    if (resultCompressionErrorMessage)
-      return op.emitError(resultCompressionErrorMessage.getValue());
+    if (failed(hasCSRorCSCEncoding(resultTensorType)))
+      return op.emitError("result #0 must be in CSR or in CSC compression");
 
     if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
       return op.emitError("Input shape does not match output shape.");
-  } else if (resultTensorType.getRank() == 1) {
-    llvm::Optional<std::string> inputCompressionErrorMessage =
-        checkCompressedVector(inputType, 0);
-    if (inputCompressionErrorMessage)
-      return op.emitError(
-          inputCompressionErrorMessage.getValue()); // TODO test this
+  } else {
+    if (failed(hasCompressedEncoding(inputTensorType)))
+      return op.emitError("operand #0 must be in compressed form");
 
-    llvm::Optional<std::string> resultCompressionErrorMessage =
-        checkCompressedVector(resultType, -1);
-    if (resultCompressionErrorMessage)
-      return op.emitError(
-          resultCompressionErrorMessage.getValue()); // TODO test this
+    if (failed(hasCompressedEncoding(resultTensorType)))
+      return op.emitError("result #0 must be in compressed form");
 
     if (inputShape[0] != resultShape[0])
       return op.emitError("Input shape does not match output shape.");
-  } else {
-    return op.emitError("Input must be a matrix or vector."); // TODO test this
   }
-
   return success();
 }
 
