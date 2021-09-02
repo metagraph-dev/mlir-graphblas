@@ -1,6 +1,9 @@
 """
 Various ops written in MLIR which implement dialects or other utilities
 """
+
+import itertools
+
 from typing import Tuple, Sequence, Optional, Union
 from .mlir_builder import MLIRFunctionBuilder, MLIRVar
 from .types import MemrefType, TensorType, SparseEncodingType, IntType
@@ -341,6 +344,7 @@ class GraphBLAS_Equal(BaseOp):
 class GraphBLAS_MatrixSelect(BaseOp):
     dialect = "graphblas"
     name = "matrix_select"
+    allowed_selectors = {"triu", "tril", "gt"}
 
     @classmethod
     def call(
@@ -349,6 +353,11 @@ class GraphBLAS_MatrixSelect(BaseOp):
         cls.ensure_mlirvar(input, TensorType)
         for thunk in thunks:
             cls.ensure_mlirvar(thunk)
+        for selector in selectors:
+            if selector not in cls.allowed_selectors:
+                raise TypeError(
+                    f"Illegal selector: {selector}, must be one of {cls.allowed_selectors}"
+                )
         ret_val = irbuilder.new_var(input.type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_select {input} "
@@ -442,7 +451,12 @@ class GraphBLAS_Apply(BaseOp):
 class GraphBLAS_MatrixMultiply(BaseOp):
     dialect = "graphblas"
     name = "matrix_multiply"
-    allowed_semirings = {"plus_plus", "plus_times", "plus_pair", "min_plus"}
+    allowed_semiring_adds = {"plus", "any", "min"}
+    allowed_semiring_muls = {"pair", "times", "plus", "first", "second"}
+    allowed_semirings = {
+        f"{add}_{mul}"
+        for add, mul in itertools.product(allowed_semiring_adds, allowed_semiring_muls)
+    }
 
     @classmethod
     def call(cls, irbuilder, a, b, semiring, *, mask=None, mask_complement=False):
