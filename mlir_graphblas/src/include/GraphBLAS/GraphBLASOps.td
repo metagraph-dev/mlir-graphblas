@@ -97,7 +97,7 @@ def GraphBLAS_NumValsOp : GraphBLAS_Op<"num_vals", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
     let results = (outs Index:$result);
 
     let assemblyFormat = [{

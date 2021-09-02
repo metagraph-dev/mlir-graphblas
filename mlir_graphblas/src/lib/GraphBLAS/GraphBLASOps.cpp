@@ -141,48 +141,6 @@ static llvm::Optional<std::string> checkSemiring(StringRef semiring) {
   return llvm::None;
 }
 
-//===--------------------------------------------------------------------===//
-// GraphBLAS Ops Methods
-//===--------------------------------------------------------------------===//
-
-void SizeOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
-  Type indexType = builder.getIndexType();
-  build(builder, result, indexType, tensor);
-}
-
-void NumRowsOp::build(OpBuilder &builder, OperationState &result,
-                      Value tensor) {
-  Type indexType = builder.getIndexType();
-  build(builder, result, indexType, tensor);
-}
-
-void NumColsOp::build(OpBuilder &builder, OperationState &result,
-                      Value tensor) {
-  Type indexType = builder.getIndexType();
-  build(builder, result, indexType, tensor);
-}
-
-static LogicalResult verify(NumValsOp op) {
-  Type inputType = op.input().getType();
-  int64_t rank = getRank(inputType);
-
-  // Require sparse matrices to be either CSR or CSC
-  if (rank == 2) {
-    llvm::Optional<std::string> inputCompressionErrorMessage =
-        checkCompressedMatrix(inputType, 0, EITHER);
-    if (inputCompressionErrorMessage)
-      return op.emitError(inputCompressionErrorMessage.getValue());
-  }
-
-  return success();
-}
-
-void NumValsOp::build(OpBuilder &builder, OperationState &result,
-                      Value tensor) {
-  Type indexType = builder.getIndexType();
-  build(builder, result, indexType, tensor);
-}
-
 /// Utility function to check encoding attribute.
 static LogicalResult hasSparseEncodingAttr(RankedTensorType t) {
   if (!sparse_tensor::getSparseTensorEncoding(t))
@@ -207,6 +165,43 @@ static LogicalResult hasCSRorCSCEncoding(RankedTensorType t) {
       return success();
   }
   return failure();
+}
+
+//===--------------------------------------------------------------------===//
+// GraphBLAS Ops Methods
+//===--------------------------------------------------------------------===//
+
+void SizeOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
+  Type indexType = builder.getIndexType();
+  build(builder, result, indexType, tensor);
+}
+
+void NumRowsOp::build(OpBuilder &builder, OperationState &result,
+                      Value tensor) {
+  Type indexType = builder.getIndexType();
+  build(builder, result, indexType, tensor);
+}
+
+void NumColsOp::build(OpBuilder &builder, OperationState &result,
+                      Value tensor) {
+  Type indexType = builder.getIndexType();
+  build(builder, result, indexType, tensor);
+}
+
+static LogicalResult verify(NumValsOp op) {
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+  if (failed(hasSparseEncodingAttr(inputType)))
+    return op.emitError("operand #0 must have sparse tensor attribute");
+  // Require sparse matrices to be either CSR or CSC
+  if (inputType.getRank() == 2 && failed(hasCSRorCSCEncoding(inputType)))
+    op.emitError("operand #0 must be in CSR or in CSC compression");
+  return success();
+}
+
+void NumValsOp::build(OpBuilder &builder, OperationState &result,
+                      Value tensor) {
+  Type indexType = builder.getIndexType();
+  build(builder, result, indexType, tensor);
 }
 
 static LogicalResult verify(DupOp op) {
