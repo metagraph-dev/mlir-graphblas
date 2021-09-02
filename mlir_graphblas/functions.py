@@ -236,7 +236,7 @@ class MatrixReduceToScalar(BaseFunction):
       matrix_reduce_to_scalar(input: MLIRSparseTensor) -> float64
     """
 
-    _valid_aggregators = {"plus"}
+    _valid_aggregators = {"plus", "count"}
     _agg_aliases = {
         "sum": "plus",
     }
@@ -280,7 +280,7 @@ class Apply(BaseFunction):
         apply(input: MLIRSparseTensor, thunk: f64) -> MLIRSparseTensor
     """
 
-    _unary_operators = {"abs"}
+    _unary_operators = {"abs", "minv"}
     _binary_operators = {"min"}
     _valid_operators = _unary_operators | _binary_operators
 

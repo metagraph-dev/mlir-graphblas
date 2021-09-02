@@ -235,14 +235,15 @@ def GraphBLAS_MatrixReduceToVectorOp : GraphBLAS_Op<"matrix_reduce_to_vector", [
         The given tensor must have a CSR sparsity or a CSC sparsity.
         The resulting sparse vector's element type must be the same as the element type of the input tensor.
         If the axis attribute is 0, the input tensor will be reduced column-wise, so the resulting
-        vector's size must be the  number of rows in the input tensor. 
-        If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
         vector's size must be the  number of columns in the input tensor. 
+        If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
+        vector's size must be the  number of rows in the input tensor.
+        The supported aggregators are "plus" and "count".
 
         Example:
         ```mlir
         %vec1 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
-        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
+        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "count", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
         ```
     }];
 
@@ -313,9 +314,13 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
     let description = [{
         Applies an operator to all elements of the given sparse tensor.  The operator
         can be unary or binary. Binary operators require a thunk. The only supported
-        binary operator is "min". Unary operators cannot take a thunk. The only
-        supported unary operator is "abs".  The given sparse tensor must either
-        be a CSR matrix, CSC matrix, or a sparse vector.
+        binary operator is "min". Unary operators cannot take a thunk.  The supported
+        unary operators are "abs" and "minv" (i.e. multiplicative inverse or 1/x).
+        The given sparse tensor must either be a CSR matrix, CSC matrix, or a sparse
+        vector.
+
+        Using "minv" with integer types uses signed integer division and rounds towards
+        zero. For example, minv(-2) == 1 / -2 == 0.
 
         Example:
         ```mlir
