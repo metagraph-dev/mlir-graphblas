@@ -281,10 +281,10 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
   Value iEnd = rewriter.create<IndexCastOp>(loc, iEnd64, indexType);
 
   // insert add identity block
+  rewriter.mergeBlocks(extBlocks.addIdentity, rewriter.getBlock(), {});
   graphblas::YieldOp addIdentityYield =
       llvm::dyn_cast_or_null<graphblas::YieldOp>(
-          extBlocks.addIdentity->getTerminator());
-  rewriter.mergeBlocks(extBlocks.addIdentity, rewriter.getBlock(), {});
+          rewriter.getBlock()->getTerminator());
   Value addIdentity = addIdentityYield.values().front();
   rewriter.eraseOp(addIdentityYield);
 
@@ -307,18 +307,20 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
   Value bVal = rewriter.create<memref::LoadOp>(loc, iterValues, ii);
 
   // insert multiply operation block
+  rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
+  // NOTE: Need to do this after merge, in case the yield is one of the block arguments,
+  //       as is the case with "first" and "second" binops
   graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
-      extBlocks.mult->getTerminator());
+      rewriter.getBlock()->getTerminator());
   Value multResult = multYield.values().front();
   rewriter.eraseOp(multYield);
-  rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
 
   // insert add operation block
+  rewriter.mergeBlocks(extBlocks.add, rewriter.getBlock(), {curr, multResult});
   graphblas::YieldOp addYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
-      extBlocks.add->getTerminator());
+      rewriter.getBlock()->getTerminator());
   Value addResult = addYield.values().front();
   rewriter.eraseOp(addYield);
-  rewriter.mergeBlocks(extBlocks.add, rewriter.getBlock(), {curr, multResult});
 
   rewriter.create<scf::YieldOp>(loc, ValueRange{addResult, ctrue});
 
@@ -349,11 +351,10 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
 
   // Does total need to be transformed?
   if (extBlocks.transformOut) {
-    graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
-        extBlocks.transformOut->getTerminator());
-    Value transformResult = yield.values().front();
-
     rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(), {total});
+    graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
+        rewriter.getBlock()->getTerminator());
+    Value transformResult = yield.values().front();
 
     rewriter.create<memref::StoreOp>(loc, transformResult, outputValues, cjPos);
     rewriter.eraseOp(yield);
