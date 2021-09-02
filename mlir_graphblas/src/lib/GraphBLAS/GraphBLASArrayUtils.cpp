@@ -225,7 +225,7 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
                          Value maskIndices, Value maskStart, Value maskEnd,
                          Type valueType, ExtensionBlocks extBlocks,
                          Value outputIndices, Value outputValues,
-                         Value indexOffset) {
+                         Value indexOffset, bool swapMultOps) {
   Location loc = rewriter.getUnknownLoc();
 
   // Types used in this function
@@ -307,7 +307,10 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
   Value bVal = rewriter.create<memref::LoadOp>(loc, iterValues, ii);
 
   // insert multiply operation block
-  rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
+  if (swapMultOps)
+    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {bVal, aVal});
+  else
+    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
   // NOTE: Need to do this after merge, in case the yield is one of the block
   // arguments, as is the case with "first" and "second" binops
   graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(

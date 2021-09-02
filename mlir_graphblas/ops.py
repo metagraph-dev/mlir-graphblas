@@ -451,6 +451,7 @@ class GraphBLAS_Apply(BaseOp):
 class GraphBLAS_MatrixMultiply(BaseOp):
     dialect = "graphblas"
     name = "matrix_multiply"
+
     allowed_semiring_adds = {"plus", "any", "min"}
     allowed_semiring_muls = {"pair", "times", "plus", "first", "second"}
     allowed_semirings = {
@@ -466,7 +467,10 @@ class GraphBLAS_MatrixMultiply(BaseOp):
             raise TypeError(
                 f"Illegal semiring: {semiring}, must be one of {cls.allowed_semirings}"
             )
-        return_type = a.type
+        if len(b.type.shape) == 1:
+            return_type = b.type
+        else:
+            return_type = a.type
         # TODO: make the return type more robust; may depend on a, b, and/or semiring
         ret_val = irbuilder.new_var(return_type)
         if mask:

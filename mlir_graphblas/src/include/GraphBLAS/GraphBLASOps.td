@@ -407,7 +407,7 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
     let arguments = (ins
      GraphBlasMatrixOrVectorOperand:$a,
      GraphBlasMatrixOrVectorOperand:$b,
-     Optional<AnyTensor>:$mask,
+     Optional<GraphBlasMatrixOrVectorOperand>:$mask,
      StrAttr:$semiring,
      DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
     let results = (outs AnyType:$output);
@@ -432,7 +432,7 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
     let arguments = (ins
       GraphBlasMatrixOrVectorOperand:$a,
       GraphBlasMatrixOrVectorOperand:$b,
-      Optional<AnyTensor>:$mask,
+      Optional<GraphBlasMatrixOrVectorOperand>:$mask,
       BoolAttr:$mask_complement);
     let results = (outs AnyType:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
