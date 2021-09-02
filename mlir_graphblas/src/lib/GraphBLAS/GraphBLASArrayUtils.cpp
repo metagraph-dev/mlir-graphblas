@@ -308,8 +308,8 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
 
   // insert multiply operation block
   rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
-  // NOTE: Need to do this after merge, in case the yield is one of the block arguments,
-  //       as is the case with "first" and "second" binops
+  // NOTE: Need to do this after merge, in case the yield is one of the block
+  // arguments, as is the case with "first" and "second" binops
   graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
       rewriter.getBlock()->getTerminator());
   Value multResult = multYield.values().front();
