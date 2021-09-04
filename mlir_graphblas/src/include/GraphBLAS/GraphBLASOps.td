@@ -724,4 +724,55 @@ def GraphBLAS_CommentOp : GraphBLAS_Op<"comment", []> {
     }];
 }
 
+def GraphBLAS_MatrixSelectRandomOp : GraphBLAS_Op<"matrix_select_random", []> {
+    let summary = "random selection of elements from each row of matrix";
+    let description = [{
+        Selects a random subset of up to `n` elements in each row of a CSR
+        matrix.  If there are less than `n` elements in a row, all elements in the row
+        are included in the output.
+        
+        An external function must be provided via the `choose_n` attribute to
+        the op with the following signature:
+        ```mlir
+        func @my_choose_n(%context: !llvm.ptr<i8>,
+                          %n: IndexType, %max_i: IndexType, 
+                          %output_indices: memref<?xIndexType>,
+                          %row_values: memref<?xValueType)
+        ```
+
+        where `IndexType` corresponds to the index element type of the sparse
+        tensor input and `ValueType` corresponds to the value element type of
+        the sparse tensor input.  This external function selects `n` random
+        indices from the interval `[0, max_i)` and writes them to the
+        `output_indices` memref in increasing order.  If desired, the
+        distribution of selected indices can be biased by the values in
+        `row_values`, which will have length `max_i`.  A uniform choice
+        function will ignore this last argument.
+
+        The implementation of the `choose_n` function is not specified by this
+        op because it will differ significantly depending on use case (uniform
+        or weighted sampling) and desired execution target (serial, parallel,
+        GPU, etc).
+
+        Example:
+        ```mlir
+        %output = graphblas.matrix_select_random %a, %n, %rng_context { choose_n = @uniform_choose_n } : (
+            tensor<?x?xf64, #CSR64>, i64, !llvm.ptr<i8>) to tensor<?x?xf64, #CSR64>
+        ```
+
+    }];
+
+    let arguments = (ins GraphBlasMatrixOperand:$input, 
+                         AnyInteger:$n,
+                         AnyType:$rng_context,
+                         SymbolRefAttr:$choose_n);
+    let results = (outs GraphBlasMatrixOperand:$output);
+
+    let assemblyFormat = [{
+           $input `,` $n `,` $rng_context attr-dict `:` `(` type($input) `,` type($n) `,` type($rng_context)  `)` `to` type($output)
+    }];
+
+    let verifier = [{ return ::verify(*this); }];
+}
+
 #endif // GRAPHBLAS_OPS
