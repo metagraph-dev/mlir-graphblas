@@ -527,15 +527,14 @@ class GraphBLAS_VectorArgMax(BaseOp):
             f"{ret_val.assign} = graphblas.vector_argmax {input} : {input.type}"
         )
 
+
 class GraphBLAS_MatrixSelectRandom(BaseOp):
     dialect = "graphblas"
     name = "matrix_select_random"
     allowed_choose_n = set(["choose_first", "choose_uniform"])
 
     @classmethod
-    def call(
-        cls, irbuilder, input, n: MLIRVar, rng_context: MLIRVar, choose_n: str
-    ):
+    def call(cls, irbuilder, input, n: MLIRVar, rng_context: MLIRVar, choose_n: str):
         cls.ensure_mlirvar(input, TensorType)
         cls.ensure_mlirvar(n, IntType)
         cls.ensure_mlirvar(rng_context)
@@ -549,6 +548,7 @@ class GraphBLAS_MatrixSelectRandom(BaseOp):
             + f"{{ choose_n = @{choose_n} }}"
             + f" : ({input.type}, {n.type}, {rng_context.type}) to {input.type}"
         )
+
 
 ###########################################
 # util ops

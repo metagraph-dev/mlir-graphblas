@@ -796,7 +796,9 @@ def test_ir_select_random(engine: MlirJitEngine, aliases: AliasMap):
         aliases=aliases,
     )
     M, n, context = ir_builder.inputs
-    filtered = ir_builder.graphblas.matrix_select_random(M, n, context, choose_n="choose_first")
+    filtered = ir_builder.graphblas.matrix_select_random(
+        M, n, context, choose_n="choose_first"
+    )
     ir_builder.return_vars(filtered)
     test_select_random = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
@@ -840,9 +842,13 @@ def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
         aliases=aliases,
     )
     M, n, context = ir_builder.inputs
-    filtered = ir_builder.graphblas.matrix_select_random(M, n, context, choose_n="choose_uniform")
+    filtered = ir_builder.graphblas.matrix_select_random(
+        M, n, context, choose_n="choose_uniform"
+    )
     ir_builder.return_vars(filtered)
-    test_select_random_uniform = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+    test_select_random_uniform = ir_builder.compile(
+        engine=engine, passes=GRAPHBLAS_PASSES
+    )
 
     # Test Results
     dense_input_tensor = np.array(
