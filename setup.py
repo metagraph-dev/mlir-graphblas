@@ -48,7 +48,7 @@ ext_modules = cythonize(
 ext_modules.append(
     Extension(
         "mlir_graphblas.SparseUtils",
-        sources=["mlir_graphblas/SparseUtils.cpp"],
+        sources=["mlir_graphblas/SparseUtils.cpp", "mlir_graphblas/RandomUtils.cpp"],
         include_dirs=[environment_include_dir],
         extra_compile_args=["-std=c++11"],
     )
