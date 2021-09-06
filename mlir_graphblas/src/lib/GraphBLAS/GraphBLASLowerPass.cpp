@@ -2693,12 +2693,12 @@ public:
 
     // Create output tensor
     Value output = rewriter.create<graphblas::DupOp>(loc, input);
-    Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type,
-                                                      output, c1);
+    Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(
+        loc, memref1DI64Type, output, c1);
     Value Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
-                                                     output, c1);
-    Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType,
-                                                    output);
+                                                           output, c1);
+    Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DValueType, output);
     rewriter.create<memref::StoreOp>(loc, c0_64, Bp, c0);
 
     // Pass 1: Scan input tensor to compute offsets
@@ -2711,32 +2711,40 @@ public:
     Value Aj_end_64 = rewriter.create<memref::LoadOp>(loc, Ap, row_plus1);
 
     // Limit number of row values in output to n
-    Value Aj_size_64 = rewriter.create<mlir::SubIOp>(loc, Aj_end_64, Aj_start_64);
-    Value isRowSmall = rewriter.create<mlir::CmpIOp>(loc, mlir::CmpIPredicate::ule, Aj_size_64, n);
-    Value Bj_size_64 = rewriter.create<mlir::SelectOp>(loc, isRowSmall, Aj_size_64, n);
+    Value Aj_size_64 =
+        rewriter.create<mlir::SubIOp>(loc, Aj_end_64, Aj_start_64);
+    Value isRowSmall = rewriter.create<mlir::CmpIOp>(
+        loc, mlir::CmpIPredicate::ule, Aj_size_64, n);
+    Value Bj_size_64 =
+        rewriter.create<mlir::SelectOp>(loc, isRowSmall, Aj_size_64, n);
 
     Value Bj_start_64 = rewriter.create<memref::LoadOp>(loc, Bp, row);
-    Value Bj_end_64 = rewriter.create<mlir::AddIOp>(loc, Bj_start_64, Bj_size_64);
+    Value Bj_end_64 =
+        rewriter.create<mlir::AddIOp>(loc, Bj_start_64, Bj_size_64);
     rewriter.create<memref::StoreOp>(loc, Bj_end_64, Bp, row_plus1);
 
     rewriter.setInsertionPointAfter(scanLoop);
 
     // Pass 2: Parallel select and compute output
-    scf::ParallelOp rowLoop = rewriter.create<scf::ParallelOp>(loc, c0, nrow, c1);
+    scf::ParallelOp rowLoop =
+        rewriter.create<scf::ParallelOp>(loc, c0, nrow, c1);
     row = rowLoop.getInductionVars()[0];
 
     rewriter.setInsertionPointToStart(rowLoop.getBody());
 
     row_plus1 = rewriter.create<mlir::AddIOp>(loc, row, c1);
     Aj_start_64 = rewriter.create<memref::LoadOp>(loc, Ap, row);
-    Value Aj_start = rewriter.create<mlir::IndexCastOp>(loc, Aj_start_64, indexType);
+    Value Aj_start =
+        rewriter.create<mlir::IndexCastOp>(loc, Aj_start_64, indexType);
     Aj_end_64 = rewriter.create<memref::LoadOp>(loc, Ap, row_plus1);
-    Value Aj_end = rewriter.create<mlir::IndexCastOp>(loc, Aj_end_64, indexType);
+    Value Aj_end =
+        rewriter.create<mlir::IndexCastOp>(loc, Aj_end_64, indexType);
     Bj_start_64 = rewriter.create<memref::LoadOp>(loc, Bp, row);
     Value Bj_start =
         rewriter.create<mlir::IndexCastOp>(loc, Bj_start_64, indexType);
     Bj_end_64 = rewriter.create<memref::LoadOp>(loc, Bp, row_plus1);
-    Value Bj_end = rewriter.create<mlir::IndexCastOp>(loc, Bj_end_64, indexType);
+    Value Bj_end =
+        rewriter.create<mlir::IndexCastOp>(loc, Bj_end_64, indexType);
 
     Value Aj_size = rewriter.create<mlir::SubIOp>(loc, Aj_end, Aj_start);
     Aj_size_64 = rewriter.create<mlir::IndexCastOp>(loc, Aj_size, int64Type);
@@ -2757,7 +2765,7 @@ public:
 
     // If number of row values less than or equal to n, copy row directly
     scf::IfOp ifCopy = rewriter.create<scf::IfOp>(loc, copyRow, true);
-  
+
     rewriter.setInsertionPointToStart(ifCopy.thenBlock());
 
     // copy contents
@@ -2775,7 +2783,8 @@ public:
     // Call function using output Bj row as temporary storage
     rewriter.create<mlir::CallOp>(
         loc, chooseNSymbol, TypeRange(),
-        ArrayRef<Value>({rngContext, Bj_size_64, Aj_size_64, Bj_view, Ax_view}));
+        ArrayRef<Value>(
+            {rngContext, Bj_size_64, Aj_size_64, Bj_view, Ax_view}));
 
     // Loop over randomly selected offsets
     scf::ParallelOp colLoop =
@@ -2784,10 +2793,12 @@ public:
 
     rewriter.setInsertionPointToStart(colLoop.getBody());
 
-    Value sourceOffset_64 = rewriter.create<memref::LoadOp>(loc, Bj_view, offset);
+    Value sourceOffset_64 =
+        rewriter.create<memref::LoadOp>(loc, Bj_view, offset);
     Value sourceOffset =
-        rewriter.create<mlir::IndexCastOp> (loc, sourceOffset_64, indexType);
-    Value colIndex = rewriter.create<memref::LoadOp>(loc, Aj_view, sourceOffset);
+        rewriter.create<mlir::IndexCastOp>(loc, sourceOffset_64, indexType);
+    Value colIndex =
+        rewriter.create<memref::LoadOp>(loc, Aj_view, sourceOffset);
     Value colValue =
         rewriter.create<memref::LoadOp>(loc, Ax_view, sourceOffset);
     // overwrite the randomly selected offset with the actual column index
@@ -2809,12 +2820,11 @@ public:
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
-      LowerMatrixSelectRandomRewrite,
-      LowerMatrixSelectRewrite, LowerMatrixReduceToVectorRewrite,
-      LowerMatrixReduceToScalarRewrite, LowerMatrixReduceToScalarGenericRewrite,
-      LowerMatrixMultiplyRewrite, LowerConvertLayoutRewrite,
-      LowerTransposeRewrite, LowerApplyRewrite, LowerApplyGenericRewrite,
-      LowerMatrixMultiplyReduceToScalarGenericRewrite,
+      LowerMatrixSelectRandomRewrite, LowerMatrixSelectRewrite,
+      LowerMatrixReduceToVectorRewrite, LowerMatrixReduceToScalarRewrite,
+      LowerMatrixReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
+      LowerConvertLayoutRewrite, LowerTransposeRewrite, LowerApplyRewrite,
+      LowerApplyGenericRewrite, LowerMatrixMultiplyReduceToScalarGenericRewrite,
       LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
       LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
       LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
