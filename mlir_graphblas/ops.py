@@ -530,7 +530,7 @@ class GraphBLAS_VectorArgMax(BaseOp):
 class GraphBLAS_MatrixSelectRandom(BaseOp):
     dialect = "graphblas"
     name = "matrix_select_random"
-    allowed_choose_n = set(["choose_first"])
+    allowed_choose_n = set(["choose_first", "choose_uniform"])
 
     @classmethod
     def call(
