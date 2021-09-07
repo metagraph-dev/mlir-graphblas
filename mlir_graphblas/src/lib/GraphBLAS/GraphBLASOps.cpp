@@ -1115,7 +1115,8 @@ static LogicalResult verify(MatrixSelectRandomOp op) {
       mlir::sparse_tensor::getSparseTensorEncoding(inputType);
 
   if (nType.getWidth() != inputSparseEncoding.getIndexBitWidth())
-    return op.emitError("n must match bit width of input sparse tensor index type");
+    return op.emitError(
+        "n must match bit width of input sparse tensor index type");
 
   return success();
 }
