@@ -78,7 +78,7 @@ def triangle_count_combined(A: MLIRSparseTensor) -> int:
         U_csc = irb.graphblas.convert_layout(U, "tensor<?x?xf64, #CSC64>")
         C = irb.graphblas.matrix_multiply(L, U_csc, "plus_pair", mask=L)
 
-        reduce_result = irb.graphblas.matrix_reduce_to_scalar(C, "plus")
+        reduce_result = irb.graphblas.reduce_to_scalar(C, "plus")
         irb.return_vars(reduce_result)
 
         _triangle_count_compiled = irb.compile()

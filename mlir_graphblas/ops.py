@@ -370,9 +370,9 @@ class GraphBLAS_MatrixSelect(BaseOp):
         )
 
 
-class GraphBLAS_MatrixReduceToVector(BaseOp):
+class GraphBLAS_ReduceToVector(BaseOp):
     dialect = "graphblas"
-    name = "matrix_reduce_to_vector"
+    name = "reduce_to_vector"
     allowed_aggregators = {"plus", "count"}
 
     @classmethod
@@ -386,14 +386,14 @@ class GraphBLAS_MatrixReduceToVector(BaseOp):
             raise TypeError(f"Illegal axis: {axis}, must be 0 or 1")
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{ret_val.assign} = graphblas.matrix_reduce_to_vector {input} "
+            f"{ret_val.assign} = graphblas.reduce_to_vector {input} "
             f'{{ aggregator = "{aggregator}" , axis = {axis} }} : {input.type} to {ret_val.type}'
         )
 
 
-class GraphBLAS_MatrixReduceToScalar(BaseOp):
+class GraphBLAS_ReduceToScalar(BaseOp):
     dialect = "graphblas"
-    name = "matrix_reduce_to_scalar"
+    name = "reduce_to_scalar"
     allowed_aggregators = {"plus", "count"}
 
     @classmethod
@@ -407,7 +407,7 @@ class GraphBLAS_MatrixReduceToScalar(BaseOp):
         # TODO: return_type might be influenced by future allowable aggregators
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{ret_val.assign} = graphblas.matrix_reduce_to_scalar {input} "
+            f"{ret_val.assign} = graphblas.reduce_to_scalar {input} "
             f'{{ aggregator = "{aggregator}" }} : {input.type} to {ret_val.type}'
         )
 

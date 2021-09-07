@@ -78,16 +78,16 @@ module {
 
     // CHECK: func @matrix_reduce_to_scalar_plus(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
     func @matrix_reduce_to_scalar_plus(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> i64 {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_reduce_to_scalar %[[ARG0]] {aggregator = "plus"} : [[CSR_TYPE]] to [[RETURN_TYPE]]
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<2x3xi64, #CSR64> to i64
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.reduce_to_scalar %[[ARG0]] {aggregator = "plus"} : [[CSR_TYPE]] to [[RETURN_TYPE]]
+        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<2x3xi64, #CSR64> to i64
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : i64
     }
 
-    // CHECK: func @matrix_reduce_to_scalar_count(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
-    func @matrix_reduce_to_scalar_count(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> i64 {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.matrix_reduce_to_scalar %[[ARG0]] {aggregator = "count"} : [[CSR_TYPE]] to [[RETURN_TYPE]]
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "count" } : tensor<2x3xi64, #CSR64> to i64
+    // CHECK: func @vector_reduce_to_scalar_count(%[[ARG0:.*]]: [[CV_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @vector_reduce_to_scalar_count(%sparse_tensor: tensor<2xi64, #SparseVec64>) -> i64 {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.reduce_to_scalar %[[ARG0]] {aggregator = "count"} : [[CV_TYPE]] to [[RETURN_TYPE]]
+        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "count" } : tensor<2xi64, #SparseVec64> to i64
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : i64
     }
@@ -296,7 +296,7 @@ module {
     func @vector_argminmax_min(%vec: tensor<3xi64, #SparseVec64>) -> index {
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_argminmax %[[ARGA]] {minmax = "min"} : [[A_TYPE]]
         %answer = graphblas.vector_argminmax %vec { minmax = "min" } : tensor<3xi64, #SparseVec64>
-	// CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : index
     }
 
@@ -304,7 +304,7 @@ module {
     func @vector_argminmax_max(%vec: tensor<3xi64, #SparseVec64>) -> index {
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_argminmax %[[ARGA]] {minmax = "max"} : [[A_TYPE]]
         %answer = graphblas.vector_argminmax %vec { minmax = "max" } : tensor<3xi64, #SparseVec64>
-	// COM: CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        // COM: CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : index
     }
 
@@ -316,7 +316,7 @@ module {
     func @vector_argmin_wrapper(%vec: tensor<3xi64, #SparseVec64>) -> index {
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_argmin %[[ARGA]] : [[A_TYPE]]
         %answer = graphblas.vector_argmin %vec : tensor<3xi64, #SparseVec64>
-	// CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : index
     }
 
@@ -328,7 +328,7 @@ module {
     func @vector_argmax_wrapper(%vec: tensor<3xi64, #SparseVec64>) -> index {
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_argmax %[[ARGA]] : [[A_TYPE]]
         %answer = graphblas.vector_argmax %vec : tensor<3xi64, #SparseVec64>
-	// CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
         return %answer : index
     }
 
@@ -336,23 +336,23 @@ module {
 
 module {
 
-    // CHECK: func @matrix_reduce_to_vector_plus(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]]) -> ([[RETURN_TYPE_0:tensor<.*>]], [[RETURN_TYPE_1:tensor<.*>]]) {
-    func @matrix_reduce_to_vector_plus(%matrix: tensor<7x9xi32, #CSR64>) -> (tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>) {
-        // CHECK-NEXT: %[[ANSWER_0:.*]] = graphblas.matrix_reduce_to_vector %[[MATRIX]] {aggregator = "plus", axis = 0 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_0]]
-        %vec1 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
-        // CHECK-NEXT: %[[ANSWER_1:.*]] = graphblas.matrix_reduce_to_vector %[[MATRIX]] {aggregator = "plus", axis = 1 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_1]]
-        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
-	// CHECK-NEXT: return %[[ANSWER_0]], %[[ANSWER_1]] : [[RETURN_TYPE_0]], [[RETURN_TYPE_1]]
+    // CHECK: func @reduce_to_vector_plus(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]]) -> ([[RETURN_TYPE_0:tensor<.*>]], [[RETURN_TYPE_1:tensor<.*>]]) {
+    func @reduce_to_vector_plus(%matrix: tensor<7x9xi32, #CSR64>) -> (tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>) {
+        // CHECK-NEXT: %[[ANSWER_0:.*]] = graphblas.reduce_to_vector %[[MATRIX]] {aggregator = "plus", axis = 0 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_0]]
+        %vec1 = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
+        // CHECK-NEXT: %[[ANSWER_1:.*]] = graphblas.reduce_to_vector %[[MATRIX]] {aggregator = "plus", axis = 1 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_1]]
+        %vec2 = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
+        // CHECK-NEXT: return %[[ANSWER_0]], %[[ANSWER_1]] : [[RETURN_TYPE_0]], [[RETURN_TYPE_1]]
         return %vec1, %vec2 : tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>
     }
 
-    // CHECK: func @matrix_reduce_to_vector_count(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]]) -> ([[RETURN_TYPE_0:tensor<.*>]], [[RETURN_TYPE_1:tensor<.*>]]) {
-    func @matrix_reduce_to_vector_count(%matrix: tensor<7x9xi32, #CSR64>) -> (tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>) {
-        // CHECK-NEXT: %[[ANSWER_0:.*]] = graphblas.matrix_reduce_to_vector %[[MATRIX]] {aggregator = "count", axis = 0 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_0]]
-        %vec1 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "count", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
-        // CHECK-NEXT: %[[ANSWER_1:.*]] = graphblas.matrix_reduce_to_vector %[[MATRIX]] {aggregator = "count", axis = 1 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_1]]
-        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "count", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
-	// CHECK-NEXT: return %[[ANSWER_0]], %[[ANSWER_1]] : [[RETURN_TYPE_0]], [[RETURN_TYPE_1]]
+    // CHECK: func @reduce_to_vector_count(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]]) -> ([[RETURN_TYPE_0:tensor<.*>]], [[RETURN_TYPE_1:tensor<.*>]]) {
+    func @reduce_to_vector_count(%matrix: tensor<7x9xi32, #CSR64>) -> (tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>) {
+        // CHECK-NEXT: %[[ANSWER_0:.*]] = graphblas.reduce_to_vector %[[MATRIX]] {aggregator = "count", axis = 0 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_0]]
+        %vec1 = graphblas.reduce_to_vector %matrix { aggregator = "count", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
+        // CHECK-NEXT: %[[ANSWER_1:.*]] = graphblas.reduce_to_vector %[[MATRIX]] {aggregator = "count", axis = 1 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_1]]
+        %vec2 = graphblas.reduce_to_vector %matrix { aggregator = "count", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
+        // CHECK-NEXT: return %[[ANSWER_0]], %[[ANSWER_1]] : [[RETURN_TYPE_0]], [[RETURN_TYPE_1]]
         return %vec1, %vec2 : tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>
     }
 

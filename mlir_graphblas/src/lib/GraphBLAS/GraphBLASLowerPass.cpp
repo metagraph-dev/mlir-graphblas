@@ -608,11 +608,11 @@ public:
   };
 };
 
-class LowerMatrixReduceToVectorRewrite
-    : public OpRewritePattern<graphblas::MatrixReduceToVectorOp> {
+class LowerReduceToVectorRewrite
+    : public OpRewritePattern<graphblas::ReduceToVectorOp> {
 public:
-  using OpRewritePattern<graphblas::MatrixReduceToVectorOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToVectorOp op,
+  using OpRewritePattern<graphblas::ReduceToVectorOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ReduceToVectorOp op,
                                 PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
@@ -640,8 +640,8 @@ public:
                                                       matrix);
       Value newLayoutInputTensor = newConvertLayoutOp.getResult();
       Type originalVectorType = op->getResultTypes().front();
-      graphblas::MatrixReduceToVectorOp newReduceOp =
-          rewriter.create<graphblas::MatrixReduceToVectorOp>(
+      graphblas::ReduceToVectorOp newReduceOp =
+          rewriter.create<graphblas::ReduceToVectorOp>(
               loc, originalVectorType, newLayoutInputTensor, aggregator, axis);
 
       rewriter.replaceOp(op, newReduceOp.getResult());
@@ -669,7 +669,7 @@ public:
       static const ArrayRef<int64_t> newVectorShape = {-1};
       Type resultVectorType =
           getCompressedVectorType(context, newVectorShape, elementType);
-      Value resultVector = rewriter.create<graphblas::MatrixReduceToVectorOp>(
+      Value resultVector = rewriter.create<graphblas::ReduceToVectorOp>(
           loc, resultVectorType, castMatrix, aggregator, axis);
 
       Type originalVectorType = op->getResultTypes().front();
@@ -904,11 +904,11 @@ public:
   };
 };
 
-class LowerMatrixReduceToScalarRewrite
-    : public OpRewritePattern<graphblas::MatrixReduceToScalarOp> {
+class LowerReduceToScalarRewrite
+    : public OpRewritePattern<graphblas::ReduceToScalarOp> {
 public:
-  using OpRewritePattern<graphblas::MatrixReduceToScalarOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarOp op,
+  using OpRewritePattern<graphblas::ReduceToScalarOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ReduceToScalarOp op,
                                 PatternRewriter &rewriter) const override {
     Value input = op.input();
     StringRef aggregator = op.aggregator();
@@ -919,8 +919,8 @@ public:
     Type valueType = operandType.getElementType();
 
     // New op
-    graphblas::MatrixReduceToScalarGenericOp newReduceOp =
-        rewriter.create<graphblas::MatrixReduceToScalarGenericOp>(
+    graphblas::ReduceToScalarGenericOp newReduceOp =
+        rewriter.create<graphblas::ReduceToScalarGenericOp>(
             loc, op->getResultTypes(), input, 2);
 
     if (aggregator == "plus") {
@@ -973,12 +973,11 @@ public:
   };
 };
 
-class LowerMatrixReduceToScalarGenericRewrite
-    : public OpRewritePattern<graphblas::MatrixReduceToScalarGenericOp> {
+class LowerReduceToScalarGenericRewrite
+    : public OpRewritePattern<graphblas::ReduceToScalarGenericOp> {
 public:
-  using OpRewritePattern<
-      graphblas::MatrixReduceToScalarGenericOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixReduceToScalarGenericOp op,
+  using OpRewritePattern<graphblas::ReduceToScalarGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ReduceToScalarGenericOp op,
                                 PatternRewriter &rewriter) const override {
     Value input = op.input();
     Location loc = op->getLoc();
@@ -986,9 +985,6 @@ public:
     RankedTensorType operandType =
         op.input().getType().dyn_cast<RankedTensorType>();
     Type valueType = operandType.getElementType();
-    Type int64Type = rewriter.getIntegerType(
-        64); // TODO should we get this from the sparse encoding?
-    Type indexType = rewriter.getIndexType();
 
     // Required blocks
     RegionRange extensions = op.extensions();
@@ -1015,23 +1011,17 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
 
     // Get sparse tensor info
-    MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
     MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
 
-    Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, input);
-    sparse_tensor::ToPointersOp inputPtrs =
-        rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type,
-                                                     input, c1);
     sparse_tensor::ToValuesOp inputValues =
         rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType,
                                                    input);
-    memref::LoadOp nnz64 =
-        rewriter.create<memref::LoadOp>(loc, inputPtrs, nrows);
-    IndexCastOp nnz = rewriter.create<IndexCastOp>(loc, nnz64, indexType);
+
+    Value nnz = rewriter.create<graphblas::NumValsOp>(loc, input);
 
     // begin loop
-    scf::ParallelOp valueLoop = rewriter.create<scf::ParallelOp>(
-        loc, c0, nnz.getResult(), c1, c0Accumulator);
+    scf::ParallelOp valueLoop =
+        rewriter.create<scf::ParallelOp>(loc, c0, nnz, c1, c0Accumulator);
     ValueRange valueLoopIdx = valueLoop.getInductionVars();
 
     rewriter.setInsertionPointToStart(valueLoop.getBody());
@@ -2658,18 +2648,18 @@ public:
 };
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
-  patterns.add<
-      LowerMatrixSelectRewrite, LowerMatrixReduceToVectorRewrite,
-      LowerMatrixReduceToScalarRewrite, LowerMatrixReduceToScalarGenericRewrite,
-      LowerMatrixMultiplyRewrite, LowerConvertLayoutRewrite,
-      LowerTransposeRewrite, LowerApplyRewrite, LowerApplyGenericRewrite,
-      LowerMatrixMultiplyReduceToScalarGenericRewrite,
-      LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
-      LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
-      LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
-      LowerVectorArgMaxOpRewrite, LowerCommentRewrite, LowerSizeRewrite,
-      LowerNumRowsRewrite, LowerNumColsRewrite, LowerNumValsRewrite,
-      LowerDupRewrite>(patterns.getContext());
+  patterns
+      .add<LowerMatrixSelectRewrite, LowerReduceToVectorRewrite,
+           LowerReduceToScalarRewrite, LowerReduceToScalarGenericRewrite,
+           LowerMatrixMultiplyRewrite, LowerConvertLayoutRewrite,
+           LowerTransposeRewrite, LowerApplyRewrite, LowerApplyGenericRewrite,
+           LowerMatrixMultiplyReduceToScalarGenericRewrite,
+           LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
+           LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
+           LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
+           LowerVectorArgMaxOpRewrite, LowerCommentRewrite, LowerSizeRewrite,
+           LowerNumRowsRewrite, LowerNumColsRewrite, LowerNumValsRewrite,
+           LowerDupRewrite>(patterns.getContext());
 }
 
 struct GraphBLASLoweringPass
@@ -2686,7 +2676,7 @@ struct GraphBLASLoweringPass
 
 void populateGraphBLASStructuralizePatterns(RewritePatternSet &patterns) {
   patterns.add<LowerMatrixMultiplyRewrite, LowerApplyRewrite,
-               LowerMatrixReduceToScalarRewrite>(patterns.getContext());
+               LowerReduceToScalarRewrite>(patterns.getContext());
 }
 
 struct GraphBLASStructuralizePass
