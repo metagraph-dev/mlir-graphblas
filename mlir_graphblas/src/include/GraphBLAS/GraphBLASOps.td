@@ -313,8 +313,8 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
     let summary = "tensor apply operation";
     let description = [{
         Applies an operator to all elements of the given sparse tensor.  The operator
-        can be unary or binary. Binary operators require a thunk. The only supported
-        binary operator is "min". Unary operators cannot take a thunk.  The supported
+        can be unary or binary. Binary operators require a thunk. The supported binary
+        operators are "min" and "div". Unary operators cannot take a thunk.  The supported
         unary operators are "abs" and "minv" (i.e. multiplicative inverse or 1/x).
         The given sparse tensor must either be a CSR matrix, CSC matrix, or a sparse
         vector.
@@ -332,13 +332,34 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
           graphblas.apply %sparse_vector { apply_operator = "abs" } : 
             (tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
         ```
+        
+        Some binary operators, e.g. "div", are not symmetric. The sparse tensor and thunk
+        should be given in the order they should be given to the binary operator. For
+        example, to divide every element of a matrix by 2, use the following:
+        
+        ```mlir
+        %thunk = constant 2 : i64
+        %matrix_answer = 
+          graphblas.apply %sparse_matrix, %thunk { apply_operator = "div" } : 
+            (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
+        ```
+        
+        As another example, to divide 10 by each element of a sparse vector, use the
+        following:
+        
+        ```mlir
+        %thunk = constant 10 : i64
+        %vector_answer = 
+          graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } : 
+            (i64, tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
+        ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, Optional<AnyType>:$thunk, StrAttr:$apply_operator);
+    let arguments = (ins AnyType:$left, Optional<AnyType>:$right, StrAttr:$apply_operator);
     let results = (outs AnyTensor:$output);
     
     let assemblyFormat = [{
-           $input (`,` $thunk^)? attr-dict `:` `(` type($input) (`,` type($thunk)^)? `)` `to` type($output)
+           $left (`,` $right^)? attr-dict `:` `(` type($left) (`,` type($right)^)? `)` `to` type($output)
     }];
 
     let verifier = [{ return ::verify(*this); }];

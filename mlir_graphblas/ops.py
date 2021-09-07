@@ -416,11 +416,11 @@ class GraphBLAS_Apply(BaseOp):
     dialect = "graphblas"
     name = "apply"
     allowed_unary_ops = {"abs", "minv"}
-    allowed_binary_ops = {"min"}
+    allowed_binary_ops = {"min", "div"}
     allowed_ops = allowed_unary_ops | allowed_binary_ops
 
     @classmethod
-    def call(cls, irbuilder, input, apply_op, thunk=None):
+    def call(cls, irbuilder, input, apply_op, *, left=None, right=None):
         cls.ensure_mlirvar(input, TensorType)
         if apply_op not in cls.allowed_ops:
             raise TypeError(
@@ -432,13 +432,25 @@ class GraphBLAS_Apply(BaseOp):
         ret_val = irbuilder.new_var(return_type)
 
         if apply_op in cls.allowed_binary_ops:
-            cls.ensure_mlirvar(thunk)
-            code = (
-                f"{ret_val.assign} = graphblas.apply {input}, {thunk} "
-                f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {thunk.type}) to {ret_val.type}'
-            )
+            if left is not None:
+                if right is not None:
+                    raise TypeError("Exactly one thunk allowed.")
+                cls.ensure_mlirvar(left)
+                code = (
+                    f"{ret_val.assign} = graphblas.apply {left}, {input} "
+                    f'{{ apply_operator = "{apply_op}" }} : ({left.type}, {input.type}) to {ret_val.type}'
+                )
+            elif right is not None:
+                cls.ensure_mlirvar(right)
+                code = (
+                    f"{ret_val.assign} = graphblas.apply {input}, {right} "
+                    f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {right.type}) to {ret_val.type}'
+                )
+            else:
+                raise TypeError("A thunk is required.")
+
         elif apply_op in cls.allowed_unary_ops:
-            if thunk is not None:
+            if left is not None or right is not None:
                 raise TypeError(f"apply_op misuse: {apply_op} cannot take a thunk.")
             code = (
                 f"{ret_val.assign} = graphblas.apply {input} "

@@ -627,7 +627,11 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
         aliases=aliases,
     )
     M, threshold = ir_builder.inputs
-    filtered = ir_builder.graphblas.matrix_select(M, [threshold], ["gt"])
+    twelve_scalar = ir_builder.constant(12, "f64")
+    thirty_four_scalar = ir_builder.constant(34, "f64")
+    M2 = ir_builder.graphblas.apply(M, "div", left=twelve_scalar)
+    M3 = ir_builder.graphblas.apply(M2, "div", right=thirty_four_scalar)
+    filtered = ir_builder.graphblas.matrix_select(M3, [threshold], ["gt"])
     ir_builder.return_vars(filtered)
     gt_thunk = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
@@ -642,6 +646,7 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
         ],
         dtype=np.float64,
     )
+    dense_input_tensor_mask = dense_input_tensor.astype(bool)
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
 
     for threshold in np.unique(dense_input_tensor):
@@ -649,10 +654,10 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
         dense_result = densify_csr(result)
 
         expected_dense_result = np.copy(dense_input_tensor)
+        expected_dense_result[dense_input_tensor_mask] /= 12.0
+        expected_dense_result[dense_input_tensor_mask] **= -1
+        expected_dense_result[dense_input_tensor_mask] /= 34.0
         expected_dense_result[expected_dense_result <= threshold] = 0
-
-        if not np.all(dense_result == expected_dense_result):
-            breakpoint()
 
         assert np.all(dense_result == expected_dense_result)
 
@@ -711,7 +716,7 @@ def test_ir_reduce_to_vector(
 
     # Build Functions
     ir_builder = MLIRFunctionBuilder(
-        "reduce_func",
+        f"reduce_func_{mlir_type}",
         input_types=[input_type],
         return_types=[
             reduce_rows_output_type,
@@ -731,7 +736,9 @@ def test_ir_reduce_to_vector(
     )
 
     zero_scalar = ir_builder.constant(0, mlir_type)
-    reduced_rows_clamped = ir_builder.graphblas.apply(reduced_rows, "min", zero_scalar)
+    reduced_rows_clamped = ir_builder.graphblas.apply(
+        reduced_rows, "min", right=zero_scalar
+    )
     reduced_columns_abs = ir_builder.graphblas.apply(reduced_columns, "abs")
 
     ir_builder.return_vars(

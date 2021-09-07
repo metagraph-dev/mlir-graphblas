@@ -148,6 +148,46 @@ module {
         return %answer : tensor<3xi64, #SparseVec64>
     }
 
+    // CHECK: func @apply_matrix_left_div(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @apply_matrix_left_div(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
+        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[THUNK]], %[[ARG0]] {apply_operator = "div"} : ([[THUNK_TYPE]], [[CSR_TYPE]]) to [[CSR_TYPE]]
+        %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "div" } : (i64, tensor<2x3xi64, #CSR64>) to tensor<2x3xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x3xi64, #CSR64>
+    }
+   
+    // CHECK: func @apply_vector_left_div(%[[ARG0:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @apply_vector_left_div(%sparse_tensor: tensor<3xi64, #SparseVec64>) -> tensor<3xi64, #SparseVec64> {
+        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[THUNK]], %[[ARG0]] {apply_operator = "div"} : ([[THUNK_TYPE]], [[VECTOR_TYPE]]) to [[VECTOR_TYPE]]
+        %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "div" } : (i64, tensor<3xi64, #SparseVec64>) to tensor<3xi64, #SparseVec64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<3xi64, #SparseVec64>
+    }
+
+    // CHECK: func @apply_matrix_right_div(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @apply_matrix_right_div(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
+        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]], %[[THUNK]] {apply_operator = "div"} : ([[CSR_TYPE]], [[THUNK_TYPE]]) to [[CSR_TYPE]]
+        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "div" } : (tensor<2x3xi64, #CSR64>, i64) to tensor<2x3xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x3xi64, #CSR64>
+    }
+   
+    // CHECK: func @apply_vector_right_div(%[[ARG0:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @apply_vector_right_div(%sparse_tensor: tensor<3xi64, #SparseVec64>) -> tensor<3xi64, #SparseVec64> {
+        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]], %[[THUNK]] {apply_operator = "div"} : ([[VECTOR_TYPE]], [[THUNK_TYPE]]) to [[VECTOR_TYPE]]
+        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "div" } : (tensor<3xi64, #SparseVec64>, i64) to tensor<3xi64, #SparseVec64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<3xi64, #SparseVec64>
+    }
+
 }
 
 module {
