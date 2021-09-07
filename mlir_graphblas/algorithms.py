@@ -431,7 +431,9 @@ def pagerank(
             )
 
             # w = t ./ d
-            w = irb.graphblas.intersect(prev_score, row_degree, "div", "tensor<?xf64, #CV64>")
+            w = irb.graphblas.intersect(
+                prev_score, row_degree, "div", "tensor<?xf64, #CV64>"
+            )
 
             # r = teleport
             # Perform this scalar assignment using an apply hack
@@ -444,7 +446,9 @@ def pagerank(
 
             # rdiff = sum(abs(prev_score - new_score))
             # TODO: this should technically be union, but we don't allow "minus" for union
-            new_rdiff = irb.graphblas.intersect(prev_score, new_score, "minus", "tensor<?xf64, #CV64>")
+            new_rdiff = irb.graphblas.intersect(
+                prev_score, new_score, "minus", "tensor<?xf64, #CV64>"
+            )
             new_rdiff = irb.graphblas.apply(new_rdiff, "abs")
             new_rdiff = irb.graphblas.reduce_to_scalar(new_rdiff, "plus")
 
