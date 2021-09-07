@@ -1104,6 +1104,22 @@ public:
                       });
       transformResult = rewriter.create<mlir::SelectOp>(loc, cmp, val, thunk);
 
+    } else if (apply_operator == "div") {
+
+      Value thunk = op.thunk();
+
+      transformResult = llvm::TypeSwitch<Type, Value>(valueType)
+                      .Case<IntegerType>([&](IntegerType type) {
+                        return rewriter.create<SignedDivIOp>(loc, val, thunk);
+                      })
+                      .Case<FloatType>([&](FloatType type) {
+                        return rewriter.create<DivFOp>(loc, val, thunk);
+                      });
+
+    } else if (apply_operator == "second") {
+
+      transformResult = op.thunk();
+
     } else if (apply_operator == "minv") {
 
       transformResult =

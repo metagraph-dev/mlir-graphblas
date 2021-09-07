@@ -179,7 +179,7 @@ def dense_neural_network_combined(
         c1 = irb.constant(1, "i64")
 
         # Make a copy of Y_init for consistency of memory cleanup in the loop
-        Y_init_dup = irb.util.dup_tensor(Y_init)
+        Y_init_dup = irb.graphblas.dup(Y_init)
 
         Y_init_ptr8 = irb.util.tensor_to_ptr8(Y_init_dup)
 
@@ -369,3 +369,97 @@ def vertex_nomination(
 
     node_of_interest = _vertex_nomination(graph, nodes_of_interest)
     return node_of_interest
+
+
+_pagerank = None
+
+
+def pagerank(
+    graph: MLIRSparseTensor, damping=0.85, tol=1e-6, *, itermax=100
+) -> MLIRSparseTensor:
+    global _pagerank
+    if _pagerank is None:
+        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
+        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+        csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
+        cv64 = SparseEncodingType(["compressed"], None, 64, 64)
+        aliases = AliasMap()
+        aliases["CSR64"] = csr64
+        aliases["CSC64"] = csc64
+        aliases["CSX64"] = csx64
+        aliases["CV64"] = cv64
+
+        irb = MLIRFunctionBuilder(
+            "pagerank",
+            input_types=["tensor<?x?xf64, #CSR64>", "f64", "f64", "i32"],
+            return_types=["tensor<?xf64, #CV64>"],
+            aliases=aliases,
+        )
+        (A, var_damping, var_tol, var_itermax) = irb.inputs
+
+        nrows = irb.graphblas.num_rows(A)
+        nrows_i64 = irb.index_cast(nrows, "i64")
+        nrows_f64 = irb.sitofp(nrows_i64, "f64")
+
+        cf1 = irb.constant(1.0, "f64")
+        teleport = irb.subf(cf1, var_damping)
+        teleport = irb.divf(teleport, nrows_f64)
+
+        row_degree = irb.graphblas.matrix_reduce_to_vector(A, "count", 1)
+        # prescale row_degree with damping factor, so it isn't done each iteration
+        row_degree = irb.graphblas.apply(row_degree, "div", var_damping)
+
+        # Use row_degree as a convenient vector to duplicate for starting score
+        r = irb.graphblas.dup(row_degree)
+
+        # r = 1/nrows
+        nrows_inv = irb.divf(cf1, nrows_f64)
+        starting = irb.graphblas.apply(r, "second", nrows_inv)
+        starting_ptr8 = irb.util.tensor_to_ptr8(starting)
+
+        # Pagerank iterations
+        rdiff = irb.new_var("f64")
+        prev_score_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        with irb.for_loop(
+            0, var_itermax, iter_vars=[(rdiff, cf1), (prev_score_ptr8, starting_ptr8)]
+        ) as for_vars:
+            # TODO: build the if statement for breaking early
+
+            # Cast prev_score from pointer to tensor
+            prev_score = irb.util.ptr8_to_tensor(
+                prev_score_ptr8, "tensor<?xf64, #CV64>"
+            )
+
+            # w = t ./ d
+            w = irb.graphblas.union(prev_score, row_degree)
+
+            # r = teleport
+            # Perform this scalar assignment using an apply hack
+            new_score = irb.graphblas.apply(prev_score, "second", teleport)
+
+            # r += A'*w
+            AT = irb.graphblas.transpose(A, "tensor<?x?xf64, #CSR64")
+            tmp = irb.graphblas.matrix_multiply(AT, w, "plus_second")
+            irb.graphblas.update(tmp, new_score, accumulate="plus")
+
+            # rdiff = sum(abs(prev_score - new_score))
+            # TODO: this should technically be union, but we don't allow "minus" for union
+            new_rdiff = irb.graphblas.intersect(prev_score, new_score, "minus")
+            new_rdiff = irb.graphblas.apply(new_rdiff, "abs")
+            new_rdiff = irb.graphblas.reduce_to_scalar(new_rdiff, "plus")
+
+            # Clean up previous score
+            irb.util.del_sparse_tensor(prev_score)
+
+            # Yield
+            new_score_ptr8 = irb.util.tensor_to_ptr8(new_score)
+            for_vars.yield_vars(new_rdiff, new_score_ptr8)
+
+        ret_val = for_vars.returned_variable[1]
+
+        irb.return_vars(ret_val)
+
+        _pagerank = irb.compile()
+
+    pr = _pagerank(graph, damping, tol, itermax)
+    return pr
