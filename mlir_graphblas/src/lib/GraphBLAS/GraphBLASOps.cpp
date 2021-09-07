@@ -225,8 +225,8 @@ void DupOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
 }
 
 template <class T>
-static LogicalResult verifyApplyArgs(T op) {
-  Type inputType = op.input().getType();
+static LogicalResult verifyApplyArgs(T op, Value input) {
+  Type inputType = input.getType();
   Type resultType = op.getResult().getType();
 
   RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
@@ -273,13 +273,17 @@ static LogicalResult verifyApplyArgs(T op) {
 }
 
 static LogicalResult verify(ApplyOp op) {
-  LogicalResult argResult = verifyApplyArgs(op);
+  Value input, thunk;
+  LogicalResult extractArgResult = extractApplyOpArgs(op, input, thunk);
+  if (extractArgResult.failed())
+    return extractArgResult;
+
+  LogicalResult argResult = verifyApplyArgs(op, input);
 
   if (argResult.failed())
     return argResult;
 
-  Type inputType = op.input().getType();
-  Value thunk = op.thunk();
+  Type inputType = input.getType();
   Type resultType = op.getResult().getType();
 
   std::string applyOperator = op.apply_operator().str();
@@ -321,7 +325,7 @@ static LogicalResult verify(ApplyOp op) {
 }
 
 static LogicalResult verify(ApplyGenericOp op) {
-  LogicalResult argResult = verifyApplyArgs(op);
+  LogicalResult argResult = verifyApplyArgs(op, op.input());
 
   if (argResult.failed())
     return argResult;

@@ -1060,7 +1060,12 @@ public:
     (void)module;
     Location loc = op->getLoc();
 
-    Value input = op.input();
+    Value input, thunk;
+    LogicalResult extractArgResult = extractApplyOpArgs(op, input, thunk);
+    assert(!extractArgResult.failed() &&
+           "Assumption that extractApplyOpArgs succeeded (due to verify "
+           "method) has been violated.");
+
     StringRef apply_operator = op.apply_operator();
 
     Type valueType =
@@ -1081,10 +1086,10 @@ public:
     Value transformResult;
     if (apply_operator == "min") {
 
-      Value thunk = op.thunk();
-
       Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
                       .Case<IntegerType>([&](IntegerType type) {
+                        // http://graphics.stanford.edu/~seander/bithacks.html#IntegerMinOrMax
+                        // says this is best
                         return rewriter.create<mlir::CmpIOp>(
                             loc, mlir::CmpIPredicate::slt, val, thunk);
                       })
@@ -1093,6 +1098,26 @@ public:
                             loc, mlir::CmpFPredicate::OLT, val, thunk);
                       });
       transformResult = rewriter.create<mlir::SelectOp>(loc, cmp, val, thunk);
+
+    } else if (apply_operator == "div") {
+
+      bool thunkIsLeft = thunk == op.left();
+
+      transformResult =
+          llvm::TypeSwitch<Type, Value>(valueType)
+              .Case<IntegerType>([&](IntegerType type) {
+                Value quotient =
+                    thunkIsLeft
+                        ? rewriter.create<SignedDivIOp>(loc, thunk, val)
+                        : rewriter.create<SignedDivIOp>(loc, val, thunk);
+                return quotient;
+              })
+              .Case<FloatType>([&](FloatType type) {
+                Value quotient = thunkIsLeft
+                                     ? rewriter.create<DivFOp>(loc, thunk, val)
+                                     : rewriter.create<DivFOp>(loc, val, thunk);
+                return quotient;
+              });
 
     } else if (apply_operator == "minv") {
 

@@ -150,7 +150,7 @@ def dense_neural_network_combined(
         add_bias_result = irb_inner.graphblas.matrix_multiply(
             matmul_result, biases, "plus_plus"
         )
-        clamp_result = irb_inner.graphblas.apply(add_bias_result, "min", threshold)
+        clamp_result = irb_inner.graphblas.apply(add_bias_result, "min", left=threshold)
         relu_result = irb_inner.graphblas.matrix_select(
             clamp_result, [zero_f64], ["gt"]
         )
