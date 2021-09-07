@@ -264,7 +264,7 @@ class MatrixReduceToScalar(BaseFunction):
     mlir_template = jinja2.Template(
         """
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>) -> f64 {
-        %total = graphblas.matrix_reduce_to_scalar %input { aggregator = "{{ agg }}" } : tensor<?x?xf64, #CSR64> to f64
+        %total = graphblas.reduce_to_scalar %input { aggregator = "{{ agg }}" } : tensor<?x?xf64, #CSR64> to f64
 
         return %total : f64
       }
