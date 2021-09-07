@@ -391,7 +391,7 @@ def pagerank(
 
         irb = MLIRFunctionBuilder(
             "pagerank",
-            input_types=["tensor<?x?xf64, #CSR64>", "f64", "f64", "i32"],
+            input_types=["tensor<?x?xf64, #CSR64>", "f64", "f64", "index"],
             return_types=["tensor<?xf64, #CV64>"],
             aliases=aliases,
         )
@@ -405,16 +405,16 @@ def pagerank(
         teleport = irb.subf(cf1, var_damping)
         teleport = irb.divf(teleport, nrows_f64)
 
-        row_degree = irb.graphblas.matrix_reduce_to_vector(A, "count", 1)
+        row_degree = irb.graphblas.reduce_to_vector(A, "count", axis=1)
         # prescale row_degree with damping factor, so it isn't done each iteration
-        row_degree = irb.graphblas.apply(row_degree, "div", var_damping)
+        row_degree = irb.graphblas.apply(row_degree, "div", right=var_damping)
 
         # Use row_degree as a convenient vector to duplicate for starting score
         r = irb.graphblas.dup(row_degree)
 
         # r = 1/nrows
         nrows_inv = irb.divf(cf1, nrows_f64)
-        starting = irb.graphblas.apply(r, "second", nrows_inv)
+        starting = irb.graphblas.apply(r, "second", right=nrows_inv)
         starting_ptr8 = irb.util.tensor_to_ptr8(starting)
 
         # Pagerank iterations
@@ -431,20 +431,20 @@ def pagerank(
             )
 
             # w = t ./ d
-            w = irb.graphblas.union(prev_score, row_degree)
+            w = irb.graphblas.intersect(prev_score, row_degree, "div", "tensor<?xf64, #CV64>")
 
             # r = teleport
             # Perform this scalar assignment using an apply hack
-            new_score = irb.graphblas.apply(prev_score, "second", teleport)
+            new_score = irb.graphblas.apply(prev_score, "second", right=teleport)
 
             # r += A'*w
-            AT = irb.graphblas.transpose(A, "tensor<?x?xf64, #CSR64")
+            AT = irb.graphblas.transpose(A, "tensor<?x?xf64, #CSR64>")
             tmp = irb.graphblas.matrix_multiply(AT, w, "plus_second")
             irb.graphblas.update(tmp, new_score, accumulate="plus")
 
             # rdiff = sum(abs(prev_score - new_score))
             # TODO: this should technically be union, but we don't allow "minus" for union
-            new_rdiff = irb.graphblas.intersect(prev_score, new_score, "minus")
+            new_rdiff = irb.graphblas.intersect(prev_score, new_score, "minus", "tensor<?xf64, #CV64>")
             new_rdiff = irb.graphblas.apply(new_rdiff, "abs")
             new_rdiff = irb.graphblas.reduce_to_scalar(new_rdiff, "plus")
 
@@ -455,7 +455,8 @@ def pagerank(
             new_score_ptr8 = irb.util.tensor_to_ptr8(new_score)
             for_vars.yield_vars(new_rdiff, new_score_ptr8)
 
-        ret_val = for_vars.returned_variable[1]
+        ret_val_ptr8 = for_vars.returned_variable[1]
+        ret_val = irb.util.ptr8_to_tensor(ret_val_ptr8, "tensor<?xf64, #CV64>")
 
         irb.return_vars(ret_val)
 

@@ -656,6 +656,7 @@ class GraphBLAS_VectorArgMax(BaseOp):
 CSR64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
 CSC64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
 CSX64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
+CV64 = SparseEncodingType(["compressed"], None, 64, 64)
 
 
 class CastCsrToCsxOp(BaseOp):
@@ -723,27 +724,37 @@ class PtrToTensorOp(BaseOp):
         cls.ensure_mlirvar(input)
         tensor_type = TensorType.parse(return_type, irbuilder.aliases)
         encoding = tensor_type.encoding
-        if encoding.levels != ["dense", "compressed"]:
-            raise TypeError(
-                f"Return type must denote a CSR or CSC tensor (got {return_type})."
+        if encoding.rank == 2:
+            if encoding.levels != ["dense", "compressed"]:
+                raise TypeError(
+                    f"Return type must denote a CSR or CSC tensor (got {return_type})."
+                )
+            ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
+            ret_string = (
+                f"{ret_val.assign} = call @ptr8_to_matrix({input}) : "
+                f"(!llvm.ptr<i8>) -> tensor<?x?xf64, {CSX64}>"
             )
-        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
-        ret_string = (
-            f"{ret_val.assign} = call @ptr8_to_matrix({input}) : "
-            f"(!llvm.ptr<i8>) -> tensor<?x?xf64, {CSX64}>"
-        )
-        if encoding.ordering is None:
-            pass
-        elif encoding.ordering == [0, 1]:
-            ret_val, cast_string = CastCsxToCsrOp.call(irbuilder, ret_val)
-            ret_string = ret_string + "\n" + cast_string
-        elif encoding.ordering == [1, 0]:
-            ret_val, cast_string = CastCsxToCscOp.call(irbuilder, ret_val)
-            ret_string = ret_string + "\n" + cast_string
+            if encoding.ordering is None:
+                pass
+            elif encoding.ordering == [0, 1]:
+                ret_val, cast_string = CastCsxToCsrOp.call(irbuilder, ret_val)
+                ret_string = ret_string + "\n" + cast_string
+            elif encoding.ordering == [1, 0]:
+                ret_val, cast_string = CastCsxToCscOp.call(irbuilder, ret_val)
+                ret_string = ret_string + "\n" + cast_string
+            else:
+                raise TypeError(
+                    f"Return type must denote a CSR or CSC tensor (got {return_type})."
+                )
+        elif encoding.rank == 1:
+            ret_val = irbuilder.new_var(f"tensor<?xf64, {CV64}>")
+            ret_string = (
+                f"{ret_val.assign} = call @ptr8_to_vector({input}) : "
+                f"(!llvm.ptr<i8>) -> tensor<?xf64, {CV64}>"
+            )
         else:
-            raise TypeError(
-                f"Return type must denote a CSR or CSC tensor (got {return_type})."
-            )
+            raise ValueError(f"Invalid rank: {encoding}")
+
         return ret_val, ret_string
 
 
@@ -755,30 +766,38 @@ class TensorToPtrOp(BaseOp):
     def call(cls, irbuilder, input):
         cls.ensure_mlirvar(input, TensorType)
 
-        encoding = input.type.encoding
-        if encoding.levels != ["dense", "compressed"]:
-            raise TypeError(
-                f"Input type must denote a CSR or CSC tensor (got {input.type})."
-            )
-
-        if encoding.ordering is None:
-            cast_string = ""
-        elif encoding.ordering == [0, 1]:
-            input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-        elif encoding.ordering == [1, 0]:
-            input, cast_string = CastCscToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-        else:
-            raise TypeError(
-                f"Return type must denote a CSR or CSC tensor (got {input.type})."
-            )
-
         ret_val = irbuilder.new_var("!llvm.ptr<i8>")
-        return ret_val, cast_string + (
-            f"{ret_val.assign} = call @matrix_to_ptr8({input}) : "
-            f"({input.type}) -> !llvm.ptr<i8>"
-        )
+        encoding = input.type.encoding
+        if encoding.rank == 2:
+            if encoding.levels != ["dense", "compressed"]:
+                raise TypeError(
+                    f"Input type must denote a CSR or CSC tensor (got {input.type})."
+                )
+
+            if encoding.ordering is None:
+                cast_string = ""
+            elif encoding.ordering == [0, 1]:
+                input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
+                cast_string += "\n"
+            elif encoding.ordering == [1, 0]:
+                input, cast_string = CastCscToCsxOp.call(irbuilder, input)
+                cast_string += "\n"
+            else:
+                raise TypeError(
+                    f"Return type must denote a CSR or CSC tensor (got {input.type})."
+                )
+
+            return ret_val, cast_string + (
+                f"{ret_val.assign} = call @matrix_to_ptr8({input}) : "
+                f"({input.type}) -> !llvm.ptr<i8>"
+            )
+        elif encoding.rank == 1:
+            return ret_val, (
+                f"{ret_val.assign} = call @vector_to_ptr8({input}) : "
+                f"({input.type}) -> !llvm.ptr<i8>"
+            )
+        else:
+            raise ValueError(f"Invalid rank: {encoding}")
 
 
 class DelSparseTensor(BaseOp):

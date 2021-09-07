@@ -137,3 +137,20 @@ def test_vertex_nomination():
     v2 = MLIRSparseTensor(indices, values, sizes, sparsity)
     w2 = mlalgo.vertex_nomination(m, v2)
     assert w2 == 3
+
+
+def test_pagerank():
+    # fmt: off
+    indices = np.array(
+        [[0, 1], [0, 2], [1, 3], [2, 3], [2, 4], [3, 4], [4, 0]],
+        dtype=np.uint64,
+    )
+    values = np.array([1.1, 9.8, 4.2, 7.1, 0.2, 6.9, 2.2], dtype=np.float64)
+    sizes = np.array([5, 5], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    m = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    expected = np.array([0.2541917746, 0.1380315018, 0.1380315018, 0.2059901768, 0.2637550447])
+
+    pr = mlalgo.pagerank(m)
+    assert np.abs(pr.values - expected).all(), pr.values

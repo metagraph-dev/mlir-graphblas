@@ -1121,7 +1121,7 @@ public:
 
     } else if (apply_operator == "second") {
 
-      transformResult = op.thunk();
+      transformResult = thunk;
 
     } else if (apply_operator == "minv") {
 
