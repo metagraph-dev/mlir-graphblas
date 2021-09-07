@@ -108,4 +108,7 @@ mlir::LogicalResult populateSemiringRegions(mlir::OpBuilder &builder,
                                             mlir::Type valueType,
                                             mlir::RegionRange regions);
 
+mlir::LogicalResult extractApplyOpArgs(mlir::graphblas::ApplyOp op,
+                                       mlir::Value &input, mlir::Value &thunk);
+
 #endif // GRAPHBLAS_GRAPHBLASUTILS_H

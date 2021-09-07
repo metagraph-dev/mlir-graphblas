@@ -470,9 +470,9 @@ class GraphBLAS_MatrixSelect(BaseOp):
         )
 
 
-class GraphBLAS_MatrixReduceToVector(BaseOp):
+class GraphBLAS_ReduceToVector(BaseOp):
     dialect = "graphblas"
-    name = "matrix_reduce_to_vector"
+    name = "reduce_to_vector"
     allowed_aggregators = {"plus", "count"}
 
     @classmethod
@@ -493,14 +493,14 @@ class GraphBLAS_MatrixReduceToVector(BaseOp):
         return_type = TensorType([-1], input.type.value_type, sparse_vec_encoding)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{ret_val.assign} = graphblas.matrix_reduce_to_vector {input} "
+            f"{ret_val.assign} = graphblas.reduce_to_vector {input} "
             f'{{ aggregator = "{aggregator}" , axis = {axis} }} : {input.type} to {ret_val.type}'
         )
 
 
-class GraphBLAS_MatrixReduceToScalar(BaseOp):
+class GraphBLAS_ReduceToScalar(BaseOp):
     dialect = "graphblas"
-    name = "matrix_reduce_to_scalar"
+    name = "reduce_to_scalar"
     allowed_aggregators = {"plus", "count"}
 
     @classmethod
@@ -514,7 +514,7 @@ class GraphBLAS_MatrixReduceToScalar(BaseOp):
         # TODO: return_type might be influenced by future allowable aggregators
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{ret_val.assign} = graphblas.matrix_reduce_to_scalar {input} "
+            f"{ret_val.assign} = graphblas.reduce_to_scalar {input} "
             f'{{ aggregator = "{aggregator}" }} : {input.type} to {ret_val.type}'
         )
 
@@ -527,7 +527,7 @@ class GraphBLAS_Apply(BaseOp):
     allowed_ops = allowed_unary_ops | allowed_binary_ops
 
     @classmethod
-    def call(cls, irbuilder, input, apply_op, thunk=None):
+    def call(cls, irbuilder, input, apply_op, *, left=None, right=None):
         cls.ensure_mlirvar(input, TensorType)
         if apply_op not in cls.allowed_ops:
             raise TypeError(
@@ -539,13 +539,25 @@ class GraphBLAS_Apply(BaseOp):
         ret_val = irbuilder.new_var(return_type)
 
         if apply_op in cls.allowed_binary_ops:
-            cls.ensure_mlirvar(thunk)
-            code = (
-                f"{ret_val.assign} = graphblas.apply {input}, {thunk} "
-                f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {thunk.type}) to {ret_val.type}'
-            )
+            if left is not None:
+                if right is not None:
+                    raise TypeError("Exactly one thunk allowed.")
+                cls.ensure_mlirvar(left)
+                code = (
+                    f"{ret_val.assign} = graphblas.apply {left}, {input} "
+                    f'{{ apply_operator = "{apply_op}" }} : ({left.type}, {input.type}) to {ret_val.type}'
+                )
+            elif right is not None:
+                cls.ensure_mlirvar(right)
+                code = (
+                    f"{ret_val.assign} = graphblas.apply {input}, {right} "
+                    f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {right.type}) to {ret_val.type}'
+                )
+            else:
+                raise TypeError("A thunk is required.")
+
         elif apply_op in cls.allowed_unary_ops:
-            if thunk is not None:
+            if left is not None or right is not None:
                 raise TypeError(f"apply_op misuse: {apply_op} cannot take a thunk.")
             code = (
                 f"{ret_val.assign} = graphblas.apply {input} "
