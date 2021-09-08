@@ -29,6 +29,20 @@ graphblas_opt_passes = (
     "--convert-std-to-llvm",
 )
 
+
+def _build_common_aliases():
+    csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
+    csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
+    csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
+    cv64 = SparseEncodingType(["compressed"], None, 64, 64)
+    aliases = AliasMap()
+    aliases["CSR64"] = csr64
+    aliases["CSC64"] = csc64
+    aliases["CSX64"] = csx64
+    aliases["CV64"] = cv64
+    return aliases
+
+
 csr_to_csc = ConvertLayout()
 matrix_select_triu = MatrixSelect("TRIU")
 matrix_select_tril = MatrixSelect("TRIL")
@@ -60,17 +74,11 @@ _triangle_count_compiled = None
 def triangle_count_combined(A: MLIRSparseTensor) -> int:
     global _triangle_count_compiled
     if _triangle_count_compiled is None:
-        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
-        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-        aliases = AliasMap()
-        aliases["CSR64"] = csr64
-        aliases["CSC64"] = csc64
-
         irb = MLIRFunctionBuilder(
             "triangle_count",
             input_types=["tensor<?x?xf64, #CSR64>"],
             return_types=["f64"],
-            aliases=aliases,
+            aliases=_build_common_aliases(),
         )
         (inp,) = irb.inputs
         U = irb.graphblas.matrix_select(inp, [], ["triu"])
@@ -120,13 +128,7 @@ def dense_neural_network_combined(
 ) -> MLIRSparseTensor:
     global _dense_neural_network_compiled
     if _dense_neural_network_compiled is None:
-        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
-        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-        csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
-        aliases = AliasMap()
-        aliases["CSR64"] = csr64
-        aliases["CSC64"] = csc64
-        aliases["CSX64"] = csx64
+        aliases = _build_common_aliases()
 
         ##############################################
         # Define inner function for a single iteration
@@ -240,19 +242,11 @@ _sssp = None
 def sssp(graph: MLIRSparseTensor, vector: MLIRSparseTensor) -> MLIRSparseTensor:
     global _sssp
     if _sssp is None:
-        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
-        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-        cv64 = SparseEncodingType(["compressed"], None, 64, 64)
-        aliases = AliasMap()
-        aliases["CSR64"] = csr64
-        aliases["CSC64"] = csc64
-        aliases["CV64"] = cv64
-
         irb = MLIRFunctionBuilder(
             "sssp",
             input_types=["tensor<?x?xf64, #CSR64>", "tensor<?xf64, #CV64>"],
             return_types=["tensor<?xf64, #CV64>"],
-            aliases=aliases,
+            aliases=_build_common_aliases(),
         )
         (m, v) = irb.inputs
         ctrue = irb.constant(1, "i1")
@@ -287,21 +281,11 @@ _mssp = None
 def mssp(graph: MLIRSparseTensor, matrix: MLIRSparseTensor) -> MLIRSparseTensor:
     global _mssp
     if _mssp is None:
-        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
-        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-        csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
-        cv64 = SparseEncodingType(["compressed"], None, 64, 64)
-        aliases = AliasMap()
-        aliases["CSR64"] = csr64
-        aliases["CSC64"] = csc64
-        aliases["CSX64"] = csx64
-        aliases["CV64"] = cv64
-
         irb = MLIRFunctionBuilder(
             "mssp",
             input_types=["tensor<?x?xf64, #CSR64>", "tensor<?x?xf64, #CSR64>"],
             return_types=["tensor<?x?xf64, #CSR64>"],
-            aliases=aliases,
+            aliases=_build_common_aliases(),
         )
         (m, v) = irb.inputs
         ctrue = irb.constant(1, "i1")
@@ -339,21 +323,11 @@ def vertex_nomination(
 ) -> int:
     global _vertex_nomination
     if _vertex_nomination is None:
-        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
-        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-        csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
-        cv64 = SparseEncodingType(["compressed"], None, 64, 64)
-        aliases = AliasMap()
-        aliases["CSR64"] = csr64
-        aliases["CSC64"] = csc64
-        aliases["CSX64"] = csx64
-        aliases["CV64"] = cv64
-
         irb = MLIRFunctionBuilder(
             "vertex_nomination",
             input_types=["tensor<?x?xf64, #CSR64>", "tensor<?xf64, #CV64>"],
             return_types=["index"],
-            aliases=aliases,
+            aliases=_build_common_aliases(),
         )
         (m, v) = irb.inputs
         mT = irb.graphblas.transpose(m, "tensor<?x?xf64, #CSR64>")
@@ -378,21 +352,11 @@ def pagerank(
 ) -> MLIRSparseTensor:
     global _pagerank
     if _pagerank is None:
-        csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
-        csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-        csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
-        cv64 = SparseEncodingType(["compressed"], None, 64, 64)
-        aliases = AliasMap()
-        aliases["CSR64"] = csr64
-        aliases["CSC64"] = csc64
-        aliases["CSX64"] = csx64
-        aliases["CV64"] = cv64
-
         irb = MLIRFunctionBuilder(
             "pagerank",
             input_types=["tensor<?x?xf64, #CSR64>", "f64", "f64", "index"],
             return_types=["tensor<?xf64, #CV64>", "index"],
-            aliases=aliases,
+            aliases=_build_common_aliases(),
         )
         (A, var_damping, var_tol, var_maxiter) = irb.inputs
 
@@ -415,7 +379,7 @@ def pagerank(
 
         # r = 1/nrows
         nrows_inv = irb.divf(cf1, nrows_f64)
-        starting = irb.graphblas.apply(r, "second", right=nrows_inv)
+        starting = irb.graphblas.apply(r, "fill", right=nrows_inv)
         starting_ptr8 = irb.util.tensor_to_ptr8(starting)
 
         # Pagerank iterations
@@ -431,10 +395,7 @@ def pagerank(
                 (iter_count, c0),
             ],
         ) as for_vars:
-            converged = irb.new_var("i1")
-            irb.add_statement(
-                f'{converged.assign} = cmpf "olt", {rdiff}, {var_tol} : {rdiff.type}'
-            )
+            converged = irb.cmpf(rdiff, var_tol, "olt")
 
             if_block = irb.new_tuple(
                 f"{rdiff.type}", f"{prev_score_ptr8.type}", f"{iter_count.type}"
@@ -466,7 +427,7 @@ def pagerank(
 
             # r = teleport
             # Perform this scalar assignment using an apply hack
-            new_score = irb.graphblas.apply(prev_score, "second", right=teleport)
+            new_score = irb.graphblas.apply(prev_score, "fill", right=teleport)
 
             # r += A'*w
             AT = irb.graphblas.transpose(A, "tensor<?x?xf64, #CSR64>")

@@ -184,6 +184,42 @@ class SelectOp(BaseOp):
         return ret_val, (f"{ret_val.assign} = select {cond}, {lhs}, {rhs}: {lhs.type}")
 
 
+class CmpIOp(BaseOp):
+    name = "cmpi"
+    allowed_cmpstr = {"eq", "ne", "slt", "sle", "sgt", "sge", "ult", "ule", "ugt", "uge"}
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs, cmpstr):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        cmpstr = cmpstr.lower()
+        if cmpstr not in cls.allowed_cmpstr:
+            raise ValueError(f"Unknown cmpstr: {cmpstr}")
+        ret_val = irbuilder.new_var("i1")
+        return ret_val, (f'{ret_val.assign} = cmpi "{cmpstr}", {lhs}, {rhs} : {lhs.type}')
+
+
+class CmpFOp(BaseOp):
+    name = "cmpf"
+    # See https://llvm.org/docs/LangRef.html#fcmp-instruction for explanation
+    allowed_cmpstr = {"false", "oeq", "ogt", "oge", "olt", "ole", "one", "ord",
+                      "ueq", "ugt", "uge", "ult", "ule", "une", "uno", "true"}
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs, cmpstr):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        cmpstr = cmpstr.lower()
+        if cmpstr not in cls.allowed_cmpstr:
+            raise ValueError(f"Unknown cmpstr: {cmpstr}")
+        ret_val = irbuilder.new_var("i1")
+        return ret_val, (f'{ret_val.assign} = cmpf "{cmpstr}", {lhs}, {rhs} : {lhs.type}')
+
+
 ###########################################
 # memref ops
 ###########################################
@@ -523,7 +559,7 @@ class GraphBLAS_Apply(BaseOp):
     dialect = "graphblas"
     name = "apply"
     allowed_unary_ops = {"abs", "minv"}
-    allowed_binary_ops = {"min", "div", "second"}
+    allowed_binary_ops = {"min", "div", "fill"}
     allowed_ops = allowed_unary_ops | allowed_binary_ops
 
     @classmethod

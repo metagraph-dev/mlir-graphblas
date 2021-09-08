@@ -293,7 +293,7 @@ class Apply(BaseFunction):
     """
 
     _unary_operators = {"abs", "minv"}
-    _binary_operators = {"min", "div", "second"}
+    _binary_operators = {"min", "div", "fill"}
     _valid_operators = _unary_operators | _binary_operators
 
     def __init__(self, operator="abs", thunk_is_left_operand=False):
