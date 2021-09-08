@@ -186,7 +186,13 @@ class SelectOp(BaseOp):
 
 class CmpIOp(BaseOp):
     name = "cmpi"
-    allowed_cmpstr = {"eq", "ne", "slt", "sle", "sgt", "sge", "ult", "ule", "ugt", "uge"}
+    # fmt: off
+    allowed_cmpstr = {
+        "eq", "ne",
+        "slt", "sle", "sgt", "sge",
+        "ult", "ule", "ugt", "uge"
+    }
+    # fmt: on
 
     @classmethod
     def call(cls, irbuilder, lhs, rhs, cmpstr):
@@ -198,14 +204,20 @@ class CmpIOp(BaseOp):
         if cmpstr not in cls.allowed_cmpstr:
             raise ValueError(f"Unknown cmpstr: {cmpstr}")
         ret_val = irbuilder.new_var("i1")
-        return ret_val, (f'{ret_val.assign} = cmpi "{cmpstr}", {lhs}, {rhs} : {lhs.type}')
+        return ret_val, (
+            f'{ret_val.assign} = cmpi "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
+        )
 
 
 class CmpFOp(BaseOp):
     name = "cmpf"
+    # fmt: off
     # See https://llvm.org/docs/LangRef.html#fcmp-instruction for explanation
-    allowed_cmpstr = {"false", "oeq", "ogt", "oge", "olt", "ole", "one", "ord",
-                      "ueq", "ugt", "uge", "ult", "ule", "une", "uno", "true"}
+    allowed_cmpstr = {
+        "false", "oeq", "ogt", "oge", "olt", "ole", "one", "ord",
+        "ueq", "ugt", "uge", "ult", "ule", "une", "uno", "true"
+    }
+    # fmt: on
 
     @classmethod
     def call(cls, irbuilder, lhs, rhs, cmpstr):
@@ -217,7 +229,9 @@ class CmpFOp(BaseOp):
         if cmpstr not in cls.allowed_cmpstr:
             raise ValueError(f"Unknown cmpstr: {cmpstr}")
         ret_val = irbuilder.new_var("i1")
-        return ret_val, (f'{ret_val.assign} = cmpf "{cmpstr}", {lhs}, {rhs} : {lhs.type}')
+        return ret_val, (
+            f'{ret_val.assign} = cmpf "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
+        )
 
 
 ###########################################
