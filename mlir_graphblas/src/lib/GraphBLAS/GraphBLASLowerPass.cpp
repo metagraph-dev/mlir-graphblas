@@ -1119,6 +1119,11 @@ public:
                 return quotient;
               });
 
+    } else if (apply_operator == "fill") {
+
+      // Always fill with the thunk, regardless of its position (left or right)
+      transformResult = thunk;
+
     } else if (apply_operator == "minv") {
 
       transformResult =

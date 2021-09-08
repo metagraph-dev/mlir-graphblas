@@ -67,6 +67,12 @@ class BaseFunction:
   indexBitWidth = 64
 }>
 
+#CV64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
 module  {
     func private @cast_csr_to_csx(tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSX64>
     func private @cast_csc_to_csx(tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSX64>
@@ -74,10 +80,14 @@ module  {
     func private @cast_csx_to_csc(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSC64>
     
     func private @ptr8_to_matrix(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSX64>
+    func private @ptr8_to_vector(!llvm.ptr<i8>) -> tensor<?xf64, #CV64>
     func private @matrix_to_ptr8(tensor<?x?xf64, #CSX64>) -> !llvm.ptr<i8>
+    func private @vector_to_ptr8(tensor<?xf64, #CV64>) -> !llvm.ptr<i8>
     
     func private @delSparseMatrix(tensor<?x?xf64, #CSX64>) -> ()
+    func private @delSparseVector(tensor<?xf64, #CV64>) -> ()
     func private @dup_matrix(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSX64>
+    func private @dup_vector(tensor<?xf64, #CV64>) -> tensor<?xf64, #CV64>
 
     {{ body }}
 
@@ -283,7 +293,7 @@ class Apply(BaseFunction):
     """
 
     _unary_operators = {"abs", "minv"}
-    _binary_operators = {"min", "div"}
+    _binary_operators = {"min", "div", "fill"}
     _valid_operators = _unary_operators | _binary_operators
 
     def __init__(self, operator="abs", thunk_is_left_operand=False):

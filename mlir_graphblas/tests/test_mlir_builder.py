@@ -528,9 +528,7 @@ def test_ir_scan_statistics(engine: MlirJitEngine, aliases: AliasMap):
     L = ir_builder.graphblas.matrix_select(A, [], ["tril"])
     L_T = ir_builder.graphblas.transpose(L, "tensor<?x?xf64, #CSC64>")
     A_triangles = ir_builder.graphblas.matrix_multiply(A, L_T, "plus_pair", mask=A)
-    tri = ir_builder.graphblas.reduce_to_vector(
-        A_triangles, "plus", 1, "tensor<?xf64, #SparseVec64>"
-    )
+    tri = ir_builder.graphblas.reduce_to_vector(A_triangles, "plus", 1)
     answer = ir_builder.graphblas.vector_argmax(tri)
     ir_builder.return_vars(answer)
     scan_statistics = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
@@ -728,12 +726,8 @@ def test_ir_reduce_to_vector(
     )
     (matrix,) = ir_builder.inputs
 
-    reduced_rows = ir_builder.graphblas.reduce_to_vector(
-        matrix, "plus", 1, reduce_rows_output_type
-    )
-    reduced_columns = ir_builder.graphblas.reduce_to_vector(
-        matrix, "count", 0, reduce_columns_output_type
-    )
+    reduced_rows = ir_builder.graphblas.reduce_to_vector(matrix, "plus", 1)
+    reduced_columns = ir_builder.graphblas.reduce_to_vector(matrix, "count", 0)
 
     zero_scalar = ir_builder.constant(0, mlir_type)
     reduced_rows_clamped = ir_builder.graphblas.apply(
