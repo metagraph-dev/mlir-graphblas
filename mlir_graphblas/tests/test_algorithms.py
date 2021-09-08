@@ -152,5 +152,11 @@ def test_pagerank():
 
     expected = np.array([0.2541917746, 0.1380315018, 0.1380315018, 0.2059901768, 0.2637550447])
 
-    pr = mlalgo.pagerank(m)
-    assert np.abs(pr.values - expected).all(), pr.values
+    # Test success
+    pr, niters = mlalgo.pagerank(m, tol=1e-7)
+    assert np.abs(pr.values - expected).sum() < 1e-5, pr.values
+
+    # Test maxiter reached, failed to converge
+    pr, niters = mlalgo.pagerank(m, tol=1e-7, maxiter=6)
+    assert niters == 6
+    assert np.abs(pr.values - expected).sum() > 1e-5, "Unexpectedly converged in 6 iterations"

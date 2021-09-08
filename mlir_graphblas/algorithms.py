@@ -257,7 +257,6 @@ def sssp(graph: MLIRSparseTensor, vector: MLIRSparseTensor) -> MLIRSparseTensor:
         (m, v) = irb.inputs
         ctrue = irb.constant(1, "i1")
         cfalse = irb.constant(0, "i1")
-        c1 = irb.constant(1, "index")
         m2 = irb.graphblas.convert_layout(m, "tensor<?x?xf64, #CSC64>")
         w = irb.graphblas.dup(v)
 
@@ -375,7 +374,7 @@ _pagerank = None
 
 
 def pagerank(
-    graph: MLIRSparseTensor, damping=0.85, tol=1e-6, *, itermax=100
+    graph: MLIRSparseTensor, damping=0.85, tol=1e-6, *, maxiter=100
 ) -> MLIRSparseTensor:
     global _pagerank
     if _pagerank is None:
@@ -392,15 +391,17 @@ def pagerank(
         irb = MLIRFunctionBuilder(
             "pagerank",
             input_types=["tensor<?x?xf64, #CSR64>", "f64", "f64", "index"],
-            return_types=["tensor<?xf64, #CV64>"],
+            return_types=["tensor<?xf64, #CV64>", "index"],
             aliases=aliases,
         )
-        (A, var_damping, var_tol, var_itermax) = irb.inputs
+        (A, var_damping, var_tol, var_maxiter) = irb.inputs
 
         nrows = irb.graphblas.num_rows(A)
         nrows_i64 = irb.index_cast(nrows, "i64")
         nrows_f64 = irb.sitofp(nrows_i64, "f64")
 
+        c0 = irb.constant(0, "index")
+        c1 = irb.constant(1, "index")
         cf1 = irb.constant(1.0, "f64")
         teleport = irb.subf(cf1, var_damping)
         teleport = irb.divf(teleport, nrows_f64)
@@ -420,10 +421,38 @@ def pagerank(
         # Pagerank iterations
         rdiff = irb.new_var("f64")
         prev_score_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        iter_count = irb.new_var("index")
         with irb.for_loop(
-            0, var_itermax, iter_vars=[(rdiff, cf1), (prev_score_ptr8, starting_ptr8)]
+            0,
+            var_maxiter,
+            iter_vars=[
+                (rdiff, cf1),
+                (prev_score_ptr8, starting_ptr8),
+                (iter_count, c0),
+            ],
         ) as for_vars:
-            # TODO: build the if statement for breaking early
+            converged = irb.new_var("i1")
+            irb.add_statement(
+                f'{converged.assign} = cmpf "olt", {rdiff}, {var_tol} : {rdiff.type}'
+            )
+
+            if_block = irb.new_tuple(
+                f"{rdiff.type}", f"{prev_score_ptr8.type}", f"{iter_count.type}"
+            )
+            irb.add_statement(
+                f"{if_block.assign} = scf.if {converged} -> ({rdiff.type}, {prev_score_ptr8.type}, {iter_count.type}) {{"
+            )
+
+            # Converged
+            # ---------
+            irb.add_statement(
+                f"scf.yield {rdiff}, {prev_score_ptr8}, {iter_count} : {rdiff.type}, {prev_score_ptr8.type}, {iter_count.type}"
+            )
+
+            irb.add_statement("} else {")
+
+            # Not converged
+            # -------------
 
             # Cast prev_score from pointer to tensor
             prev_score = irb.util.ptr8_to_tensor(
@@ -446,6 +475,7 @@ def pagerank(
 
             # rdiff = sum(abs(prev_score - new_score))
             # TODO: this should technically be union, but we don't allow "minus" for union
+            #       Replace with apply(neg), then union(plus)
             new_rdiff = irb.graphblas.intersect(
                 prev_score, new_score, "minus", "tensor<?xf64, #CV64>"
             )
@@ -455,16 +485,26 @@ def pagerank(
             # Clean up previous score
             irb.util.del_sparse_tensor(prev_score)
 
+            # Increment iteration count
+            new_iter_count = irb.addi(iter_count, c1)
+
             # Yield
             new_score_ptr8 = irb.util.tensor_to_ptr8(new_score)
-            for_vars.yield_vars(new_rdiff, new_score_ptr8)
+            irb.add_statement(
+                f"scf.yield {new_rdiff}, {new_score_ptr8}, {new_iter_count} : {new_rdiff.type}, {new_score_ptr8.type}, {new_iter_count.type}"
+            )
+            irb.add_statement("}")
+
+            # Yield values are: rdiff, score, iter_count
+            for_vars.yield_vars(if_block[0], if_block[1], if_block[2])
 
         ret_val_ptr8 = for_vars.returned_variable[1]
         ret_val = irb.util.ptr8_to_tensor(ret_val_ptr8, "tensor<?xf64, #CV64>")
 
-        irb.return_vars(ret_val)
+        # Return values are: score, iter_count
+        irb.return_vars(ret_val, for_vars.returned_variable[2])
 
         _pagerank = irb.compile()
 
-    pr = _pagerank(graph, damping, tol, itermax)
+    pr = _pagerank(graph, damping, tol, maxiter)
     return pr
