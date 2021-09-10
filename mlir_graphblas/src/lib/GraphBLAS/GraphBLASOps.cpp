@@ -64,7 +64,7 @@ checkCompressedMatrix(Type inputType, int inputIndex,
                        "sparse encoding.";
 
   // Even if (compressionType == EITHER), we still need to check that the
-  // dim ordering is present, i.e. not CSX
+  // dim ordering is present
   AffineMap dimOrdering = sparseEncoding.getDimOrdering();
   unsigned dimOrdering0 = dimOrdering.getDimPosition(0);
   unsigned dimOrdering1 = dimOrdering.getDimPosition(1);
