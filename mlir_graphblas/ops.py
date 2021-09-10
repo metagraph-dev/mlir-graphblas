@@ -308,7 +308,7 @@ class LLVMLoadOp(BaseOp):
     name = "load"
 
     @classmethod
-    def call(cls, irbuilder, pointer, return_type):
+    def call(cls, irbuilder, pointer, return_type: str):
         cls.ensure_mlirvar(pointer)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (f"{ret_val.assign} = llvm.load {pointer} : {pointer.type}")
@@ -385,7 +385,7 @@ class GraphBLAS_ConvertLayout(BaseOp):
     name = "convert_layout"
 
     @classmethod
-    def call(cls, irbuilder, input, return_type):
+    def call(cls, irbuilder, input, return_type: str):
         cls.ensure_mlirvar(input, TensorType)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
@@ -399,7 +399,7 @@ class GraphBLAS_Transpose(BaseOp):
     name = "transpose"
 
     @classmethod
-    def call(cls, irbuilder, input, return_type):
+    def call(cls, irbuilder, input, return_type: str):
         cls.ensure_mlirvar(input, TensorType)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
@@ -414,7 +414,7 @@ class GraphBLAS_Union(BaseOp):
     allowed_operators = {"plus", "times", "min", "max", "first", "second"}
 
     @classmethod
-    def call(cls, irbuilder, lhs, rhs, operator, return_type):
+    def call(cls, irbuilder, lhs, rhs, operator, return_type: str):
         cls.ensure_mlirvar(lhs, TensorType)
         cls.ensure_mlirvar(rhs, TensorType)
         if operator not in cls.allowed_operators:
@@ -443,7 +443,7 @@ class GraphBLAS_Intersect(BaseOp):
     }
 
     @classmethod
-    def call(cls, irbuilder, lhs, rhs, operator, return_type):
+    def call(cls, irbuilder, lhs, rhs, operator, return_type: str):
         cls.ensure_mlirvar(lhs, TensorType)
         cls.ensure_mlirvar(rhs, TensorType)
         if operator not in cls.allowed_operators:
@@ -697,6 +697,19 @@ class GraphBLAS_VectorArgMax(BaseOp):
         )
 
 
+class GraphBLAS_Diag(BaseOp):
+    dialect = "graphblas"
+    name = "diag"
+
+    @classmethod
+    def call(cls, irbuilder, input, return_type: str):
+        cls.ensure_mlirvar(input, TensorType)
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.diag {input} : {input.type} to {return_type}"
+        )
+
+
 ###########################################
 # util ops
 ###########################################
@@ -770,7 +783,7 @@ class PtrToTensorOp(BaseOp):
     name = "ptr8_to_tensor"
 
     @classmethod
-    def call(cls, irbuilder, input, return_type):
+    def call(cls, irbuilder, input, return_type: str):
         cls.ensure_mlirvar(input)
         tensor_type = TensorType.parse(return_type, irbuilder.aliases)
         encoding = tensor_type.encoding

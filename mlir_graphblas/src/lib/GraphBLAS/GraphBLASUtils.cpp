@@ -335,7 +335,9 @@ mlir::Value callEmptyLike(OpBuilder &builder, ModuleOp &mod, Location loc,
 }
 
 mlir::Value callEmpty(OpBuilder &builder, ModuleOp &mod, Location loc,
-                      Value inputTensor, ArrayRef<int64_t> resultShape) {
+                      Value inputTensor, ArrayRef<int64_t> resultShape,
+                      CompressionType outputCompressionType) {
+
   Type inputType = inputTensor.getType();
   RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
   int64_t inputTensorRank = inputTensorType.getRank();
@@ -344,20 +346,28 @@ mlir::Value callEmpty(OpBuilder &builder, ModuleOp &mod, Location loc,
     inputType = inputTensor.getType();
   }
 
-  int64_t ndims = resultShape.size();
-  std::string funcName;
-  if (ndims == 2) {
-    funcName = "matrix_empty";
-  } else {
-    funcName = "vector_empty";
-  }
-
   MLIRContext *context = mod.getContext();
   Type indexType = builder.getIndexType();
-
   Type elementType = inputTensorType.getElementType();
-  Type outputTensorType =
-      getCompressedVectorType(context, resultShape, elementType);
+
+  int64_t ndims = resultShape.size();
+  std::string funcName;
+  Type outputTensorType;
+  if (ndims == 2) {
+    funcName = "matrix_empty";
+    if (outputCompressionType == CSR) {
+      outputTensorType = getCSRTensorType(context, resultShape, elementType);
+    } else if (outputCompressionType == CSC) {
+      outputTensorType = getCSCTensorType(context, resultShape, elementType);
+    } else {
+      assert(outputCompressionType == CSR || outputCompressionType == CSC);
+    }
+  } else {
+    funcName = "vector_empty";
+    assert(outputCompressionType == SPARSE_VEC);
+    outputTensorType =
+        getCompressedVectorType(context, resultShape, elementType);
+  }
 
   FlatSymbolRefAttr func =
       getFunc(mod, loc, funcName, TypeRange{outputTensorType},

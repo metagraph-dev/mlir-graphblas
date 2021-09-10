@@ -10,6 +10,8 @@
 #include <set>
 #include <string>
 
+enum CompressionType { CSR, CSC, EITHER, SPARSE_VEC };
+
 static const llvm::StringSet<> supportedIntersectOperators{
     "plus", "minus", "times", "div", "min", "max", "first", "second"};
 //"eq", "ne", "lt", "le", "gt", "ge"};
@@ -58,7 +60,8 @@ mlir::Value convertToExternalCSC(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                                  mlir::Location loc, mlir::Value input);
 mlir::Value callEmpty(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                       mlir::Location loc, mlir::Value inputTensor,
-                      llvm::ArrayRef<int64_t> resultShape);
+                      llvm::ArrayRef<int64_t> resultShape,
+                      CompressionType outputCompressionType);
 mlir::Value callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                           mlir::Location loc, mlir::Value tensor);
 mlir::Value callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,

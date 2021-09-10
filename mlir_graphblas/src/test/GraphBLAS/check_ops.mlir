@@ -376,6 +376,42 @@ module {
 
 module {
 
+    // CHECK: func @diag_vec_to_mat_csr(%[[VECTOR:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[MATRIX_TYPE:tensor<.*->.*>]] {
+    func @diag_vec_to_mat_csr(%vec: tensor<7xi64, #SparseVec64>) -> tensor<7x7xi64, #CSR64> {
+        // CHECK-NEXT: %[[MATRIX:.*]] = graphblas.diag %[[VECTOR]] : [[VECTOR_TYPE]] to [[MATRIX_TYPE]]
+        %mat = graphblas.diag %vec : tensor<7xi64, #SparseVec64> to tensor<7x7xi64, #CSR64>
+        // CHECK-NEXT: return %[[MATRIX]] : [[MATRIX_TYPE]]
+        return %mat : tensor<7x7xi64, #CSR64>
+    }
+
+    // CHECK: func @diag_mat_to_vec_csr(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]]) -> [[VECTOR_TYPE:tensor<.*>]] {
+    func @diag_mat_to_vec_csr(%mat: tensor<7x7xi64, #CSR64>) -> tensor<7xi64, #SparseVec64> {
+        // CHECK-NEXT: %[[VECTOR:.*]] = graphblas.diag %[[MATRIX]] : [[MATRIX_TYPE]] to [[VECTOR_TYPE]]
+        %vec = graphblas.diag %mat : tensor<7x7xi64, #CSR64> to tensor<7xi64, #SparseVec64>
+        // CHECK-NEXT: return %[[VECTOR]] : [[VECTOR_TYPE]]
+        return %vec : tensor<7xi64, #SparseVec64>
+    }
+
+    // CHECK: func @diag_vec_to_mat_csc(%[[VECTOR:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[MATRIX_TYPE:tensor<.*->.*>]] {
+    func @diag_vec_to_mat_csc(%vec: tensor<7xi64, #SparseVec64>) -> tensor<7x7xi64, #CSC64> {
+        // CHECK-NEXT: %[[MATRIX:.*]] = graphblas.diag %[[VECTOR]] : [[VECTOR_TYPE]] to [[MATRIX_TYPE]]
+        %mat = graphblas.diag %vec : tensor<7xi64, #SparseVec64> to tensor<7x7xi64, #CSC64>
+        // CHECK-NEXT: return %[[MATRIX]] : [[MATRIX_TYPE]]
+        return %mat : tensor<7x7xi64, #CSC64>
+    }
+
+    // CHECK: func @diag_mat_to_vec_csc(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]]) -> [[VECTOR_TYPE:tensor<.*>]] {
+    func @diag_mat_to_vec_csc(%mat: tensor<7x7xi64, #CSC64>) -> tensor<7xi64, #SparseVec64> {
+        // CHECK-NEXT: %[[VECTOR:.*]] = graphblas.diag %[[MATRIX]] : [[MATRIX_TYPE]] to [[VECTOR_TYPE]]
+        %vec = graphblas.diag %mat : tensor<7x7xi64, #CSC64> to tensor<7xi64, #SparseVec64>
+        // CHECK-NEXT: return %[[VECTOR]] : [[VECTOR_TYPE]]
+        return %vec : tensor<7xi64, #SparseVec64>
+    }
+
+}
+
+module {
+
     // CHECK: func @reduce_to_vector_plus(%[[MATRIX:.*]]: [[MATRIX_TYPE:tensor<.*->.*>]]) -> ([[RETURN_TYPE_0:tensor<.*>]], [[RETURN_TYPE_1:tensor<.*>]]) {
     func @reduce_to_vector_plus(%matrix: tensor<7x9xi32, #CSR64>) -> (tensor<9xi32, #SparseVec64>, tensor<7xi32, #SparseVec64>) {
         // CHECK-NEXT: %[[ANSWER_0:.*]] = graphblas.reduce_to_vector %[[MATRIX]] {aggregator = "plus", axis = 0 : i64} : [[MATRIX_TYPE]] to [[RETURN_TYPE_0]]
