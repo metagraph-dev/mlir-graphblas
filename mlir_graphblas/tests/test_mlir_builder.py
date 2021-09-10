@@ -6,7 +6,7 @@ import numpy as np
 
 from mlir_graphblas import MlirJitEngine
 from mlir_graphblas.engine import parse_mlir_functions
-from mlir_graphblas.sparse_utils import MLIRSparseTensor
+from mlir_graphblas.sparse_utils import MLIRSparseTensor, ChooseUniformContext
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, TensorType
 from mlir_graphblas.functions import ConvertLayout
@@ -837,7 +837,7 @@ def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
     # Build Function
     ir_builder = MLIRFunctionBuilder(
         "test_select_random_uniform",
-        input_types=["tensor<?x?xf64, #CSR64>", "i64", "i64"],
+        input_types=["tensor<?x?xf64, #CSR64>", "i64", "!llvm.ptr<i8>"],
         return_types=["tensor<?x?xf64, #CSR64>"],
         aliases=aliases,
     )
@@ -863,7 +863,8 @@ def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
 
-    result = test_select_random_uniform(input_tensor, 2, 0xB00)
+    rng = ChooseUniformContext()
+    result = test_select_random_uniform(input_tensor, 2, rng)
     dense_result = densify_csr(result)
 
     expected_row_count = np.minimum((dense_input_tensor != 0).sum(axis=1), 2)

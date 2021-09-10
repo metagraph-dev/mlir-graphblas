@@ -357,22 +357,25 @@ def input_llvm_pointer_to_ctypes(
         isinstance(mlir_type.type, mlir.astnodes.IntegerType)
         and int(mlir_type.type.width) == 8
     ):
-        # We blindly assume that an i8 pointer points to a sparse tensor
-        # since MLIR's sparse tensor object isn't supported inside an LLVMPtr
-        # Instead, we pass a ptr<ptr<i8>> and blindly assume it means a list of sparse tensors
+
         type_string = mlir_type.type.dump()
         ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
         ctypes_input_types = [ctypes_type]
 
-        def encoder(arg: MLIRSparseTensor) -> list:
-            # protocol for indicating an object can be interpreted as a MLIRSparseTensor
-            if hasattr(arg, "__mlir_sparse__"):
-                arg = arg.__mlir_sparse__
-            if not isinstance(arg, MLIRSparseTensor):
-                raise TypeError(
-                    f"{repr(arg)} is expected to be an instance of {MLIRSparseTensor.__qualname__}"
-                )
-            return [ctypes.cast(arg.data, ctypes_type)]
+        def encoder(arg) -> list:
+            if isinstance(arg, MLIRSparseTensor):
+                data = arg.data
+            elif hasattr(arg, "__mlir_sparse__"):
+                # if the argument is MLIRSparseTensor compatible, grab that object
+                data = arg.__mlir_sparse__.data
+            elif hasattr(arg, "__mlir_void_ptr__"):
+                # for generic void pointer pass-through
+                data = arg.__mlir_void_ptr__
+            else:
+                raise TypeError(f"Cannot cast object of type {type(arg)} to void*")
+            
+            return [ctypes.cast(data, ctypes_type)]
+
 
     else:
         # Treat the pointer as an array (intended to represent a Python sequence).

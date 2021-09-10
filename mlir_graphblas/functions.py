@@ -82,7 +82,7 @@ module  {
     func private @dup_matrix(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSX64>
 
     func private @choose_first(i64, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
-    func private @choose_uniform(i64, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
+    func private @choose_uniform(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
 
     {{ body }}
 
