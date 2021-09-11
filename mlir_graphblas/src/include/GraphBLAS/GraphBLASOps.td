@@ -97,7 +97,7 @@ def GraphBLAS_NumValsOp : GraphBLAS_Op<"num_vals", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
     let results = (outs Index:$result);
 
     let assemblyFormat = [{
@@ -227,23 +227,22 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
     let verifier = [{ return ::verify(*this); }];
 }
 
-def GraphBLAS_MatrixReduceToVectorOp : GraphBLAS_Op<"matrix_reduce_to_vector", [NoSideEffect]> {
+def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]> {
     let summary = "matrix reduce to vector operation";
     let description = [{
-        Reduces a sparse tensor to a vector according to the given aggregator.
-        The given sparse tensor must be a matrix, i.e. have rank 2.
-        The given tensor must have a CSR sparsity or a CSC sparsity.
+        Reduces a sparse matrix to a vector according to the given aggregator.
+        The given matrix must have a CSR sparsity or a CSC sparsity.
         The resulting sparse vector's element type must be the same as the element type of the input tensor.
         If the axis attribute is 0, the input tensor will be reduced column-wise, so the resulting
-        vector's size must be the  number of columns in the input tensor. 
+        vector's size must be the number of columns in the input tensor.
         If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
         vector's size must be the  number of rows in the input tensor.
         The supported aggregators are "plus" and "count".
 
         Example:
         ```mlir
-        %vec1 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
-        %vec2 = graphblas.matrix_reduce_to_vector %matrix { aggregator = "count", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
+        %vec1 = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
+        %vec2 = graphblas.reduce_to_vector %matrix { aggregator = "count", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
         ```
     }];
 
@@ -257,20 +256,20 @@ def GraphBLAS_MatrixReduceToVectorOp : GraphBLAS_Op<"matrix_reduce_to_vector", [
     let verifier = [{ return ::verify(*this); }];
 }
 
-def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [NoSideEffect]> {
-    let summary = "matrix reduce to scalar operation";
+def GraphBLAS_ReduceToScalarOp : GraphBLAS_Op<"reduce_to_scalar", [NoSideEffect]> {
+    let summary = "reduce to scalar operation";
     let description = [{
-        Reduces a sparse matrix to a scalar according to the given aggregator.
-        The given tensor must have a CSR sparsity or a CSC sparsity.  The resulting
+        Reduces a sparse matrix or sparse vector to a scalar according to the given aggregator.
+        Matrices must have a CSR sparsity or a CSC sparsity.  The resulting
         scalar's type will depend on the type of the input tensor.
 
         Example:
         ```mlir
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xi64, #CSR64> to i64
+        %answer = graphblas.reduce_to_scalar %sparse_matrix { aggregator = "plus" } : tensor<?x?xi64, #CSR64> to i64
         ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOperand:$input, StrAttr:$aggregator);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, StrAttr:$aggregator);
     let results = (outs AnyType:$output);
     
     let assemblyFormat = [{
@@ -280,17 +279,16 @@ def GraphBLAS_MatrixReduceToScalarOp : GraphBLAS_Op<"matrix_reduce_to_scalar", [
     let verifier = [{ return ::verify(*this); }];
 }
 
-def GraphBLAS_MatrixReduceToScalarGenericOp : GraphBLAS_Op<"matrix_reduce_to_scalar_generic", [NoSideEffect]> {
-    let summary = "matrix reduce to scalar generic operation";
+def GraphBLAS_ReduceToScalarGenericOp : GraphBLAS_Op<"reduce_to_scalar_generic", [NoSideEffect]> {
+    let summary = "reduce to scalar generic operation";
     let description = [{
         Reduces a sparse tensor to a scalar according to the given aggregator
-        block.  The given sparse tensor must be a matrix, i.e. have rank 2.  The given
-        tensor must have a CSR sparsity or a CSC sparsity.  The resulting scalar's type
-        will depend on the type of the input tensor.
+        block.  If the tensor is a matrix, it must have a CSR sparsity or a CSC sparsity.
+        The resulting scalar's type will depend on the type of the input tensor.
 
         Example:
         ```mlir
-          %answer = graphblas.matrix_reduce_to_scalar_generic %sparse_tensor : tensor<?x?xi64, #CSR64> to i64 {
+          %answer = graphblas.reduce_to_scalar_generic %sparse_vector : tensor<?xi64, #SparseVec64> to i64 {
             ^bb0(%a : i64, %b : i64):
               %result = std.addi %a, %b : i64
               graphblas.yield agg %result : i64
@@ -298,7 +296,7 @@ def GraphBLAS_MatrixReduceToScalarGenericOp : GraphBLAS_Op<"matrix_reduce_to_sca
         ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOperand:$input);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
     let results = (outs AnyType:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
     
@@ -313,9 +311,9 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
     let summary = "tensor apply operation";
     let description = [{
         Applies an operator to all elements of the given sparse tensor.  The operator
-        can be unary or binary. Binary operators require a thunk. The only supported
-        binary operator is "min". Unary operators cannot take a thunk.  The supported
-        unary operators are "abs" and "minv" (i.e. multiplicative inverse or 1/x).
+        can be unary or binary. Binary operators require a thunk. The supported binary
+        operators are "min", "div", and "fill". Unary operators cannot take a thunk.
+        The supported unary operators are "abs" and "minv" (i.e. multiplicative inverse or 1/x).
         The given sparse tensor must either be a CSR matrix, CSC matrix, or a sparse
         vector.
 
@@ -332,13 +330,34 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
           graphblas.apply %sparse_vector { apply_operator = "abs" } : 
             (tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
         ```
+        
+        Some binary operators, e.g. "div", are not symmetric. The sparse tensor and thunk
+        should be given in the order they should be given to the binary operator. For
+        example, to divide every element of a matrix by 2, use the following:
+        
+        ```mlir
+        %thunk = constant 2 : i64
+        %matrix_answer = 
+          graphblas.apply %sparse_matrix, %thunk { apply_operator = "div" } : 
+            (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
+        ```
+        
+        As another example, to divide 10 by each element of a sparse vector, use the
+        following:
+        
+        ```mlir
+        %thunk = constant 10 : i64
+        %vector_answer = 
+          graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } : 
+            (i64, tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
+        ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, Optional<AnyType>:$thunk, StrAttr:$apply_operator);
-    let results = (outs AnyTensor:$output);
+    let arguments = (ins AnyType:$left, Optional<AnyType>:$right, StrAttr:$apply_operator);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
     
     let assemblyFormat = [{
-           $input (`,` $thunk^)? attr-dict `:` `(` type($input) (`,` type($thunk)^)? `)` `to` type($output)
+           $left (`,` $right^)? attr-dict `:` `(` type($left) (`,` type($right)^)? `)` `to` type($output)
     }];
 
     let verifier = [{ return ::verify(*this); }];
@@ -351,7 +370,7 @@ def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
     }];
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
-    let results = (outs AnyTensor:$output);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
     
     let assemblyFormat = [{

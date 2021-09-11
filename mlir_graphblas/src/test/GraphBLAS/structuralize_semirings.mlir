@@ -18,7 +18,7 @@
 
 // additive operations
 
-// CHECK-LABEL:   builtin.func @matrix_multiply_plus_X(
+// CHECK-LABEL:   func @matrix_multiply_plus_X(
 // CHECK:           %[[VAL_2:.*]] = constant 0.000000e+00 : f64
 // CHECK:             graphblas.yield add_identity %[[VAL_2]] : f64
 // CHECK:           },  {
@@ -31,7 +31,7 @@ func @matrix_multiply_plus_X(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #C
     return %answer : tensor<?x?xf64, #CSR64>
 }
 
-// CHECK-LABEL:   builtin.func @matrix_multiply_min_X(
+// CHECK-LABEL:   func @matrix_multiply_min_X(
 // CHECK:           %[[VAL_2:.*]] = constant 1.7976931348623157E+308 : f64
 // CHECK:             graphblas.yield add_identity %[[VAL_2]] : f64
 // CHECK:           },  {
@@ -45,7 +45,7 @@ func @matrix_multiply_min_X(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CS
     return %answer : tensor<?x?xf64, #CSR64>
 }
 
-// CHECK-LABEL:   builtin.func @matrix_multiply_any_X(
+// CHECK-LABEL:   func @matrix_multiply_any_X(
 // CHECK:           %[[VAL_2:.*]] = constant 0.000000e+00 : f64
 // CHECK:             graphblas.yield add_identity %[[VAL_2]] : f64
 // CHECK:           },  {
@@ -59,7 +59,7 @@ func @matrix_multiply_any_X(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CS
 
 // multiplicative operations
 
-// CHECK-LABEL:   builtin.func @matrix_multiply_X_pair(
+// CHECK-LABEL:   func @matrix_multiply_X_pair(
 // CHECK:           %[[VAL_3:.*]] = constant 1.000000e+00 : f64
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_7:.*]]: f64, %[[VAL_8:.*]]: f64):
@@ -70,7 +70,7 @@ func @matrix_multiply_X_pair(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #C
     return %answer : tensor<?x?xf64, #CSR64>
 }
 
-// CHECK-LABEL:   builtin.func @matrix_multiply_X_times(
+// CHECK-LABEL:   func @matrix_multiply_X_times(
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_6:.*]]: f64, %[[VAL_7:.*]]: f64):
 // CHECK:             %[[VAL_8:.*]] = mulf %[[VAL_6]], %[[VAL_7]] : f64
@@ -81,7 +81,7 @@ func @matrix_multiply_X_times(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #
     return %answer : tensor<?x?xf64, #CSR64>
 }
 
-// CHECK-LABEL:   builtin.func @matrix_multiply_X_plus(
+// CHECK-LABEL:   func @matrix_multiply_X_plus(
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_6:.*]]: f64, %[[VAL_7:.*]]: f64):
 // CHECK:             %[[VAL_8:.*]] = addf %[[VAL_6]], %[[VAL_7]] : f64
@@ -92,7 +92,7 @@ func @matrix_multiply_X_plus(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #C
     return %answer : tensor<?x?xf64, #CSR64>
 }
 
-// CHECK-LABEL:   builtin.func @matrix_multiply_X_first(
+// CHECK-LABEL:   func @matrix_multiply_X_first(
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_6:.*]]: f64, %[[VAL_7:.*]]: f64):
 // CHECK:             graphblas.yield mult %[[VAL_6]] : f64
@@ -102,7 +102,7 @@ func @matrix_multiply_X_first(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #
     return %answer : tensor<?x?xf64, #CSR64>
 }
 
-// CHECK-LABEL:   builtin.func @matrix_multiply_X_second(
+// CHECK-LABEL:   func @matrix_multiply_X_second(
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_6:.*]]: f64, %[[VAL_7:.*]]: f64):
 // CHECK:             graphblas.yield mult %[[VAL_7]] : f64

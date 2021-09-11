@@ -65,6 +65,18 @@ class IndexCastOp(BaseOp):
         )
 
 
+class SignedIntToFloatOp(BaseOp):
+    name = "sitofp"
+
+    @classmethod
+    def call(cls, irbuilder, value: MLIRVar, result_type):
+        cls.ensure_mlirvar(value)
+        ret_val = irbuilder.new_var(result_type)
+        return ret_val, (
+            f"{ret_val.assign} = std.sitofp {value} : {value.type} to {ret_val.type}"
+        )
+
+
 class AddIOp(BaseOp):
     name = "addi"
 
@@ -76,6 +88,19 @@ class AddIOp(BaseOp):
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
         return ret_val, (f"{ret_val.assign} = addi {lhs}, {rhs} : {lhs.type}")
+
+
+class SubIOp(BaseOp):
+    name = "subi"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var(lhs.type)
+        return ret_val, (f"{ret_val.assign} = subi {lhs}, {rhs} : {lhs.type}")
 
 
 class MulIOp(BaseOp):
@@ -104,6 +129,19 @@ class AddFOp(BaseOp):
         return ret_val, (f"{ret_val.assign} = addf {lhs}, {rhs} : {lhs.type}")
 
 
+class SubFOp(BaseOp):
+    name = "subf"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var(lhs.type)
+        return ret_val, (f"{ret_val.assign} = subf {lhs}, {rhs} : {lhs.type}")
+
+
 class MulFOp(BaseOp):
     name = "mulf"
 
@@ -115,6 +153,19 @@ class MulFOp(BaseOp):
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
         return ret_val, (f"{ret_val.assign} = mulf {lhs}, {rhs} : {lhs.type}")
+
+
+class DivFOp(BaseOp):
+    name = "divf"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var(lhs.type)
+        return ret_val, (f"{ret_val.assign} = divf {lhs}, {rhs} : {lhs.type}")
 
 
 class SelectOp(BaseOp):
@@ -131,6 +182,56 @@ class SelectOp(BaseOp):
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
         return ret_val, (f"{ret_val.assign} = select {cond}, {lhs}, {rhs}: {lhs.type}")
+
+
+class CmpIOp(BaseOp):
+    name = "cmpi"
+    # fmt: off
+    allowed_cmpstr = {
+        "eq", "ne",
+        "slt", "sle", "sgt", "sge",
+        "ult", "ule", "ugt", "uge"
+    }
+    # fmt: on
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs, cmpstr):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        cmpstr = cmpstr.lower()
+        if cmpstr not in cls.allowed_cmpstr:
+            raise ValueError(f"Unknown cmpstr: {cmpstr}")
+        ret_val = irbuilder.new_var("i1")
+        return ret_val, (
+            f'{ret_val.assign} = cmpi "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
+        )
+
+
+class CmpFOp(BaseOp):
+    name = "cmpf"
+    # fmt: off
+    # See https://llvm.org/docs/LangRef.html#fcmp-instruction for explanation
+    allowed_cmpstr = {
+        "false", "oeq", "ogt", "oge", "olt", "ole", "one", "ord",
+        "ueq", "ugt", "uge", "ult", "ule", "une", "uno", "true"
+    }
+    # fmt: on
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs, cmpstr):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        cmpstr = cmpstr.lower()
+        if cmpstr not in cls.allowed_cmpstr:
+            raise ValueError(f"Unknown cmpstr: {cmpstr}")
+        ret_val = irbuilder.new_var("i1")
+        return ret_val, (
+            f'{ret_val.assign} = cmpf "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
+        )
 
 
 ###########################################
@@ -307,6 +408,55 @@ class GraphBLAS_Transpose(BaseOp):
         )
 
 
+class GraphBLAS_Union(BaseOp):
+    dialect = "graphblas"
+    name = "union"
+    allowed_operators = {"plus", "times", "min", "max", "first", "second"}
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs, operator, return_type):
+        cls.ensure_mlirvar(lhs, TensorType)
+        cls.ensure_mlirvar(rhs, TensorType)
+        if operator not in cls.allowed_operators:
+            raise TypeError(
+                f"Illegal operator: {operator}, must be one of {cls.allowed_operators}"
+            )
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f'{ret_val.assign} = graphblas.union {lhs}, {rhs} {{ union_operator = "{operator}" }} :'
+            f"({lhs.type}, {rhs.type}) to {return_type}"
+        )
+
+
+class GraphBLAS_Intersect(BaseOp):
+    dialect = "graphblas"
+    name = "intersect"
+    allowed_operators = {
+        "plus",
+        "minus",
+        "times",
+        "div",
+        "min",
+        "max",
+        "first",
+        "second",
+    }
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs, operator, return_type):
+        cls.ensure_mlirvar(lhs, TensorType)
+        cls.ensure_mlirvar(rhs, TensorType)
+        if operator not in cls.allowed_operators:
+            raise TypeError(
+                f"Illegal operator: {operator}, must be one of {cls.allowed_operators}"
+            )
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f'{ret_val.assign} = graphblas.intersect {lhs}, {rhs} {{ intersect_operator = "{operator}" }} :'
+            f"({lhs.type}, {rhs.type}) to {return_type}"
+        )
+
+
 class GraphBLAS_Update(BaseOp):
     dialect = "graphblas"
     name = "update"
@@ -370,13 +520,13 @@ class GraphBLAS_MatrixSelect(BaseOp):
         )
 
 
-class GraphBLAS_MatrixReduceToVector(BaseOp):
+class GraphBLAS_ReduceToVector(BaseOp):
     dialect = "graphblas"
-    name = "matrix_reduce_to_vector"
+    name = "reduce_to_vector"
     allowed_aggregators = {"plus", "count"}
 
     @classmethod
-    def call(cls, irbuilder, input, aggregator, axis, return_type):
+    def call(cls, irbuilder, input, aggregator, axis):
         cls.ensure_mlirvar(input, TensorType)
         if aggregator not in cls.allowed_aggregators:
             raise TypeError(
@@ -384,16 +534,23 @@ class GraphBLAS_MatrixReduceToVector(BaseOp):
             )
         elif axis not in (0, 1):
             raise TypeError(f"Illegal axis: {axis}, must be 0 or 1")
+        sparse_vec_encoding = SparseEncodingType(
+            ["compressed"],
+            None,
+            input.type.encoding.pointer_bit_width,
+            input.type.encoding.index_bit_width,
+        )
+        return_type = TensorType([-1], input.type.value_type, sparse_vec_encoding)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{ret_val.assign} = graphblas.matrix_reduce_to_vector {input} "
+            f"{ret_val.assign} = graphblas.reduce_to_vector {input} "
             f'{{ aggregator = "{aggregator}" , axis = {axis} }} : {input.type} to {ret_val.type}'
         )
 
 
-class GraphBLAS_MatrixReduceToScalar(BaseOp):
+class GraphBLAS_ReduceToScalar(BaseOp):
     dialect = "graphblas"
-    name = "matrix_reduce_to_scalar"
+    name = "reduce_to_scalar"
     allowed_aggregators = {"plus", "count"}
 
     @classmethod
@@ -407,7 +564,7 @@ class GraphBLAS_MatrixReduceToScalar(BaseOp):
         # TODO: return_type might be influenced by future allowable aggregators
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{ret_val.assign} = graphblas.matrix_reduce_to_scalar {input} "
+            f"{ret_val.assign} = graphblas.reduce_to_scalar {input} "
             f'{{ aggregator = "{aggregator}" }} : {input.type} to {ret_val.type}'
         )
 
@@ -416,11 +573,11 @@ class GraphBLAS_Apply(BaseOp):
     dialect = "graphblas"
     name = "apply"
     allowed_unary_ops = {"abs", "minv"}
-    allowed_binary_ops = {"min"}
+    allowed_binary_ops = {"min", "div", "fill"}
     allowed_ops = allowed_unary_ops | allowed_binary_ops
 
     @classmethod
-    def call(cls, irbuilder, input, apply_op, thunk=None):
+    def call(cls, irbuilder, input, apply_op, *, left=None, right=None):
         cls.ensure_mlirvar(input, TensorType)
         if apply_op not in cls.allowed_ops:
             raise TypeError(
@@ -432,13 +589,25 @@ class GraphBLAS_Apply(BaseOp):
         ret_val = irbuilder.new_var(return_type)
 
         if apply_op in cls.allowed_binary_ops:
-            cls.ensure_mlirvar(thunk)
-            code = (
-                f"{ret_val.assign} = graphblas.apply {input}, {thunk} "
-                f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {thunk.type}) to {ret_val.type}'
-            )
+            if left is not None:
+                if right is not None:
+                    raise TypeError("Exactly one thunk allowed.")
+                cls.ensure_mlirvar(left)
+                code = (
+                    f"{ret_val.assign} = graphblas.apply {left}, {input} "
+                    f'{{ apply_operator = "{apply_op}" }} : ({left.type}, {input.type}) to {ret_val.type}'
+                )
+            elif right is not None:
+                cls.ensure_mlirvar(right)
+                code = (
+                    f"{ret_val.assign} = graphblas.apply {input}, {right} "
+                    f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {right.type}) to {ret_val.type}'
+                )
+            else:
+                raise TypeError("A thunk is required.")
+
         elif apply_op in cls.allowed_unary_ops:
-            if thunk is not None:
+            if left is not None or right is not None:
                 raise TypeError(f"apply_op misuse: {apply_op} cannot take a thunk.")
             code = (
                 f"{ret_val.assign} = graphblas.apply {input} "
@@ -559,6 +728,7 @@ class GraphBLAS_MatrixSelectRandom(BaseOp):
 CSR64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
 CSC64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
 CSX64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
+CV64 = SparseEncodingType(["compressed"], None, 64, 64)
 
 
 class CastCsrToCsxOp(BaseOp):
@@ -626,27 +796,37 @@ class PtrToTensorOp(BaseOp):
         cls.ensure_mlirvar(input)
         tensor_type = TensorType.parse(return_type, irbuilder.aliases)
         encoding = tensor_type.encoding
-        if encoding.levels != ["dense", "compressed"]:
-            raise TypeError(
-                f"Return type must denote a CSR or CSC tensor (got {return_type})."
+        if encoding.rank == 2:
+            if encoding.levels != ["dense", "compressed"]:
+                raise TypeError(
+                    f"Return type must denote a CSR or CSC tensor (got {return_type})."
+                )
+            ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
+            ret_string = (
+                f"{ret_val.assign} = call @ptr8_to_matrix({input}) : "
+                f"(!llvm.ptr<i8>) -> tensor<?x?xf64, {CSX64}>"
             )
-        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
-        ret_string = (
-            f"{ret_val.assign} = call @ptr8_to_matrix({input}) : "
-            f"(!llvm.ptr<i8>) -> tensor<?x?xf64, {CSX64}>"
-        )
-        if encoding.ordering is None:
-            pass
-        elif encoding.ordering == [0, 1]:
-            ret_val, cast_string = CastCsxToCsrOp.call(irbuilder, ret_val)
-            ret_string = ret_string + "\n" + cast_string
-        elif encoding.ordering == [1, 0]:
-            ret_val, cast_string = CastCsxToCscOp.call(irbuilder, ret_val)
-            ret_string = ret_string + "\n" + cast_string
+            if encoding.ordering is None:
+                pass
+            elif encoding.ordering == [0, 1]:
+                ret_val, cast_string = CastCsxToCsrOp.call(irbuilder, ret_val)
+                ret_string = ret_string + "\n" + cast_string
+            elif encoding.ordering == [1, 0]:
+                ret_val, cast_string = CastCsxToCscOp.call(irbuilder, ret_val)
+                ret_string = ret_string + "\n" + cast_string
+            else:
+                raise TypeError(
+                    f"Return type must denote a CSR or CSC tensor (got {return_type})."
+                )
+        elif encoding.rank == 1:
+            ret_val = irbuilder.new_var(f"tensor<?xf64, {CV64}>")
+            ret_string = (
+                f"{ret_val.assign} = call @ptr8_to_vector({input}) : "
+                f"(!llvm.ptr<i8>) -> tensor<?xf64, {CV64}>"
+            )
         else:
-            raise TypeError(
-                f"Return type must denote a CSR or CSC tensor (got {return_type})."
-            )
+            raise ValueError(f"Invalid rank: {encoding}")
+
         return ret_val, ret_string
 
 
@@ -658,30 +838,38 @@ class TensorToPtrOp(BaseOp):
     def call(cls, irbuilder, input):
         cls.ensure_mlirvar(input, TensorType)
 
-        encoding = input.type.encoding
-        if encoding.levels != ["dense", "compressed"]:
-            raise TypeError(
-                f"Input type must denote a CSR or CSC tensor (got {input.type})."
-            )
-
-        if encoding.ordering is None:
-            cast_string = ""
-        elif encoding.ordering == [0, 1]:
-            input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-        elif encoding.ordering == [1, 0]:
-            input, cast_string = CastCscToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-        else:
-            raise TypeError(
-                f"Return type must denote a CSR or CSC tensor (got {input.type})."
-            )
-
         ret_val = irbuilder.new_var("!llvm.ptr<i8>")
-        return ret_val, cast_string + (
-            f"{ret_val.assign} = call @matrix_to_ptr8({input}) : "
-            f"({input.type}) -> !llvm.ptr<i8>"
-        )
+        encoding = input.type.encoding
+        if encoding.rank == 2:
+            if encoding.levels != ["dense", "compressed"]:
+                raise TypeError(
+                    f"Input type must denote a CSR or CSC tensor (got {input.type})."
+                )
+
+            if encoding.ordering is None:
+                cast_string = ""
+            elif encoding.ordering == [0, 1]:
+                input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
+                cast_string += "\n"
+            elif encoding.ordering == [1, 0]:
+                input, cast_string = CastCscToCsxOp.call(irbuilder, input)
+                cast_string += "\n"
+            else:
+                raise TypeError(
+                    f"Return type must denote a CSR or CSC tensor (got {input.type})."
+                )
+
+            return ret_val, cast_string + (
+                f"{ret_val.assign} = call @matrix_to_ptr8({input}) : "
+                f"({input.type}) -> !llvm.ptr<i8>"
+            )
+        elif encoding.rank == 1:
+            return ret_val, (
+                f"{ret_val.assign} = call @vector_to_ptr8({input}) : "
+                f"({input.type}) -> !llvm.ptr<i8>"
+            )
+        else:
+            raise ValueError(f"Invalid rank: {encoding}")
 
 
 class DelSparseTensor(BaseOp):
@@ -692,38 +880,20 @@ class DelSparseTensor(BaseOp):
     def call(cls, irbuilder, input):
         cls.ensure_mlirvar(input, TensorType)
         encoding = input.type.encoding
-        if encoding.ordering is None:
-            cast_string = ""
-        elif encoding.ordering == [0, 1]:
-            input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-        elif encoding.ordering == [1, 0]:
-            input, cast_string = CastCscToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
+        if encoding.rank == 2:
+            if encoding.ordering is None:
+                cast_string = ""
+            elif encoding.ordering == [0, 1]:
+                input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
+                cast_string += "\n"
+            elif encoding.ordering == [1, 0]:
+                input, cast_string = CastCscToCsxOp.call(irbuilder, input)
+                cast_string += "\n"
 
-        return None, cast_string + (
-            f"call @delSparseMatrix({input}) : ({input.type}) -> ()"
-        )
-
-
-class DupTensor(BaseOp):
-    dialect = "util"
-    name = "dup_tensor"
-
-    @classmethod
-    def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
-        encoding = input.type.encoding
-        if encoding.ordering is None:
-            cast_string = ""
-        elif encoding.ordering == [0, 1]:
-            input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-        elif encoding.ordering == [1, 0]:
-            input, cast_string = CastCscToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-
-        ret_val = irbuilder.new_var(input.type)
-        return ret_val, cast_string + (
-            f"{ret_val.assign} = call @dup_matrix({input}) : ({input.type}) -> {input.type}"
-        )
+            return None, cast_string + (
+                f"call @delSparseMatrix({input}) : ({input.type}) -> ()"
+            )
+        elif encoding.rank == 1:
+            return None, f"call @delSparseVector({input}) : ({input.type}) -> ()"
+        else:
+            raise ValueError(f"Invalid rank: {encoding}")

@@ -13,9 +13,9 @@ module {
     // CHECK-DAG:       %[[VAL_1:.*]] = constant 0.000000e+00 : f64
     // CHECK-DAG:       %[[VAL_2:.*]] = constant 0 : index
     // CHECK-DAG:       %[[VAL_3:.*]] = constant 1 : index
-    // CHECK:           %[[VAL_4:.*]] = tensor.dim %[[VAL_0]], %[[VAL_2]] : tensor<?x?xf64, [[CSR]]>
-    // CHECK:           %[[VAL_5:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_3]] : tensor<?x?xf64, [[CSR]]> to memref<?xi64>
     // CHECK:           %[[VAL_6:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<?x?xf64, [[CSR]]> to memref<?xf64>
+    // CHECK:           %[[VAL_5:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_3]] : tensor<?x?xf64, [[CSR]]> to memref<?xi64>
+    // CHECK:           %[[VAL_4:.*]] = tensor.dim %[[VAL_0]], %[[VAL_2]] : tensor<?x?xf64, [[CSR]]>
     // CHECK:           %[[VAL_7:.*]] = memref.load %[[VAL_5]]{{\[}}%[[VAL_4]]] : memref<?xi64>
     // CHECK:           %[[VAL_8:.*]] = index_cast %[[VAL_7]] : i64 to index
     // CHECK:           %[[VAL_9:.*]] = scf.parallel (%[[VAL_10:.*]]) = (%[[VAL_2]]) to (%[[VAL_8]]) step (%[[VAL_3]]) init (%[[VAL_1]]) -> f64 {
@@ -27,10 +27,10 @@ module {
     // CHECK:             }
     // CHECK:             scf.yield
     // CHECK:           }
-    // CHECK:           return %[[VAL_15:.*]] : f64
+    // CHECK:           return %[[VAL_9]] : f64
     // CHECK:         }
     func @matrix_reduce_to_scalar_f64(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> f64 {
-        %answer = graphblas.matrix_reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #CSR64> to f64
+        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "plus" } : tensor<?x?xf64, #CSR64> to f64
         return %answer : f64
     }
 }

@@ -51,7 +51,7 @@ func @fuse_adjacent(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #CSC64>) ->
             %mult_result = std.mulf %mult_a, %mult_b : f64
             graphblas.yield mult %mult_result : f64
     }
-    %reduce_result = graphblas.matrix_reduce_to_scalar_generic %C : tensor<?x?xf64, #CSR64> to f64  {
+    %reduce_result = graphblas.reduce_to_scalar_generic %C : tensor<?x?xf64, #CSR64> to f64  {
       graphblas.yield agg_identity %cst : f64
     },  {
     ^bb0(%arg1: f64, %arg2: f64):
@@ -100,7 +100,7 @@ func @fuse_adjacent_with_mask(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #
             %mult_result = std.mulf %mult_a, %mult_b : f64
             graphblas.yield mult %mult_result : f64
     }
-    %reduce_result = graphblas.matrix_reduce_to_scalar_generic %C : tensor<?x?xf64, #CSR64> to f64  {
+    %reduce_result = graphblas.reduce_to_scalar_generic %C : tensor<?x?xf64, #CSR64> to f64  {
       graphblas.yield agg_identity %cst : f64
     },  {
     ^bb0(%arg1: f64, %arg2: f64):
@@ -125,7 +125,7 @@ func @fuse_adjacent_with_mask(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #
 // CHECK:             %[[VAL_9:.*]] = mulf %[[VAL_7]], %[[VAL_8]] : f64
 // CHECK:             graphblas.yield mult %[[VAL_9]] : f64
 // CHECK:           }
-// CHECK:           %[[VAL_10:.*]] = graphblas.matrix_reduce_to_scalar_generic %[[VAL_11:.*]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to f64  {
+// CHECK:           %[[VAL_10:.*]] = graphblas.reduce_to_scalar_generic %[[VAL_11:.*]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to f64  {
 // CHECK:             graphblas.yield agg_identity %[[VAL_2]] : f64
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_12:.*]]: f64, %[[VAL_13:.*]]: f64):
@@ -149,7 +149,7 @@ func @nofuse_multi_use(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #CSC64>)
             %mult_result = std.mulf %mult_a, %mult_b : f64
             graphblas.yield mult %mult_result : f64
     }
-    %reduce_result = graphblas.matrix_reduce_to_scalar_generic %C : tensor<?x?xf64, #CSR64> to f64  {
+    %reduce_result = graphblas.reduce_to_scalar_generic %C : tensor<?x?xf64, #CSR64> to f64  {
       graphblas.yield agg_identity %cst : f64
     },  {
     ^bb0(%arg1: f64, %arg2: f64):

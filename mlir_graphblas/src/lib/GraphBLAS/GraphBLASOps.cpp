@@ -29,6 +29,7 @@ using namespace mlir::graphblas;
 
 enum CompressionType { CSR, CSC, EITHER };
 
+// TODO: now redundant remove when possible
 static llvm::Optional<std::string>
 checkCompressedMatrix(Type inputType, int inputIndex,
                       CompressionType compressionType) {
@@ -85,6 +86,7 @@ checkCompressedMatrix(Type inputType, int inputIndex,
   return llvm::None;
 }
 
+// TODO: now redundant remove me when possible.
 static llvm::Optional<std::string> checkCompressedVector(Type inputType,
                                                          int inputIndex) {
 
@@ -141,48 +143,6 @@ static llvm::Optional<std::string> checkSemiring(StringRef semiring) {
   return llvm::None;
 }
 
-//===--------------------------------------------------------------------===//
-// GraphBLAS Ops Methods
-//===--------------------------------------------------------------------===//
-
-void SizeOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
-  Type indexType = builder.getIndexType();
-  build(builder, result, indexType, tensor);
-}
-
-void NumRowsOp::build(OpBuilder &builder, OperationState &result,
-                      Value tensor) {
-  Type indexType = builder.getIndexType();
-  build(builder, result, indexType, tensor);
-}
-
-void NumColsOp::build(OpBuilder &builder, OperationState &result,
-                      Value tensor) {
-  Type indexType = builder.getIndexType();
-  build(builder, result, indexType, tensor);
-}
-
-static LogicalResult verify(NumValsOp op) {
-  Type inputType = op.input().getType();
-  int64_t rank = getRank(inputType);
-
-  // Require sparse matrices to be either CSR or CSC
-  if (rank == 2) {
-    llvm::Optional<std::string> inputCompressionErrorMessage =
-        checkCompressedMatrix(inputType, 0, EITHER);
-    if (inputCompressionErrorMessage)
-      return op.emitError(inputCompressionErrorMessage.getValue());
-  }
-
-  return success();
-}
-
-void NumValsOp::build(OpBuilder &builder, OperationState &result,
-                      Value tensor) {
-  Type indexType = builder.getIndexType();
-  build(builder, result, indexType, tensor);
-}
-
 /// Utility function to check encoding attribute.
 static LogicalResult hasSparseEncodingAttr(RankedTensorType t) {
   if (!sparse_tensor::getSparseTensorEncoding(t))
@@ -223,6 +183,55 @@ static LogicalResult hasCSREncoding(RankedTensorType t) {
   return failure();
 }
 
+/// Utility function to check if a 1-d tensor is compressed.
+static LogicalResult hasCompressedEncoding(RankedTensorType t) {
+  assert(t.getRank() == 1 && "expect a 1d ranked tensor");
+  if (auto encoding = sparse_tensor::getSparseTensorEncoding(t)) {
+    auto compression = encoding.getDimLevelType();
+    if (compression[0] ==
+        sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
+      return success();
+  }
+  return failure();
+}
+
+//===--------------------------------------------------------------------===//
+// GraphBLAS Ops Methods
+//===--------------------------------------------------------------------===//
+
+void SizeOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
+  Type indexType = builder.getIndexType();
+  build(builder, result, indexType, tensor);
+}
+
+void NumRowsOp::build(OpBuilder &builder, OperationState &result,
+                      Value tensor) {
+  Type indexType = builder.getIndexType();
+  build(builder, result, indexType, tensor);
+}
+
+void NumColsOp::build(OpBuilder &builder, OperationState &result,
+                      Value tensor) {
+  Type indexType = builder.getIndexType();
+  build(builder, result, indexType, tensor);
+}
+
+static LogicalResult verify(NumValsOp op) {
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+  if (failed(hasSparseEncodingAttr(inputType)))
+    return op.emitError("operand #0 must have sparse tensor attribute");
+  // Require sparse matrices to be either CSR or CSC
+  if (inputType.getRank() == 2 && failed(hasCSRorCSCEncoding(inputType)))
+    op.emitError("operand #0 must be in CSR or in CSC compression");
+  return success();
+}
+
+void NumValsOp::build(OpBuilder &builder, OperationState &result,
+                      Value tensor) {
+  Type indexType = builder.getIndexType();
+  build(builder, result, indexType, tensor);
+}
+
 static LogicalResult verify(DupOp op) {
   auto inputType = op.input().getType().cast<RankedTensorType>();
   auto rank = inputType.getRank();
@@ -239,61 +248,58 @@ void DupOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
 }
 
 template <class T>
-static LogicalResult verifyApplyArgs(T op) {
-  Type inputType = op.input().getType();
+static LogicalResult verifyApplyArgs(T op, Value input) {
+  Type inputType = input.getType();
   Type resultType = op.getResult().getType();
 
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
+  RankedTensorType resultTensorType = resultType.cast<RankedTensorType>();
 
   ArrayRef<int64_t> inputShape = inputTensorType.getShape();
   ArrayRef<int64_t> resultShape = resultTensorType.getShape();
+  assert(inputShape.size() == resultShape.size() && "must be same size");
+
+  if (failed(hasSparseEncodingAttr(inputTensorType)))
+    return op.emitError("operand #0 must have sparse tensor attribute");
+  if (failed(hasSparseEncodingAttr(resultTensorType)))
+    return op.emitError("result #0 must have sparse tensor attribute");
 
   // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
   // shapes using "?"
   if (resultTensorType.getRank() == 2) {
-    llvm::Optional<std::string> inputCompressionErrorMessage =
-        checkCompressedMatrix(inputType, 0, EITHER);
-    if (inputCompressionErrorMessage)
-      return op.emitError(inputCompressionErrorMessage.getValue());
+    if (failed(hasCSRorCSCEncoding(inputTensorType)))
+      return op.emitError("operand #0 must be in CSR or in CSC compression");
 
-    llvm::Optional<std::string> resultCompressionErrorMessage =
-        checkCompressedMatrix(resultType, -1, EITHER);
-    if (resultCompressionErrorMessage)
-      return op.emitError(resultCompressionErrorMessage.getValue());
+    if (failed(hasCSRorCSCEncoding(resultTensorType)))
+      return op.emitError("result #0 must be in CSR or in CSC compression");
 
     if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
       return op.emitError("Input shape does not match output shape.");
-  } else if (resultTensorType.getRank() == 1) {
-    llvm::Optional<std::string> inputCompressionErrorMessage =
-        checkCompressedVector(inputType, 0);
-    if (inputCompressionErrorMessage)
-      return op.emitError(
-          inputCompressionErrorMessage.getValue()); // TODO test this
+  } else {
+    if (failed(hasCompressedEncoding(inputTensorType)))
+      return op.emitError("operand #0 must be in compressed form");
 
-    llvm::Optional<std::string> resultCompressionErrorMessage =
-        checkCompressedVector(resultType, -1);
-    if (resultCompressionErrorMessage)
-      return op.emitError(
-          resultCompressionErrorMessage.getValue()); // TODO test this
+    if (failed(hasCompressedEncoding(resultTensorType)))
+      return op.emitError("result #0 must be in compressed form");
 
     if (inputShape[0] != resultShape[0])
       return op.emitError("Input shape does not match output shape.");
-  } else {
-    return op.emitError("Input must be a matrix or vector."); // TODO test this
   }
-
   return success();
 }
 
 static LogicalResult verify(ApplyOp op) {
-  LogicalResult argResult = verifyApplyArgs(op);
+  Value input, thunk;
+  LogicalResult extractArgResult = extractApplyOpArgs(op, input, thunk);
+  if (extractArgResult.failed())
+    return extractArgResult;
+
+  LogicalResult argResult = verifyApplyArgs(op, input);
 
   if (argResult.failed())
     return argResult;
 
-  Type inputType = op.input().getType();
-  Value thunk = op.thunk();
+  Type inputType = input.getType();
   Type resultType = op.getResult().getType();
 
   std::string applyOperator = op.apply_operator().str();
@@ -335,7 +341,7 @@ static LogicalResult verify(ApplyOp op) {
 }
 
 static LogicalResult verify(ApplyGenericOp op) {
-  LogicalResult argResult = verifyApplyArgs(op);
+  LogicalResult argResult = verifyApplyArgs(op, op.input());
 
   if (argResult.failed())
     return argResult;
@@ -785,7 +791,7 @@ static LogicalResult verify(EqualOp op) {
 }
 
 template <class T>
-static LogicalResult verifyMatrixReduceToVectorArgs(T op) {
+static LogicalResult verifyReduceToVectorArgs(T op) {
   Type inputType = op.input().getType();
   RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
 
@@ -830,8 +836,8 @@ static LogicalResult verifyMatrixReduceToVectorArgs(T op) {
   return success();
 }
 
-static LogicalResult verify(MatrixReduceToVectorOp op) {
-  LogicalResult argResult = verifyMatrixReduceToVectorArgs(op);
+static LogicalResult verify(ReduceToVectorOp op) {
+  LogicalResult argResult = verifyReduceToVectorArgs(op);
 
   if (argResult.failed())
     return argResult;
@@ -845,13 +851,23 @@ static LogicalResult verify(MatrixReduceToVectorOp op) {
 }
 
 template <class T>
-static LogicalResult verifyMatrixReduceToScalarArgs(T op) {
+static LogicalResult verifyReduceToScalarArgs(T op) {
   Type operandType = op.input().getType();
 
-  llvm::Optional<std::string> compressionErrorMessage =
-      checkCompressedMatrix(operandType, 0, EITHER);
-  if (compressionErrorMessage)
-    return op.emitError(compressionErrorMessage.getValue());
+  int64_t rank = getRank(operandType);
+  if (rank < 1 || rank > 2)
+    return op.emitError("Operand #0 must be a sparse vector or sparse matrix.");
+
+  llvm::Optional<std::string> errMsg;
+  if (rank == 1) {
+    errMsg = checkCompressedVector(operandType, 0);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+  } else {
+    errMsg = checkCompressedMatrix(operandType, 0, EITHER);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+  }
 
   Type resultType = op.getResult().getType();
   RankedTensorType operandTensorType = operandType.dyn_cast<RankedTensorType>();
@@ -861,8 +877,8 @@ static LogicalResult verifyMatrixReduceToScalarArgs(T op) {
   return success();
 }
 
-static LogicalResult verify(MatrixReduceToScalarOp op) {
-  LogicalResult argResult = verifyMatrixReduceToScalarArgs(op);
+static LogicalResult verify(ReduceToScalarOp op) {
+  LogicalResult argResult = verifyReduceToScalarArgs(op);
 
   if (argResult.failed())
     return argResult;
@@ -875,8 +891,8 @@ static LogicalResult verify(MatrixReduceToScalarOp op) {
   return success();
 }
 
-static LogicalResult verify(MatrixReduceToScalarGenericOp op) {
-  LogicalResult argResult = verifyMatrixReduceToScalarArgs(op);
+static LogicalResult verify(ReduceToScalarGenericOp op) {
+  LogicalResult argResult = verifyReduceToScalarArgs(op);
 
   if (argResult.failed())
     return argResult;
