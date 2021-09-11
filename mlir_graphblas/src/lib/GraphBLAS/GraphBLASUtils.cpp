@@ -738,3 +738,26 @@ LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
 
   return success();
 }
+
+LogicalResult extractApplyOpArgs(mlir::graphblas::ApplyOp op, Value &input,
+                                 Value &thunk) {
+  Value left = op.left();
+  Value right = op.right();
+
+  bool left_is_tensor = (bool)left.getType().dyn_cast<RankedTensorType>();
+  bool right_is_tensor = right && right.getType().dyn_cast<RankedTensorType>();
+
+  if (left_is_tensor == right_is_tensor) {
+    return op.emitError("Exactly one operand must be a ranked tensor.");
+  }
+
+  if (left_is_tensor) {
+    input = left;
+    thunk = right;
+  } else {
+    input = right;
+    thunk = left;
+  }
+
+  return success();
+}

@@ -28,13 +28,14 @@ static const llvm::StringSet<> supportedSemiringAddNames{"plus", "any", "min"};
 static const llvm::StringSet<> supportedSemiringMultiplyNames{
     "pair", "times", "plus", "first", "second"};
 
-static const llvm::StringSet<> supportedReduceAggregators{"plus"};
+static const llvm::StringSet<> supportedReduceAggregators{"plus", "count"};
 
 static const llvm::StringSet<> supportedSelectors{"triu", "tril", "gt"};
 static const llvm::StringSet<> supportedThunkNeedingSelectors{"gt"};
 
-static const llvm::StringSet<> supportedBinaryApplyOperators{"min"};
-static const llvm::StringSet<> supportedUnaryApplyOperators{"abs"};
+static const llvm::StringSet<> supportedBinaryApplyOperators{"min", "div",
+                                                             "fill"};
+static const llvm::StringSet<> supportedUnaryApplyOperators{"abs", "minv"};
 
 bool typeIsCSR(mlir::Type inputType);
 bool typeIsCSC(mlir::Type inputType);
@@ -107,5 +108,8 @@ mlir::LogicalResult populateSemiringRegions(mlir::OpBuilder &builder,
                                             mlir::StringRef semiring,
                                             mlir::Type valueType,
                                             mlir::RegionRange regions);
+
+mlir::LogicalResult extractApplyOpArgs(mlir::graphblas::ApplyOp op,
+                                       mlir::Value &input, mlir::Value &thunk);
 
 #endif // GRAPHBLAS_GRAPHBLASUTILS_H

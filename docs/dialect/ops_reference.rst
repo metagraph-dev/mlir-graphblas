@@ -236,10 +236,34 @@ Results:
 
 Applies in an element-wise fashion the function indicated by the ``apply_operator``
 attribute to each element. The operator can be unary or binary. Binary operators
-require a thunk. The only supported binary operator is "min". Unary operators
-cannot take a thunk. The only supported unary operator is "abs".
+require a thunk. The supported binary operators are "min" and "div". Unary operators
+cannot take a thunk. Unary operators cannot take a thunk. The supported unary
+operators are "abs" and "minv" (i.e. multiplicative inverse or `1/x`).
 
+Using "minv" with integer types uses signed integer division and rounds towards
+zero. For example, `minv(-2) == 1 / -2 == 0`.
 
+Some binary operators, e.g. "div", are not symmetric. The sparse tensor and thunk
+should be given in the order they should be given to the binary operator. For
+example, to divide every element of a matrix by 2, use the following:
+
+.. code-block:: text
+
+    %thunk = constant 2 : i64
+    %matrix_answer = graphblas.apply %sparse_matrix, %thunk { apply_operator = "div" } : (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
+
+As another example, to divide 10 by each element of a sparse vector, use the
+following:
+
+.. code-block:: text
+        
+    %thunk = constant 10 : i64
+    %vector_answer = graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } : (i64, tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
+
+Note that the application only takes place for elements that are present in the
+matrix. Thus, the operation will not apply when the values are missing in the
+tensor. For example, `[0.0, 1.0, 0.0] / 2.0 == [0.0, 0.5, 0.0]`.
+    
 Example:
 ^^^^^^^^
 
@@ -268,7 +292,7 @@ Attributes:
      - Description
    * - ``apply_operator``
      - ``::mlir::StringAttr``
-     - Operator to apply.  Allowed: "min", "abs"
+     - Operator to apply.  Allowed: "min", "div", "abs", "minv"
 
 Operands:
 ^^^^^^^^^

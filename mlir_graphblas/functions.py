@@ -13,6 +13,8 @@ class MLIRCompileError(Exception):
 _default_engine = MlirJitEngine()
 
 _standard_passes = (
+    "--graphblas-structuralize",
+    "--graphblas-optimize",
     "--graphblas-lower",
     "--sparsification",
     "--sparse-tensor-conversion",
@@ -65,6 +67,12 @@ class BaseFunction:
   indexBitWidth = 64
 }>
 
+#CV64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
 module  {
     func private @cast_csr_to_csx(tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSX64>
     func private @cast_csc_to_csx(tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSX64>
@@ -72,10 +80,14 @@ module  {
     func private @cast_csx_to_csc(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSC64>
     
     func private @ptr8_to_matrix(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSX64>
+    func private @ptr8_to_vector(!llvm.ptr<i8>) -> tensor<?xf64, #CV64>
     func private @matrix_to_ptr8(tensor<?x?xf64, #CSX64>) -> !llvm.ptr<i8>
+    func private @vector_to_ptr8(tensor<?xf64, #CV64>) -> !llvm.ptr<i8>
     
     func private @delSparseMatrix(tensor<?x?xf64, #CSX64>) -> ()
+    func private @delSparseVector(tensor<?xf64, #CV64>) -> ()
     func private @dup_matrix(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSX64>
+    func private @dup_vector(tensor<?xf64, #CV64>) -> tensor<?xf64, #CV64>
 
     {{ body }}
 
@@ -234,7 +246,7 @@ class MatrixReduceToScalar(BaseFunction):
       matrix_reduce_to_scalar(input: MLIRSparseTensor) -> float64
     """
 
-    _valid_aggregators = {"plus"}
+    _valid_aggregators = {"plus", "count"}
     _agg_aliases = {
         "sum": "plus",
     }
@@ -262,7 +274,7 @@ class MatrixReduceToScalar(BaseFunction):
     mlir_template = jinja2.Template(
         """
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>) -> f64 {
-        %total = graphblas.matrix_reduce_to_scalar %input { aggregator = "{{ agg }}" } : tensor<?x?xf64, #CSR64> to f64
+        %total = graphblas.reduce_to_scalar %input { aggregator = "{{ agg }}" } : tensor<?x?xf64, #CSR64> to f64
 
         return %total : f64
       }
@@ -276,13 +288,15 @@ class Apply(BaseFunction):
     Call signature:
       If using a thunk-requiring operator:
         apply(input: MLIRSparseTensor, thunk: f64) -> MLIRSparseTensor
+      If not using a thunk-requiring operator:
+        apply(input: MLIRSparseTensor) -> MLIRSparseTensor
     """
 
-    _unary_operators = {"abs"}
-    _binary_operators = {"min"}
+    _unary_operators = {"abs", "minv"}
+    _binary_operators = {"min", "div", "fill"}
     _valid_operators = _unary_operators | _binary_operators
 
-    def __init__(self, operator="min"):
+    def __init__(self, operator="abs", thunk_is_left_operand=False):
         super().__init__()
 
         op = operator.lower()
@@ -293,6 +307,7 @@ class Apply(BaseFunction):
 
         self.func_name = f"apply_{op}"
         self.op = op
+        self.thunk_is_left_operand = thunk_is_left_operand
 
     def get_mlir(self, *, make_private=True):
         return self.mlir_template.render(
@@ -300,6 +315,7 @@ class Apply(BaseFunction):
             private_func=make_private,
             op=self.op,
             needs_thunk=self.op in self._binary_operators,
+            thunk_is_left_operand=self.thunk_is_left_operand,
         )
 
     mlir_template = jinja2.Template(
@@ -310,7 +326,13 @@ class Apply(BaseFunction):
           , %thunk: f64
           {%- endif -%}
       ) -> tensor<?x?xf64, #CSR64> {
-        %output = graphblas.apply %input{% if needs_thunk %}, %thunk{% endif %} { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>{% if needs_thunk %}, f64{% endif %}) to tensor<?x?xf64, #CSR64>
+        {% if not needs_thunk %}
+        %output = graphblas.apply %input { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+        {% elif thunk_is_left_operand %}
+        %output = graphblas.apply %thunk, %input { apply_operator = "{{ op }}" } : (f64, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+        {% else %}
+        %output = graphblas.apply %input, %thunk { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
+        {% endif %}
 
         return %output : tensor<?x?xf64, #CSR64>
       }

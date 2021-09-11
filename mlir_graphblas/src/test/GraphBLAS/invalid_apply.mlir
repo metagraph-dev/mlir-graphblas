@@ -215,3 +215,35 @@ module {
         return %answer : tensor<2x3xbf16, #CSR64>
     }
 }
+
+// -----
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @apply_wrapper(%thunk: bf16) -> tensor<2x3xbf16, #CSR64> {
+        %answer = graphblas.apply %thunk, %thunk { apply_operator = "div" } : (bf16, bf16) to tensor<2x3xbf16, #CSR64> // expected-error {{Exactly one operand must be a ranked tensor.}}
+        return %answer : tensor<2x3xbf16, #CSR64>
+    }
+}
+
+// -----
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @apply_wrapper(%sparse_tensor: tensor<2x3xbf16, #CSR64>) -> tensor<2x3xbf16, #CSR64> {
+        %answer = graphblas.apply %sparse_tensor, %sparse_tensor { apply_operator = "div" } : (tensor<2x3xbf16, #CSR64>, tensor<2x3xbf16, #CSR64>) to tensor<2x3xbf16, #CSR64> // expected-error {{Exactly one operand must be a ranked tensor.}}
+        return %answer : tensor<2x3xbf16, #CSR64>
+    }
+}

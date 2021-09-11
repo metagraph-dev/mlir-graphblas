@@ -100,3 +100,63 @@ def test_mssp():
 
     assert (w.indices[1] == [0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 6]).all()
     assert (w.values == [14, 0, 9, 11, 7, 10, 4, 3, 5, 3, 0, 12, 4, 9]).all()
+
+
+def test_vertex_nomination():
+    # fmt: off
+    indices = np.array(
+        [[0, 1], [0, 3],
+         [1, 4], [1, 6],
+         [2, 5],
+         [3, 0], [3, 2],
+         [4, 5],
+         [5, 1],
+         [6, 2], [6, 3], [6, 4]],
+        dtype=np.uint64,
+    )
+    # fmt: on
+    values = np.array([2, 3, 8, 4, 1, 3, 3, 7, 1, 5, 7, 3], dtype=np.float64)
+    sizes = np.array([7, 7], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    m = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    indices = np.array([[6]], dtype=np.uint64)
+    values = np.array([0], dtype=np.float64)
+    sizes = np.array([7], dtype=np.uint64)
+    sparsity = np.array([True], dtype=np.bool8)
+    v = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    # Compute Vertex Nomination
+    # correct answer for node #6 is node #4
+    w = mlalgo.vertex_nomination(m, v)
+    assert w == 4
+
+    # correct answer for nodes #0,1,5 is node #3
+    indices = np.array([[0], [1], [5]], dtype=np.uint64)
+    values = np.array([0, 0, 0], dtype=np.float64)
+    v2 = MLIRSparseTensor(indices, values, sizes, sparsity)
+    w2 = mlalgo.vertex_nomination(m, v2)
+    assert w2 == 3
+
+
+def test_pagerank():
+    # fmt: off
+    indices = np.array(
+        [[0, 1], [0, 2], [1, 3], [2, 3], [2, 4], [3, 4], [4, 0]],
+        dtype=np.uint64,
+    )
+    values = np.array([1.1, 9.8, 4.2, 7.1, 0.2, 6.9, 2.2], dtype=np.float64)
+    sizes = np.array([5, 5], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    m = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    expected = np.array([0.2541917746, 0.1380315018, 0.1380315018, 0.2059901768, 0.2637550447])
+
+    # Test success
+    pr, niters = mlalgo.pagerank(m, tol=1e-7)
+    assert np.abs(pr.values - expected).sum() < 1e-5, pr.values
+
+    # Test maxiter reached, failed to converge
+    pr, niters = mlalgo.pagerank(m, tol=1e-7, maxiter=6)
+    assert niters == 6
+    assert np.abs(pr.values - expected).sum() > 1e-5, "Unexpectedly converged in 6 iterations"

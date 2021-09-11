@@ -234,8 +234,8 @@ void DupOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
 }
 
 template <class T>
-static LogicalResult verifyApplyArgs(T op) {
-  Type inputType = op.input().getType();
+static LogicalResult verifyApplyArgs(T op, Value input) {
+  Type inputType = input.getType();
   Type resultType = op.getResult().getType();
 
   RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
@@ -275,13 +275,17 @@ static LogicalResult verifyApplyArgs(T op) {
 }
 
 static LogicalResult verify(ApplyOp op) {
-  LogicalResult argResult = verifyApplyArgs(op);
+  Value input, thunk;
+  LogicalResult extractArgResult = extractApplyOpArgs(op, input, thunk);
+  if (extractArgResult.failed())
+    return extractArgResult;
+
+  LogicalResult argResult = verifyApplyArgs(op, input);
 
   if (argResult.failed())
     return argResult;
 
-  Type inputType = op.input().getType();
-  Value thunk = op.thunk();
+  Type inputType = input.getType();
   Type resultType = op.getResult().getType();
 
   std::string applyOperator = op.apply_operator().str();
@@ -323,7 +327,7 @@ static LogicalResult verify(ApplyOp op) {
 }
 
 static LogicalResult verify(ApplyGenericOp op) {
-  LogicalResult argResult = verifyApplyArgs(op);
+  LogicalResult argResult = verifyApplyArgs(op, op.input());
 
   if (argResult.failed())
     return argResult;
@@ -773,7 +777,7 @@ static LogicalResult verify(EqualOp op) {
 }
 
 template <class T>
-static LogicalResult verifyMatrixReduceToVectorArgs(T op) {
+static LogicalResult verifyReduceToVectorArgs(T op) {
   Type inputType = op.input().getType();
   RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
 
@@ -818,8 +822,8 @@ static LogicalResult verifyMatrixReduceToVectorArgs(T op) {
   return success();
 }
 
-static LogicalResult verify(MatrixReduceToVectorOp op) {
-  LogicalResult argResult = verifyMatrixReduceToVectorArgs(op);
+static LogicalResult verify(ReduceToVectorOp op) {
+  LogicalResult argResult = verifyReduceToVectorArgs(op);
 
   if (argResult.failed())
     return argResult;
@@ -833,13 +837,23 @@ static LogicalResult verify(MatrixReduceToVectorOp op) {
 }
 
 template <class T>
-static LogicalResult verifyMatrixReduceToScalarArgs(T op) {
+static LogicalResult verifyReduceToScalarArgs(T op) {
   Type operandType = op.input().getType();
 
-  llvm::Optional<std::string> compressionErrorMessage =
-      checkCompressedMatrix(operandType, 0, EITHER);
-  if (compressionErrorMessage)
-    return op.emitError(compressionErrorMessage.getValue());
+  int64_t rank = getRank(operandType);
+  if (rank < 1 || rank > 2)
+    return op.emitError("Operand #0 must be a sparse vector or sparse matrix.");
+
+  llvm::Optional<std::string> errMsg;
+  if (rank == 1) {
+    errMsg = checkCompressedVector(operandType, 0);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+  } else {
+    errMsg = checkCompressedMatrix(operandType, 0, EITHER);
+    if (errMsg)
+      return op.emitError(errMsg.getValue());
+  }
 
   Type resultType = op.getResult().getType();
   RankedTensorType operandTensorType = operandType.dyn_cast<RankedTensorType>();
@@ -849,8 +863,8 @@ static LogicalResult verifyMatrixReduceToScalarArgs(T op) {
   return success();
 }
 
-static LogicalResult verify(MatrixReduceToScalarOp op) {
-  LogicalResult argResult = verifyMatrixReduceToScalarArgs(op);
+static LogicalResult verify(ReduceToScalarOp op) {
+  LogicalResult argResult = verifyReduceToScalarArgs(op);
 
   if (argResult.failed())
     return argResult;
@@ -863,8 +877,8 @@ static LogicalResult verify(MatrixReduceToScalarOp op) {
   return success();
 }
 
-static LogicalResult verify(MatrixReduceToScalarGenericOp op) {
-  LogicalResult argResult = verifyMatrixReduceToScalarArgs(op);
+static LogicalResult verify(ReduceToScalarGenericOp op) {
+  LogicalResult argResult = verifyReduceToScalarArgs(op);
 
   if (argResult.failed())
     return argResult;
