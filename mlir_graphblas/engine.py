@@ -49,9 +49,7 @@ for extlib_pattern in ["SparseUtils*.so", "RandomUtils*.so"]:
             f'by running "python setup.py build_ext" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
         )
     elif len(SO_FILES) > 1:
-        raise RuntimeError(
-            f"Multiple files matching {SO_FILE_PATTERN} found."
-        )
+        raise RuntimeError(f"Multiple files matching {SO_FILE_PATTERN} found.")
     [SO_FILE] = SO_FILES
     llvm.load_library_permanently(
         SO_FILE
@@ -376,9 +374,8 @@ def input_llvm_pointer_to_ctypes(
                 data = arg.__mlir_void_ptr__
             else:
                 raise TypeError(f"Cannot cast object of type {type(arg)} to void*")
-            
-            return [ctypes.cast(data, ctypes_type)]
 
+            return [ctypes.cast(data, ctypes_type)]
 
     else:
         # Treat the pointer as an array (intended to represent a Python sequence).
@@ -663,7 +660,9 @@ class MlirJitEngine:
         self._engine.run_static_constructors()
 
         if profile:
-            files_to_link = list(EXTERNAL_LIBS)  # make copy since we are going to append
+            files_to_link = list(
+                EXTERNAL_LIBS
+            )  # make copy since we are going to append
             # On the first call (globally) to self._engine.add_module,
             # the notify_func is called twice. The first time is on some
             # buffer with no symbols and the second is on the buffer
@@ -815,9 +814,7 @@ class MlirJitEngine:
         ).encode()
         lowered_text = self._cli.apply_passes(dummy_declarations_string, passes)
         lowered_lines = list(filter(len, lowered_text.splitlines()))
-        assert (
-            lowered_lines[0] == 'module attributes {llvm.data_layout = ""}  {'
-        )
+        assert lowered_lines[0] == 'module attributes {llvm.data_layout = ""}  {'
         assert lowered_lines[-1] == "}"
         lowered_lines = lowered_lines[1:-1]
         assert all(

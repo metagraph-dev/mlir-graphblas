@@ -2839,19 +2839,18 @@ public:
 };
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
-  patterns
-      .add<LowerMatrixSelectRandomRewrite, LowerMatrixSelectRewrite,
-      LowerReduceToVectorRewrite,
-           LowerReduceToScalarRewrite, LowerReduceToScalarGenericRewrite,
-           LowerMatrixMultiplyRewrite, LowerConvertLayoutRewrite,
-           LowerTransposeRewrite, LowerApplyRewrite, LowerApplyGenericRewrite,
-           LowerMatrixMultiplyReduceToScalarGenericRewrite,
-           LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
-           LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
-           LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
-           LowerVectorArgMaxOpRewrite, LowerCommentRewrite, LowerSizeRewrite,
-           LowerNumRowsRewrite, LowerNumColsRewrite, LowerNumValsRewrite,
-           LowerDupRewrite>(patterns.getContext());
+  patterns.add<LowerMatrixSelectRandomRewrite, LowerMatrixSelectRewrite,
+               LowerReduceToVectorRewrite, LowerReduceToScalarRewrite,
+               LowerReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
+               LowerConvertLayoutRewrite, LowerTransposeRewrite,
+               LowerApplyRewrite, LowerApplyGenericRewrite,
+               LowerMatrixMultiplyReduceToScalarGenericRewrite,
+               LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
+               LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
+               LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
+               LowerVectorArgMaxOpRewrite, LowerCommentRewrite,
+               LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
+               LowerNumValsRewrite, LowerDupRewrite>(patterns.getContext());
 }
 
 struct GraphBLASLoweringPass
