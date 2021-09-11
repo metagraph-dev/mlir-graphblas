@@ -8,7 +8,7 @@
 
 module {
 
-// CHECK:         builtin.func @vector_argminmax_min(%[[VAL_0:.*]]: tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
+// CHECK:         func @vector_argminmax_min(%[[VAL_0:.*]]: tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
 // CHECK:           %[[VAL_1:.*]] = constant 0 : index
 // CHECK:           %[[VAL_2:.*]] = constant 1 : index
 // CHECK:           %[[VAL_3:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_1]] : tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
@@ -37,7 +37,7 @@ module {
        return %answer : index
    }
    
-// CHECK:         builtin.func @vector_argminmax_max(%[[VAL_0:.*]]: tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
+// CHECK:         func @vector_argminmax_max(%[[VAL_0:.*]]: tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
 // CHECK:           %[[VAL_1:.*]] = constant 0 : index
 // CHECK:           %[[VAL_2:.*]] = constant 1 : index
 // CHECK:           %[[VAL_3:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_1]] : tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
