@@ -6,7 +6,8 @@ import numpy as np
 
 from mlir_graphblas import MlirJitEngine
 from mlir_graphblas.engine import parse_mlir_functions
-from mlir_graphblas.sparse_utils import MLIRSparseTensor, ChooseUniformContext
+from mlir_graphblas.sparse_utils import MLIRSparseTensor
+from mlir_graphblas.random_utils import ChooseUniformContext
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, TensorType
 from mlir_graphblas.functions import ConvertLayout

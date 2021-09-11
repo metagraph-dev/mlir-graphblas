@@ -34,21 +34,40 @@ annotate = True  # Creates html file
 #########
 
 ext_modules = cythonize(
-    Extension(
-        "mlir_graphblas.sparse_utils",
-        language="c++",
-        sources=["mlir_graphblas/sparse_utils.pyx"],
-        extra_compile_args=["-std=c++11"],
-        include_dirs=include_dirs,
-        define_macros=define_macros,
-    ),
+    [
+        Extension(
+            "mlir_graphblas.sparse_utils",
+            language="c++",
+            sources=["mlir_graphblas/sparse_utils.pyx"],
+            extra_compile_args=["-std=c++11"],
+            include_dirs=include_dirs,
+            define_macros=define_macros,
+        ),
+        Extension(
+            "mlir_graphblas.random_utils",
+            language="c++",
+            sources=["mlir_graphblas/random_utils.pyx"],
+            extra_compile_args=["-std=c++11"],
+            include_dirs=include_dirs,
+            define_macros=define_macros,
+        ),
+    ],
     annotate=annotate,
 )
 
 ext_modules.append(
     Extension(
         "mlir_graphblas.SparseUtils",
-        sources=["mlir_graphblas/SparseUtils.cpp", "mlir_graphblas/RandomUtils.cpp"],
+        sources=["mlir_graphblas/SparseUtils.cpp"],
+        include_dirs=[environment_include_dir],
+        extra_compile_args=["-std=c++11"],
+    )
+)
+
+ext_modules.append(
+    Extension(
+        "mlir_graphblas.RandomUtils",
+        sources=["mlir_graphblas/RandomUtils.cpp"],
         include_dirs=[environment_include_dir],
         extra_compile_args=["-std=c++11"],
     )
