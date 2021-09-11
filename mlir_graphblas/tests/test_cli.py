@@ -41,8 +41,8 @@ def test_apply_passes(cli_input):
     assert (
         result
         == """\
-builtin.module  {
-  builtin.func @scale_func(%arg0: memref<?xf32>, %arg1: f32) -> memref<?xf32> {
+module  {
+  func @scale_func(%arg0: memref<?xf32>, %arg1: f32) -> memref<?xf32> {
     %c0 = constant 0 : index
     %0 = memref.dim %arg0, %c0 : memref<?xf32>
     %1 = memref.alloc(%0) : memref<?xf32>

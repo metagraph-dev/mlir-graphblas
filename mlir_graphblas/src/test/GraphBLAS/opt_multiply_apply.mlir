@@ -45,7 +45,7 @@ func @fuse_adjacent(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #CSC64>, %t
 }
 
 
-// CHECK-LABEL:   builtin.func @fuse_adjacent_left_thunk_div(
+// CHECK-LABEL:   func @fuse_adjacent_left_thunk_div(
 // CHECK-SAME:                                               %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                               %[[VAL_1:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                               %[[VAL_2:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
@@ -74,7 +74,7 @@ func @fuse_adjacent_left_thunk_div(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf
 }
 
 
-// CHECK-LABEL:   builtin.func @fuse_adjacent_with_mask(
+// CHECK-LABEL:   func @fuse_adjacent_with_mask(
 // CHECK-SAME:                                          %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                          %[[VAL_1:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_2:.*]] = constant 0.000000e+00 : f64

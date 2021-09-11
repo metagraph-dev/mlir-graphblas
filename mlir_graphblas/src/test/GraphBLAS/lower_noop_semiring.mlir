@@ -15,7 +15,7 @@
 }>
 
 // verify that directly yielding one of the block arguments lowers without crashing
-// CHECK-LABEL:   builtin.func @noop_semiring(
+// CHECK-LABEL:   func @noop_semiring(
 func @noop_semiring(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSR64> {
     %answer = graphblas.matrix_multiply_generic %a, %b {mask_complement = false} : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
         ^bb0:

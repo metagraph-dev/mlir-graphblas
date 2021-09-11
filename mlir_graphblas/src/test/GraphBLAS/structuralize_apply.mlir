@@ -15,7 +15,7 @@
 
 module {
 
-// CHECK:           builtin.func @apply_left_thunk_min_float_matrix(%[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           func @apply_left_thunk_min_float_matrix(%[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_3:.*]]: f64):
 // CHECK:               %[[VAL_4:.*]] = cmpf olt, %[[VAL_3]], %[[VAL_1]] : f64
@@ -30,7 +30,7 @@ module {
         return %answer : tensor<?x?xf64, #CSR64>
     }
 
-// CHECK:           builtin.func @apply_left_thunk_min_float_vector(%[[VAL_7:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: f64) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           func @apply_left_thunk_min_float_vector(%[[VAL_7:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: f64) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_9:.*]] = graphblas.apply_generic %[[VAL_7]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_10:.*]]: f64):
 // CHECK:               %[[VAL_11:.*]] = cmpf olt, %[[VAL_10]], %[[VAL_8]] : f64
@@ -45,7 +45,7 @@ module {
         return %answer : tensor<8xf64, #SparseVec64>
     }
 
-// CHECK:           builtin.func @apply_right_thunk_min_float_matrix(%[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           func @apply_right_thunk_min_float_matrix(%[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_3:.*]]: f64):
 // CHECK:               %[[VAL_4:.*]] = cmpf olt, %[[VAL_3]], %[[VAL_1]] : f64
@@ -60,11 +60,7 @@ module {
         return %answer : tensor<?x?xf64, #CSR64>
     }
 
-<<<<<<< HEAD
-// CHECK:           func @apply_min_float_vector(%[[VAL_7:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: f64) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
-=======
-// CHECK:           builtin.func @apply_right_thunk_min_float_vector(%[[VAL_7:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: f64) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
->>>>>>> main
+// CHECK:           func @apply_right_thunk_min_float_vector(%[[VAL_7:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: f64) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_9:.*]] = graphblas.apply_generic %[[VAL_7]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_10:.*]]: f64):
 // CHECK:               %[[VAL_11:.*]] = cmpf olt, %[[VAL_10]], %[[VAL_8]] : f64
@@ -79,7 +75,7 @@ module {
         return %answer : tensor<8xf64, #SparseVec64>
     }
 
-// CHECK-LABEL:   builtin.func @apply_left_thunk_div_float_matrix(
+// CHECK-LABEL:   func @apply_left_thunk_div_float_matrix(
 // CHECK-SAME:                                                    %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                                    %[[VAL_1:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -95,7 +91,7 @@ module {
         return %answer : tensor<?x?xf64, #CSR64>
     }
 
-// CHECK-LABEL:   builtin.func @apply_left_thunk_div_float_vector(
+// CHECK-LABEL:   func @apply_left_thunk_div_float_vector(
 // CHECK-SAME:                                                    %[[VAL_0:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                                    %[[VAL_1:.*]]: f64) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -111,7 +107,7 @@ module {
         return %answer : tensor<8xf64, #SparseVec64>
     }
 
-// CHECK-LABEL:   builtin.func @apply_right_thunk_div_float_matrix(
+// CHECK-LABEL:   func @apply_right_thunk_div_float_matrix(
 // CHECK-SAME:                                                     %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                                     %[[VAL_1:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -127,7 +123,7 @@ module {
         return %answer : tensor<?x?xf64, #CSR64>
     }
 
-// CHECK-LABEL:   builtin.func @apply_right_thunk_div_float_vector(
+// CHECK-LABEL:   func @apply_right_thunk_div_float_vector(
 // CHECK-SAME:                                                     %[[VAL_0:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                                     %[[VAL_1:.*]]: f64) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -143,7 +139,7 @@ module {
         return %answer : tensor<8xf64, #SparseVec64>
     }
 
-// CHECK:           builtin.func @apply_abs_float_matrix(%[[VAL_14:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           func @apply_abs_float_matrix(%[[VAL_14:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_15:.*]] = graphblas.apply_generic %[[VAL_14]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_16:.*]]: f64):
 // CHECK:               %[[VAL_17:.*]] = absf %[[VAL_16]] : f64
@@ -157,7 +153,7 @@ module {
         return %answer : tensor<?x?xf64, #CSR64>
     }
 
-// CHECK:           builtin.func @apply_abs_float_vector(%[[VAL_19:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           func @apply_abs_float_vector(%[[VAL_19:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_20:.*]] = graphblas.apply_generic %[[VAL_19]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_21:.*]]: f64):
 // CHECK:               %[[VAL_22:.*]] = absf %[[VAL_21]] : f64
@@ -171,7 +167,7 @@ module {
         return %answer : tensor<8xf64, #SparseVec64>
     }
 
-// CHECK-LABEL:   builtin.func @apply_minv_float_matrix(
+// CHECK-LABEL:   func @apply_minv_float_matrix(
 // CHECK-SAME:                                          %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_1:.*]] = constant 1.000000e+00 : f64
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -187,7 +183,7 @@ module {
         return %answer : tensor<?x?xf64, #CSR64>
     }
     
-// CHECK-LABEL:   builtin.func @apply_minv_float_vector(
+// CHECK-LABEL:   func @apply_minv_float_vector(
 // CHECK-SAME:                                          %[[VAL_0:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_1:.*]] = constant 1.000000e+00 : f64
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -207,11 +203,7 @@ module {
 
 module {
 
-<<<<<<< HEAD
-// CHECK:           func @apply_min_int_matrix(%[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: i8) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
-=======
-// CHECK:           builtin.func @apply_left_thunk_min_int_matrix(%[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: i8) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
->>>>>>> main
+// CHECK:           func @apply_left_thunk_min_int_matrix(%[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: i8) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_3:.*]]: i8):
 // CHECK:               %[[VAL_4:.*]] = cmpi slt, %[[VAL_3]], %[[VAL_1]] : i8
@@ -226,7 +218,7 @@ module {
         return %answer : tensor<?x?xi8, #CSR64>
     }
 
-// CHECK:           builtin.func @apply_left_thunk_min_int_vector(%[[VAL_7:.*]]: tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: i8) -> tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           func @apply_left_thunk_min_int_vector(%[[VAL_7:.*]]: tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: i8) -> tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_9:.*]] = graphblas.apply_generic %[[VAL_7]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_10:.*]]: i8):
 // CHECK:               %[[VAL_11:.*]] = cmpi slt, %[[VAL_10]], %[[VAL_8]] : i8
@@ -241,7 +233,7 @@ module {
         return %answer : tensor<8xi8, #SparseVec64>
     }
 
-// CHECK:           builtin.func @apply_right_thunk_min_int_matrix(%[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: i8) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           func @apply_right_thunk_min_int_matrix(%[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: i8) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_3:.*]]: i8):
 // CHECK:               %[[VAL_4:.*]] = cmpi slt, %[[VAL_3]], %[[VAL_1]] : i8
@@ -256,7 +248,7 @@ module {
         return %answer : tensor<?x?xi8, #CSR64>
     }
 
-// CHECK:           builtin.func @apply_right_thunk_min_int_vector(%[[VAL_7:.*]]: tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: i8) -> tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           func @apply_right_thunk_min_int_vector(%[[VAL_7:.*]]: tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: i8) -> tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_9:.*]] = graphblas.apply_generic %[[VAL_7]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_10:.*]]: i8):
 // CHECK:               %[[VAL_11:.*]] = cmpi slt, %[[VAL_10]], %[[VAL_8]] : i8
@@ -271,7 +263,7 @@ module {
         return %answer : tensor<8xi8, #SparseVec64>
     }
 
-// CHECK-LABEL:   builtin.func @apply_left_thunk_div_int_matrix(
+// CHECK-LABEL:   func @apply_left_thunk_div_int_matrix(
 // CHECK-SAME:                                                  %[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                                  %[[VAL_1:.*]]: i8) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -287,7 +279,7 @@ module {
         return %answer : tensor<?x?xi8, #CSR64>
     }
 
-// CHECK-LABEL:   builtin.func @apply_left_thunk_div_int_vector(
+// CHECK-LABEL:   func @apply_left_thunk_div_int_vector(
 // CHECK-SAME:                                                  %[[VAL_0:.*]]: tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                                  %[[VAL_1:.*]]: i8) -> tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -303,7 +295,7 @@ module {
         return %answer : tensor<8xi8, #SparseVec64>
     }
 
-// CHECK-LABEL:   builtin.func @apply_right_thunk_div_int_matrix(
+// CHECK-LABEL:   func @apply_right_thunk_div_int_matrix(
 // CHECK-SAME:                                                   %[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                                   %[[VAL_1:.*]]: i8) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -319,7 +311,7 @@ module {
         return %answer : tensor<?x?xi8, #CSR64>
     }
     
-// CHECK-LABEL:   builtin.func @apply_right_thunk_div_int_vector(
+// CHECK-LABEL:   func @apply_right_thunk_div_int_vector(
 // CHECK-SAME:                                                   %[[VAL_0:.*]]: tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                                   %[[VAL_1:.*]]: i8) -> tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -335,7 +327,7 @@ module {
         return %answer : tensor<8xi8, #SparseVec64>
     }
 
-// CHECK:           builtin.func @apply_abs_int_matrix(%[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK:           func @apply_abs_int_matrix(%[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_1:.*]] = constant 7 : i8
 // CHECK:             %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_3:.*]]: i8):
@@ -369,7 +361,7 @@ module {
         return %answer : tensor<8xi8, #SparseVec64>
     }
 
-// CHECK-LABEL:   builtin.func @apply_minv_int_matrix(
+// CHECK-LABEL:   func @apply_minv_int_matrix(
 // CHECK-SAME:                                        %[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_1:.*]] = constant 1 : i8
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
@@ -385,7 +377,7 @@ module {
         return %answer : tensor<?x?xi8, #CSR64>
     }
 
-// CHECK-LABEL:   builtin.func @apply_minv_int_vector(
+// CHECK-LABEL:   func @apply_minv_int_vector(
 // CHECK-SAME:                                        %[[VAL_0:.*]]: tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:           %[[VAL_1:.*]] = constant 1 : i8
 // CHECK:           %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
