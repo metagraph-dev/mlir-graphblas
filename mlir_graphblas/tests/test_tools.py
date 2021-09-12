@@ -5,8 +5,8 @@ import mlir_graphblas
 TEST_CASES = (
     pytest.param(
         """
-module  {
-  func @test_func(%arg0: tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
+builtin.module  {
+  builtin.func @test_func(%arg0: tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
     return %arg0 : tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
   }
 }
@@ -18,8 +18,8 @@ module  {
     indexBitWidth = 64 
 }>
 
-module  {
-  func @test_func(%arg0: tensor<2x3xf64, #CSX64>) -> tensor<2x3xf64, #CSX64> {
+builtin.module  {
+  builtin.func @test_func(%arg0: tensor<2x3xf64, #CSX64>) -> tensor<2x3xf64, #CSX64> {
     return %arg0 : tensor<2x3xf64, #CSX64>
   }
 }
@@ -28,8 +28,8 @@ module  {
     ),
     pytest.param(
         """
-module  {
-  func @test_func(%arg0: tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+builtin.module  {
+  builtin.func @test_func(%arg0: tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
     return %arg0 : tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
   }
 }
@@ -42,8 +42,8 @@ module  {
     indexBitWidth = 64 
 }>
 
-module  {
-  func @test_func(%arg0: tensor<2x3xf64, #CSC64>) -> tensor<2x3xf64, #CSC64> {
+builtin.module  {
+  builtin.func @test_func(%arg0: tensor<2x3xf64, #CSC64>) -> tensor<2x3xf64, #CSC64> {
     return %arg0 : tensor<2x3xf64, #CSC64>
   }
 }
@@ -52,8 +52,8 @@ module  {
     ),
     pytest.param(
         """
-module  {
-  func @test_func(%arg0: tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+builtin.module  {
+  builtin.func @test_func(%arg0: tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
     return %arg0 : tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
   }
 }
@@ -66,8 +66,8 @@ module  {
     indexBitWidth = 64 
 }>
 
-module  {
-  func @test_func(%arg0: tensor<2x3xf64, #CSR64>) -> tensor<2x3xf64, #CSR64> {
+builtin.module  {
+  builtin.func @test_func(%arg0: tensor<2x3xf64, #CSR64>) -> tensor<2x3xf64, #CSR64> {
     return %arg0 : tensor<2x3xf64, #CSR64>
   }
 }
@@ -76,8 +76,8 @@ module  {
     ),
     pytest.param(
         """
-module  {
-  func @convert_layout_wrapper(%arg0: tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+builtin.module  {
+  builtin.func @convert_layout_wrapper(%arg0: tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
     %0 = graphblas.convert_layout %arg0 : tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
     return %0 : tensor<2x3xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
   }
@@ -98,8 +98,8 @@ module  {
     indexBitWidth = 64 
 }>
 
-module  {
-  func @convert_layout_wrapper(%arg0: tensor<2x3xf64, #CSR64>) -> tensor<2x3xf64, #CSC64> {
+builtin.module  {
+  builtin.func @convert_layout_wrapper(%arg0: tensor<2x3xf64, #CSR64>) -> tensor<2x3xf64, #CSC64> {
     %0 = graphblas.convert_layout %arg0 : tensor<2x3xf64, #CSR64> to tensor<2x3xf64, #CSC64>
     return %0 : tensor<2x3xf64, #CSC64>
   }
@@ -109,8 +109,8 @@ module  {
     ),
     pytest.param(
         """
-module  {
-  func @vector_argminmax_min(%arg0: tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
+builtin.module  {
+  builtin.func @vector_argminmax_min(%arg0: tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
     %0 = graphblas.vector_argminmax %arg0 {minmax = "min"} : tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
     return %0 : index
   }
@@ -123,8 +123,8 @@ module  {
     indexBitWidth = 64 
 }>
 
-module  {
-  func @vector_argminmax_min(%arg0: tensor<3xi64, #SparseVec64>) -> index {
+builtin.module  {
+  builtin.func @vector_argminmax_min(%arg0: tensor<3xi64, #SparseVec64>) -> index {
     %0 = graphblas.vector_argminmax %arg0 {minmax = "min"} : tensor<3xi64, #SparseVec64>
     return %0 : index
   }
