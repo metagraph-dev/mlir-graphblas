@@ -398,7 +398,9 @@ class MLIRFunctionBuilder(BaseFunction):
             assert function.get_mlir(make_private=True) == function_mlir_text
         else:
             if isinstance(function, MLIRFunctionBuilder):
-                function_mlir_text = function.get_mlir(make_private=True, include_func_defs=False)
+                function_mlir_text = function.get_mlir(
+                    make_private=True, include_func_defs=False
+                )
             else:
                 function_mlir_text = function.get_mlir(make_private=True)
             full_function_mlir_text = function.get_mlir_module(make_private=True)

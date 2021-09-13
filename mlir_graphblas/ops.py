@@ -723,6 +723,7 @@ class GraphBLAS_MatrixSelectRandom(BaseOp):
 # util ops
 ###########################################
 
+
 class PtrToTensorOp(BaseOp):
     dialect = "util"
     name = "ptr8_to_tensor"
@@ -735,7 +736,9 @@ class PtrToTensorOp(BaseOp):
         ret_val = irbuilder.new_var(return_type)
         funcname = f"ptr8_to_{tensor_type.to_short_string()}"
         irbuilder.needed_function_table[funcname] = (
-            f"func private @{funcname}(!llvm.ptr<i8>) -> {return_type}", ["!llvm.ptr<i8>"], return_type
+            f"func private @{funcname}(!llvm.ptr<i8>) -> {return_type}",
+            ["!llvm.ptr<i8>"],
+            return_type,
         )
 
         return ret_val, (
@@ -755,7 +758,9 @@ class TensorToPtrOp(BaseOp):
         ret_val = irbuilder.new_var("!llvm.ptr<i8>")
         funcname = f"{input.type.to_short_string()}_to_ptr8"
         irbuilder.needed_function_table[funcname] = (
-            f"func private @{funcname}({input.type}) -> !llvm.ptr<i8>", [str(input.type)], "!llvm.ptr<i8>"
+            f"func private @{funcname}({input.type}) -> !llvm.ptr<i8>",
+            [str(input.type)],
+            "!llvm.ptr<i8>",
         )
 
         return ret_val, (
@@ -774,7 +779,9 @@ class DelSparseTensor(BaseOp):
         input, cast_string = TensorToPtrOp.call(irbuilder, input)
         cast_string += "\n"
         irbuilder.needed_function_table["delSparseTensor"] = (
-            f"func private @delSparseTensor(!llvm.ptr<i8>) -> ()", ["!llvm.ptr<i8>"], ""
+            f"func private @delSparseTensor(!llvm.ptr<i8>) -> ()",
+            ["!llvm.ptr<i8>"],
+            "",
         )
 
         return None, cast_string + (

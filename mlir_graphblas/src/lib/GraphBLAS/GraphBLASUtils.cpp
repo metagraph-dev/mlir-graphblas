@@ -104,7 +104,8 @@ int64_t getRank(Value inputValue) {
 // make Compressed Vector type
 RankedTensorType getCompressedVectorType(MLIRContext *context,
                                          ArrayRef<int64_t> shape,
-                                         Type valueType, unsigned ptrBitWidth, unsigned idxBitWidth) {
+                                         Type valueType, unsigned ptrBitWidth,
+                                         unsigned idxBitWidth) {
   SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 1> dlt;
   dlt.push_back(
       sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
@@ -118,24 +119,24 @@ RankedTensorType getCompressedVectorType(MLIRContext *context,
   return rtt;
 }
 
-RankedTensorType getCompressedVectorType(MLIRContext *context,
-                                         Type valueType) {
-  return getCompressedVectorType(context, ArrayRef<int64_t>{-1}, valueType, 64, 64);
+RankedTensorType getCompressedVectorType(MLIRContext *context, Type valueType) {
+  return getCompressedVectorType(context, ArrayRef<int64_t>{-1}, valueType, 64,
+                                 64);
 }
 
-RankedTensorType getSingleCompressedMatrixType(MLIRContext *context,
-                                               ArrayRef<int64_t> shape,
-                                               bool columnOriented,
-                                               Type valueType, unsigned ptrBitWidth, unsigned idxBitWidth) {
+RankedTensorType
+getSingleCompressedMatrixType(MLIRContext *context, ArrayRef<int64_t> shape,
+                              bool columnOriented, Type valueType,
+                              unsigned ptrBitWidth, unsigned idxBitWidth) {
   SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 2> dlt;
   dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense);
   dlt.push_back(
       sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
   AffineMap map;
   if (columnOriented)
-      map = AffineMap::getPermutationMap(ArrayRef<unsigned>{1, 0}, context);
+    map = AffineMap::getPermutationMap(ArrayRef<unsigned>{1, 0}, context);
   else
-      map = AffineMap::getPermutationMap(ArrayRef<unsigned>{0, 1}, context);
+    map = AffineMap::getPermutationMap(ArrayRef<unsigned>{0, 1}, context);
 
   RankedTensorType rtt =
       RankedTensorType::get(shape, valueType,
@@ -146,11 +147,13 @@ RankedTensorType getSingleCompressedMatrixType(MLIRContext *context,
 }
 
 RankedTensorType getCSRType(MLIRContext *context, Type valueType) {
-  return getSingleCompressedMatrixType(context, ArrayRef<int64_t>{-1, -1}, false, valueType, 64, 64);
+  return getSingleCompressedMatrixType(context, ArrayRef<int64_t>{-1, -1},
+                                       false, valueType, 64, 64);
 }
 
 RankedTensorType getCSCType(MLIRContext *context, Type valueType) {
-  return getSingleCompressedMatrixType(context, ArrayRef<int64_t>{-1, -1}, true, valueType, 64, 64);
+  return getSingleCompressedMatrixType(context, ArrayRef<int64_t>{-1, -1}, true,
+                                       valueType, 64, 64);
 }
 
 /// Returns function reference (first hit also inserts into module).
@@ -174,16 +177,16 @@ std::string buildSparseTypeString(RankedTensorType tensorType) {
   Type valueType = tensorType.getElementType();
   sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
       sparse_tensor::getSparseTensorEncoding(tensorType);
-  std::string piString = "p" + std::to_string(sparseEncoding.getPointerBitWidth())
-                       + "i" + std::to_string(sparseEncoding.getIndexBitWidth());
-  std::string dtype =
-      llvm::TypeSwitch<Type, std::string>(valueType)
-          .Case<IntegerType>([&](IntegerType type) {
-            return "i" + std::to_string(type.getWidth());
-          })
-          .Case<FloatType>([&](FloatType type) {
-            return "f" + std::to_string(type.getWidth());
-          });
+  std::string piString =
+      "p" + std::to_string(sparseEncoding.getPointerBitWidth()) + "i" +
+      std::to_string(sparseEncoding.getIndexBitWidth());
+  std::string dtype = llvm::TypeSwitch<Type, std::string>(valueType)
+                          .Case<IntegerType>([&](IntegerType type) {
+                            return "i" + std::to_string(type.getWidth());
+                          })
+                          .Case<FloatType>([&](FloatType type) {
+                            return "f" + std::to_string(type.getWidth());
+                          });
 
   if (rank == 2) {
     AffineMap dimOrdering = sparseEncoding.getDimOrdering();
@@ -207,7 +210,8 @@ Value castToPtr8(OpBuilder &builder, ModuleOp &mod, Location loc, Value input) {
   Type ptr8Type = LLVM::LLVMPointerType::get(IntegerType::get(context, 8));
 
   std::string funcName = buildSparseTypeString(inputType) + "_to_ptr8";
-  FlatSymbolRefAttr castFuncSymbol = getFunc(mod, loc, funcName, ptr8Type, inputType);
+  FlatSymbolRefAttr castFuncSymbol =
+      getFunc(mod, loc, funcName, ptr8Type, inputType);
   CallOp castCallOp = builder.create<CallOp>(loc, castFuncSymbol, ptr8Type,
                                              llvm::ArrayRef<Value>({input}));
   Value result = castCallOp->getResult(0);
@@ -233,8 +237,7 @@ void callDelSparseTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
   Value ptr = castToPtr8(builder, mod, loc, tensor);
   Type ptr8Type = ptr.getType();
 
-  FlatSymbolRefAttr func =
-      getFunc(mod, loc, "delSparseTensor", {}, ptr8Type);
+  FlatSymbolRefAttr func = getFunc(mod, loc, "delSparseTensor", {}, ptr8Type);
   builder.create<mlir::CallOp>(loc, func, TypeRange(), ptr);
   return;
 }
@@ -247,7 +250,8 @@ Value callNewTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
   std::string funcName = "new_" + buildSparseTypeString(tensorType);
   FlatSymbolRefAttr func;
   if (rank == 2)
-    func = getFunc(mod, loc, funcName, tensorType, TypeRange{indexType, indexType});
+    func = getFunc(mod, loc, funcName, tensorType,
+                   TypeRange{indexType, indexType});
   else
     func = getFunc(mod, loc, funcName, tensorType, TypeRange{indexType});
   CallOp callOpResult = builder.create<CallOp>(loc, func, tensorType, shape);
@@ -256,7 +260,7 @@ Value callNewTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
 }
 
 Value callEmptyLike(OpBuilder &builder, ModuleOp &mod, Location loc,
-                          Value tensor) {
+                    Value tensor) {
   RankedTensorType tensorType = tensor.getType().dyn_cast<RankedTensorType>();
   Value ptr = castToPtr8(builder, mod, loc, tensor);
   Type ptr8Type = ptr.getType();
@@ -269,7 +273,7 @@ Value callEmptyLike(OpBuilder &builder, ModuleOp &mod, Location loc,
 }
 
 Value callDupTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
-                          Value tensor) {
+                    Value tensor) {
   RankedTensorType tensorType = tensor.getType().dyn_cast<RankedTensorType>();
   Value ptr = castToPtr8(builder, mod, loc, tensor);
   Type ptr8Type = ptr.getType();
@@ -282,29 +286,29 @@ Value callDupTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
 }
 
 CallOp callResizeDim(OpBuilder &builder, ModuleOp &mod, Location loc,
-                           Value tensor, Value d, Value size) {
+                     Value tensor, Value d, Value size) {
   Value ptr = castToPtr8(builder, mod, loc, tensor);
   Type ptr8Type = ptr.getType();
 
   Type indexType = builder.getIndexType();
   FlatSymbolRefAttr func = getFunc(mod, loc, "resize_dim", TypeRange(),
                                    {ptr8Type, indexType, indexType});
-  CallOp result = builder.create<mlir::CallOp>(
-      loc, func, TypeRange(), ArrayRef<Value>({ptr, d, size}));
+  CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(),
+                                               ArrayRef<Value>({ptr, d, size}));
 
   return result;
 }
 
 CallOp callResizePointers(OpBuilder &builder, ModuleOp &mod, Location loc,
-                                Value tensor, Value d, Value size) {
+                          Value tensor, Value d, Value size) {
   Value ptr = castToPtr8(builder, mod, loc, tensor);
   Type ptr8Type = ptr.getType();
 
   Type indexType = builder.getIndexType();
   FlatSymbolRefAttr func = getFunc(mod, loc, "resize_pointers", TypeRange(),
                                    {ptr8Type, indexType, indexType});
-  CallOp result = builder.create<mlir::CallOp>(
-      loc, func, TypeRange(), ArrayRef<Value>({ptr, d, size}));
+  CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(),
+                                               ArrayRef<Value>({ptr, d, size}));
 
   return result;
 }
@@ -324,15 +328,15 @@ mlir::CallOp callResizeIndex(OpBuilder &builder, ModuleOp &mod, Location loc,
 }
 
 CallOp callResizeValues(OpBuilder &builder, ModuleOp &mod, Location loc,
-                              Value tensor, Value size) {
+                        Value tensor, Value size) {
   Value ptr = castToPtr8(builder, mod, loc, tensor);
   Type ptr8Type = ptr.getType();
 
   Type indexType = builder.getIndexType();
   FlatSymbolRefAttr func =
       getFunc(mod, loc, "resize_values", TypeRange(), {ptr8Type, indexType});
-  CallOp result = builder.create<mlir::CallOp>(
-      loc, func, TypeRange(), ArrayRef<Value>({ptr, size}));
+  CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(),
+                                               ArrayRef<Value>({ptr, size}));
 
   return result;
 }

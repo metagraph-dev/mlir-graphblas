@@ -135,7 +135,9 @@ class TensorType(Type):
         else:
             raise ValueError(f"Invalid rank: {self.encoding.rank}")
         ret.append(str(self.value_type))
-        ret.append(f"p{self.encoding.pointer_bit_width}i{self.encoding.index_bit_width}")
+        ret.append(
+            f"p{self.encoding.pointer_bit_width}i{self.encoding.index_bit_width}"
+        )
         return "_".join(ret)
 
     @classmethod

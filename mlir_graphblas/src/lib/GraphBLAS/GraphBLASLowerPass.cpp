@@ -215,9 +215,9 @@ public:
 
     // the verify function will ensure that this is CSR->CSC or CSC->CSR
     Value output = castToPtr8(rewriter, module, loc, duplicate);
-    RankedTensorType flippedType = getSingleCompressedMatrixType(context, inputTensorType.getShape(),
-                                                                 csr2csc, valueType, ptrBitWidth,
-                                                                 idxBitWidth);
+    RankedTensorType flippedType = getSingleCompressedMatrixType(
+        context, inputTensorType.getShape(), csr2csc, valueType, ptrBitWidth,
+        idxBitWidth);
     output = castToTensor(rewriter, module, loc, output, flippedType);
 
     Value outputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(
@@ -348,18 +348,18 @@ public:
     bool inputTypeIsCSR = typeIsCSR(inputType);
     bool outputTypeIsCSR = typeIsCSR(outputType);
 
-    RankedTensorType flippedInputType = getSingleCompressedMatrixType(context, inputShape,
-                                                                      inputTypeIsCSR,
-                                                                      inputValueType, ptrBitWidth, idxBitWidth);
+    RankedTensorType flippedInputType =
+        getSingleCompressedMatrixType(context, inputShape, inputTypeIsCSR,
+                                      inputValueType, ptrBitWidth, idxBitWidth);
 
     // Add a graphblas.convert_layout op if the input and output compression
     // types are the same
     if (inputTypeIsCSR == outputTypeIsCSR) {
       // TODO consider separating this out into its own rewrite pattern
-      Value flippedInput =
-          rewriter.create<graphblas::ConvertLayoutOp>(loc, flippedInputType, inputTensor);
-      Value transposed =
-          rewriter.create<graphblas::TransposeOp>(loc, outputType, flippedInput);
+      Value flippedInput = rewriter.create<graphblas::ConvertLayoutOp>(
+          loc, flippedInputType, inputTensor);
+      Value transposed = rewriter.create<graphblas::TransposeOp>(
+          loc, outputType, flippedInput);
 
       rewriter.replaceOp(op, transposed);
 
@@ -627,26 +627,28 @@ public:
       // TODO consider moving this out to its own rewrite pattern
 
       sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
-        sparse_tensor::getSparseTensorEncoding(matrixType);
+          sparse_tensor::getSparseTensorEncoding(matrixType);
       unsigned ptrBitWidth = sparseEncoding.getPointerBitWidth();
       unsigned idxBitWidth = sparseEncoding.getIndexBitWidth();
 
       RankedTensorType flippedMatrixType =
-          getSingleCompressedMatrixType(context, matrixShape, matrixTypeIsCSR, elementType, ptrBitWidth, idxBitWidth);
-      Value convertedTensor =
-          rewriter.create<graphblas::ConvertLayoutOp>(loc, flippedMatrixType, matrix);
+          getSingleCompressedMatrixType(context, matrixShape, matrixTypeIsCSR,
+                                        elementType, ptrBitWidth, idxBitWidth);
+      Value convertedTensor = rewriter.create<graphblas::ConvertLayoutOp>(
+          loc, flippedMatrixType, matrix);
       Type originalVectorType = op->getResultTypes().front();
-      Value reducedResult =
-          rewriter.create<graphblas::ReduceToVectorOp>(
-              loc, originalVectorType, convertedTensor, aggregator, axis);
+      Value reducedResult = rewriter.create<graphblas::ReduceToVectorOp>(
+          loc, originalVectorType, convertedTensor, aggregator, axis);
 
       rewriter.replaceOp(op, reducedResult);
 
       return success();
     }
 
-    // TODO: why is this code here? We need a higher level strategy to either reject sparse tensors
-    // TODO:   with hardcoded shape or to automatically convert them to "?" for every graphblas op
+    // TODO: why is this code here? We need a higher level strategy to either
+    // reject sparse tensors
+    // TODO:   with hardcoded shape or to automatically convert them to "?" for
+    // every graphblas op
     // TODO:   as part of the structuralize passes
     /*if (matrixShape[0] != -1 || matrixShape[1] != -1) {
       // TODO consider moving this out to its own rewrite pattern
@@ -716,7 +718,8 @@ public:
     ValueRange outputShape = {len_dense_dim};
 
     RankedTensorType vectorType = getCompressedVectorType(context, elementType);
-    Value output = callNewTensor(rewriter, module, loc, outputShape, vectorType);
+    Value output =
+        callNewTensor(rewriter, module, loc, outputShape, vectorType);
 
     scf::ForOp nnzLoop =
         rewriter.create<scf::ForOp>(loc, c0, len_dense_dim, c1, ValueRange{c0});
