@@ -242,10 +242,14 @@ void callDelSparseTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
 Value callNewTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
                     ValueRange shape, RankedTensorType tensorType) {
   Type indexType = builder.getIndexType();
+  int64_t rank = tensorType.getRank();
 
   std::string funcName = "new_" + buildSparseTypeString(tensorType);
-  FlatSymbolRefAttr func =
-      getFunc(mod, loc, funcName, tensorType, {indexType, indexType});
+  FlatSymbolRefAttr func;
+  if (rank == 2)
+    func = getFunc(mod, loc, funcName, tensorType, TypeRange{indexType, indexType});
+  else
+    func = getFunc(mod, loc, funcName, tensorType, TypeRange{indexType});
   CallOp callOpResult = builder.create<CallOp>(loc, func, tensorType, shape);
   Value result = callOpResult->getResult(0);
   return result;

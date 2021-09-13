@@ -125,6 +125,19 @@ class TensorType(Type):
         shape_string = "x".join("?" if dim == -1 else str(dim) for dim in self.shape)
         return f"tensor<{shape_string}x{self.value_type}, {self.encoding}>"
 
+    def to_short_string(self):
+        ret = []
+        if self.encoding.rank == 2:
+            ret.append("matrix")
+            ret.append("csc" if self.encoding.ordering == [1, 0] else "csr")
+        elif self.encoding.rank == 1:
+            ret.append("vector")
+        else:
+            raise ValueError(f"Invalid rank: {self.encoding.rank}")
+        ret.append(str(self.value_type))
+        ret.append(f"p{self.encoding.pointer_bit_width}i{self.encoding.index_bit_width}")
+        return "_".join(ret)
+
     @classmethod
     def parse(cls, text: str, aliases: AliasMap = None):
         if m := cls._patt.match(text):
