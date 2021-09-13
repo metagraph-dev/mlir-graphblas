@@ -10,7 +10,7 @@ cdef extern from "RandomUtils.cpp" nogil:
                   int64_t outSize, int64_t outStride, double *valAlloc,
                   double *valBase, int64_t valOffset, int64_t valSize,
                   int64_t valStride)
-    void *destroy_choose_uniform_context(void *rngContext)
+    void destroy_choose_uniform_context(void *rngContext)
 
 
 cdef class ChooseUniformContext:

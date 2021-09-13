@@ -54,7 +54,7 @@ void choose_uniform(void *rngContext, int64_t n, int64_t maxIndex,
   }
 }
 
-void *destroy_choose_uniform_context(void *rngContext) {
+void destroy_choose_uniform_context(void *rngContext) {
   auto generator = (std::default_random_engine *) rngContext;
   delete generator;
 }
