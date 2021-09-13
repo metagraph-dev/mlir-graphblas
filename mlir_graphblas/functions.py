@@ -68,7 +68,12 @@ class BaseFunction:
   indexBitWidth = 64
 }>
 
+#map1d = affine_map<(d0)[s0, s1] -> (d0 * s1 + s0)>
+
 module  {
+    func private @choose_first(i64, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
+    func private @choose_uniform(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
+
     {{ body }}
 
 }

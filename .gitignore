@@ -1,6 +1,8 @@
 # Cython
 mlir_graphblas/sparse_utils.cpp
 mlir_graphblas/sparse_utils.html
+mlir_graphblas/random_utils.cpp
+mlir_graphblas/random_utils.html
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
