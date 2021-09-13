@@ -51,7 +51,7 @@ jobs:
           ./run-clang-format.py -r mlir_graphblas/src/
       - name: Pytest
         run: |
-          pytest mlir_graphblas
+          pytest -v mlir_graphblas
       - name: Coveralls
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

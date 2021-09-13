@@ -697,6 +697,28 @@ class GraphBLAS_VectorArgMax(BaseOp):
         )
 
 
+class GraphBLAS_MatrixSelectRandom(BaseOp):
+    dialect = "graphblas"
+    name = "matrix_select_random"
+    allowed_choose_n = set(["choose_first", "choose_uniform"])
+
+    @classmethod
+    def call(cls, irbuilder, input, n: MLIRVar, rng_context: MLIRVar, choose_n: str):
+        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(n, IntType)
+        cls.ensure_mlirvar(rng_context)
+        if choose_n not in cls.allowed_choose_n:
+            raise TypeError(
+                f"Illegal choose_n function: {choose_n}, must be one of {cls.allowed_choose_n}"
+            )
+        ret_val = irbuilder.new_var(input.type)
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.matrix_select_random {input}, {n}, {rng_context} "
+            + f"{{ choose_n = @{choose_n} }}"
+            + f" : ({input.type}, {n.type}, {rng_context.type}) to {input.type}"
+        )
+
+
 ###########################################
 # util ops
 ###########################################

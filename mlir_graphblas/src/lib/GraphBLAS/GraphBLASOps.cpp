@@ -169,6 +169,20 @@ static LogicalResult hasCSRorCSCEncoding(RankedTensorType t) {
   return failure();
 }
 
+/// Utility function to check if a 2d-tensor has CSR format.
+static LogicalResult hasCSREncoding(RankedTensorType t) {
+  assert(t.getRank() == 2 && "expect a 2d ranked tensor");
+  if (auto encoding = sparse_tensor::getSparseTensorEncoding(t)) {
+    auto compression = encoding.getDimLevelType();
+    if (((compression[0] ==
+          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense) &&
+         (compression[1] ==
+          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)))
+      return success();
+  }
+  return failure();
+}
+
 /// Utility function to check if a 1-d tensor is compressed.
 static LogicalResult hasCompressedEncoding(RankedTensorType t) {
   assert(t.getRank() == 1 && "expect a 1d ranked tensor");
@@ -1095,6 +1109,30 @@ static LogicalResult verify(TransposeOp op) {
     // dimLevelType values guaranteed to be the same since we already checked
     // earlier
   }
+
+  return success();
+}
+
+static LogicalResult verify(MatrixSelectRandomOp op) {
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+  IntegerType nType = op.n().getType().cast<IntegerType>();
+  RankedTensorType resultType =
+      op.getResult().getType().cast<RankedTensorType>();
+
+  if (failed(hasSparseEncodingAttr(inputType)) ||
+      failed(hasCSREncoding(inputType)))
+    return op.emitError("input: Missing sparse tensor encoding or 2d-tensor "
+                        "not in CSR form");
+
+  if (inputType != resultType)
+    return op.emitError("Input and output tensors have different types.");
+
+  mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
+      mlir::sparse_tensor::getSparseTensorEncoding(inputType);
+
+  if (nType.getWidth() != inputSparseEncoding.getIndexBitWidth())
+    return op.emitError(
+        "n must match bit width of input sparse tensor index type");
 
   return success();
 }

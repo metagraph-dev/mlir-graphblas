@@ -7,6 +7,7 @@ import numpy as np
 from mlir_graphblas import MlirJitEngine
 from mlir_graphblas.engine import parse_mlir_functions
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
+from mlir_graphblas.random_utils import ChooseUniformContext
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, TensorType
 from mlir_graphblas.functions import ConvertLayout
@@ -786,3 +787,88 @@ def test_ir_reduce_to_vector(
     assert np.all(reduced_columns_abs == expected_reduced_columns_abs)
 
     return
+
+
+def test_ir_select_random(engine: MlirJitEngine, aliases: AliasMap):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "test_select_random",
+        input_types=["tensor<?x?xf64, #CSR64>", "i64", "i64"],
+        return_types=["tensor<?x?xf64, #CSR64>"],
+        aliases=aliases,
+    )
+    M, n, context = ir_builder.inputs
+    filtered = ir_builder.graphblas.matrix_select_random(
+        M, n, context, choose_n="choose_first"
+    )
+    ir_builder.return_vars(filtered)
+    test_select_random = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [1, 0, 0, 0, 0],
+            [-9, 2, 3, 0, 0],
+            [0, 0, 4, 1, 1],
+            [0, 0, 5, 6, 0],
+            [0, 0, 0, -9, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    result = test_select_random(input_tensor, 2, 0xB00)
+    dense_result = densify_csr(result)
+
+    # choose_first always selects the first N elements on the row
+    expected_output_tensor = np.array(
+        [
+            [1, 0, 0, 0, 0],
+            [-9, 2, 0, 0, 0],
+            [0, 0, 4, 1, 0],
+            [0, 0, 5, 6, 0],
+            [0, 0, 0, -9, 0],
+        ],
+        dtype=np.float64,
+    )
+
+    np.testing.assert_equal(expected_output_tensor, dense_result)
+
+
+def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "test_select_random_uniform",
+        input_types=["tensor<?x?xf64, #CSR64>", "i64", "!llvm.ptr<i8>"],
+        return_types=["tensor<?x?xf64, #CSR64>"],
+        aliases=aliases,
+    )
+    M, n, context = ir_builder.inputs
+    filtered = ir_builder.graphblas.matrix_select_random(
+        M, n, context, choose_n="choose_uniform"
+    )
+    ir_builder.return_vars(filtered)
+    test_select_random_uniform = ir_builder.compile(
+        engine=engine, passes=GRAPHBLAS_PASSES
+    )
+
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [1, 0, 0, 0, 0],
+            [-9, 2, 3, 0, 0],
+            [0, 0, 4, 1, 1],
+            [0, 0, 5, 6, 0],
+            [0, 0, 0, -9, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    rng = ChooseUniformContext()
+    result = test_select_random_uniform(input_tensor, 2, rng)
+    dense_result = densify_csr(result)
+
+    expected_row_count = np.minimum((dense_input_tensor != 0).sum(axis=1), 2)
+    actual_row_count = (dense_result != 0).sum(axis=1)
+    np.testing.assert_equal(expected_row_count, actual_row_count)

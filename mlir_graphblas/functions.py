@@ -73,6 +73,8 @@ class BaseFunction:
   indexBitWidth = 64
 }>
 
+#map1d = affine_map<(d0)[s0, s1] -> (d0 * s1 + s0)>
+
 module  {
     func private @cast_csr_to_csx(tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSX64>
     func private @cast_csc_to_csx(tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSX64>
@@ -88,6 +90,9 @@ module  {
     func private @delSparseVector(tensor<?xf64, #CV64>) -> ()
     func private @dup_matrix(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSX64>
     func private @dup_vector(tensor<?xf64, #CV64>) -> tensor<?xf64, #CV64>
+
+    func private @choose_first(i64, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
+    func private @choose_uniform(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
 
     {{ body }}
 
