@@ -706,14 +706,14 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
 
-    Value len_dense_dim =
-        rewriter.create<tensor::DimOp>(loc, matrix, (axis == 1) ? c0 : c1);
+    Value len_dense_dim;
+    if (axis == 1)
+      len_dense_dim = rewriter.create<graphblas::NumRowsOp>(loc, matrix);
+    else
+      len_dense_dim = rewriter.create<graphblas::NumColsOp>(loc, matrix);
 
     Value matrixPointers = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memref1DPointerType, matrix, c1);
-
-    Value matrixValues = rewriter.create<sparse_tensor::ToValuesOp>(
-        loc, memref1DValueType, matrix);
 
     ValueRange outputShape = {len_dense_dim};
 
@@ -760,6 +760,9 @@ public:
     Value outputNNZ_i64 =
         rewriter.create<IndexCastOp>(loc, outputNNZ, int64Type);
     rewriter.create<memref::StoreOp>(loc, outputNNZ_i64, outputPointers, c1);
+
+    Value matrixValues = rewriter.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DValueType, matrix);
 
     Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
         loc, memref1DI64Type, output, c0);
@@ -2648,6 +2651,443 @@ public:
   };
 };
 
+class LowerDiagOpRewrite : public OpRewritePattern<graphblas::DiagOp> {
+public:
+  using OpRewritePattern<graphblas::DiagOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::DiagOp op,
+                                PatternRewriter &rewriter) const override {
+
+    RankedTensorType resultTensorType =
+        op.getResult().getType().dyn_cast<RankedTensorType>();
+
+    if (resultTensorType.getRank() == 1) {
+      return lowerMatrixToVecDiagOp(op, rewriter, resultTensorType);
+    } else if (resultTensorType.getRank() == 2) {
+      return lowerVecToMatrixDiagOp(op, rewriter, resultTensorType);
+    }
+
+    return failure();
+  };
+
+private:
+  LogicalResult
+  lowerVecToMatrixDiagOp(graphblas::DiagOp op, PatternRewriter &rewriter,
+                         RankedTensorType &resultTensorType) const {
+
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Value vector = op.input();
+
+    Type valueType = resultTensorType.getElementType();
+
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
+    Type memref1DValueType = MemRefType::get({-1}, valueType);
+
+    Value c0_i64 =
+        rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(int64Type, 0));
+    Value c1_i64 =
+        rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(int64Type, 1));
+
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+
+    Value vectorLength = rewriter.create<graphblas::SizeOp>(loc, vector);
+    Value vectorIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
+        loc, memref1DI64Type, vector, c0);
+    Value vectorValues = rewriter.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DValueType, vector);
+
+    Value output = callNewTensor(
+        rewriter, module, loc, {vectorLength, vectorLength}, resultTensorType);
+
+    Value outputNNZ = rewriter.create<graphblas::NumValsOp>(loc, vector);
+    callResizeIndex(rewriter, module, loc, output, c1, outputNNZ);
+    callResizeValues(rewriter, module, loc, output, outputNNZ);
+
+    Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
+        loc, memref1DI64Type, output, c1);
+    Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DValueType, output);
+
+    scf::ForOp copyValuesAndIndicesLoop =
+        rewriter.create<scf::ForOp>(loc, c0, outputNNZ, c1);
+    {
+      rewriter.setInsertionPointToStart(copyValuesAndIndicesLoop.getBody());
+      Value outputPosition = copyValuesAndIndicesLoop.getInductionVar();
+      Value vectorIndex =
+          rewriter.create<memref::LoadOp>(loc, vectorIndices, outputPosition);
+      rewriter.create<memref::StoreOp>(loc, vectorIndex, outputIndices,
+                                       outputPosition);
+      Value vectorValue =
+          rewriter.create<memref::LoadOp>(loc, vectorValues, outputPosition);
+      rewriter.create<memref::StoreOp>(loc, vectorValue, outputValues,
+                                       outputPosition);
+      rewriter.setInsertionPointAfter(copyValuesAndIndicesLoop);
+    }
+
+    Value outputPointers = rewriter.create<sparse_tensor::ToPointersOp>(
+        loc, memref1DI64Type, output, c1);
+    scf::ForOp pointersUpdateLoop = rewriter.create<scf::ForOp>(
+        loc, c0, vectorLength, c1, ValueRange{c0_i64, c0, c0_i64});
+    {
+      rewriter.setInsertionPointToStart(pointersUpdateLoop.getBody());
+      Value pointersPosition = pointersUpdateLoop.getInductionVar();
+      Value ptr_i64 = pointersUpdateLoop.getLoopBody().getArgument(1);
+      Value vectorIndicesPosition =
+          pointersUpdateLoop.getLoopBody().getArgument(2);
+      Value vectorIndicesValue =
+          pointersUpdateLoop.getLoopBody().getArgument(3);
+
+      rewriter.create<memref::StoreOp>(loc, ptr_i64, outputPointers,
+                                       pointersPosition);
+      Value pointersPosition_i64 =
+          rewriter.create<mlir::IndexCastOp>(loc, pointersPosition, int64Type);
+      Value rowHasValue =
+          rewriter.create<CmpIOp>(op.getLoc(), CmpIPredicate::eq,
+                                  vectorIndicesValue, pointersPosition_i64);
+
+      scf::IfOp ifRowHasValueBlock = rewriter.create<scf::IfOp>(
+          loc, TypeRange{int64Type, indexType, int64Type}, rowHasValue, true);
+      {
+        rewriter.setInsertionPointToStart(ifRowHasValueBlock.thenBlock());
+        Value nextPtr_i64 = rewriter.create<mlir::AddIOp>(loc, ptr_i64, c1_i64);
+        Value nextVectorIndicesPosition =
+            rewriter.create<mlir::AddIOp>(loc, vectorIndicesPosition, c1);
+        Value nextUpdatedVectorIndicesValue = rewriter.create<memref::LoadOp>(
+            loc, vectorIndices, nextVectorIndicesPosition);
+
+        rewriter.create<scf::YieldOp>(
+            loc, ValueRange{nextPtr_i64, nextVectorIndicesPosition,
+                            nextUpdatedVectorIndicesValue});
+      }
+      {
+        rewriter.setInsertionPointToStart(ifRowHasValueBlock.elseBlock());
+        rewriter.create<scf::YieldOp>(
+            loc,
+            ValueRange{ptr_i64, vectorIndicesPosition, vectorIndicesValue});
+      }
+      rewriter.setInsertionPointAfter(ifRowHasValueBlock);
+
+      Value updatedPtr_i64 = ifRowHasValueBlock.getResult(0);
+      Value updatedVectorIndicesPosition = ifRowHasValueBlock.getResult(1);
+      Value updatedVectorIndicesValue = ifRowHasValueBlock.getResult(2);
+
+      rewriter.create<scf::YieldOp>(
+          loc, ValueRange{updatedPtr_i64, updatedVectorIndicesPosition,
+                          updatedVectorIndicesValue});
+
+      rewriter.setInsertionPointAfter(pointersUpdateLoop);
+    }
+
+    Value outputNNZ_i64 =
+        rewriter.create<IndexCastOp>(loc, outputNNZ, int64Type);
+    rewriter.create<memref::StoreOp>(loc, outputNNZ_i64, outputPointers,
+                                     vectorLength);
+
+    rewriter.replaceOp(op, output);
+
+    cleanupIntermediateTensor(rewriter, module, loc, output);
+
+    return success();
+  }
+
+  LogicalResult
+  lowerMatrixToVecDiagOp(graphblas::DiagOp op, PatternRewriter &rewriter,
+                         RankedTensorType &resultTensorType) const {
+
+    // This implementation reads as assuming the input matrix is CSR,
+    // but it will work for CSC as well.
+
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Value matrix = op.input();
+
+    Type valueType = resultTensorType.getElementType();
+
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type int1Type = rewriter.getIntegerType(1);
+    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
+    Type memref1DValueType = MemRefType::get({-1}, valueType);
+
+    Value c1_i1 =
+        rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(int1Type, 1));
+    Value c0_valueType = llvm::TypeSwitch<Type, Value>(valueType)
+                             .Case<IntegerType>([&](IntegerType type) {
+                               return rewriter.create<ConstantOp>(
+                                   loc, rewriter.getIntegerAttr(valueType, 1));
+                             })
+                             .Case<FloatType>([&](FloatType type) {
+                               return rewriter.create<ConstantOp>(
+                                   loc, rewriter.getFloatAttr(valueType, 1.0));
+                             });
+
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Value c2 = rewriter.create<ConstantIndexOp>(loc, 2);
+
+    Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, matrix);
+
+    Value matrixPointers = rewriter.create<sparse_tensor::ToPointersOp>(
+        loc, memref1DI64Type, matrix, c1);
+    Value matrixIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
+        loc, memref1DI64Type, matrix, c1);
+    Value matrixValues = rewriter.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DValueType, matrix);
+
+    Value output = callNewTensor(rewriter, module, loc, ValueRange{nrows},
+                                 resultTensorType);
+    callResizeDim(rewriter, module, loc, output, c0, nrows);
+
+    // We do two loops, one to find the outoput vector's nnz
+    // and one to fill up the output's indices and values.
+    // We have to get the nnz first to allocate space in the
+    // output vector correctly.
+    // TODO We could do one loop where we do both.
+    //  1) assume that the output nnz is some arbitrary size
+    //  2) resize accordingly
+    //  3) on each iteration,
+    //        - store the values and indices
+    //        - track the correct nnz
+    //        - if we reach the limit of whatever size the
+    //          output vector is, resize (double it or
+    //          something like that)
+    //  4) resize the output vector to the correct nnz
+    // It's unclear which approach is more performant since
+    // it depends on how accurate our arbitrary guesses are
+    // for initial size and how much we should resize.
+
+    scf::ForOp outputNNZLoop =
+        rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
+    {
+      Value numDiagonalContainingRows =
+          outputNNZLoop.getLoopBody().getArgument(1);
+      rewriter.setInsertionPointToStart(outputNNZLoop.getBody());
+
+      Value matrixRowIndex = outputNNZLoop.getInductionVar();
+      Value nextMatrixRowIndex =
+          rewriter.create<AddIOp>(loc, matrixRowIndex, c1);
+
+      Value firstPtr_i64 =
+          rewriter.create<memref::LoadOp>(loc, matrixPointers, matrixRowIndex);
+      Value secondPtr_i64 = rewriter.create<memref::LoadOp>(loc, matrixPointers,
+                                                            nextMatrixRowIndex);
+
+      Value firstPtr =
+          rewriter.create<IndexCastOp>(loc, firstPtr_i64, indexType);
+      Value secondPtr =
+          rewriter.create<IndexCastOp>(loc, secondPtr_i64, indexType);
+
+      Value matrixRowIndex_i64 =
+          rewriter.create<IndexCastOp>(loc, matrixRowIndex, int64Type);
+
+      scf::WhileOp findDiagonalWhileLoop = rewriter.create<scf::WhileOp>(
+          loc, TypeRange{indexType, int1Type}, ValueRange{firstPtr, c1_i1});
+      Block *findDiagonalWhileLoopBefore = rewriter.createBlock(
+          &findDiagonalWhileLoop.before(), {}, TypeRange{indexType, int1Type});
+      Block *findDiagonalWhileLoopAfter = rewriter.createBlock(
+          &findDiagonalWhileLoop.after(), {}, TypeRange{indexType, int1Type});
+      Value diagonalNotFound = findDiagonalWhileLoop.getResult(1);
+      {
+        rewriter.setInsertionPointToStart(
+            &findDiagonalWhileLoop.before().front());
+        Value ptr = findDiagonalWhileLoopBefore->getArgument(0);
+        Value diagonalPositionNotFound =
+            findDiagonalWhileLoopBefore->getArgument(1);
+        Value morePtrs = rewriter.create<CmpIOp>(
+            op.getLoc(), CmpIPredicate::ult, ptr, secondPtr);
+        Value continueCondition =
+            rewriter.create<AndOp>(loc, diagonalPositionNotFound, morePtrs);
+        rewriter.create<scf::ConditionOp>(
+            loc, continueCondition, ValueRange{ptr, diagonalPositionNotFound});
+      }
+      {
+        rewriter.setInsertionPointToStart(
+            &findDiagonalWhileLoop.after().front());
+        Value currentPtr = findDiagonalWhileLoopAfter->getArgument(0);
+        Value elementColumnIndex_i64 =
+            rewriter.create<memref::LoadOp>(loc, matrixIndices, currentPtr);
+        Value isNotDiagonalPosition =
+            rewriter.create<CmpIOp>(op.getLoc(), CmpIPredicate::ne,
+                                    elementColumnIndex_i64, matrixRowIndex_i64);
+        Value nextPtr = rewriter.create<AddIOp>(loc, currentPtr, c1);
+        rewriter.create<scf::YieldOp>(
+            loc, ValueRange{nextPtr, isNotDiagonalPosition});
+        rewriter.setInsertionPointAfter(findDiagonalWhileLoop);
+      }
+
+      scf::IfOp ifDiagonalNotFoundBlock = rewriter.create<scf::IfOp>(
+          loc, TypeRange{indexType}, diagonalNotFound, true);
+      {
+        rewriter.setInsertionPointToStart(ifDiagonalNotFoundBlock.thenBlock());
+        rewriter.create<scf::YieldOp>(loc,
+                                      ValueRange{numDiagonalContainingRows});
+      }
+      {
+        rewriter.setInsertionPointToStart(ifDiagonalNotFoundBlock.elseBlock());
+        Value nextNumDiagonalContainingRows =
+            rewriter.create<AddIOp>(loc, numDiagonalContainingRows, c1);
+        rewriter.create<scf::YieldOp>(
+            loc, ValueRange{nextNumDiagonalContainingRows});
+      }
+      rewriter.setInsertionPointAfter(ifDiagonalNotFoundBlock);
+      Value updatedNumDiagonalContainingRows =
+          ifDiagonalNotFoundBlock.getResult(0);
+
+      rewriter.create<scf::YieldOp>(
+          loc, ValueRange{updatedNumDiagonalContainingRows});
+
+      rewriter.setInsertionPointAfter(outputNNZLoop);
+    }
+    Value outputNNZ = outputNNZLoop.getResult(0);
+
+    callResizePointers(rewriter, module, loc, output, c0, c2);
+    callResizeIndex(rewriter, module, loc, output, c0, outputNNZ);
+    callResizeValues(rewriter, module, loc, output, outputNNZ);
+
+    Value outputPointers = rewriter.create<sparse_tensor::ToPointersOp>(
+        loc, memref1DI64Type, output, c0);
+    Value nrows_i64 = rewriter.create<IndexCastOp>(loc, nrows, int64Type);
+    rewriter.create<memref::StoreOp>(loc, nrows_i64, outputPointers, c1);
+
+    Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
+        loc, memref1DI64Type, output, c0);
+    Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DValueType, output);
+
+    scf::ForOp outputValueAndIncidesFillingLoop =
+        rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
+    {
+      Value outputValuesPosition =
+          outputValueAndIncidesFillingLoop.getLoopBody().getArgument(1);
+      Value rowIndex = outputValueAndIncidesFillingLoop.getInductionVar();
+      rewriter.setInsertionPointToStart(
+          outputValueAndIncidesFillingLoop.getBody());
+
+      Value nextRowIndex = rewriter.create<AddIOp>(loc, rowIndex, c1);
+      Value firstPtr_i64 =
+          rewriter.create<memref::LoadOp>(loc, matrixPointers, rowIndex);
+      Value secondPtr_i64 =
+          rewriter.create<memref::LoadOp>(loc, matrixPointers, nextRowIndex);
+
+      Value firstPtr =
+          rewriter.create<IndexCastOp>(loc, firstPtr_i64, indexType);
+      Value secondPtr =
+          rewriter.create<IndexCastOp>(loc, secondPtr_i64, indexType);
+
+      Value rowIndex_i64 =
+          rewriter.create<IndexCastOp>(loc, rowIndex, int64Type);
+
+      // instead of having a var for whether or not a diagonal value was found
+      // and the value itself, we could just track whether or not the diagonal
+      // value (see the C++ variable diagonalValue) is zero (or whatever the
+      // missing value represents).
+      // This will cause bugs with malformed sparse tensors that have the
+      // missing value in the values array.
+
+      // c0_valueType is just used as a dummmy initial value here ; any garbage
+      // value would work
+      scf::WhileOp findDiagonalWhileLoop = rewriter.create<scf::WhileOp>(
+          loc, TypeRange{indexType, int1Type, valueType},
+          ValueRange{firstPtr, c1_i1, c0_valueType});
+      Block *findDiagonalWhileLoopBefore =
+          rewriter.createBlock(&findDiagonalWhileLoop.before(), {},
+                               TypeRange{indexType, int1Type, valueType});
+      Block *findDiagonalWhileLoopAfter =
+          rewriter.createBlock(&findDiagonalWhileLoop.after(), {},
+                               TypeRange{indexType, int1Type, valueType});
+      Value diagonalNotFound = findDiagonalWhileLoop.getResult(1);
+      Value diagonalValue = findDiagonalWhileLoop.getResult(2);
+      {
+        Value ptr = findDiagonalWhileLoopBefore->getArgument(0);
+        Value diagonalPositionNotFound =
+            findDiagonalWhileLoopBefore->getArgument(1);
+        Value currentDiagonalValue =
+            findDiagonalWhileLoopBefore->getArgument(2);
+        rewriter.setInsertionPointToStart(
+            &findDiagonalWhileLoop.before().front());
+        Value morePtrs = rewriter.create<CmpIOp>(
+            op.getLoc(), CmpIPredicate::ult, ptr, secondPtr);
+        Value continueCondition =
+            rewriter.create<AndOp>(loc, diagonalPositionNotFound, morePtrs);
+        rewriter.create<scf::ConditionOp>(
+            loc, continueCondition,
+            ValueRange{ptr, diagonalPositionNotFound, currentDiagonalValue});
+      }
+      {
+        rewriter.setInsertionPointToStart(
+            &findDiagonalWhileLoop.after().front());
+        Value currentPtr = findDiagonalWhileLoopAfter->getArgument(0);
+        Value previousDiagonalValue =
+            findDiagonalWhileLoopAfter->getArgument(2);
+        Value elementColumnIndex_i64 =
+            rewriter.create<memref::LoadOp>(loc, matrixIndices, currentPtr);
+        Value isNotDiagonalPosition =
+            rewriter.create<CmpIOp>(op.getLoc(), CmpIPredicate::ne,
+                                    elementColumnIndex_i64, rowIndex_i64);
+
+        scf::IfOp ifDiagonalNotFoundBlock = rewriter.create<scf::IfOp>(
+            loc, TypeRange{valueType}, isNotDiagonalPosition, true);
+        {
+          rewriter.setInsertionPointToStart(
+              ifDiagonalNotFoundBlock.thenBlock());
+          // TODO yielding a dummy value (e.g. c0_valueType) works as well ;
+          // unsure which creates more optimal code
+          rewriter.create<scf::YieldOp>(loc, ValueRange{previousDiagonalValue});
+        }
+        {
+          rewriter.setInsertionPointToStart(
+              ifDiagonalNotFoundBlock.elseBlock());
+          Value actualDiagonalValue =
+              rewriter.create<memref::LoadOp>(loc, matrixValues, currentPtr);
+          rewriter.create<scf::YieldOp>(loc, ValueRange{actualDiagonalValue});
+        }
+        rewriter.setInsertionPointAfter(ifDiagonalNotFoundBlock);
+        Value updatedDiagonalValue = ifDiagonalNotFoundBlock.getResult(0);
+
+        Value nextPtr = rewriter.create<AddIOp>(loc, currentPtr, c1);
+        rewriter.create<scf::YieldOp>(
+            loc,
+            ValueRange{nextPtr, isNotDiagonalPosition, updatedDiagonalValue});
+        rewriter.setInsertionPointAfter(findDiagonalWhileLoop);
+      }
+
+      scf::IfOp ifDiagonalNotFoundBlock = rewriter.create<scf::IfOp>(
+          loc, TypeRange{indexType}, diagonalNotFound, true);
+      {
+        rewriter.setInsertionPointToStart(ifDiagonalNotFoundBlock.thenBlock());
+        rewriter.create<scf::YieldOp>(loc, ValueRange{outputValuesPosition});
+      }
+      {
+        rewriter.setInsertionPointToStart(ifDiagonalNotFoundBlock.elseBlock());
+
+        rewriter.create<memref::StoreOp>(loc, diagonalValue, outputValues,
+                                         outputValuesPosition);
+        rewriter.create<memref::StoreOp>(loc, rowIndex_i64, outputIndices,
+                                         outputValuesPosition);
+
+        Value nextOutputValuesPosition =
+            rewriter.create<AddIOp>(loc, outputValuesPosition, c1);
+        rewriter.create<scf::YieldOp>(loc,
+                                      ValueRange{nextOutputValuesPosition});
+      }
+      rewriter.setInsertionPointAfter(ifDiagonalNotFoundBlock);
+      Value nextOutputValuesPosition = ifDiagonalNotFoundBlock.getResult(0);
+
+      rewriter.create<scf::YieldOp>(loc, ValueRange{nextOutputValuesPosition});
+      rewriter.setInsertionPointAfter(outputValueAndIncidesFillingLoop);
+    }
+
+    rewriter.replaceOp(op, output);
+
+    return success();
+  }
+};
+
 class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
 public:
   using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
@@ -2829,9 +3269,10 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
                LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
                LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
                LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
-               LowerVectorArgMaxOpRewrite, LowerCommentRewrite,
-               LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
-               LowerNumValsRewrite, LowerDupRewrite>(patterns.getContext());
+               LowerVectorArgMaxOpRewrite, LowerDiagOpRewrite,
+               LowerCommentRewrite, LowerSizeRewrite, LowerNumRowsRewrite,
+               LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite>(
+      patterns.getContext());
 }
 
 struct GraphBLASLoweringPass

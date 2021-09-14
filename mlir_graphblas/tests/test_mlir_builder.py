@@ -68,11 +68,11 @@ func @csr_to_csc(%matrix: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSC64> {
 def aliases() -> AliasMap:
     csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
     csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-    sparsevec64 = SparseEncodingType(["compressed"], None, 64, 64)
+    cv64 = SparseEncodingType(["compressed"], None, 64, 64)
     aliases = AliasMap()
     aliases["CSR64"] = csr64
     aliases["CSC64"] = csc64
-    aliases["SparseVec64"] = sparsevec64
+    aliases["CV64"] = cv64
     return aliases
 
 
@@ -580,7 +580,7 @@ def test_ir_builder_vector_argminmax(
     # Build Function
     ir_builder = MLIRFunctionBuilder(
         "vector_arg_min_and_max",
-        input_types=["tensor<?xi32, #SparseVec64>"],
+        input_types=["tensor<?xi32, #CV64>"],
         return_types=["index", "index", "index", "index"],
         aliases=aliases,
     )
@@ -666,26 +666,26 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
 REDUCE_TO_VECTOR_CASES = [
     # pytest.param(
     #     "tensor<5x4x{scalar_type}, #CSR64>",
-    #     "tensor<5x{scalar_type}, #SparseVec64>",
-    #     "tensor<4x{scalar_type}, #SparseVec64>"
+    #     "tensor<5x{scalar_type}, #CV64>",
+    #     "tensor<4x{scalar_type}, #CV64>"
     #     id="csr_fixed"
     # ), # TODO make this work
     # pytest.param(
     #     "tensor<5x4x{scalar_type}, #CSC64>",
-    #     "tensor<5x{scalar_type}, #SparseVec64>",
-    #     "tensor<4x{scalar_type}, #SparseVec64>"
+    #     "tensor<5x{scalar_type}, #CV64>",
+    #     "tensor<4x{scalar_type}, #CV64>"
     #     id="csc_fixed"
     # ), # TODO make this work
     pytest.param(
         "tensor<?x?x{scalar_type}, #CSR64>",
-        "tensor<?x{scalar_type}, #SparseVec64>",
-        "tensor<?x{scalar_type}, #SparseVec64>",
+        "tensor<?x{scalar_type}, #CV64>",
+        "tensor<?x{scalar_type}, #CV64>",
         id="csr_arbitrary",
     ),
     pytest.param(
         "tensor<?x?x{scalar_type}, #CSC64>",
-        "tensor<?x{scalar_type}, #SparseVec64>",
-        "tensor<?x{scalar_type}, #SparseVec64>",
+        "tensor<?x{scalar_type}, #CV64>",
+        "tensor<?x{scalar_type}, #CV64>",
         id="csc_arbitrary",
     ),
 ]
@@ -785,6 +785,102 @@ def test_ir_reduce_to_vector(
     assert np.all(reduced_columns == expected_reduced_columns)
     assert np.all(reduced_rows_clamped == expected_reduced_rows_clamped)
     assert np.all(reduced_columns_abs == expected_reduced_columns_abs)
+
+    return
+
+
+DIAG_CASES = [
+    # pytest.param(
+    #     "tensor<4x4x{scalar_type}, #CSR64>",
+    #     "tensor<4x{scalar_type}, #CV64>",
+    #     id="csr_fixed"
+    # ), # TODO make this work
+    # pytest.param(
+    #     "tensor<4x4x{scalar_type}, #CSC64>",
+    #     "tensor<4x{scalar_type}, #CV64>",
+    #     id="csc_fixed"
+    # ), # TODO make this work
+    pytest.param(
+        "tensor<?x?x{scalar_type}, #CSR64>",
+        "tensor<?x{scalar_type}, #CV64>",
+        id="csr_arbitrary",
+    ),
+    pytest.param(
+        "tensor<?x?x{scalar_type}, #CSC64>",
+        "tensor<?x{scalar_type}, #CV64>",
+        id="csc_arbitrary",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "matrix_type_template, vector_type_template",
+    DIAG_CASES,
+)
+@pytest.mark.parametrize("mlir_type", ["f64"])  # TODO make this work for other types
+def test_ir_diag(
+    matrix_type_template: str,
+    vector_type_template: str,
+    mlir_type: str,
+    engine: MlirJitEngine,
+    aliases: AliasMap,
+):
+    matrix_type = matrix_type_template.format(scalar_type=mlir_type)
+    vector_type = vector_type_template.format(scalar_type=mlir_type)
+    np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
+
+    # Build Functions
+    ir_builder = MLIRFunctionBuilder(
+        f"diag_func_{mlir_type}",
+        input_types=[vector_type, matrix_type],
+        return_types=[
+            matrix_type,
+            vector_type,
+        ],
+        aliases=aliases,
+    )
+    (input_vector, input_matrix) = ir_builder.inputs
+
+    output_matrix = ir_builder.graphblas.diag(input_vector, matrix_type)
+    output_vector = ir_builder.graphblas.diag(input_matrix, vector_type)
+    ir_builder.return_vars(output_matrix, output_vector)
+    diag_func = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    dense_input_vector = np.array(
+        [1, 0, -2, 3],
+        dtype=np_type,
+    )
+    input_vector = sparsify_array(dense_input_vector, [True])
+    dense_input_matrix = np.array(
+        [
+            [1, 7, 7, 7],
+            [0, 0, 7, 0],
+            [0, 7, 2, 0],
+            [7, 7, 0, 3],
+        ],
+        dtype=np_type,
+    )
+    input_matrix = sparsify_array(dense_input_matrix, [False, True])
+    matrix_type_is_csc = [1, 0] == TensorType.parse(
+        matrix_type, aliases
+    ).encoding.ordering
+    if matrix_type_is_csc:
+        input_matrix = engine.csr_to_csc(input_matrix)
+
+    output_matrix, output_vector = diag_func(input_vector, input_matrix)
+
+    if matrix_type_is_csc:
+        output_matrix = densify_csc(output_matrix)
+    else:
+        output_matrix = densify_csr(output_matrix)
+    output_vector = densify_vector(output_vector)
+
+    expected_output_matrix = np.diagflat(dense_input_vector)
+    expected_output_vector = np.diag(dense_input_matrix)
+
+    assert np.all(expected_output_matrix == output_matrix)
+    assert np.all(expected_output_vector == output_vector)
 
     return
 

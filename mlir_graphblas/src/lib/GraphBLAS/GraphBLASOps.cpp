@@ -27,8 +27,6 @@ using namespace mlir::graphblas;
 // Helpers
 //===--------------------------------------------------------------------===//
 
-enum CompressionType { CSR, CSC, EITHER };
-
 // TODO: now redundant remove when possible
 static llvm::Optional<std::string>
 checkCompressedMatrix(Type inputType, int inputIndex,
@@ -607,6 +605,51 @@ static LogicalResult verify(VectorArgMaxOp op) {
       checkCompressedVector(vecType, 0);
   if (vecCompressionErrorMessage)
     return op.emitError(vecCompressionErrorMessage.getValue());
+
+  return success();
+}
+
+static LogicalResult verify(DiagOp op) {
+  Type inputType = op.input().getType();
+  Type resultType = op.getResult().getType();
+
+  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
+
+  ArrayRef<int64_t> inputShape = inputTensorType.getShape();
+  ArrayRef<int64_t> resultShape = resultTensorType.getShape();
+
+  // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
+  // shapes using "?"
+  if (resultTensorType.getRank() == 1) {
+    llvm::Optional<std::string> inputCompressionErrorMessage =
+        checkCompressedMatrix(inputType, 0, EITHER);
+    if (inputCompressionErrorMessage)
+      return op.emitError(inputCompressionErrorMessage.getValue());
+
+    llvm::Optional<std::string> resultCompressionErrorMessage =
+        checkCompressedVector(resultType, -1);
+    if (resultCompressionErrorMessage)
+      return op.emitError(resultCompressionErrorMessage.getValue());
+
+    if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[0])
+      return op.emitError("Input shape is not compatible with output shape.");
+  } else if (resultTensorType.getRank() == 2) {
+    llvm::Optional<std::string> inputCompressionErrorMessage =
+        checkCompressedVector(inputType, 0);
+    if (inputCompressionErrorMessage)
+      return op.emitError(inputCompressionErrorMessage.getValue());
+
+    llvm::Optional<std::string> resultCompressionErrorMessage =
+        checkCompressedMatrix(resultType, -1, EITHER);
+    if (resultCompressionErrorMessage)
+      return op.emitError(resultCompressionErrorMessage.getValue());
+
+    if (inputShape[0] != resultShape[0] || inputShape[0] != resultShape[1])
+      return op.emitError("Input shape is not compatible with output shape.");
+  } else {
+    return op.emitError("Result must be a matrix or vector.");
+  }
 
   return success();
 }
