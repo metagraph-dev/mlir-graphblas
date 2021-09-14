@@ -13,19 +13,14 @@
   indexBitWidth = 64
 }>
 
-// CHECK-LABEL:   func private @cast_csx_to_csr(tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:         func private @dup_matrix(tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:         func private @cast_csr_to_csx(tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:         func private @dup_vector(tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
-
 // CHECK-LABEL:   func @apply_min_matrix(
-// CHECK-SAME:                                   %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
-// CHECK-SAME:                                   %[[VAL_1:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
-// CHECK:           %[[VAL_2:.*]] = constant 1 : index
-// CHECK:           %[[VAL_3:.*]] = constant 0 : index
-// CHECK:           %[[VAL_4:.*]] = call @cast_csr_to_csx(%[[VAL_0]]) : (tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           %[[VAL_5:.*]] = call @dup_matrix(%[[VAL_4]]) : (tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           %[[VAL_6:.*]] = call @cast_csx_to_csr(%[[VAL_5]]) : (tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK-SAME:                           %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
+// CHECK-SAME:                           %[[VAL_1:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK-DAG:       %[[VAL_2:.*]] = constant 1 : index
+// CHECK-DAG:       %[[VAL_3:.*]] = constant 0 : index
+// CHECK:           %[[VAL_4:.*]] = call @matrix_csr_f64_p64i64_to_ptr8(%[[VAL_0]]) : (tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
+// CHECK:           %[[VAL_5:.*]] = call @dup_tensor(%[[VAL_4]]) : (!llvm.ptr<i8>) -> !llvm.ptr<i8>
+// CHECK:           %[[VAL_6:.*]] = call @ptr8_to_matrix_csr_f64_p64i64(%[[VAL_5]]) : (!llvm.ptr<i8>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           %[[VAL_7:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
 // CHECK:           %[[VAL_8:.*]] = sparse_tensor.values %[[VAL_6]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
 // CHECK:           %[[VAL_9:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_2]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
@@ -53,24 +48,26 @@ func @apply_min_matrix(%sparse_tensor: tensor<?x?xf64, #CSR64>, %thunk: f64) -> 
 }
 
 // CHECK-LABEL:   func @apply_min_vector(
-// CHECK-SAME:                                   %[[VAL_0:.*]]: tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>,
-// CHECK-SAME:                                   %[[VAL_1:.*]]: f64) -> tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
-// CHECK:           %[[VAL_2:.*]] = constant 0 : index
-// CHECK:           %[[VAL_3:.*]] = constant 1 : index
-// CHECK:           %[[VAL_4:.*]] = call @dup_vector(%[[VAL_0]]) : (tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           %[[VAL_5:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:           %[[VAL_6:.*]] = sparse_tensor.values %[[VAL_4]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:           %[[VAL_7:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_2]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:           %[[VAL_8:.*]] = memref.load %[[VAL_7]]{{\[}}%[[VAL_3]]] : memref<?xi64>
-// CHECK:           %[[VAL_9:.*]] = index_cast %[[VAL_8]] : i64 to index
-// CHECK:           scf.parallel (%[[VAL_10:.*]]) = (%[[VAL_2]]) to (%[[VAL_9]]) step (%[[VAL_3]]) {
-// CHECK:             %[[VAL_11:.*]] = memref.load %[[VAL_5]]{{\[}}%[[VAL_10]]] : memref<?xf64>
-// CHECK:             %[[VAL_12:.*]] = cmpf olt, %[[VAL_11]], %[[VAL_1]] : f64
-// CHECK:             %[[VAL_13:.*]] = select %[[VAL_12]], %[[VAL_11]], %[[VAL_1]] : f64
-// CHECK:             memref.store %[[VAL_13]], %[[VAL_6]]{{\[}}%[[VAL_10]]] : memref<?xf64>
+// CHECK-SAME:                           %[[VAL_0:.*]]: tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>,
+// CHECK-SAME:                           %[[VAL_1:.*]]: f64) -> tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
+// CHECK-DAG:       %[[VAL_2:.*]] = constant 0 : index
+// CHECK-DAG:       %[[VAL_3:.*]] = constant 1 : index
+// CHECK:           %[[VAL_4:.*]] = call @vector_f64_p64i64_to_ptr8(%[[VAL_0]]) : (tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
+// CHECK:           %[[VAL_5:.*]] = call @dup_tensor(%[[VAL_4]]) : (!llvm.ptr<i8>) -> !llvm.ptr<i8>
+// CHECK:           %[[VAL_6:.*]] = call @ptr8_to_vector_f64_p64i64(%[[VAL_5]]) : (!llvm.ptr<i8>) -> tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:           %[[VAL_7:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
+// CHECK:           %[[VAL_8:.*]] = sparse_tensor.values %[[VAL_6]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
+// CHECK:           %[[VAL_9:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_2]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
+// CHECK:           %[[VAL_10:.*]] = memref.load %[[VAL_9]]{{\[}}%[[VAL_3]]] : memref<?xi64>
+// CHECK:           %[[VAL_11:.*]] = index_cast %[[VAL_10]] : i64 to index
+// CHECK:           scf.parallel (%[[VAL_12:.*]]) = (%[[VAL_2]]) to (%[[VAL_11]]) step (%[[VAL_3]]) {
+// CHECK:             %[[VAL_13:.*]] = memref.load %[[VAL_7]]{{\[}}%[[VAL_12]]] : memref<?xf64>
+// CHECK:             %[[VAL_14:.*]] = cmpf olt, %[[VAL_13]], %[[VAL_1]] : f64
+// CHECK:             %[[VAL_15:.*]] = select %[[VAL_14]], %[[VAL_13]], %[[VAL_1]] : f64
+// CHECK:             memref.store %[[VAL_15]], %[[VAL_8]]{{\[}}%[[VAL_12]]] : memref<?xf64>
 // CHECK:             scf.yield
 // CHECK:           }
-// CHECK:           return %[[VAL_4]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:           return %[[VAL_6]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
 
 func @apply_min_vector(%sparse_tensor: tensor<7xf64, #SparseVec64>, %thunk: f64) -> tensor<7xf64, #SparseVec64> {

@@ -218,10 +218,13 @@ class MLIRFunctionBuilder(BaseFunction):
     # MLIR Generation/Compilation Methods #
     #######################################
 
-    def get_mlir(self, make_private=True) -> str:
-        needed_function_definitions = "\n\n".join(
-            func_def for func_def, _, _ in self.needed_function_table.values()
-        )
+    def get_mlir(self, make_private=True, include_func_defs=True) -> str:
+        if include_func_defs:
+            needed_function_definitions = "\n\n".join(
+                func_def for func_def, _, _ in self.needed_function_table.values()
+            )
+        else:
+            needed_function_definitions = ""
 
         joined_statements = "\n".join(self.function_body_statements)
 
@@ -394,7 +397,12 @@ class MLIRFunctionBuilder(BaseFunction):
             ]
             assert function.get_mlir(make_private=True) == function_mlir_text
         else:
-            function_mlir_text = function.get_mlir(make_private=True)
+            if isinstance(function, MLIRFunctionBuilder):
+                function_mlir_text = function.get_mlir(
+                    make_private=True, include_func_defs=False
+                )
+            else:
+                function_mlir_text = function.get_mlir(make_private=True)
             full_function_mlir_text = function.get_mlir_module(make_private=True)
             mlir_ast = parse_mlir_functions(full_function_mlir_text, self.engine._cli)
             mlir_functions: List[mlir.astnodes.Function] = [
@@ -413,6 +421,11 @@ class MLIRFunctionBuilder(BaseFunction):
                 input_types,
                 return_type,  # TODO handle non-singleton returns here
             )
+            # Add function header definitions to self.needed_function_table
+            # Doing this avoid duplication conflicts
+            if isinstance(function, MLIRFunctionBuilder):
+                for key, vals in function.needed_function_table.items():
+                    self.needed_function_table[key] = vals
 
         result_var = self.new_var(return_type)  # TODO handle non-singleton returns here
         statement = "".join(

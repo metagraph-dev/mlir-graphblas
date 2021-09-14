@@ -135,19 +135,10 @@ public:
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
     Value inputTensor = op.input();
-    Type inputType = inputTensor.getType();
-    unsigned rank = inputType.dyn_cast<RankedTensorType>().getRank();
 
     Value duplicate = callDupTensor(rewriter, module, loc, inputTensor);
-    if (rank == 2) {
-      if (typeIsCSC(inputType)) {
-        duplicate = convertToExternalCSC(rewriter, module, loc, duplicate);
-      } else {
-        duplicate = convertToExternalCSR(rewriter, module, loc, duplicate);
-      }
-    }
-
     rewriter.replaceOp(op, duplicate);
+
     return success();
   };
 };
@@ -158,6 +149,7 @@ public:
   using OpRewritePattern<graphblas::ConvertLayoutOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::ConvertLayoutOp op,
                                 PatternRewriter &rewriter) const override {
+    MLIRContext *context = op.getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -172,7 +164,12 @@ public:
     }
 
     // otherwise, the rest of this function changes the data layout
-    Type valueType = inputType.dyn_cast<RankedTensorType>().getElementType();
+    RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+    sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+        sparse_tensor::getSparseTensorEncoding(inputTensorType);
+    unsigned ptrBitWidth = sparseEncoding.getPointerBitWidth();
+    unsigned idxBitWidth = sparseEncoding.getIndexBitWidth();
+    Type valueType = inputTensorType.getElementType();
     Type int64Type = rewriter.getIntegerType(64);
     Type indexType = rewriter.getIndexType();
 
@@ -216,12 +213,12 @@ public:
     callResizeIndex(rewriter, module, loc, duplicate, c1, nnz);
     callResizeValues(rewriter, module, loc, duplicate, nnz);
 
-    // verify function will ensure that this is CSR->CSC or CSC->CSR
-    Value output;
-    if (csr2csc)
-      output = convertToExternalCSC(rewriter, module, loc, duplicate);
-    else
-      output = convertToExternalCSR(rewriter, module, loc, duplicate);
+    // the verify function will ensure that this is CSR->CSC or CSC->CSR
+    Value output = castToPtr8(rewriter, module, loc, duplicate);
+    RankedTensorType flippedType = getSingleCompressedMatrixType(
+        context, inputTensorType.getShape(), csr2csc, valueType, ptrBitWidth,
+        idxBitWidth);
+    output = castToTensor(rewriter, module, loc, output, flippedType);
 
     Value outputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memref1DI64Type, output, c1);
@@ -332,49 +329,47 @@ public:
   using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::TransposeOp op,
                                 PatternRewriter &rewriter) const override {
+    MLIRContext *context = op.getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     Value inputTensor = op.input();
     RankedTensorType inputType =
         inputTensor.getType().dyn_cast<RankedTensorType>();
+    llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
+    sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+        sparse_tensor::getSparseTensorEncoding(inputType);
+    unsigned ptrBitWidth = sparseEncoding.getPointerBitWidth();
+    unsigned idxBitWidth = sparseEncoding.getIndexBitWidth();
+    Type inputValueType = inputType.getElementType();
     RankedTensorType outputType =
         op->getResultTypes().front().dyn_cast<RankedTensorType>();
 
     bool inputTypeIsCSR = typeIsCSR(inputType);
     bool outputTypeIsCSR = typeIsCSR(outputType);
 
+    RankedTensorType flippedInputType =
+        getSingleCompressedMatrixType(context, inputShape, inputTypeIsCSR,
+                                      inputValueType, ptrBitWidth, idxBitWidth);
+
     // Add a graphblas.convert_layout op if the input and output compression
     // types are the same
     if (inputTypeIsCSR == outputTypeIsCSR) {
       // TODO consider separating this out into its own rewrite pattern
-      MLIRContext *context = op.getContext();
-      Type inputTensorValueType = inputType.getElementType();
-      llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
-      RankedTensorType newType =
-          inputTypeIsCSR
-              ? getCSCTensorType(context, inputShape, inputTensorValueType)
-              : getCSRTensorType(context, inputShape, inputTensorValueType);
-      graphblas::ConvertLayoutOp newConvertLayoutOp =
-          rewriter.create<graphblas::ConvertLayoutOp>(loc, newType,
-                                                      inputTensor);
-      Value newLayOutInputTensor = newConvertLayoutOp.getResult();
-      graphblas::TransposeOp newTransposeOp =
-          rewriter.create<graphblas::TransposeOp>(loc, outputType,
-                                                  newLayOutInputTensor);
+      Value flippedInput = rewriter.create<graphblas::ConvertLayoutOp>(
+          loc, flippedInputType, inputTensor);
+      Value transposed = rewriter.create<graphblas::TransposeOp>(
+          loc, outputType, flippedInput);
 
-      rewriter.replaceOp(op, newTransposeOp.getResult());
+      rewriter.replaceOp(op, transposed);
 
       return success();
     }
 
     // Cast types
     Value output = callDupTensor(rewriter, module, loc, inputTensor);
-    if (inputTypeIsCSR) {
-      output = convertToExternalCSC(rewriter, module, loc, output);
-    } else {
-      output = convertToExternalCSR(rewriter, module, loc, output);
-    }
+    output = castToPtr8(rewriter, module, loc, output);
+    output = castToTensor(rewriter, module, loc, output, flippedInputType);
 
     // Swap sizes
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
@@ -614,6 +609,7 @@ public:
   using OpRewritePattern<graphblas::ReduceToVectorOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::ReduceToVectorOp op,
                                 PatternRewriter &rewriter) const override {
+    MLIRContext *context = op.getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -630,32 +626,35 @@ public:
     if ((axis == 0 && matrixTypeIsCSR) || (axis == 1 && !matrixTypeIsCSR)) {
       // TODO consider moving this out to its own rewrite pattern
 
-      MLIRContext *context = op.getContext();
+      sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+          sparse_tensor::getSparseTensorEncoding(matrixType);
+      unsigned ptrBitWidth = sparseEncoding.getPointerBitWidth();
+      unsigned idxBitWidth = sparseEncoding.getIndexBitWidth();
 
-      RankedTensorType newMatrixType =
-          matrixTypeIsCSR ? getCSCTensorType(context, matrixShape, elementType)
-                          : getCSRTensorType(context, matrixShape, elementType);
-      graphblas::ConvertLayoutOp newConvertLayoutOp =
-          rewriter.create<graphblas::ConvertLayoutOp>(loc, newMatrixType,
-                                                      matrix);
-      Value newLayoutInputTensor = newConvertLayoutOp.getResult();
+      RankedTensorType flippedMatrixType =
+          getSingleCompressedMatrixType(context, matrixShape, matrixTypeIsCSR,
+                                        elementType, ptrBitWidth, idxBitWidth);
+      Value convertedTensor = rewriter.create<graphblas::ConvertLayoutOp>(
+          loc, flippedMatrixType, matrix);
       Type originalVectorType = op->getResultTypes().front();
-      graphblas::ReduceToVectorOp newReduceOp =
-          rewriter.create<graphblas::ReduceToVectorOp>(
-              loc, originalVectorType, newLayoutInputTensor, aggregator, axis);
+      Value reducedResult = rewriter.create<graphblas::ReduceToVectorOp>(
+          loc, originalVectorType, convertedTensor, aggregator, axis);
 
-      rewriter.replaceOp(op, newReduceOp.getResult());
+      rewriter.replaceOp(op, reducedResult);
 
       return success();
     }
 
-    if (matrixShape[0] != -1 || matrixShape[1] != -1) {
+    // TODO: why is this code here? We need a higher level strategy to either
+    // reject sparse tensors
+    // TODO:   with hardcoded shape or to automatically convert them to "?" for
+    // every graphblas op
+    // TODO:   as part of the structuralize passes
+    /*if (matrixShape[0] != -1 || matrixShape[1] != -1) {
       // TODO consider moving this out to its own rewrite pattern
 
       // TODO this casting doesn't actually safely lower down to the LLVM
       // dialect since it doesn't survive the --sparse-tensor-conversion pass
-
-      MLIRContext *context = op.getContext();
 
       static const ArrayRef<int64_t> newMatrixShape = {-1, -1};
       RankedTensorType newMatrixType =
@@ -679,7 +678,7 @@ public:
       rewriter.replaceOp(op, castVector);
 
       return success();
-    }
+    }*/
 
     Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
@@ -716,11 +715,11 @@ public:
     Value matrixValues = rewriter.create<sparse_tensor::ToValuesOp>(
         loc, memref1DValueType, matrix);
 
-    int64_t outputLength = (axis == 1) ? matrixShape[0] : matrixShape[1];
-    ArrayRef<int64_t> outputShape = {outputLength};
-    Value output = callEmpty(rewriter, module, loc, matrix, outputShape);
+    ValueRange outputShape = {len_dense_dim};
 
-    callResizeDim(rewriter, module, loc, output, c0, len_dense_dim);
+    RankedTensorType vectorType = getCompressedVectorType(context, elementType);
+    Value output =
+        callNewTensor(rewriter, module, loc, outputShape, vectorType);
 
     scf::ForOp nnzLoop =
         rewriter.create<scf::ForOp>(loc, c0, len_dense_dim, c1, ValueRange{c0});
@@ -1375,7 +1374,6 @@ private:
     callResizeDim(rewriter, module, loc, C, c0, nrow);
     callResizeDim(rewriter, module, loc, C, c1, ncol);
     callResizePointers(rewriter, module, loc, C, c1, nrow_plus_one);
-    C = convertToExternalCSR(rewriter, module, loc, C);
 
     Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memref1DI64Type, A, c1);
@@ -1479,7 +1477,6 @@ private:
     Value nnz = rewriter.create<graphblas::NumValsOp>(loc, C);
     callResizeIndex(rewriter, module, loc, C, c1, nnz);
     callResizeValues(rewriter, module, loc, C, nnz);
-    C = convertToExternalCSR(rewriter, module, loc, C);
     Value Cj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
                                                            C, c1);
     Value Cx =
@@ -2231,19 +2228,11 @@ public:
 
     unsigned rank = aType.getRank(); // ranks guaranteed to be equal
 
-    Value output;
+    Value output = callEmptyLike(rewriter, module, loc, a);
     if (rank == 2) {
-      Value outputX = callEmptyLike(rewriter, module, loc, a);
-      computeMatrixElementWise(rewriter, module, a, b, outputX, unionOperator,
+      computeMatrixElementWise(rewriter, module, a, b, output, unionOperator,
                                /* intersect */ false);
-      // Convert to same ordering as inputs
-      if (typeIsCSR(aType)) {
-        output = convertToExternalCSR(rewriter, module, loc, outputX);
-      } else {
-        output = convertToExternalCSC(rewriter, module, loc, outputX);
-      }
     } else {
-      output = callEmptyLike(rewriter, module, loc, a);
       computeVectorElementWise(rewriter, module, a, b, output, unionOperator,
                                /* intersect */ false);
     }
@@ -2274,19 +2263,11 @@ public:
 
     unsigned rank = aType.getRank(); // ranks guaranteed to be equal
 
-    Value output;
+    Value output = callEmptyLike(rewriter, module, loc, a);
     if (rank == 2) {
-      Value outputX = callEmptyLike(rewriter, module, loc, a);
-      computeMatrixElementWise(rewriter, module, a, b, outputX,
+      computeMatrixElementWise(rewriter, module, a, b, output,
                                intersectOperator, /* intersect */ true);
-      // Convert to same ordering as inputs
-      if (typeIsCSR(aType)) {
-        output = convertToExternalCSR(rewriter, module, loc, outputX);
-      } else {
-        output = convertToExternalCSC(rewriter, module, loc, outputX);
-      }
     } else {
-      output = callEmptyLike(rewriter, module, loc, a);
       computeVectorElementWise(rewriter, module, a, b, output,
                                intersectOperator, /* intersect */ true);
     }
