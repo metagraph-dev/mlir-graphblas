@@ -43,25 +43,32 @@ bool typeIsCSR(mlir::Type inputType);
 bool typeIsCSC(mlir::Type inputType);
 mlir::RankedTensorType getCompressedVectorType(mlir::MLIRContext *context,
                                                mlir::ArrayRef<int64_t> shape,
+                                               mlir::Type valueType,
+                                               unsigned ptrBitWidth,
+                                               unsigned idxBitWidth);
+mlir::RankedTensorType getCompressedVectorType(mlir::MLIRContext *context,
                                                mlir::Type valueType);
-mlir::RankedTensorType getCSRTensorType(mlir::MLIRContext *context,
-                                        llvm::ArrayRef<int64_t> shape,
-                                        mlir::Type valueType);
-mlir::RankedTensorType getCSCTensorType(mlir::MLIRContext *context,
-                                        llvm::ArrayRef<int64_t> shape,
-                                        mlir::Type valueType);
+mlir::RankedTensorType
+getSingleCompressedMatrixType(mlir::MLIRContext *context,
+                              mlir::ArrayRef<int64_t> shape,
+                              bool columnOriented, mlir::Type valueType,
+                              unsigned ptrBitWidth, unsigned idxBitWidth);
+mlir::RankedTensorType getCSRType(mlir::MLIRContext *context,
+                                  mlir::Type valueType);
+mlir::RankedTensorType getCSCType(mlir::MLIRContext *context,
+                                  mlir::Type valueType);
 
 int64_t getRank(mlir::Type inputType);
 int64_t getRank(mlir::Value inputValue);
 
-mlir::Value convertToExternalCSR(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
-                                 mlir::Location loc, mlir::Value input);
-mlir::Value convertToExternalCSC(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
-                                 mlir::Location loc, mlir::Value input);
-mlir::Value callEmpty(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
-                      mlir::Location loc, mlir::Value inputTensor,
-                      llvm::ArrayRef<int64_t> resultShape,
-                      CompressionType outputCompressionType);
+mlir::Value castToPtr8(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                       mlir::Location loc, mlir::Value input);
+mlir::Value castToTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                         mlir::Location loc, mlir::Value input,
+                         mlir::RankedTensorType tensorType);
+mlir::Value callNewTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                          mlir::Location loc, mlir::ValueRange shape,
+                          mlir::RankedTensorType tensorType);
 mlir::Value callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                           mlir::Location loc, mlir::Value tensor);
 mlir::Value callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,

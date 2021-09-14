@@ -31,6 +31,7 @@ _standard_passes = (
 )
 
 
+# TODO: eliminate this and all functions; extract required pieces into MLIRFunctionBuilder
 class BaseFunction:
     func_name = None
     _compiled = None  # (engine, passes, callable)
@@ -61,33 +62,17 @@ class BaseFunction:
   indexBitWidth = 64
 }>
 
-#CSX64 = #sparse_tensor.encoding<{
-  dimLevelType = [ "dense", "compressed" ],
-  pointerBitWidth = 64,
-  indexBitWidth = 64
-}>
-
 #CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
+#map1d = affine_map<(d0)[s0, s1] -> (d0 * s1 + s0)>
+
 module  {
-    func private @cast_csr_to_csx(tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSX64>
-    func private @cast_csc_to_csx(tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSX64>
-    func private @cast_csx_to_csr(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSR64>
-    func private @cast_csx_to_csc(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSC64>
-    
-    func private @ptr8_to_matrix(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSX64>
-    func private @ptr8_to_vector(!llvm.ptr<i8>) -> tensor<?xf64, #CV64>
-    func private @matrix_to_ptr8(tensor<?x?xf64, #CSX64>) -> !llvm.ptr<i8>
-    func private @vector_to_ptr8(tensor<?xf64, #CV64>) -> !llvm.ptr<i8>
-    
-    func private @delSparseMatrix(tensor<?x?xf64, #CSX64>) -> ()
-    func private @delSparseVector(tensor<?xf64, #CV64>) -> ()
-    func private @dup_matrix(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSX64>
-    func private @dup_vector(tensor<?xf64, #CV64>) -> tensor<?xf64, #CV64>
+    func private @choose_first(i64, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
+    func private @choose_uniform(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
 
     {{ body }}
 
