@@ -113,6 +113,7 @@ module  {
 
         engine.add(mlir, passes)
         func = engine[self.func_name]
+        func.builder = self
         self._compiled = (engine, tuple(passes), func)
         return func
 

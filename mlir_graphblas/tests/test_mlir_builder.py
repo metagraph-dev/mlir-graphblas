@@ -119,6 +119,21 @@ def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine, aliases: Alias
     assert np.isclose(dense_input_tensor, densify_csc(output_tensor)).all()
 
 
+def test_builder_attribute(engine: MlirJitEngine, aliases: AliasMap):
+    ir_builder = MLIRFunctionBuilder(
+        "no_op",
+        input_types=["tensor<?x?xf64, #CSR64>"],
+        return_types=("tensor<?x?xf64, #CSR64>",),
+        aliases=aliases,
+    )
+    (input_var,) = ir_builder.inputs
+    ir_builder.return_vars(input_var)
+
+    no_op = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    assert no_op.builder == ir_builder
+
+
 def test_ir_builder_triple_convert_layout(engine: MlirJitEngine, aliases: AliasMap):
     # Build Function
 
@@ -465,97 +480,6 @@ numpy_dense_result
 np.isclose(dense_result, numpy_dense_result)
 {np.isclose(dense_result, numpy_dense_result)}
 """
-
-    return
-
-
-def test_ir_project_and_filter(engine: MlirJitEngine, aliases: AliasMap):
-    # Build Function
-    ir_builder = MLIRFunctionBuilder(
-        "left_project_and_filter",
-        input_types=["tensor<?x?xf64, #CSR64>"],
-        return_types=["tensor<?x?xf64, #CSR64>"],
-        aliases=aliases,
-    )
-    (M,) = ir_builder.inputs
-    M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSC64>")
-    left_projection = ir_builder.graphblas.matrix_multiply(M, M_T, "plus_times")
-    zero_f64 = ir_builder.constant(0.0, "f64")
-    filtered = ir_builder.graphblas.matrix_select(left_projection, [zero_f64], ["gt"])
-    ir_builder.return_vars(filtered)
-    left_project_and_filter = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
-
-    # Test Results
-    r"""
-    0  1  2  3
-    |\ | /|\ |\
-    | \|/ | \| \
-    5  6  7  8  9
-    """
-    # fmt: off
-    dense_input_tensor = np.array(
-        [  #   0   1   2   3
-            [  1,  0,  0,  0], # 5
-            [ -9,  1,  1,  0], # 6
-            [  0,  0,  1,  0], # 7
-            [  0,  0,  1,  1], # 8
-            [  0,  0,  0, -9], # 9
-        ],
-        dtype=np.float64,
-    )
-    # fmt: on
-    input_tensor = sparsify_array(dense_input_tensor, [False, True])
-
-    result = left_project_and_filter(input_tensor)
-    dense_result = densify_csr(result)
-
-    expected_dense_result = dense_input_tensor @ dense_input_tensor.T
-    expected_dense_result[expected_dense_result < 0] = 0
-
-    assert np.all(dense_result == expected_dense_result)
-
-    return
-
-
-def test_ir_scan_statistics(engine: MlirJitEngine, aliases: AliasMap):
-    # Build Function
-    ir_builder = MLIRFunctionBuilder(
-        "scan_statistics",
-        input_types=["tensor<?x?xf64, #CSR64>"],
-        return_types=["index"],
-        aliases=aliases,
-    )
-    (A,) = ir_builder.inputs
-    L = ir_builder.graphblas.matrix_select(A, [], ["tril"])
-    L_T = ir_builder.graphblas.transpose(L, "tensor<?x?xf64, #CSC64>")
-    A_triangles = ir_builder.graphblas.matrix_multiply(A, L_T, "plus_pair", mask=A)
-    tri = ir_builder.graphblas.reduce_to_vector(A_triangles, "plus", 1)
-    answer = ir_builder.graphblas.vector_argmax(tri)
-    ir_builder.return_vars(answer)
-    scan_statistics = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
-
-    # Test Results
-    dense_input_tensor = np.array(
-        [
-            [0, 1, 0, 1, 1, 0, 0, 0],
-            [1, 0, 0, 1, 1, 0, 0, 0],
-            [0, 0, 0, 0, 1, 1, 1, 1],
-            [1, 1, 0, 0, 1, 0, 0, 0],
-            [1, 1, 1, 1, 0, 0, 0, 0],
-            [0, 0, 1, 0, 0, 0, 1, 0],
-            [0, 0, 1, 0, 0, 1, 0, 0],
-            [0, 0, 1, 0, 0, 0, 0, 0],
-        ],
-        dtype=np.float64,
-    )
-    input_tensor = sparsify_array(dense_input_tensor, [False, True])
-
-    result = scan_statistics(input_tensor)
-
-    # valid results are in {0, 1, 3, 4}, but we choose the lowest index
-    expected_result = 0
-
-    assert result == expected_result
 
     return
 

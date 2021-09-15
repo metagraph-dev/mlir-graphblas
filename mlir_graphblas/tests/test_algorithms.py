@@ -1,6 +1,12 @@
 import numpy as np
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 import mlir_graphblas.algorithms as mlalgo
+from .jit_engine_test_utils import (
+    sparsify_array,
+    densify_csr,
+    densify_csc,
+    densify_vector,
+)
 
 
 def test_triangle_count():
@@ -102,6 +108,37 @@ def test_mssp():
     assert (w.values == [14, 0, 9, 11, 7, 10, 4, 3, 5, 3, 0, 12, 4, 9]).all()
 
 
+def test_left_bipartite_project_and_filter():
+    # Test Results
+    r"""
+    0  1  2  3
+    |\ | /|\ |\
+    | \|/ | \| \
+    5  6  7  8  9
+    """
+    # fmt: off
+    dense_input_tensor = np.array(
+        [  #   0   1   2   3
+            [  1,  0,  0,  0], # 5
+            [ -9,  1,  1,  0], # 6
+            [  0,  0,  1,  0], # 7
+            [  0,  0,  1,  1], # 8
+            [  0,  0,  0, -9], # 9
+        ],
+        dtype=np.float64,
+    )
+    # fmt: on
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    result = mlalgo.left_bipartite_project_and_filter(input_tensor)
+    dense_result = densify_csr(result)
+
+    expected_dense_result = dense_input_tensor @ dense_input_tensor.T
+    expected_dense_result[expected_dense_result < 0] = 0
+
+    assert np.all(dense_result == expected_dense_result)
+
+
 def test_vertex_nomination():
     # fmt: off
     indices = np.array(
@@ -137,6 +174,31 @@ def test_vertex_nomination():
     v2 = MLIRSparseTensor(indices, values, sizes, sparsity)
     w2 = mlalgo.vertex_nomination(m, v2)
     assert w2 == 3
+
+
+def test_scan_statistics():
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [0, 1, 0, 1, 1, 0, 0, 0],
+            [1, 0, 0, 1, 1, 0, 0, 0],
+            [0, 0, 0, 0, 1, 1, 1, 1],
+            [1, 1, 0, 0, 1, 0, 0, 0],
+            [1, 1, 1, 1, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0, 0, 0, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    result = mlalgo.scan_statistics(input_tensor)
+
+    # valid results are in {0, 1, 3, 4}, but we choose the lowest index
+    expected_result = 0
+
+    assert result == expected_result
 
 
 def test_pagerank():
