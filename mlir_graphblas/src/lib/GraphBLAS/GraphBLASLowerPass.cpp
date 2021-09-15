@@ -1057,11 +1057,6 @@ public:
   using OpRewritePattern<graphblas::ApplyOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::ApplyOp op,
                                 PatternRewriter &rewriter) const override {
-    ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable
-                                                          for debugging */
-    (void)module;
-    Location loc = op->getLoc();
-
     Value input, thunk;
     LogicalResult extractArgResult = extractApplyOpArgs(op, input, thunk);
     assert(!extractArgResult.failed() &&
@@ -1069,6 +1064,16 @@ public:
            "method) has been violated.");
 
     StringRef apply_operator = op.apply_operator();
+    if (apply_operator == "identity") {
+      // This doesn't produce a copy like we do for all the other operators
+      rewriter.replaceOp(op, input);
+      return success();
+    }
+
+    ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable
+                                                          for debugging */
+    (void)module;
+    Location loc = op->getLoc();
 
     Type valueType =
         input.getType().dyn_cast<RankedTensorType>().getElementType();
@@ -1131,15 +1136,23 @@ public:
       transformResult =
           llvm::TypeSwitch<Type, Value>(valueType)
               .Case<IntegerType>([&](IntegerType type) {
-                // TODO is there a bit hack we can do here?
-                //   x <  -1  => 0
-                //   x == -1  => -1
-                //   x ==  1  => 1
-                //   x >   1  => 0
+                // TODO we're missing python tests for all ops when given
+                // integer-typed tensors
+                unsigned bitWidth = type.getWidth();
+                Value shiftAmount = rewriter.create<ConstantOp>(
+                    loc, rewriter.getIntegerAttr(type, bitWidth - 1));
+                Value mask =
+                    rewriter.create<SignedShiftRightOp>(loc, val, shiftAmount);
+                Value maskPlusVal = rewriter.create<AddIOp>(loc, mask, val);
+                Value absVal = rewriter.create<XOrOp>(loc, mask, maskPlusVal);
                 Value c1_type = rewriter.create<ConstantOp>(
                     loc, rewriter.getIntegerAttr(type, 1));
+                Value absValIsOne_i1 = rewriter.create<CmpIOp>(
+                    loc, CmpIPredicate::eq, absVal, c1_type);
+                Value absValIsOne_type =
+                    rewriter.create<SignExtendIOp>(loc, type, absValIsOne_i1);
                 Value multipicativeInverse =
-                    rewriter.create<SignedDivIOp>(loc, c1_type, val);
+                    rewriter.create<AndOp>(loc, absValIsOne_type, val);
                 return multipicativeInverse;
               })
               .Case<FloatType>([&](FloatType type) {
@@ -1151,6 +1164,22 @@ public:
                     rewriter.create<DivFOp>(loc, c1_type, val);
                 return multipicativeInverse;
               });
+
+    } else if (apply_operator == "ainv") {
+
+      transformResult = llvm::TypeSwitch<Type, Value>(valueType)
+                            .Case<IntegerType>([&](IntegerType type) {
+                              Value c0_type = rewriter.create<ConstantOp>(
+                                  loc, rewriter.getIntegerAttr(type, 0));
+                              Value additiveInverse =
+                                  rewriter.create<SubIOp>(loc, c0_type, val);
+                              return additiveInverse;
+                            })
+                            .Case<FloatType>([&](FloatType type) {
+                              Value additiveInverse =
+                                  rewriter.create<NegFOp>(loc, val);
+                              return additiveInverse;
+                            });
 
     } else if (apply_operator == "abs") {
 

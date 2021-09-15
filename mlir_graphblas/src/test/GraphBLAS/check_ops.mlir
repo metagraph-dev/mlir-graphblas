@@ -132,6 +132,38 @@ module {
         return %answer : tensor<3xi64, #SparseVec64>
     }
 
+    // CHECK: func @apply_matrix_ainv(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @apply_matrix_ainv(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]] {apply_operator = "ainv"} : ([[CSR_TYPE]]) to [[CSR_TYPE]]
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "ainv" } : (tensor<2x3xi64, #CSR64>) to tensor<2x3xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x3xi64, #CSR64>
+    }
+   
+    // CHECK: func @apply_vector_ainv(%[[ARG0:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @apply_vector_ainv(%sparse_tensor: tensor<3xi64, #SparseVec64>) -> tensor<3xi64, #SparseVec64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]] {apply_operator = "ainv"} : ([[VECTOR_TYPE]]) to [[VECTOR_TYPE]]
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "ainv" } : (tensor<3xi64, #SparseVec64>) to tensor<3xi64, #SparseVec64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<3xi64, #SparseVec64>
+    }
+
+    // CHECK: func @apply_matrix_identity(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @apply_matrix_identity(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]] {apply_operator = "identity"} : ([[CSR_TYPE]]) to [[CSR_TYPE]]
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "identity" } : (tensor<2x3xi64, #CSR64>) to tensor<2x3xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<2x3xi64, #CSR64>
+    }
+   
+    // CHECK: func @apply_vector_identity(%[[ARG0:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @apply_vector_identity(%sparse_tensor: tensor<3xi64, #SparseVec64>) -> tensor<3xi64, #SparseVec64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]] {apply_operator = "identity"} : ([[VECTOR_TYPE]]) to [[VECTOR_TYPE]]
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "identity" } : (tensor<3xi64, #SparseVec64>) to tensor<3xi64, #SparseVec64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
+        return %answer : tensor<3xi64, #SparseVec64>
+    }
+
     // CHECK: func @apply_matrix_minv(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
     func @apply_matrix_minv(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]] {apply_operator = "minv"} : ([[CSR_TYPE]]) to [[CSR_TYPE]]

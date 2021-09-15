@@ -238,7 +238,8 @@ Applies in an element-wise fashion the function indicated by the ``apply_operato
 attribute to each element. The operator can be unary or binary. Binary operators
 require a thunk. The supported binary operators are "min" and "div". Unary operators
 cannot take a thunk. Unary operators cannot take a thunk. The supported unary
-operators are "abs" and "minv" (i.e. multiplicative inverse or `1/x`).
+operators are "abs", "minv" (i.e. multiplicative inverse or `1/x`), "ainv"
+(i.e. additive inverse or `-x`), and "identity".
 
 Using "minv" with integer types uses signed integer division and rounds towards
 zero. For example, `minv(-2) == 1 / -2 == 0`.
@@ -262,7 +263,7 @@ following:
 
 Note that the application only takes place for elements that are present in the
 matrix. Thus, the operation will not apply when the values are missing in the
-tensor. For example, `[0.0, 1.0, 0.0] / 2.0 == [0.0, 0.5, 0.0]`.
+tensor. For example, `1.0 / [ _ , 2.0,  _ ] == [ _ , 0.5,  _ ]`.
     
 Example:
 ^^^^^^^^
