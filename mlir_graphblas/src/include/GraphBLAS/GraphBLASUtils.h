@@ -37,7 +37,8 @@ static const llvm::StringSet<> supportedThunkNeedingSelectors{"gt"};
 
 static const llvm::StringSet<> supportedBinaryApplyOperators{"min", "div",
                                                              "fill"};
-static const llvm::StringSet<> supportedUnaryApplyOperators{"abs", "minv"};
+static const llvm::StringSet<> supportedUnaryApplyOperators{"abs", "minv",
+                                                            "ainv", "identity"};
 
 bool typeIsCSR(mlir::Type inputType);
 bool typeIsCSC(mlir::Type inputType);

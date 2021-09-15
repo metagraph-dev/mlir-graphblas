@@ -734,10 +734,20 @@ def test_ir_reduce_to_vector(
     reduced_rows_clamped = ir_builder.graphblas.apply(
         reduced_rows, "min", right=zero_scalar
     )
+    reduced_rows_clamped = ir_builder.graphblas.apply(reduced_rows_clamped, "identity")
+
     reduced_columns_abs = ir_builder.graphblas.apply(reduced_columns, "abs")
+    reduced_columns_abs = ir_builder.graphblas.apply(reduced_columns_abs, "identity")
+    reduced_columns_negative_abs = ir_builder.graphblas.apply(reduced_columns, "ainv")
+    reduced_columns_negative_abs = ir_builder.graphblas.apply(
+        reduced_columns_negative_abs, "identity"
+    )
 
     ir_builder.return_vars(
-        reduced_rows, reduced_columns, reduced_rows_clamped, reduced_columns_abs
+        reduced_rows,
+        reduced_columns,
+        reduced_rows_clamped,
+        reduced_columns_negative_abs,
     )
     reduce_func = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
@@ -763,13 +773,13 @@ def test_ir_reduce_to_vector(
         reduced_rows,
         reduced_columns,
         reduced_rows_clamped,
-        reduced_columns_abs,
+        reduced_columns_negative_abs,
     ) = reduce_func(input_tensor)
 
     reduced_rows = densify_vector(reduced_rows)
     reduced_columns = densify_vector(reduced_columns)
     reduced_rows_clamped = densify_vector(reduced_rows_clamped)
-    reduced_columns_abs = densify_vector(reduced_columns_abs)
+    reduced_columns_negative_abs = densify_vector(reduced_columns_negative_abs)
 
     expected_reduced_rows = dense_input_tensor.sum(axis=1)
     expected_reduced_columns = (
@@ -779,12 +789,12 @@ def test_ir_reduce_to_vector(
     expected_reduced_rows_clamped = np.copy(expected_reduced_rows)
     expected_reduced_rows_clamped[expected_reduced_rows_clamped > 0] = 0
 
-    expected_reduced_columns_abs = np.abs(expected_reduced_columns)
+    expected_reduced_columns_negative_abs = -np.abs(expected_reduced_columns)
 
     assert np.all(reduced_rows == expected_reduced_rows)
     assert np.all(reduced_columns == expected_reduced_columns)
     assert np.all(reduced_rows_clamped == expected_reduced_rows_clamped)
-    assert np.all(reduced_columns_abs == expected_reduced_columns_abs)
+    assert np.all(reduced_columns_negative_abs == expected_reduced_columns_negative_abs)
 
     return
 

@@ -572,7 +572,7 @@ class GraphBLAS_ReduceToScalar(BaseOp):
 class GraphBLAS_Apply(BaseOp):
     dialect = "graphblas"
     name = "apply"
-    allowed_unary_ops = {"abs", "minv"}
+    allowed_unary_ops = {"abs", "minv", "ainv", "identity"}
     allowed_binary_ops = {"min", "div", "fill"}
     allowed_ops = allowed_unary_ops | allowed_binary_ops
 
