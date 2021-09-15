@@ -782,16 +782,17 @@ def test_ir_diag(
 
     # Test Results
     dense_input_vector = np.array(
-        [1, 0, -2, 3],
+        [0, 0, 0, 1, 0, -2, 0, 0],
         dtype=np_type,
     )
     input_vector = sparsify_array(dense_input_vector, [True])
     dense_input_matrix = np.array(
         [
-            [1, 7, 7, 7],
-            [0, 0, 7, 0],
-            [0, 7, 2, 0],
-            [7, 7, 0, 3],
+            [0, 7, 7, 0, 7],
+            [0, 1, 7, 0, 0],
+            [0, 1, 0, 7, 0],
+            [0, 7, 0, 2, 0],
+            [7, 7, 0, 0, 0],
         ],
         dtype=np_type,
     )

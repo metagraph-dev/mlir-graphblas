@@ -2759,8 +2759,12 @@ private:
 
     Value outputPointers = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memref1DI64Type, output, c1);
+    Value initialVectorIndicesValue =
+        rewriter.create<memref::LoadOp>(loc, vectorIndices, c0);
+    Value vectorLengthMinusOne = rewriter.create<SubIOp>(loc, vectorLength, c1);
     scf::ForOp pointersUpdateLoop = rewriter.create<scf::ForOp>(
-        loc, c0, vectorLength, c1, ValueRange{c0_i64, c0, c0_i64});
+        loc, c0, vectorLength, c1,
+        ValueRange{c0_i64, c0, initialVectorIndicesValue});
     {
       rewriter.setInsertionPointToStart(pointersUpdateLoop.getBody());
       Value pointersPosition = pointersUpdateLoop.getInductionVar();
@@ -2777,11 +2781,16 @@ private:
       Value rowHasValue =
           rewriter.create<CmpIOp>(op.getLoc(), CmpIPredicate::eq,
                                   vectorIndicesValue, pointersPosition_i64);
+      Value notAtLastIteration =
+          rewriter.create<CmpIOp>(op.getLoc(), CmpIPredicate::ne,
+                                  pointersPosition, vectorLengthMinusOne);
+      Value mustUpdate =
+          rewriter.create<AndOp>(loc, notAtLastIteration, rowHasValue);
 
-      scf::IfOp ifRowHasValueBlock = rewriter.create<scf::IfOp>(
-          loc, TypeRange{int64Type, indexType, int64Type}, rowHasValue, true);
+      scf::IfOp ifMustUpdateBlock = rewriter.create<scf::IfOp>(
+          loc, TypeRange{int64Type, indexType, int64Type}, mustUpdate, true);
       {
-        rewriter.setInsertionPointToStart(ifRowHasValueBlock.thenBlock());
+        rewriter.setInsertionPointToStart(ifMustUpdateBlock.thenBlock());
         Value nextPtr_i64 = rewriter.create<mlir::AddIOp>(loc, ptr_i64, c1_i64);
         Value nextVectorIndicesPosition =
             rewriter.create<mlir::AddIOp>(loc, vectorIndicesPosition, c1);
@@ -2793,16 +2802,16 @@ private:
                             nextUpdatedVectorIndicesValue});
       }
       {
-        rewriter.setInsertionPointToStart(ifRowHasValueBlock.elseBlock());
+        rewriter.setInsertionPointToStart(ifMustUpdateBlock.elseBlock());
         rewriter.create<scf::YieldOp>(
             loc,
             ValueRange{ptr_i64, vectorIndicesPosition, vectorIndicesValue});
       }
-      rewriter.setInsertionPointAfter(ifRowHasValueBlock);
+      rewriter.setInsertionPointAfter(ifMustUpdateBlock);
 
-      Value updatedPtr_i64 = ifRowHasValueBlock.getResult(0);
-      Value updatedVectorIndicesPosition = ifRowHasValueBlock.getResult(1);
-      Value updatedVectorIndicesValue = ifRowHasValueBlock.getResult(2);
+      Value updatedPtr_i64 = ifMustUpdateBlock.getResult(0);
+      Value updatedVectorIndicesPosition = ifMustUpdateBlock.getResult(1);
+      Value updatedVectorIndicesValue = ifMustUpdateBlock.getResult(2);
 
       rewriter.create<scf::YieldOp>(
           loc, ValueRange{updatedPtr_i64, updatedVectorIndicesPosition,
@@ -2980,8 +2989,9 @@ private:
 
     Value outputPointers = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memref1DI64Type, output, c0);
-    Value nrows_i64 = rewriter.create<IndexCastOp>(loc, nrows, int64Type);
-    rewriter.create<memref::StoreOp>(loc, nrows_i64, outputPointers, c1);
+    Value outputNNZ_i64 =
+        rewriter.create<IndexCastOp>(loc, outputNNZ, int64Type);
+    rewriter.create<memref::StoreOp>(loc, outputNNZ_i64, outputPointers, c1);
 
     Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
         loc, memref1DI64Type, output, c0);
