@@ -11,6 +11,7 @@ from mlir_graphblas.types import AliasMap, SparseEncodingType, Type
 from .sparse_utils import MLIRSparseTensor
 from .engine import MlirJitEngine
 
+
 graphblas_opt_passes = (
     "--graphblas-structuralize",
     "--graphblas-optimize",
@@ -313,6 +314,32 @@ def mssp(graph: MLIRSparseTensor, matrix: MLIRSparseTensor) -> MLIRSparseTensor:
 
     w = _mssp(graph, matrix)
     return w
+
+
+_left_bipartite_project_and_filter = None
+
+
+def left_bipartite_project_and_filter(graph: MLIRSparseTensor) -> MLIRSparseTensor:
+    global _left_bipartite_project_and_filter
+    if _left_bipartite_project_and_filter is None:
+        # Build Function
+        ir_builder = MLIRFunctionBuilder(
+            "left_project_and_filter",
+            input_types=["tensor<?x?xf64, #CSR64>"],
+            return_types=["tensor<?x?xf64, #CSR64>"],
+            aliases=_build_common_aliases(),
+        )
+        (M,) = ir_builder.inputs
+        M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSC64>")
+        left_projection = ir_builder.graphblas.matrix_multiply(M, M_T, "plus_times")
+        zero_f64 = ir_builder.constant(0.0, "f64")
+        filtered = ir_builder.graphblas.matrix_select(
+            left_projection, [zero_f64], ["gt"]
+        )
+        ir_builder.return_vars(filtered)
+        _left_bipartite_project_and_filter = ir_builder.compile()
+
+    return _left_bipartite_project_and_filter(graph)
 
 
 _vertex_nomination = None
