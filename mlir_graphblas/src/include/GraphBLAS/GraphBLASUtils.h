@@ -10,7 +10,7 @@
 #include <set>
 #include <string>
 
-enum CompressionType { CSR, CSC, EITHER, SPARSE_VEC };
+enum CompressionType { CSR, CSC, EITHER };
 
 static const llvm::StringSet<> supportedIntersectOperators{
     "plus", "minus", "times", "div", "min", "max", "first", "second"};
@@ -40,6 +40,8 @@ static const llvm::StringSet<> supportedBinaryApplyOperators{"min", "div",
 static const llvm::StringSet<> supportedUnaryApplyOperators{"abs", "minv",
                                                             "ainv", "identity"};
 
+bool hasRowOrdering(mlir::Type inputType);
+bool hasColumnOrdering(mlir::Type inputType);
 bool typeIsCSR(mlir::Type inputType);
 bool typeIsCSC(mlir::Type inputType);
 mlir::RankedTensorType getCompressedVectorType(mlir::MLIRContext *context,

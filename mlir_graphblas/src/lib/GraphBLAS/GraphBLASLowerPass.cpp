@@ -2872,7 +2872,7 @@ private:
                                  resultTensorType);
     callResizeDim(rewriter, module, loc, output, c0, nrows);
 
-    // We do two loops, one to find the outoput vector's nnz
+    // We do two loops, one to find the output vector's nnz
     // and one to fill up the output's indices and values.
     // We have to get the nnz first to allocate space in the
     // output vector correctly.
@@ -3245,8 +3245,9 @@ public:
     // Else, fill output row with random selection from input row
     rewriter.setInsertionPointToStart(ifCopy.elseBlock());
 
-    MLIRContext *context = module.getContext();
-    FuncOp chooseFunc = module.lookupSymbol<FuncOp>(chooseNSymbol);
+    // These are unused. Should they be removed?
+    // MLIRContext *context = module.getContext();
+    // FuncOp chooseFunc = module.lookupSymbol<FuncOp>(chooseNSymbol);
 
     // TODO: Verify signature of this function is what we expect
 

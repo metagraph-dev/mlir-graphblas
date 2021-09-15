@@ -28,21 +28,8 @@ func @num_cols_wrapper(%argA: tensor<1xi64>) -> index {
 
 // -----
 
-func @dup_warpper(%argA: tensor<1x1xi64>) -> tensor<1x1xi64> {
-  %answer = graphblas.dup %argA : tensor<1x1xi64> // expected-error {{operand #0 must have sparse tensor attribute}}
+func @dup_wrapper(%argA: tensor<1x1xi64>) -> tensor<1x1xi64> {
+  %answer = graphblas.dup %argA : tensor<1x1xi64> // expected-error {{operand must be a sparse tensor}}
   return %answer : tensor<1x1xi64>
 }
 
-// -----
-
-#E = #sparse_tensor.encoding<{
-  dimLevelType = [ "compressed", "compressed" ],
-  dimOrdering = affine_map<(i,j) -> (i,j)>,
-  pointerBitWidth = 64,
-  indexBitWidth = 64
-}>
-
-func @dup_warpper(%argA: tensor<1x1xi64, #E>) -> tensor<1x1xi64, #E> {
-  %answer = graphblas.dup %argA : tensor<1x1xi64, #E> // expected-error {{operand #0 must be in CSR or in CSC compression}}
-  return %answer : tensor<1x1xi64, #E>
-}
