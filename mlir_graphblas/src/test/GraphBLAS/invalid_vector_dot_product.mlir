@@ -26,7 +26,7 @@ module {
 module {
 
    func @vector_dot_product_wrapper(%argA: tensor<3xi64>, %argB: tensor<?xi64, #SparseVec64>) -> i64 {
-       %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_times" } : (tensor<3xi64>, tensor<?xi64, #SparseVec64>) to i64 // expected-error {{First argument must be a sparse vector or sparse matrix.}}
+       %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_times" } : (tensor<3xi64>, tensor<?xi64, #SparseVec64>) to i64 // expected-error {{1st operand must be a sparse tensor.}}
        return %answer : i64
    }
 

@@ -37,6 +37,8 @@ static const llvm::StringSet<> supportedBinaryApplyOperators{"min", "div",
                                                              "fill"};
 static const llvm::StringSet<> supportedUnaryApplyOperators{"abs", "minv"};
 
+bool hasRowOrdering(mlir::Type inputType);
+bool hasColumnOrdering(mlir::Type inputType);
 bool typeIsCSR(mlir::Type inputType);
 bool typeIsCSC(mlir::Type inputType);
 mlir::RankedTensorType getCompressedVectorType(mlir::MLIRContext *context,

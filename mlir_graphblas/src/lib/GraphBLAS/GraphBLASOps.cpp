@@ -29,87 +29,123 @@ using namespace mlir::graphblas;
 
 enum CompressionType { CSR, CSC, EITHER };
 
-// TODO: now redundant remove when possible
-static llvm::Optional<std::string>
-checkCompressedMatrix(Type inputType, int inputIndex,
-                      CompressionType compressionType) {
-  /*
-     Negative values for inputIndex indicate that the input type is the return
-     type. Otherwise, inputIndex indicates which arg inputType corresponds to.
+/// Utility function to check encoding attribute.
+static LogicalResult hasSparseEncodingAttr(RankedTensorType t) {
+  if (!sparse_tensor::getSparseTensorEncoding(t))
+    return failure();
+  return success();
+}
 
-     Returns llvm::None if the given tensor is valid.
+static LogicalResult verifySameShape(ArrayRef<int64_t> aShape,
+                                     ArrayRef<int64_t> bShape) {
+  if (aShape.size() != bShape.size())
+    return failure();
+  for (unsigned i = 0; i < aShape.size(); i++) {
+    if (aShape[i] != bShape[i])
+      return failure();
+  }
+  return success();
+}
+
+static LogicalResult verifySameShape(RankedTensorType aType,
+                                     RankedTensorType bType) {
+  ArrayRef<int64_t> aShape = aType.getShape();
+  ArrayRef<int64_t> bShape = bType.getShape();
+  return verifySameShape(aShape, bShape);
+}
+
+static llvm::Optional<std::string>
+checkMatrixEncoding(RankedTensorType tensorType,
+                    CompressionType compressionType) {
+  /*
+     Returns llvm::None if the given matrix is valid.
      Returns a string explaining the problem otherwise.
    */
-
-  std::string inputName = inputIndex < 0
-                              ? "Return value"
-                              : "Operand #" + std::to_string(inputIndex);
-
-  mlir::sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
-      mlir::sparse_tensor::getSparseTensorEncoding(inputType);
+  // Must have sparse encoding
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(tensorType);
   if (!sparseEncoding)
-    return inputName + " must be a sparse tensor.";
-
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  if (inputTensorType.getRank() != 2)
-    return inputName + " must have rank 2.";
-
+    return std::string("must be a sparse tensor.");
+  // Must be rank 2
+  if (tensorType.getRank() != 2)
+    return std::string("must have rank 2.");
+  // Must be [dense, compressed] dimLevelType (for currently available
+  // compression types)
   ArrayRef<mlir::sparse_tensor::SparseTensorEncodingAttr::DimLevelType>
       compression = sparseEncoding.getDimLevelType();
   if (compression[0] !=
           mlir::sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense ||
       compression[1] != mlir::sparse_tensor::SparseTensorEncodingAttr::
                             DimLevelType::Compressed)
-    return inputName + " must have CSR or CSC compression, i.e. must have "
+    return std::string("must have CSR or CSC compression, i.e. must have "
                        "dimLevelType = [ \"dense\", \"compressed\" ] in the "
-                       "sparse encoding.";
+                       "sparse encoding.");
 
   // Even if (compressionType == EITHER), we still need to check that the
   // dim ordering is present
   AffineMap dimOrdering = sparseEncoding.getDimOrdering();
+  if (!dimOrdering)
+    return std::string("dimOrdering must be present in sparse tensor encoding");
+  if (dimOrdering.getNumResults() != 2)
+    return std::string("dimOrdering must have exactly 2 outputs");
   unsigned dimOrdering0 = dimOrdering.getDimPosition(0);
   unsigned dimOrdering1 = dimOrdering.getDimPosition(1);
 
-  if (compressionType != EITHER) {
-
-    assert(compressionType == CSR || compressionType == CSC);
-
-    if (compressionType == CSR) {
-      if (dimOrdering0 != 0 || dimOrdering1 != 1)
-        return inputName + " must have CSR compression.";
-    } else if (compressionType == CSC) {
-      if (dimOrdering0 != 1 || dimOrdering1 != 0)
-        return inputName + " must have CSC compression.";
-    }
+  if (compressionType == CSR) {
+    if (dimOrdering0 != 0 || dimOrdering1 != 1)
+      return std::string("must have CSR compression.");
+  } else if (compressionType == CSC) {
+    if (dimOrdering0 != 1 || dimOrdering1 != 0)
+      return std::string("must have CSC compression.");
   }
 
   return llvm::None;
 }
 
-// TODO: now redundant remove me when possible.
-static llvm::Optional<std::string> checkCompressedVector(Type inputType,
-                                                         int inputIndex) {
-
-  std::string inputName = inputIndex < 0
-                              ? "Return value"
-                              : "Operand #" + std::to_string(inputIndex);
-
-  mlir::sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
-      mlir::sparse_tensor::getSparseTensorEncoding(inputType);
+static llvm::Optional<std::string>
+checkVectorEncoding(RankedTensorType tensorType) {
+  /*
+     Returns llvm::None if the given matrix is valid.
+     Returns a string explaining the problem otherwise.
+   */
+  // Must have sparse encoding
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(tensorType);
   if (!sparseEncoding)
-    return inputName + " must be a sparse tensor.";
-
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  if (inputTensorType.getRank() != 1)
-    return inputName + " must have rank 1.";
-
+    return std::string("must be a sparse tensor.");
+  // Must be rank 1
+  if (tensorType.getRank() != 1)
+    return std::string("must have rank 1.");
+  // Must be [compressed] dimLevelType (until we decide to support dense
+  // vectors)
   ArrayRef<mlir::sparse_tensor::SparseTensorEncodingAttr::DimLevelType>
       compression = sparseEncoding.getDimLevelType();
   if (compression[0] !=
       mlir::sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
-    return inputName +
-           " must be sparse, i.e. must have "
-           "dimLevelType = [ \"compressed\" ] in the sparse encoding.";
+    return std::string(
+        "must be sparse, i.e. must have "
+        "dimLevelType = [ \"compressed\" ] in the sparse encoding.");
+
+  return llvm::None;
+}
+
+static llvm::Optional<std::string> checkBitWidthMatch(RankedTensorType a,
+                                                      RankedTensorType b) {
+  sparse_tensor::SparseTensorEncodingAttr aEncoding =
+      sparse_tensor::getSparseTensorEncoding(a);
+  sparse_tensor::SparseTensorEncodingAttr bEncoding =
+      sparse_tensor::getSparseTensorEncoding(b);
+  unsigned aPtr = aEncoding.getPointerBitWidth();
+  unsigned bPtr = bEncoding.getPointerBitWidth();
+  if (aPtr != bPtr)
+    return "pointer bit widths do not match: " + std::to_string(aPtr) +
+           "!=" + std::to_string(bPtr);
+
+  unsigned aIdx = aEncoding.getIndexBitWidth();
+  unsigned bIdx = bEncoding.getIndexBitWidth();
+  if (aIdx != bIdx)
+    return "index bit widths do not match: " + std::to_string(aIdx) +
+           "!=" + std::to_string(bIdx);
 
   return llvm::None;
 }
@@ -143,58 +179,6 @@ static llvm::Optional<std::string> checkSemiring(StringRef semiring) {
   return llvm::None;
 }
 
-/// Utility function to check encoding attribute.
-static LogicalResult hasSparseEncodingAttr(RankedTensorType t) {
-  if (!sparse_tensor::getSparseTensorEncoding(t))
-    return failure();
-  return success();
-}
-
-/// Utility function to check if a 2d-tensor is in CSR or
-/// CSC format.
-static LogicalResult hasCSRorCSCEncoding(RankedTensorType t) {
-  assert(t.getRank() == 2 && "expect a 2d ranked tensor");
-  if (auto encoding = sparse_tensor::getSparseTensorEncoding(t)) {
-    auto compression = encoding.getDimLevelType();
-    if (((compression[0] ==
-          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense) &&
-         (compression[1] ==
-          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)) ||
-        ((compression[0] ==
-          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed) &&
-         (compression[1] ==
-          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense)))
-      return success();
-  }
-  return failure();
-}
-
-/// Utility function to check if a 2d-tensor has CSR format.
-static LogicalResult hasCSREncoding(RankedTensorType t) {
-  assert(t.getRank() == 2 && "expect a 2d ranked tensor");
-  if (auto encoding = sparse_tensor::getSparseTensorEncoding(t)) {
-    auto compression = encoding.getDimLevelType();
-    if (((compression[0] ==
-          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense) &&
-         (compression[1] ==
-          sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)))
-      return success();
-  }
-  return failure();
-}
-
-/// Utility function to check if a 1-d tensor is compressed.
-static LogicalResult hasCompressedEncoding(RankedTensorType t) {
-  assert(t.getRank() == 1 && "expect a 1d ranked tensor");
-  if (auto encoding = sparse_tensor::getSparseTensorEncoding(t)) {
-    auto compression = encoding.getDimLevelType();
-    if (compression[0] ==
-        sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
-      return success();
-  }
-  return failure();
-}
-
 //===--------------------------------------------------------------------===//
 // GraphBLAS Ops Methods
 //===--------------------------------------------------------------------===//
@@ -218,11 +202,16 @@ void NumColsOp::build(OpBuilder &builder, OperationState &result,
 
 static LogicalResult verify(NumValsOp op) {
   RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
-  if (failed(hasSparseEncodingAttr(inputType)))
-    return op.emitError("operand #0 must have sparse tensor attribute");
-  // Require sparse matrices to be either CSR or CSC
-  if (inputType.getRank() == 2 && failed(hasCSRorCSCEncoding(inputType)))
-    op.emitError("operand #0 must be in CSR or in CSC compression");
+  llvm::Optional<std::string> errMsg;
+  if (inputType.getRank() == 2) {
+    errMsg = checkMatrixEncoding(inputType, EITHER);
+    if (errMsg)
+      op.emitError("operand " + errMsg.getValue());
+  } else {
+    errMsg = checkVectorEncoding(inputType);
+    if (errMsg)
+      op.emitError("operand " + errMsg.getValue());
+  }
   return success();
 }
 
@@ -233,12 +222,11 @@ void NumValsOp::build(OpBuilder &builder, OperationState &result,
 }
 
 static LogicalResult verify(DupOp op) {
-  auto inputType = op.input().getType().cast<RankedTensorType>();
-  auto rank = inputType.getRank();
+  // Dup needs a sparse tensor, but otherwise works for any rank or compression
+  // type
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
   if (failed(hasSparseEncodingAttr(inputType)))
-    return op.emitError("operand #0 must have sparse tensor attribute");
-  if (rank == 2 && failed(hasCSRorCSCEncoding(inputType)))
-    return op.emitError("operand #0 must be in CSR or in CSC compression");
+    return op.emitError("operand must be a sparse tensor");
   return success();
 }
 
@@ -257,33 +245,34 @@ static LogicalResult verifyApplyArgs(T op, Value input) {
 
   ArrayRef<int64_t> inputShape = inputTensorType.getShape();
   ArrayRef<int64_t> resultShape = resultTensorType.getShape();
-  assert(inputShape.size() == resultShape.size() && "must be same size");
+  if (inputShape.size() != resultShape.size())
+    return op.emitError("operand and result must have the same rank");
+  for (unsigned i = 0; i < inputShape.size(); i++) {
+    if (inputShape[i] != resultShape[i])
+      return op.emitError("operand and result shapes must match");
+  }
 
-  if (failed(hasSparseEncodingAttr(inputTensorType)))
-    return op.emitError("operand #0 must have sparse tensor attribute");
-  if (failed(hasSparseEncodingAttr(resultTensorType)))
-    return op.emitError("result #0 must have sparse tensor attribute");
-
-  // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
-  // shapes using "?"
+  llvm::Optional<std::string> errMsg;
   if (resultTensorType.getRank() == 2) {
-    if (failed(hasCSRorCSCEncoding(inputTensorType)))
-      return op.emitError("operand #0 must be in CSR or in CSC compression");
+    errMsg = checkMatrixEncoding(inputTensorType, EITHER);
+    if (errMsg)
+      return op.emitError("operand " + errMsg.getValue());
 
-    if (failed(hasCSRorCSCEncoding(resultTensorType)))
-      return op.emitError("result #0 must be in CSR or in CSC compression");
-
-    if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
-      return op.emitError("Input shape does not match output shape.");
+    // Result must be ordered the same as input
+    if (hasRowOrdering(inputTensorType))
+      errMsg = checkMatrixEncoding(resultTensorType, CSR);
+    else
+      errMsg = checkMatrixEncoding(resultTensorType, CSC);
+    if (errMsg)
+      return op.emitError("result " + errMsg.getValue());
   } else {
-    if (failed(hasCompressedEncoding(inputTensorType)))
-      return op.emitError("operand #0 must be in compressed form");
+    errMsg = checkVectorEncoding(inputTensorType);
+    if (errMsg)
+      return op.emitError("operand " + errMsg.getValue());
 
-    if (failed(hasCompressedEncoding(resultTensorType)))
-      return op.emitError("result #0 must be in compressed form");
-
-    if (inputShape[0] != resultShape[0])
-      return op.emitError("Input shape does not match output shape.");
+    errMsg = checkVectorEncoding(resultTensorType);
+    if (errMsg)
+      return op.emitError("result " + errMsg.getValue());
   }
   return success();
 }
@@ -330,7 +319,7 @@ static LogicalResult verify(ApplyOp op) {
     if (thunk)
       return op.emitError("\"" + applyOperator +
                           "\""
-                          " is a unary opertator, but was given a thunk.");
+                          " is a unary operator, but was given a thunk.");
 
   } else {
     return op.emitError("\"" + applyOperator +
@@ -357,65 +346,59 @@ static LogicalResult verify(ApplyGenericOp op) {
 template <class T>
 static LogicalResult verifyMatrixMultiplyArgs(T op,
                                               bool checkResultTensorType) {
-  Type aType = op.a().getType();
-  Type bType = op.b().getType();
-  Type resultType = op.getResult().getType();
+  Type aOrigType = op.a().getType();
+  Type bOrigType = op.b().getType();
+  Type resultOrigType = op.getResult().getType();
 
-  int64_t aRank = getRank(aType);
-  int64_t bRank = getRank(bType);
+  RankedTensorType aType = aOrigType.cast<RankedTensorType>();
+  RankedTensorType bType = bOrigType.cast<RankedTensorType>();
 
-  if (aRank < 1 || aRank > 2)
-    return op.emitError(
-        "First argument must be a sparse vector or sparse matrix.");
-  if (bRank < 1 || bRank > 2)
-    return op.emitError(
-        "Second argument must be a sparse vector or sparse matrix.");
+  ArrayRef<int64_t> aShape = aType.getShape();
+  ArrayRef<int64_t> bShape = bType.getShape();
 
-  RankedTensorType aTensorType = aType.dyn_cast<RankedTensorType>();
-  RankedTensorType bTensorType = bType.dyn_cast<RankedTensorType>();
-
-  ArrayRef<int64_t> aShape = aTensorType.getShape();
-  ArrayRef<int64_t> bShape = bTensorType.getShape();
+  int64_t aRank = aType.getRank();
+  int64_t bRank = bType.getRank();
 
   int64_t resultRank = 0;
   ArrayRef<int64_t> resultShape;
-  Type resultElementType = resultType;
-  RankedTensorType resultTensorType;
+  Type resultElementType = resultOrigType;
+  RankedTensorType resultType;
 
   // Vector-vector result is a scalar; Otherwise, get the tensor properties of
   // the result
   if (checkResultTensorType) {
     if (aRank == 2 || bRank == 2) {
-      resultTensorType = resultType.dyn_cast<RankedTensorType>();
-      resultShape = resultTensorType.getShape();
-      resultRank = getRank(resultType);
-      resultElementType = resultTensorType.getElementType();
+      resultType = resultOrigType.cast<RankedTensorType>();
+      resultShape = resultType.getShape();
+      resultRank = resultType.getRank();
+      resultElementType = resultType.getElementType();
     }
+
+    if (aType.getElementType() != resultElementType)
+      return op.emitError(
+          "Result element type differs from the input element types.");
   }
 
-  if (aTensorType.getElementType() != bTensorType.getElementType())
+  if (aType.getElementType() != bType.getElementType())
     return op.emitError("Operand element types must be identical.");
 
   llvm::Optional<std::string> errMsg;
   if (aRank == 2 && bRank == 2) {
     // Matrix-Matrix
-    errMsg = checkCompressedMatrix(aType, 0, CSR);
+    errMsg = checkMatrixEncoding(aType, CSR);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("1st operand " + errMsg.getValue());
 
-    errMsg = checkCompressedMatrix(bType, 1, CSC);
+    errMsg = checkMatrixEncoding(bType, CSC);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("2nd operand " + errMsg.getValue());
 
     if (checkResultTensorType) {
-      errMsg = checkCompressedMatrix(resultType, -1, CSR);
+      errMsg = checkMatrixEncoding(resultType, CSR);
       if (errMsg)
-        return op.emitError(errMsg.getValue());
+        return op.emitError("result " + errMsg.getValue());
       if (resultShape[0] != aShape[0] || resultShape[1] != bShape[1])
         return op.emitError("Operand shapes incompatible with output shape.");
-      if (aTensorType.getElementType() != resultElementType)
-        return op.emitError(
-            "Result element type differs from the input element types.");
     }
 
     // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
@@ -424,89 +407,77 @@ static LogicalResult verifyMatrixMultiplyArgs(T op,
       return op.emitError("Operand shapes are incompatible.");
   } else if (aRank == 2 && bRank == 1) {
     // Matrix-Vector
-    errMsg = checkCompressedMatrix(aType, 0, CSR);
+    errMsg = checkMatrixEncoding(aType, CSR);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("1st operand " + errMsg.getValue());
 
-    errMsg = checkCompressedVector(bType, 1);
+    errMsg = checkVectorEncoding(bType);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("2nd operand " + errMsg.getValue());
 
     if (checkResultTensorType) {
-      errMsg = checkCompressedVector(resultType, -1);
+      errMsg = checkVectorEncoding(resultType);
       if (errMsg)
-        return op.emitError(errMsg.getValue());
+        return op.emitError("result " + errMsg.getValue());
 
       if (resultShape[0] != aShape[0])
         return op.emitError("Operand shapes incompatible with output shape.");
-      if (aTensorType.getElementType() != resultElementType)
-        return op.emitError(
-            "Result element type differs from the input element types.");
     }
     if (aShape[1] != bShape[0])
       return op.emitError("Operand shapes are incompatible.");
   } else if (aRank == 1 && bRank == 2) {
     // Vector-Matrix
-    errMsg = checkCompressedVector(aType, 0);
+    errMsg = checkVectorEncoding(aType);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("1st operand " + errMsg.getValue());
 
-    errMsg = checkCompressedMatrix(bType, 1, CSC);
+    errMsg = checkMatrixEncoding(bType, CSC);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("2nd operand " + errMsg.getValue());
 
     if (aShape[0] != bShape[0])
       return op.emitError("Operand shapes are incompatible.");
 
     if (checkResultTensorType) {
-      errMsg = checkCompressedVector(resultType, -1);
+      errMsg = checkVectorEncoding(resultType);
       if (errMsg)
-        return op.emitError(errMsg.getValue());
+        return op.emitError("result " + errMsg.getValue());
       if (resultShape[0] != bShape[1])
         return op.emitError("Operand shapes incompatible with output shape.");
-      if (aTensorType.getElementType() != resultElementType)
-        return op.emitError(
-            "Result element type differs from the input element types.");
     }
   } else {
     // Vector-Vector
-    errMsg = checkCompressedVector(aType, 0);
+    errMsg = checkVectorEncoding(aType);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("1st operand " + errMsg.getValue());
 
-    errMsg = checkCompressedVector(bType, 1);
+    errMsg = checkVectorEncoding(bType);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("2nd operand " + errMsg.getValue());
 
     if (aShape[0] != bShape[0])
       return op.emitError("Operand shapes are incompatible.");
-    if (aTensorType.getElementType() != resultElementType)
-      return op.emitError(
-          "Result element type differs from the input element types.");
   }
 
   Value mask = op.mask();
   if (mask) {
-    Type maskType = mask.getType();
+    RankedTensorType maskType = mask.getType().cast<RankedTensorType>();
 
     if (checkResultTensorType) {
+      ArrayRef<int64_t> maskShape = maskType.getShape();
       if (resultRank == 2) {
-        errMsg = checkCompressedMatrix(maskType, 2, CSR);
+        errMsg = checkMatrixEncoding(maskType, CSR);
         if (errMsg)
-          return op.emitError(errMsg.getValue());
+          return op.emitError("3rd operand (mask) " + errMsg.getValue());
 
-        RankedTensorType maskTensorType = maskType.dyn_cast<RankedTensorType>();
-        ArrayRef<int64_t> maskShape = maskTensorType.getShape();
         if (resultShape[0] != maskShape[0] || resultShape[1] != maskShape[1])
           return op.emitError(
               "Mask shape must match shape of matrix multiply result.");
       } else if (resultRank == 1) {
-        errMsg = checkCompressedVector(maskType, 2);
+        errMsg = checkVectorEncoding(maskType);
         if (errMsg)
-          return op.emitError(errMsg.getValue());
+          return op.emitError("3rd operand (mask) " + errMsg.getValue());
 
-        RankedTensorType maskTensorType = maskType.dyn_cast<RankedTensorType>();
-        ArrayRef<int64_t> maskShape = maskTensorType.getShape();
         if (resultShape[0] != maskShape[0])
           return op.emitError(
               "Mask shape must match shape of matrix multiply result.");
@@ -573,12 +544,11 @@ static LogicalResult verify(MatrixMultiplyReduceToScalarGenericOp op) {
 }
 
 static LogicalResult verify(VectorArgMinMaxOp op) {
-  Type vecType = op.vec().getType();
+  RankedTensorType vecType = op.vec().getType().cast<RankedTensorType>();
 
-  llvm::Optional<std::string> vecCompressionErrorMessage =
-      checkCompressedVector(vecType, 0);
-  if (vecCompressionErrorMessage)
-    return op.emitError(vecCompressionErrorMessage.getValue());
+  llvm::Optional<std::string> errMsg = checkVectorEncoding(vecType);
+  if (errMsg)
+    return op.emitError("operand " + errMsg.getValue());
 
   std::string minmax = op.minmax().str();
   if (minmax != "min" && minmax != "max")
@@ -590,89 +560,58 @@ static LogicalResult verify(VectorArgMinMaxOp op) {
 }
 
 static LogicalResult verify(VectorArgMinOp op) {
-  Type vecType = op.vec().getType();
+  RankedTensorType vecType = op.vec().getType().cast<RankedTensorType>();
 
-  llvm::Optional<std::string> vecCompressionErrorMessage =
-      checkCompressedVector(vecType, 0);
-  if (vecCompressionErrorMessage)
-    return op.emitError(vecCompressionErrorMessage.getValue());
+  llvm::Optional<std::string> errMsg = checkVectorEncoding(vecType);
+  if (errMsg)
+    return op.emitError("operand " + errMsg.getValue());
 
   return success();
 }
 
 static LogicalResult verify(VectorArgMaxOp op) {
-  Type vecType = op.vec().getType();
+  RankedTensorType vecType = op.vec().getType().cast<RankedTensorType>();
 
-  llvm::Optional<std::string> vecCompressionErrorMessage =
-      checkCompressedVector(vecType, 0);
-  if (vecCompressionErrorMessage)
-    return op.emitError(vecCompressionErrorMessage.getValue());
+  llvm::Optional<std::string> errMsg = checkVectorEncoding(vecType);
+  if (errMsg)
+    return op.emitError("operand " + errMsg.getValue());
 
   return success();
 }
 
 static LogicalResult verify(UpdateOp op) {
-  Type iType = op.input().getType();
-  Type oType = op.output().getType();
+  RankedTensorType iType = op.input().getType().cast<RankedTensorType>();
+  RankedTensorType oType = op.output().getType().cast<RankedTensorType>();
   Value mask = op.mask();
 
-  int64_t iRank = getRank(iType);
-  int64_t oRank = getRank(oType);
-  int64_t mRank = -1;
-  if (mask)
-    mRank = getRank(mask.getType());
+  int64_t iRank = iType.getRank();
+  RankedTensorType maskType;
+  if (mask) {
+    maskType = mask.getType().cast<RankedTensorType>();
+  }
 
-  if (iRank < 1 || iRank > 2)
+  if (failed(verifySameShape(iType, oType)))
     return op.emitError(
-        "Input argument must be a sparse vector or sparse matrix.");
-  if (oRank < 1 || oRank > 2)
+        "Input and Output arguments must have identical shapes.");
+  if (mask && failed(verifySameShape(oType, maskType)))
     return op.emitError(
-        "Output argument must be a sparse vector or sparse matrix.");
-  if (mask && (mRank < 1 || mRank > 2))
-    return op.emitError(
-        "Mask argument must be a sparse vector or sparse matrix.");
-
-  if (failed(verifyCompatibleShape(iType, oType)))
-    return op.emitError(
-        "Input and Output arguments must have compatible shapes.");
-  if (mask and failed(verifyCompatibleShape(oType, mask.getType())))
-    return op.emitError(
-        "Mask and Output arguments must have compatible shapes.");
+        "Mask and Output arguments must have identical shapes.");
 
   llvm::Optional<std::string> errMsg;
   if (iRank == 1) {
-    errMsg = checkCompressedVector(iType, 0);
+    errMsg = checkVectorEncoding(iType);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
-    errMsg = checkCompressedVector(oType, 1);
-    if (errMsg)
-      return op.emitError(errMsg.getValue());
-    if (mask) {
-      errMsg = checkCompressedVector(mask.getType(), 2);
-      if (errMsg)
-        return op.emitError(errMsg.getValue());
-    }
+      return op.emitError("input " + errMsg.getValue());
   } else if (iRank == 2) {
-    errMsg = checkCompressedMatrix(iType, 0, EITHER);
+    errMsg = checkMatrixEncoding(iType, EITHER);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
-    // Determine output sparse encoding
-    CompressionType sparseEncoding = CSR;
-    if (typeIsCSC(iType)) {
-      sparseEncoding = CSC;
-    }
-    errMsg = checkCompressedMatrix(oType, 1, sparseEncoding);
-    if (errMsg)
-      return op.emitError(errMsg.getValue());
-    if (mask) {
-      errMsg = checkCompressedMatrix(mask.getType(), 2, sparseEncoding);
-      if (errMsg)
-        return op.emitError(errMsg.getValue());
-    }
+      return op.emitError("input " + errMsg.getValue());
   }
 
   if (iType != oType)
-    return op.emitError("Arguments must have the same type.");
+    return op.emitError("input and output must have identical types.");
+  if (mask && iType != maskType)
+    return op.emitError("mask and input must have identical types.");
 
   llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
   if (accumulateOperator) {
@@ -686,41 +625,29 @@ static LogicalResult verify(UpdateOp op) {
 
 template <class T>
 static LogicalResult verifyEwise(T op) {
-  Type aType = op.a().getType();
-  Type bType = op.b().getType();
+  Type aOrigType = op.a().getType();
+  Type bOrigType = op.b().getType();
 
-  int64_t aRank = getRank(aType);
-  int64_t bRank = getRank(bType);
+  RankedTensorType aType = aOrigType.cast<RankedTensorType>();
+  RankedTensorType bType = bOrigType.cast<RankedTensorType>();
 
-  if (aRank < 1 || aRank > 2)
-    return op.emitError("Input a must be a sparse vector or sparse matrix.");
-  if (bRank < 1 || bRank > 2)
-    return op.emitError("Input b must be a sparse vector or sparse matrix.");
+  if (failed(verifySameShape(aType, bType)))
+    return op.emitError("Inputs must have identical shapes.");
 
-  if (failed(verifyCompatibleShape(aType, bType)))
-    return op.emitError("Inputs must have compatible shapes.");
+  int64_t aRank = aType.getRank();
 
   llvm::Optional<std::string> errMsg;
   if (aRank == 1) {
-    errMsg = checkCompressedVector(aType, 0);
+    errMsg = checkVectorEncoding(aType);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
-    errMsg = checkCompressedVector(bType, 1);
-    if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("1st operand " + errMsg.getValue());
   } else if (aRank == 2) {
-    errMsg = checkCompressedMatrix(aType, 0, EITHER);
+    errMsg = checkMatrixEncoding(aType, EITHER);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
-    // Determine output sparse encoding
-    CompressionType sparseEncoding = CSR;
-    if (typeIsCSC(aType)) {
-      sparseEncoding = CSC;
-    }
-    errMsg = checkCompressedMatrix(bType, 1, sparseEncoding);
-    if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("1st operand " + errMsg.getValue());
   }
+  if (aType != bType)
+    return op.emitError("operands must have identical types.");
 
   return success();
 }
@@ -748,70 +675,35 @@ static LogicalResult verify(IntersectOp op) {
 }
 
 static LogicalResult verify(EqualOp op) {
-  Type aType = op.a().getType();
-  Type bType = op.b().getType();
-
-  if (failed(verifyCompatibleShape(aType, bType)))
-    return op.emitError("Input vectors must have compatible shapes.");
-
-  if (aType != bType)
-    return op.emitError("Arguments must have the same type.");
-
-  int64_t aRank = getRank(aType);
-  int64_t bRank = getRank(bType);
-
-  if (aRank < 1 || aRank > 2)
-    return op.emitError(
-        "First argument must be a sparse vector or sparse matrix.");
-  if (bRank < 1 || bRank > 2)
-    return op.emitError(
-        "Second argument must be a sparse vector or sparse matrix.");
-
-  if (aRank != bRank)
-    return op.emitError("Arguments must have same rank.");
-
-  llvm::Optional<std::string> errMsg;
-  if (aRank == 1) {
-    errMsg = checkCompressedVector(aType, 0);
-    if (errMsg)
-      return op.emitError(errMsg.getValue());
-    errMsg = checkCompressedVector(bType, 1);
-    if (errMsg)
-      return op.emitError(errMsg.getValue());
-  } else if (aRank == 2) {
-    errMsg = checkCompressedMatrix(aType, 0, EITHER);
-    if (errMsg)
-      return op.emitError(errMsg.getValue());
-    errMsg = checkCompressedMatrix(bType, 1, EITHER);
-    if (errMsg)
-      return op.emitError(errMsg.getValue());
-  }
-
-  return success();
+  // TODO: this might need to be separate once masks are available for union and
+  // intersect
+  return verifyEwise(op);
 }
 
-template <class T>
-static LogicalResult verifyReduceToVectorArgs(T op) {
-  Type inputType = op.input().getType();
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+static LogicalResult verify(ReduceToVectorOp op) {
+  std::string aggregator = op.aggregator().str();
+  if (!supportedReduceAggregators.contains(aggregator))
+    return op.emitError("\"" + aggregator +
+                        "\" is not a supported aggregator.");
 
-  llvm::Optional<std::string> inputCompressionErrorMessage =
-      checkCompressedMatrix(inputType, 0, EITHER);
-  if (inputCompressionErrorMessage)
-    return op.emitError(inputCompressionErrorMessage.getValue());
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
 
-  Type resultType = op.getResult().getType();
-  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
+  llvm::Optional<std::string> errMsg;
+  errMsg = checkMatrixEncoding(inputType, EITHER);
+  if (errMsg)
+    return op.emitError("operand " + errMsg.getValue());
 
-  llvm::Optional<std::string> resultCompressionErrorMessage =
-      checkCompressedVector(resultType, -1);
-  if (resultCompressionErrorMessage)
-    return op.emitError(resultCompressionErrorMessage.getValue());
+  RankedTensorType resultType =
+      op.getResult().getType().cast<RankedTensorType>();
 
-  if (resultTensorType.getElementType() != inputTensorType.getElementType())
+  errMsg = checkVectorEncoding(resultType);
+  if (errMsg)
+    return op.emitError("result " + errMsg.getValue());
+
+  if (resultType.getElementType() != inputType.getElementType())
     return op.emitError("Operand and output types are incompatible.");
 
-  ArrayRef<int64_t> inputShape = inputTensorType.getShape();
+  ArrayRef<int64_t> inputShape = inputType.getShape();
 
   int axis = op.axis();
   int expectedResultLength;
@@ -823,12 +715,7 @@ static LogicalResult verifyReduceToVectorArgs(T op) {
     return op.emitError("The axis attribute is expected to be 0 or 1.");
   }
 
-  std::string aggregator = op.aggregator().str();
-  if (!supportedReduceAggregators.contains(aggregator))
-    return op.emitError("\"" + aggregator +
-                        "\" is not a supported aggregator.");
-
-  ArrayRef<int64_t> resultShape = resultTensorType.getShape();
+  ArrayRef<int64_t> resultShape = resultType.getShape();
   if (resultShape[0] != expectedResultLength) {
     return op.emitError("Operand and output shapes are incompatible.");
   }
@@ -836,42 +723,27 @@ static LogicalResult verifyReduceToVectorArgs(T op) {
   return success();
 }
 
-static LogicalResult verify(ReduceToVectorOp op) {
-  LogicalResult argResult = verifyReduceToVectorArgs(op);
-
-  if (argResult.failed())
-    return argResult;
-
-  std::string aggregator = op.aggregator().str();
-  if (!supportedReduceAggregators.contains(aggregator))
-    return op.emitError("\"" + aggregator +
-                        "\" is not a supported aggregator.");
-
-  return success();
-}
-
 template <class T>
 static LogicalResult verifyReduceToScalarArgs(T op) {
-  Type operandType = op.input().getType();
+  Type operandOrigType = op.input().getType();
 
-  int64_t rank = getRank(operandType);
-  if (rank < 1 || rank > 2)
-    return op.emitError("Operand #0 must be a sparse vector or sparse matrix.");
+  RankedTensorType operandType = operandOrigType.cast<RankedTensorType>();
+
+  int64_t rank = operandType.getRank();
 
   llvm::Optional<std::string> errMsg;
   if (rank == 1) {
-    errMsg = checkCompressedVector(operandType, 0);
+    errMsg = checkVectorEncoding(operandType);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("operand " + errMsg.getValue());
   } else {
-    errMsg = checkCompressedMatrix(operandType, 0, EITHER);
+    errMsg = checkMatrixEncoding(operandType, EITHER);
     if (errMsg)
-      return op.emitError(errMsg.getValue());
+      return op.emitError("operand " + errMsg.getValue());
   }
 
   Type resultType = op.getResult().getType();
-  RankedTensorType operandTensorType = operandType.dyn_cast<RankedTensorType>();
-  if (resultType != operandTensorType.getElementType())
+  if (resultType != operandType.getElementType())
     return op.emitError("Operand and output types are incompatible.");
 
   return success();
@@ -906,15 +778,14 @@ static LogicalResult verify(ReduceToScalarGenericOp op) {
 }
 
 static LogicalResult verify(MatrixSelectOp op) {
-  Type inputType = op.input().getType();
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+
+  llvm::Optional<std::string> errMsg = checkMatrixEncoding(inputType, EITHER);
+  if (errMsg)
+    return op.emitError("input " + errMsg.getValue());
 
   for (OpResult result : op.getResults()) {
-    Type resultType = result.getType();
-
-    llvm::Optional<std::string> resultCompressionErrorMessage =
-        checkCompressedMatrix(resultType, -1, EITHER);
-    if (resultCompressionErrorMessage)
-      return op.emitError(resultCompressionErrorMessage.getValue());
+    RankedTensorType resultType = result.getType().cast<RankedTensorType>();
 
     if (inputType != resultType)
       return op.emitError(
@@ -955,7 +826,6 @@ static LogicalResult verify(MatrixSelectOp op) {
     }
   }
 
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
   for (auto indexed_pair :
        llvm::enumerate(llvm::zip(selectorsNeedingThunk, thunks))) {
     std::tuple<std::string, Value> pair = indexed_pair.value();
@@ -963,7 +833,7 @@ static LogicalResult verify(MatrixSelectOp op) {
     if (selector == "gt") {
       Value thunk = std::get<1>(pair);
       Type thunkType = thunk.getType();
-      if (thunkType != inputTensorType.getElementType()) {
+      if (thunkType != inputType.getElementType()) {
         return op.emitError() << "Operand #" << indexed_pair.index() + 1
                               << " is associated with the selector "
                               << "\"" << selector << "\""
@@ -977,71 +847,37 @@ static LogicalResult verify(MatrixSelectOp op) {
 }
 
 static LogicalResult verify(ConvertLayoutOp op) {
-  Type inputType = op.input().getType();
-  Type resultType = op.getResult().getType();
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+  ;
+  RankedTensorType resultType =
+      op.getResult().getType().cast<RankedTensorType>();
+  ;
 
-  llvm::Optional<std::string> inputCompressionErrorMessage =
-      checkCompressedMatrix(inputType, 0, EITHER);
-  if (inputCompressionErrorMessage)
-    return op.emitError(inputCompressionErrorMessage.getValue());
+  llvm::Optional<std::string> errMsg;
+  errMsg = checkMatrixEncoding(inputType, EITHER);
+  if (errMsg)
+    return op.emitError("operand " + errMsg.getValue());
 
-  llvm::Optional<std::string> resultCompressionErrorMessage =
-      checkCompressedMatrix(resultType, -1, EITHER);
-  if (resultCompressionErrorMessage)
-    return op.emitError(resultCompressionErrorMessage.getValue());
+  errMsg = checkMatrixEncoding(resultType, EITHER);
+  if (errMsg)
+    return op.emitError("result " + errMsg.getValue());
 
   // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
   // shapes using "?"
 
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-  RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
-
-  if (inputTensorType.getElementType() != resultTensorType.getElementType())
+  if (inputType.getElementType() != resultType.getElementType())
     return op.emitError(
-        "Input and output tensors have different element types.");
+        "Input and output tensors must have same element type.");
 
-  ArrayRef<int64_t> inputShape = inputTensorType.getShape();
-  ArrayRef<int64_t> resultShape = resultTensorType.getShape();
+  ArrayRef<int64_t> inputShape = inputType.getShape();
+  ArrayRef<int64_t> resultShape = resultType.getShape();
 
-  mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
-      mlir::sparse_tensor::getSparseTensorEncoding(inputType);
-
-  mlir::sparse_tensor::SparseTensorEncodingAttr resultSparseEncoding =
-      mlir::sparse_tensor::getSparseTensorEncoding(resultType);
-
-  if (inputShape[0] != resultShape[0] || inputShape[1] != resultShape[1])
+  if (inputShape != resultShape)
     return op.emitError("Input and output shapes are expected to be the same.");
 
-  if (inputSparseEncoding != resultSparseEncoding) {
-    AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
-    AffineMap resultDimOrdering = resultSparseEncoding.getDimOrdering();
-    unsigned inputDimOrdering0 = inputDimOrdering.getDimPosition(0);
-    unsigned inputDimOrdering1 = inputDimOrdering.getDimPosition(1);
-    unsigned resultDimOrdering0 = resultDimOrdering.getDimPosition(0);
-    unsigned resultDimOrdering1 = resultDimOrdering.getDimPosition(1);
-    if (inputDimOrdering0 != resultDimOrdering1 ||
-        inputDimOrdering1 != resultDimOrdering0)
-      return op.emitError(
-          "Sparse encoding dimension orderings of input and result tensors "
-          "expected to be swapped or encodings must be identical.");
-
-    // TODO should we be more lenient like the sparse tensor dialect is via
-    // isMatchingWidth? see
-    // llvm-project/mlir/lib/Dialect/SparseTensor/IR/SparseTensorDialect.cpp
-    unsigned inputPointerBitWidth = inputSparseEncoding.getPointerBitWidth();
-    unsigned resultPointerBitWidth = resultSparseEncoding.getPointerBitWidth();
-    if (inputPointerBitWidth != resultPointerBitWidth)
-      return op.emitError("Sparse encoding pointer bit widths of input and "
-                          "result tensors do not match.");
-
-    unsigned inputIndexBitWidth = inputSparseEncoding.getIndexBitWidth();
-    unsigned resultIndexBitWidth = resultSparseEncoding.getIndexBitWidth();
-    if (inputIndexBitWidth != resultIndexBitWidth)
-      return op.emitError("Sparse encoding index bit widths of input and "
-                          "result tensors do not match.");
-    // dimLevelType values guaranteed to be the same since we already checked
-    // earlier
-  }
+  errMsg = checkBitWidthMatch(inputType, resultType);
+  if (errMsg)
+    return op.emitError("Input and output " + errMsg.getValue());
 
   return success();
 }
@@ -1051,18 +887,15 @@ static LogicalResult verify(TransposeOp op) {
   RankedTensorType resultType =
       op.getResult().getType().cast<RankedTensorType>();
 
-  if (failed(hasSparseEncodingAttr(inputType)) ||
-      failed(hasCSRorCSCEncoding(inputType)))
-    return op.emitError("input: Missing sparse tensor encoding or 2d-tensor "
-                        "not in CSR or CSC form");
+  llvm::Optional<std::string> errMsg;
+  errMsg = checkMatrixEncoding(inputType, EITHER);
+  if (errMsg)
+    return op.emitError("operand " + errMsg.getValue());
 
-  if (failed(hasSparseEncodingAttr(resultType)) ||
-      failed(hasCSRorCSCEncoding(resultType)))
-    return op.emitError("result: Missing sparse tensor encoding or 2d-tensor "
-                        "not in CSR or CSC form");
+  errMsg = checkMatrixEncoding(resultType, EITHER);
+  if (errMsg)
+    return op.emitError("result " + errMsg.getValue());
 
-  // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
-  // shapes using "?"
   if (inputType.getElementType() != resultType.getElementType())
     return op.emitError(
         "Input and output tensors have different element types.");
@@ -1070,45 +903,12 @@ static LogicalResult verify(TransposeOp op) {
   ArrayRef<int64_t> inputShape = inputType.getShape();
   ArrayRef<int64_t> resultShape = resultType.getShape();
 
-  mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
-      mlir::sparse_tensor::getSparseTensorEncoding(inputType);
-
-  mlir::sparse_tensor::SparseTensorEncodingAttr resultSparseEncoding =
-      mlir::sparse_tensor::getSparseTensorEncoding(resultType);
-
   if (inputShape[0] != resultShape[1] || inputShape[1] != resultShape[0])
     return op.emitError("Input and output shapes are expected to be swapped.");
 
-  if (inputSparseEncoding != resultSparseEncoding) {
-    AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
-    AffineMap resultDimOrdering = resultSparseEncoding.getDimOrdering();
-    unsigned inputDimOrdering0 = inputDimOrdering.getDimPosition(0);
-    unsigned inputDimOrdering1 = inputDimOrdering.getDimPosition(1);
-    unsigned resultDimOrdering0 = resultDimOrdering.getDimPosition(0);
-    unsigned resultDimOrdering1 = resultDimOrdering.getDimPosition(1);
-    if (inputDimOrdering0 != resultDimOrdering1 ||
-        inputDimOrdering1 != resultDimOrdering0)
-      return op.emitError(
-          "Sparse encoding dimension orderings of input and result tensors "
-          "expected to be swapped or encodings must be identical.");
-
-    // TODO should we be more lenient like the sparse tensor dialect is via
-    // isMatchingWidth? see
-    // llvm-project/mlir/lib/Dialect/SparseTensor/IR/SparseTensorDialect.cpp
-    unsigned inputPointerBitWidth = inputSparseEncoding.getPointerBitWidth();
-    unsigned resultPointerBitWidth = resultSparseEncoding.getPointerBitWidth();
-    if (inputPointerBitWidth != resultPointerBitWidth)
-      return op.emitError("Sparse encoding pointer bit widths of input and "
-                          "result tensors do not match.");
-
-    unsigned inputIndexBitWidth = inputSparseEncoding.getIndexBitWidth();
-    unsigned resultIndexBitWidth = resultSparseEncoding.getIndexBitWidth();
-    if (inputIndexBitWidth != resultIndexBitWidth)
-      return op.emitError("Sparse encoding index bit widths of input and "
-                          "result tensors do not match.");
-    // dimLevelType values guaranteed to be the same since we already checked
-    // earlier
-  }
+  errMsg = checkBitWidthMatch(inputType, resultType);
+  if (errMsg)
+    return op.emitError("Input and output " + errMsg.getValue());
 
   return success();
 }
@@ -1119,13 +919,12 @@ static LogicalResult verify(MatrixSelectRandomOp op) {
   RankedTensorType resultType =
       op.getResult().getType().cast<RankedTensorType>();
 
-  if (failed(hasSparseEncodingAttr(inputType)) ||
-      failed(hasCSREncoding(inputType)))
-    return op.emitError("input: Missing sparse tensor encoding or 2d-tensor "
-                        "not in CSR form");
+  llvm::Optional<std::string> errMsg = checkMatrixEncoding(inputType, CSR);
+  if (errMsg)
+    return op.emitError("input " + errMsg.getValue());
 
   if (inputType != resultType)
-    return op.emitError("Input and output tensors have different types.");
+    return op.emitError("Input and output tensor type must be identical.");
 
   mlir::sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
       mlir::sparse_tensor::getSparseTensorEncoding(inputType);

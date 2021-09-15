@@ -20,7 +20,7 @@ module {
 module {
 
    func @vector_argminmax_wrapper(%argA: tensor<3xi64>) -> index {
-       %answer = graphblas.vector_argminmax %argA { minmax = "max" } : tensor<3xi64> // expected-error {{Operand #0 must be a sparse tensor.}}
+       %answer = graphblas.vector_argminmax %argA { minmax = "max" } : tensor<3xi64> // expected-error {{operand must be a sparse tensor.}}
        return %answer : index
    }
 
@@ -31,7 +31,7 @@ module {
 module {
 
    func @vector_argmin_wrapper(%argA: tensor<3xi64>) -> index {
-       %answer = graphblas.vector_argmin %argA : tensor<3xi64> // expected-error {{Operand #0 must be a sparse tensor.}}
+       %answer = graphblas.vector_argmin %argA : tensor<3xi64> // expected-error {{operand must be a sparse tensor.}}
        return %answer : index
    }
 
@@ -42,7 +42,7 @@ module {
 module {
 
    func @vector_argmax_wrapper(%argA: tensor<3xi64>) -> index {
-       %answer = graphblas.vector_argmax %argA : tensor<3xi64> // expected-error {{Operand #0 must be a sparse tensor.}}
+       %answer = graphblas.vector_argmax %argA : tensor<3xi64> // expected-error {{operand must be a sparse tensor.}}
        return %answer : index
    }
 

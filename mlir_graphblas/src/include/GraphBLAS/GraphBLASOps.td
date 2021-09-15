@@ -563,7 +563,7 @@ def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
     let arguments = (ins
      GraphBlasMatrixOrVectorOperand:$input,
      GraphBlasMatrixOrVectorOperand:$output,
-     Optional<AnyTensor>:$mask, OptionalAttr<StrAttr>:$accumulate_operator,
+     Optional<GraphBlasMatrixOrVectorOperand>:$mask, OptionalAttr<StrAttr>:$accumulate_operator,
      DefaultValuedAttr<BoolAttr, "false">:$replace, DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
     let results = (outs Index:$fake_output);
     

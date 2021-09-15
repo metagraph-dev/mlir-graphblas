@@ -16,6 +16,32 @@ using namespace std;
 using namespace mlir;
 using namespace mlir::sparse_tensor;
 
+bool hasRowOrdering(Type inputType) {
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(inputType);
+  AffineMap dimOrdering = sparseEncoding.getDimOrdering();
+  unsigned dimSize = dimOrdering.getNumResults();
+  for (unsigned i = 0; i < dimSize; i++) {
+    if (dimOrdering.getDimPosition(i) != i)
+      return false;
+  }
+  return true;
+}
+
+bool hasColumnOrdering(Type inputType) {
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(inputType);
+  AffineMap dimOrdering = sparseEncoding.getDimOrdering();
+  unsigned dimSize = dimOrdering.getNumResults();
+  for (unsigned i = 0; i < dimSize; i++) {
+    if (dimOrdering.getDimPosition(i) != dimSize - (i + 1))
+      return false;
+  }
+  return true;
+}
+
+// TODO: this is very heavyweight; we already check for CSR/CSC/EITHER in the
+// verify methods; prefer hasRow/ColumnOrdering methods above
 bool typeIsCSR(Type inputType) {
 
   sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
@@ -51,6 +77,8 @@ bool typeIsCSR(Type inputType) {
   return true;
 }
 
+// TODO: this is very heavyweight; we already check for CSR/CSC/EITHER in the
+// verify methods; prefer hasRow/ColumnOrdering methods above
 bool typeIsCSC(Type inputType) {
   sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
       sparse_tensor::getSparseTensorEncoding(inputType);
@@ -92,7 +120,7 @@ int64_t getRank(Type inputType) {
   if (!sparseEncoding)
     return -1;
 
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
   return inputTensorType.getRank();
 }
 
