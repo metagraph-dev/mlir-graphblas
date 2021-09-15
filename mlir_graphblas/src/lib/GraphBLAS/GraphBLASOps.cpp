@@ -27,8 +27,6 @@ using namespace mlir::graphblas;
 // Helpers
 //===--------------------------------------------------------------------===//
 
-enum CompressionType { CSR, CSC, EITHER };
-
 /// Utility function to check encoding attribute.
 static LogicalResult hasSparseEncodingAttr(RankedTensorType t) {
   if (!sparse_tensor::getSparseTensorEncoding(t))
@@ -575,6 +573,50 @@ static LogicalResult verify(VectorArgMaxOp op) {
   llvm::Optional<std::string> errMsg = checkVectorEncoding(vecType);
   if (errMsg)
     return op.emitError("operand " + errMsg.getValue());
+
+  return success();
+}
+
+static LogicalResult verify(DiagOp op) {
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+  RankedTensorType resultType =
+      op.getResult().getType().cast<RankedTensorType>();
+
+  ArrayRef<int64_t> inputShape = inputType.getShape();
+  ArrayRef<int64_t> resultShape = resultType.getShape();
+
+  // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
+  // shapes using "?"
+  llvm::Optional<std::string> errMsg;
+  if (resultType.getRank() == 1) {
+    errMsg = checkMatrixEncoding(inputType, EITHER);
+    if (errMsg)
+      return op.emitError("operand " + errMsg.getValue());
+
+    errMsg = checkVectorEncoding(resultType);
+    if (errMsg)
+      return op.emitError("result " + errMsg.getValue());
+
+    if (inputShape[0] != inputShape[1])
+      return op.emitError("Input shape must be square.");
+
+    if (inputShape[0] != resultShape[0])
+      return op.emitError("Input shape is not compatible with output shape.");
+  } else {
+    errMsg = checkVectorEncoding(inputType);
+    if (errMsg)
+      return op.emitError("operand " + errMsg.getValue());
+
+    errMsg = checkMatrixEncoding(resultType, EITHER);
+    if (errMsg)
+      return op.emitError("result " + errMsg.getValue());
+
+    if (resultShape[0] != resultShape[1])
+      return op.emitError("Output shape must be square.");
+
+    if (inputShape[0] != resultShape[0])
+      return op.emitError("Input shape is not compatible with output shape.");
+  }
 
   return success();
 }

@@ -10,6 +10,8 @@
 #include <set>
 #include <string>
 
+enum CompressionType { CSR, CSC, EITHER };
+
 static const llvm::StringSet<> supportedIntersectOperators{
     "plus", "minus", "times", "div", "min", "max", "first", "second"};
 //"eq", "ne", "lt", "le", "gt", "ge"};

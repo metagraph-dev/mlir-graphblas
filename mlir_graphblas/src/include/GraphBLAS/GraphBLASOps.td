@@ -151,8 +151,8 @@ def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input);
-    let results = (outs AnyTensor:$output);
+    let arguments = (ins GraphBlasMatrixOperand:$input);
+    let results = (outs GraphBlasMatrixOperand:$output);
     
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
@@ -217,8 +217,8 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins AnyTensor:$input, Variadic<AnyType>:$thunks, StrArrayAttr:$selectors);
-    let results = (outs Variadic<AnyTensor>:$outputs);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, Variadic<AnyType>:$thunks, StrArrayAttr:$selectors);
+    let results = (outs Variadic<GraphBlasMatrixOrVectorOperand>:$outputs);
     
     let assemblyFormat = [{
            $input (`,` $thunks^)? attr-dict `:` type($input) (`,` type($thunks)^)? `to` type($outputs)
@@ -476,7 +476,7 @@ def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp :
         format.  The mask (if provided) must be CSR format.
     }];
 
-    let arguments = (ins GraphBlasMatrixOperand:$a, GraphBlasMatrixOperand:$b, Optional<AnyTensor>:$mask);
+    let arguments = (ins GraphBlasMatrixOperand:$a, GraphBlasMatrixOperand:$b, Optional<GraphBlasMatrixOperand>:$mask);
     let results = (outs AnyType:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
 
@@ -650,7 +650,7 @@ def GraphBLAS_VectorArgMinOp : GraphBLAS_Op<"vector_argmin", [NoSideEffect]> {
 def GraphBLAS_VectorArgMaxOp : GraphBLAS_Op<"vector_argmax", [NoSideEffect]> {
     let summary = "vector argmax operation";
     let description = [{
-        Determaxes the argmax of a vector.  If there are multiple values that
+        Determines the argmax of a vector.  If there are multiple values that
         can be the argmax, an arbitrary one is chosen from them.  The given
         sparse vector must have rank 1 and must be sparse.
 
@@ -666,6 +666,32 @@ def GraphBLAS_VectorArgMaxOp : GraphBLAS_Op<"vector_argmax", [NoSideEffect]> {
     
     let assemblyFormat = [{
            $vec attr-dict `:` type($vec)
+    }];
+
+    let verifier = [{ return ::verify(*this); }];
+}
+
+def GraphBLAS_DiagOp : GraphBLAS_Op<"diag", [NoSideEffect]> {
+    let summary = "diag operation";
+    let description = [{
+        When given a sparse square matrix, returns the diagonal as a vector.
+        When given a sparse vector, returns a square sparse matrix with the
+        vector's values along the diagonal.
+
+        Example:
+        ```mlir
+        %csr_matrix_answer = graphblas.diag %vec : tensor<?xi64, #SparseVec64> to tensor<?x?xi64, #CSR64>
+        %csc_matrix_answer = graphblas.diag %vec : tensor<?xi64, #SparseVec64> to tensor<?x?xi64, #CSC64>
+        %vector_answer = graphblas.diag %mat : tensor<?x?xi64, #CSR64> to tensor<?xi64, #SparseVec64>
+        ```
+
+    }];
+
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
+    
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($output)
     }];
 
     let verifier = [{ return ::verify(*this); }];
