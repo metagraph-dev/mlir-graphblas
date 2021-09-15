@@ -264,3 +264,16 @@ def test_from_raw_pointer():
     assert a1.value_dtype == a2.value_dtype
 
     a2.data = 0  # So we don't free the data twice
+
+
+def test_views_have_parent():
+    sparsity = np.array([True, True, True], dtype=np.bool8)
+    sizes = np.array([10, 20, 30], dtype=np.uint64)
+    indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
+    values = np.array([1.2, 3.4], dtype=np.float64)
+
+    a1 = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
+    v = a1.values
+    assert v.base is a1
+    del a1
+    np.testing.assert_array_almost_equal(v, values)
