@@ -371,6 +371,30 @@ def vertex_nomination(
     return node_of_interest
 
 
+_scan_statistics = None
+
+
+def scan_statistics(graph: MLIRSparseTensor) -> int:
+    global _scan_statistics
+    if _scan_statistics is None:
+        ir_builder = MLIRFunctionBuilder(
+            "scan_statistics",
+            input_types=["tensor<?x?xf64, #CSR64>"],
+            return_types=["index"],
+            aliases=_build_common_aliases(),
+        )
+        (A,) = ir_builder.inputs
+        L = ir_builder.graphblas.matrix_select(A, [], ["tril"])
+        L_T = ir_builder.graphblas.transpose(L, "tensor<?x?xf64, #CSC64>")
+        A_triangles = ir_builder.graphblas.matrix_multiply(A, L_T, "plus_pair", mask=A)
+        tri = ir_builder.graphblas.reduce_to_vector(A_triangles, "plus", 1)
+        answer = ir_builder.graphblas.vector_argmax(tri)
+        ir_builder.return_vars(answer)
+        _scan_statistics = ir_builder.compile()
+
+    return _scan_statistics(graph)
+
+
 _pagerank = None
 
 

@@ -176,6 +176,31 @@ def test_vertex_nomination():
     assert w2 == 3
 
 
+def test_scan_statistics():
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [0, 1, 0, 1, 1, 0, 0, 0],
+            [1, 0, 0, 1, 1, 0, 0, 0],
+            [0, 0, 0, 0, 1, 1, 1, 1],
+            [1, 1, 0, 0, 1, 0, 0, 0],
+            [1, 1, 1, 1, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0, 0, 0, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    result = mlalgo.scan_statistics(input_tensor)
+
+    # valid results are in {0, 1, 3, 4}, but we choose the lowest index
+    expected_result = 0
+
+    assert result == expected_result
+
+
 def test_pagerank():
     # fmt: off
     indices = np.array(
