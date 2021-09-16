@@ -681,10 +681,12 @@ public:
     }*/
 
     Type indexType = rewriter.getIndexType();
+    Type int32Type = rewriter.getIntegerType(32);
     Type int64Type = rewriter.getIntegerType(64);
 
     Type memref1DValueType = MemRefType::get({-1}, elementType);
     MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memref1DI32Type = MemRefType::get({-1}, int32Type);
 
     sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
         sparse_tensor::getSparseTensorEncoding(matrixType);
@@ -717,7 +719,7 @@ public:
 
     ValueRange outputShape = {len_dense_dim};
     Type vectorElementType = (aggregator == "argmin" || aggregator == "argmax")
-                                 ? int64Type
+                                 ? int32Type
                                  : elementType;
     RankedTensorType vectorType =
         getCompressedVectorType(context, vectorElementType);
@@ -770,7 +772,7 @@ public:
     Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
         loc, memref1DI64Type, output, c0);
     Type outputValuesType = (aggregator == "argmin" || aggregator == "argmax")
-                                ? memref1DI64Type
+                                ? memref1DI32Type
                                 : memref1DValueType;
     Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(
         loc, outputValuesType, output);
@@ -923,9 +925,13 @@ public:
               rewriter.setInsertionPointAfter(rowAggregationLoop);
             }
 
-            Value rowAggregation = rowAggregationLoop.getResult(1);
-            rewriter.create<memref::StoreOp>(loc, rowAggregation, outputValues,
-                                             outputValuesPosition);
+            Value rowAggregation_i64 = rowAggregationLoop.getResult(1);
+            Value rowAggregation_i32 = rewriter.create<TruncateIOp>(
+                loc, int32Type,
+                rowAggregation_i64); // TODO this is a workaround ; make this
+                                     // work is i64
+            rewriter.create<memref::StoreOp>(
+                loc, rowAggregation_i32, outputValues, outputValuesPosition);
             Value rowIndex64 =
                 rewriter.create<IndexCastOp>(loc, rowIndex, int64Type);
             rewriter.create<memref::StoreOp>(loc, rowIndex64, outputIndices,
@@ -3261,7 +3267,6 @@ public:
   using OpRewritePattern<graphblas::MatrixSelectRandomOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixSelectRandomOp op,
                                 PatternRewriter &rewriter) const override {
-    ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     Value input = op.input();

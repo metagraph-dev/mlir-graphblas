@@ -239,13 +239,13 @@ def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]
         vector's size must be the  number of rows in the input tensor.
         The supported aggregators are "plus", "count", "argmin", and "argmax".
 
-        When using the aggregators "argmin" and "argmax", the output tensor must have 64-bit integer elements.
+        When using the aggregators "argmin" and "argmax", the output tensor must have 32-bit integer elements.
 
         Example:
         ```mlir
-        %vec1 = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64>
-        %vec2 = graphblas.reduce_to_vector %matrix { aggregator = "count", axis = 1 } : tensor<7x9xi32, #CSR64> to tensor<7xi32, #SparseVec64>
-        %vec3 = graphblas.reduce_to_vector %matrix { aggregator = "argmin", axis = 1 } : tensor<7x9xf32, #CSR64> to tensor<7xi64, #SparseVec64>
+        %vec1 = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #SparseVec64>
+        %vec2 = graphblas.reduce_to_vector %matrix { aggregator = "count", axis = 1 } : tensor<7x9xf16, #CSR64> to tensor<7xf16, #SparseVec64>
+        %vec3 = graphblas.reduce_to_vector %matrix { aggregator = "argmin", axis = 1 } : tensor<7x9xf32, #CSR64> to tensor<7xi32, #SparseVec64>
         ```
     }];
 
