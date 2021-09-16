@@ -647,8 +647,8 @@ def test_ir_reduce_to_vector(
             reduce_columns_output_type,
             reduce_rows_output_type,
             reduce_columns_output_type,
-            "tensor<?xi64, #CV64>",
-            "tensor<?xi64, #CV64>",
+            "tensor<?xi32, #CV64>",
+            "tensor<?xi32, #CV64>",
         ],
         aliases=aliases,
     )
@@ -727,8 +727,13 @@ def test_ir_reduce_to_vector(
 
     expected_reduced_columns_negative_abs = -np.abs(expected_reduced_columns)
 
-    expected_reduced_rows_argmin = np.argmin(dense_input_tensor, axis=1)
-    expected_reduced_columns_argmax = np.argmax(dense_input_tensor, axis=0)
+    M = dense_input_tensor.copy()
+    M[dense_input_tensor == 0] = dense_input_tensor.max() + 1
+    expected_reduced_rows_argmin = np.argmin(M, axis=1)
+
+    M = dense_input_tensor.copy()
+    M[dense_input_tensor == 0] = dense_input_tensor.min() - 1
+    expected_reduced_columns_argmax = np.argmax(M, axis=0)
 
     assert np.all(reduced_rows == expected_reduced_rows)
     assert np.all(reduced_columns == expected_reduced_columns)
