@@ -494,8 +494,9 @@ def pagerank(
             new_rdiff = irb.graphblas.apply(new_rdiff, "abs")
             new_rdiff = irb.graphblas.reduce_to_scalar(new_rdiff, "plus")
 
+            # Note: this is commented out due to https://github.com/metagraph-dev/mlir-graphblas/issues/163
             # Clean up previous score
-            irb.util.del_sparse_tensor(prev_score)
+            # irb.util.del_sparse_tensor(prev_score)
 
             # Increment iteration count
             new_iter_count = irb.addi(iter_count, c1)
