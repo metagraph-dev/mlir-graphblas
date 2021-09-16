@@ -713,7 +713,7 @@ class GraphBLAS_Diag(BaseOp):
 class GraphBLAS_MatrixSelectRandom(BaseOp):
     dialect = "graphblas"
     name = "matrix_select_random"
-    allowed_choose_n = set(["choose_first", "choose_uniform"])
+    allowed_choose_n = set(["choose_first", "choose_uniform", "choose_weighted"])
 
     @classmethod
     def call(cls, irbuilder, input, n: MLIRVar, rng_context: MLIRVar, choose_n: str):
