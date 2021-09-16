@@ -14,17 +14,17 @@ def logged_subprocess_run(*args, **kwargs):
     return subprocess.run(*args, **kwargs)
 
 
-try:
-    # when running in developer mode
-    from . import src
-
+# check for graphblas-opt in source tree
     _SCRIPT_DIR = os.path.dirname(__file__)
     _BUILD_DIR = os.path.join(_SCRIPT_DIR, "src", "build")
     GRAPHBLAS_OPT_EXE = os.path.join(_BUILD_DIR, "bin", "graphblas-opt")
-except ImportError:
-    # ImportError assumes a normal install without a src directory, so graphblas-opt should
-    # be available in the /bin folder of the environment
+if os.path.exists(GRAPHBLAS_OPT_EXE):
+    print(f'Using development graphblas-opt: {GRAPHBLAS_OPT_EXE}')
+else:
+    # A normal install does not have a src/build directory, so assume graphblas-opt 
+    # should be available in the path of the environment
     GRAPHBLAS_OPT_EXE = "graphblas-opt"
+
 
 
 class MlirOptError(Exception):
