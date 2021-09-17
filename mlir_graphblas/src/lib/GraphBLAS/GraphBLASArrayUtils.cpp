@@ -15,13 +15,12 @@
 
 using namespace ::mlir;
 
-ValueRange buildMaskComplement(PatternRewriter &rewriter, Value fullSize,
-                               Value maskIndices, Value maskStart,
-                               Value maskEnd) {
+ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
+                               Value fullSize, Value maskIndices,
+                               Value maskStart, Value maskEnd) {
   // Returns:
   // 1. a memref containing the indices of the mask complement
   // 2. the size of the memref
-  Location loc = rewriter.getUnknownLoc();
 
   // Types used in this function
   Type indexType = rewriter.getIndexType();
@@ -100,7 +99,7 @@ ValueRange buildMaskComplement(PatternRewriter &rewriter, Value fullSize,
   return ValueRange{compIndices, compSize};
 }
 
-Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
+Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
                          Value fixedIndices, Value fixedIndexStart,
                          Value fixedIndexEnd, Value iterPointers,
                          Value iterIndices,
@@ -108,8 +107,6 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
                          // provide maskStart=c0 and maskEnd=len(iterPointers)-1
                          Value maskIndices, Value maskStart, Value maskEnd,
                          Type valueType) {
-  Location loc = rewriter.getUnknownLoc();
-
   // Types used in this function
   Type indexType = rewriter.getIndexType();
   Type int64Type = rewriter.getIntegerType(64);
@@ -215,7 +212,7 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Value nk,
   return total;
 }
 
-void computeInnerProduct(PatternRewriter &rewriter, Value nk,
+void computeInnerProduct(PatternRewriter &rewriter, Location loc, Value nk,
                          Value fixedIndices, Value fixedValues,
                          Value fixedIndexStart, Value fixedIndexEnd,
                          Value iterPointers, Value iterIndices,
@@ -226,8 +223,6 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
                          Type valueType, ExtensionBlocks extBlocks,
                          Value outputIndices, Value outputValues,
                          Value indexOffset, bool swapMultOps) {
-  Location loc = rewriter.getUnknownLoc();
-
   // Types used in this function
   Type indexType = rewriter.getIndexType();
   Type int64Type = rewriter.getIntegerType(64);
@@ -390,10 +385,10 @@ void computeInnerProduct(PatternRewriter &rewriter, Value nk,
 // computes the resulting number of indices based on:
 // intersect=true -> the intersection of indices
 // intersect=false -> the union of indices
-Value computeIndexOverlapSize(PatternRewriter &rewriter, bool intersect,
-                              Value aPosStart, Value aPosEnd, Value Ai,
-                              Value bPosStart, Value bPosEnd, Value Bi) {
-  Location loc = rewriter.getUnknownLoc();
+Value computeIndexOverlapSize(PatternRewriter &rewriter, Location loc,
+                              bool intersect, Value aPosStart, Value aPosEnd,
+                              Value Ai, Value bPosStart, Value bPosEnd,
+                              Value Bi) {
 
   // Types used in this function
   Type boolType = rewriter.getI1Type();
@@ -567,13 +562,12 @@ Value computeIndexOverlapSize(PatternRewriter &rewriter, bool intersect,
 // Updates Oi and Ox with indices and values
 // intersect flag determines whether this is an intersection or union operation
 // Returns the final position in Oi (one more than the last value inserted)
-Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect,
-                              std::string agg, Type valueType, Value aPosStart,
-                              Value aPosEnd, Value Ai, Value Ax,
-                              Value bPosStart, Value bPosEnd, Value Bi,
-                              Value Bx, Value oPosStart, Value Oi, Value Ox) {
-  Location loc = rewriter.getUnknownLoc();
-
+Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
+                              bool intersect, std::string agg, Type valueType,
+                              Value aPosStart, Value aPosEnd, Value Ai,
+                              Value Ax, Value bPosStart, Value bPosEnd,
+                              Value Bi, Value Bx, Value oPosStart, Value Oi,
+                              Value Ox) {
   // Types used in this function
   Type boolType = rewriter.getI1Type();
   Type int64Type = rewriter.getI64Type();
@@ -907,11 +901,9 @@ Value computeUnionAggregation(PatternRewriter &rewriter, bool intersect,
   return finalPosO;
 }
 
-void computeVectorElementWise(PatternRewriter &rewriter, ModuleOp module,
-                              Value lhs, Value rhs, Value output,
-                              std::string op, bool intersect) {
-  Location loc = rewriter.getUnknownLoc();
-
+void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
+                              ModuleOp module, Value lhs, Value rhs,
+                              Value output, std::string op, bool intersect) {
   // Types
   RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
   Type int64Type = rewriter.getIntegerType(64);
@@ -935,8 +927,8 @@ void computeVectorElementWise(PatternRewriter &rewriter, ModuleOp module,
   Value Rx =
       rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, rhs);
 
-  Value ewiseSize = computeIndexOverlapSize(rewriter, intersect, c0, lhsNnz, Li,
-                                            c0, rhsNnz, Ri);
+  Value ewiseSize = computeIndexOverlapSize(rewriter, loc, intersect, c0,
+                                            lhsNnz, Li, c0, rhsNnz, Ri);
   Value ewiseSize64 = rewriter.create<IndexCastOp>(loc, ewiseSize, int64Type);
 
   callResizeIndex(rewriter, module, loc, output, c0, ewiseSize);
@@ -950,15 +942,13 @@ void computeVectorElementWise(PatternRewriter &rewriter, ModuleOp module,
   Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType,
                                                         output);
 
-  computeUnionAggregation(rewriter, intersect, op, valueType, c0, lhsNnz, Li,
-                          Lx, c0, rhsNnz, Ri, Rx, c0, Oi, Ox);
+  computeUnionAggregation(rewriter, loc, intersect, op, valueType, c0, lhsNnz,
+                          Li, Lx, c0, rhsNnz, Ri, Rx, c0, Oi, Ox);
 }
 
-void computeMatrixElementWise(PatternRewriter &rewriter, ModuleOp module,
-                              Value lhs, Value rhs, Value output,
-                              std::string op, bool intersect) {
-  Location loc = rewriter.getUnknownLoc();
-
+void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
+                              ModuleOp module, Value lhs, Value rhs,
+                              Value output, std::string op, bool intersect) {
   // Types
   RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
   Type indexType = rewriter.getIndexType();
@@ -1029,8 +1019,8 @@ void computeMatrixElementWise(PatternRewriter &rewriter, ModuleOp module,
       rewriter.create<IndexCastOp>(loc, rhsColStart64, indexType);
   Value rhsColEnd = rewriter.create<IndexCastOp>(loc, rhsColEnd64, indexType);
   Value unionSize =
-      computeIndexOverlapSize(rewriter, intersect, lhsColStart, lhsColEnd, Li,
-                              rhsColStart, rhsColEnd, Ri);
+      computeIndexOverlapSize(rewriter, loc, intersect, lhsColStart, lhsColEnd,
+                              Li, rhsColStart, rhsColEnd, Ri);
   Value unionSize64 = rewriter.create<IndexCastOp>(loc, unionSize, int64Type);
   rewriter.create<scf::YieldOp>(loc, unionSize64);
 
@@ -1096,7 +1086,7 @@ void computeMatrixElementWise(PatternRewriter &rewriter, ModuleOp module,
   rhsColStart = rewriter.create<IndexCastOp>(loc, rhsColStart64, indexType);
   rhsColEnd = rewriter.create<IndexCastOp>(loc, rhsColEnd64, indexType);
 
-  computeUnionAggregation(rewriter, intersect, op, valueType, lhsColStart,
+  computeUnionAggregation(rewriter, loc, intersect, op, valueType, lhsColStart,
                           lhsColEnd, Li, Lx, rhsColStart, rhsColEnd, Ri, Rx,
                           OcolStart, Oi, Ox);
 
