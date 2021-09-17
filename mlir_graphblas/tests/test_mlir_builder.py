@@ -962,7 +962,7 @@ def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
 
-    rng = ChooseUniformContext()
+    rng = ChooseUniformContext(seed=2)
     result = test_select_random_uniform(input_tensor, 2, rng)
     dense_result = densify_csr(result)
 
@@ -1003,7 +1003,7 @@ def test_ir_select_random_weighted(engine: MlirJitEngine, aliases: AliasMap):
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
 
     # basic checks
-    rng = ChooseWeightedContext()
+    rng = ChooseWeightedContext(seed=2)
     result = test_select_random_weighted(input_tensor, 2, rng)
     dense_result = densify_csr(result)
 

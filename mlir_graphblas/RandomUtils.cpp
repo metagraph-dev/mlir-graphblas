@@ -25,8 +25,8 @@ void choose_first(int64_t rngContext, int64_t n, int64_t maxIndex,
 }
 
 // A uniform sampler using a temporary set
-void *create_choose_uniform_context() {
-  auto generator = new std::default_random_engine;
+void *create_choose_uniform_context(uint64_t seed) {
+  auto generator = new std::default_random_engine(seed);
   return (void *)generator;
 }
 
@@ -61,8 +61,8 @@ void destroy_choose_uniform_context(void *rngContext) {
 }
 
 // A weighted sampler using a temporary set
-void *create_choose_weighted_context() {
-  auto generator = new std::default_random_engine;
+void *create_choose_weighted_context(uint64_t seed) {
+  auto generator = new std::default_random_engine(seed);
   return (void *)generator;
 }
 
