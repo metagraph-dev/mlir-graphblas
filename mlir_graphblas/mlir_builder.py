@@ -220,7 +220,7 @@ class MLIRFunctionBuilder(BaseFunction):
 
     def get_mlir(self, make_private=True, include_func_defs=True) -> str:
         if include_func_defs:
-            needed_function_definitions = "\n\n".join(
+            needed_function_definitions = "\n    ".join(
                 func_def for func_def, _, _ in self.needed_function_table.values()
             )
         else:

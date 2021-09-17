@@ -207,6 +207,7 @@ def test_pagerank():
         [[0, 1], [0, 2], [1, 3], [2, 3], [2, 4], [3, 4], [4, 0]],
         dtype=np.uint64,
     )
+    # fmt: on
     values = np.array([1.1, 9.8, 4.2, 7.1, 0.2, 6.9, 2.2], dtype=np.float64)
     sizes = np.array([5, 5], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
@@ -222,3 +223,34 @@ def test_pagerank():
     pr, niters = mlalgo.pagerank(m, tol=1e-7, maxiter=6)
     assert niters == 6
     assert np.abs(pr.values - expected).sum() > 1e-5, "Unexpectedly converged in 6 iterations"
+
+
+def test_graph_search_random():
+    # fmt: off
+    indices = np.array(
+        [[0, 1], [0, 2], [1, 0], [1, 3], [2, 0], [2, 4], [3, 2], [4, 4]],
+        dtype=np.uint64,
+    )
+    values = np.array([100, 200, 300, 400, 175, 222, 333, 200], dtype=np.float64)
+    # fmt: on
+    sizes = np.array([5, 5], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    graph = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    count = mlalgo.graph_search(graph, 3, [2, 4])
+
+    # Check for one of the possible solutions:
+    # [0, 1, 4] or [0, 1, 3, 4] or [0, 2, 4] or [0, 2, 4] or [4]
+    # [2, 1, 3]    [1, 1, 1, 3]    [2, 1, 3]    [1, 1, 4]    [6]
+    for idx, vals in [
+        ([0, 1, 4], [2, 1, 3]),
+        ([0, 1, 3, 4], [1, 1, 1, 3]),
+        ([0, 2, 4], [2, 1, 3]),
+        ([0, 2, 4], [1, 1, 4]),
+        ([4], [6]),
+    ]:
+        if len(count.indices[1]) == len(idx):
+            if (count.indices[1] == idx).all() and (count.values == vals).all():
+                break
+    else:
+        assert False, f"Invalid solution: idx={count.indices[1]}, vals={count.values}"

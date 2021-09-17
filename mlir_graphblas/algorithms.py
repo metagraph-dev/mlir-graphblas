@@ -521,3 +521,83 @@ def pagerank(
 
     pr = _pagerank(graph, damping, tol, maxiter)
     return pr
+
+
+_graph_search = None
+_gs_context = None
+
+
+def graph_search(
+    graph: MLIRSparseTensor, num_steps, initial_seed_array
+) -> MLIRSparseTensor:
+    global _graph_search, _gs_context
+    if _graph_search is None:
+        irb = MLIRFunctionBuilder(
+            "graph_search",
+            input_types=["tensor<?x?xf64, #CSR64>", "index", "tensor<?xi64>", "!llvm.ptr<i8>"],
+            return_types=["tensor<?xf64, #CV64>"],
+            aliases=_build_common_aliases(),
+        )
+        (A, nsteps, seeds, ctx) = irb.inputs
+
+        c0 = irb.constant(0, "index")
+        c1 = irb.constant(1, "index")
+        ci1 = irb.constant(1, "i64")
+        cf1 = irb.constant(1.0, "f64")
+
+        # Create count vector
+        ncols = irb.graphblas.num_cols(A)
+        count = irb.util.new_sparse_tensor("tensor<?xf64, #CV64>", ncols)
+
+        # Create B matrix, sized (nseeds x ncols) with nnz=nseeds
+        nseeds = irb.tensor.dim(seeds, c0)
+        nseeds_64 = irb.index_cast(nseeds, "i64")
+        B = irb.util.new_sparse_tensor("tensor<?x?xf64, #CSR64>", nseeds, ncols)
+        Bptr8 = irb.util.tensor_to_ptr8(B)
+        irb.util.resize_sparse_index(Bptr8, c1, nseeds)
+        irb.util.resize_sparse_values(Bptr8, nseeds)
+
+        Bp = irb.sparse_tensor.pointers(B, c1)
+        Bi = irb.sparse_tensor.indices(B, c1)
+        Bx = irb.sparse_tensor.values(B)
+
+        # Populate B matrix based on initial seed
+        with irb.for_loop(0, nseeds) as for_vars:
+            seed_num = for_vars.iter_var_index
+            seed_num_64 = irb.index_cast(seed_num, "i64")
+            irb.memref.store(seed_num_64, Bp, seed_num)
+            cur_node = irb.tensor.extract(seeds, seed_num)
+            irb.memref.store(cur_node, Bi, seed_num)
+            irb.memref.store(cf1, Bx, seed_num)
+        irb.memref.store(nseeds_64, Bp, nseeds)
+
+        # Convert layout of A
+        A_csc = irb.graphblas.convert_layout(A, "tensor<?x?xf64, #CSC64>")
+
+        # Perform graph search nsteps times
+        with irb.for_loop(0, nsteps) as for_vars:
+            # Compute neighbors of current nodes
+            available_neighbors = irb.graphblas.matrix_multiply(B, A_csc, semiring="min_first")
+            # Select new neighbors
+            chosen_neighbors = irb.graphblas.matrix_select_random(available_neighbors, ci1, ctx, "choose_uniform")
+            # Update B inplace with new neighbors
+            chosen_neighbors_idx = irb.sparse_tensor.indices(chosen_neighbors, c1)
+            with irb.for_loop(0, nseeds) as inner_for:
+                inner_seed_num = inner_for.iter_var_index
+                inner_cur_node = irb.memref.load(chosen_neighbors_idx, inner_seed_num)
+                irb.memref.store(inner_cur_node, Bi, inner_seed_num)
+            # Add new nodes to count
+            small_count = irb.graphblas.reduce_to_vector(B, aggregator="plus", axis=0)
+            irb.graphblas.update(small_count, count, accumulate="plus")
+
+        irb.return_vars(count)
+
+        _graph_search = irb.compile()
+        from mlir_graphblas.random_utils import ChooseUniformContext
+        _gs_context = ChooseUniformContext()
+
+    import numpy as np
+    if not isinstance(initial_seed_array, np.ndarray):
+        initial_seed_array = np.array(initial_seed_array, dtype=np.int64)
+    count = _graph_search(graph, num_steps, initial_seed_array, _gs_context)
+    return count

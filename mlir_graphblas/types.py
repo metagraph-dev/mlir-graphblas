@@ -103,6 +103,38 @@ class MemrefType(Type):
 
 
 class TensorType(Type):
+    _patt = re.compile(r"^tensor<\s*((?:(?:.)*x)*)([^,]+)\s*>$")
+
+    def __init__(self, shape: Sequence[int], value_type: Type):
+        shape = tuple(shape)
+        if not isinstance(value_type, Type):
+            raise TypeError(f"value_type must be a Type, not {type(value_type)}")
+        elif not all(isinstance(dim, int) for dim in shape):
+            raise TypeError(f"shape must be a sequence of ints, not {type(shape)}")
+        self.shape = shape
+        self.value_type = value_type
+
+    def __str__(self):
+        shape_string = "x".join("?" if dim == -1 else str(dim) for dim in self.shape)
+        return f"tensor<{shape_string}x{self.value_type}>"
+
+    @classmethod
+    def parse(cls, text: str, aliases: AliasMap = None):
+        if m := cls._patt.match(text):
+            dim_strings = m.group(1).split("x")[:-1]
+            if dim_strings == ["*"]:
+                raise NotImplementedError(f"Unranked tensors not currently supported.")
+            elif (
+                any(not s.isdigit() for s in dim_strings if s != "?")
+                or len(dim_strings) == 0
+            ):
+                raise ValueError(f"{repr(text)} does not have a valid shape.")
+            shape = [int(dim) if dim.isdigit() else -1 for dim in dim_strings]
+            value_type = Type.find(m.group(2), aliases=aliases)
+            return TensorType(shape, value_type)
+
+
+class SparseTensorType(Type):
     _patt = re.compile(r"^tensor<\s*((?:(?:.)*x)*)(.+),\s*(#.+)\s*>$")
 
     def __init__(
@@ -156,7 +188,7 @@ class TensorType(Type):
             value_type = Type.find(m.group(2), aliases=aliases)
             encoding = Type.find(m.group(3), aliases=aliases)
 
-            return TensorType(shape, value_type, encoding)
+            return SparseTensorType(shape, value_type, encoding)
 
 
 class SparseEncodingType(Type):
