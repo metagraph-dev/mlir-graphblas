@@ -647,8 +647,8 @@ def test_ir_reduce_to_vector(
             reduce_columns_output_type,
             reduce_rows_output_type,
             reduce_columns_output_type,
-            "tensor<?xi32, #CV64>",
-            "tensor<?xi32, #CV64>",
+            "tensor<?xi64, #CV64>",
+            "tensor<?xi64, #CV64>",
         ],
         aliases=aliases,
     )

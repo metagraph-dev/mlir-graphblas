@@ -745,16 +745,16 @@ static LogicalResult verify(ReduceToVectorOp op) {
 
   if (aggregator == "argmin" or aggregator == "argmax") {
     Type valueType = resultType.getElementType();
-    bool valueTypeIsI32 = llvm::TypeSwitch<Type, bool>(valueType)
+    bool valueTypeIsI64 = llvm::TypeSwitch<Type, bool>(valueType)
                               .Case<IntegerType>([&](IntegerType type) {
                                 unsigned bitWidth = type.getWidth();
-                                return bitWidth == 32;
+                                return bitWidth == 64;
                               })
                               .Default([&](Type type) { return false; });
-    if (!valueTypeIsI32)
+    if (!valueTypeIsI64)
       return op.emitError(
           "\"" + aggregator +
-          "\" requires the output vector to have i32 elements.");
+          "\" requires the output vector to have i64 elements.");
   } else if (resultType.getElementType() != inputType.getElementType())
     return op.emitError("Operand and output types are incompatible.");
 

@@ -45,7 +45,7 @@ module {
 
 module {
     func @reduce_to_vector_wrapper(%matrix: tensor<?x?xf32, #CSR64>) -> tensor<?xf32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "argmin", axis = 0 } : tensor<?x?xf32, #CSR64> to tensor<?xf32, #SparseVec64> // expected-error {{"argmin" requires the output vector to have i32 elements.}}
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "argmin", axis = 0 } : tensor<?x?xf32, #CSR64> to tensor<?xf32, #SparseVec64> // expected-error {{"argmin" requires the output vector to have i64 elements.}}
         return %vec : tensor<?xf32, #SparseVec64>
     }
 }
@@ -67,7 +67,7 @@ module {
 
 module {
     func @reduce_to_vector_wrapper(%matrix: tensor<?x?xf32, #CSR64>) -> tensor<?xf32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "argmax", axis = 0 } : tensor<?x?xf32, #CSR64> to tensor<?xf32, #SparseVec64> // expected-error {{"argmax" requires the output vector to have i32 elements.}}
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "argmax", axis = 0 } : tensor<?x?xf32, #CSR64> to tensor<?xf32, #SparseVec64> // expected-error {{"argmax" requires the output vector to have i64 elements.}}
         return %vec : tensor<?xf32, #SparseVec64>
     }
 }
