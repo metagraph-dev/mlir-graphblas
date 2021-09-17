@@ -716,8 +716,11 @@ public:
         loc, memref1DPointerType, matrix, c1);
 
     ValueRange outputShape = {len_dense_dim};
-
-    RankedTensorType vectorType = getCompressedVectorType(context, elementType);
+    Type vectorElementType = (aggregator == "argmin" || aggregator == "argmax")
+                                 ? int64Type
+                                 : elementType;
+    RankedTensorType vectorType =
+        getCompressedVectorType(context, vectorElementType);
     Value output =
         callNewTensor(rewriter, module, loc, outputShape, vectorType);
 
@@ -766,8 +769,11 @@ public:
 
     Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
         loc, memref1DI64Type, output, c0);
+    Type outputValuesType = (aggregator == "argmin" || aggregator == "argmax")
+                                ? memref1DI64Type
+                                : memref1DValueType;
     Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(
-        loc, memref1DValueType, output);
+        loc, outputValuesType, output);
 
     scf::ForOp reduceLoop =
         rewriter.create<scf::ForOp>(loc, c0, len_dense_dim, c1, ValueRange{c0});
@@ -781,8 +787,166 @@ public:
           rewriter.create<AddIOp>(loc, rowIndex, c1).getResult();
       Value nextPtr64 =
           rewriter.create<memref::LoadOp>(loc, matrixPointers, nextRowIndex);
+
       scf::IfOp ifRowIsNonEmptyBlock;
-      if (aggregator == "plus") {
+      if (aggregator == "count") {
+
+        Value ptrDiff = rewriter.create<SubIOp>(loc, nextPtr64, ptr64);
+
+        Value c0_i64 = rewriter.create<ConstantOp>(
+            loc, rewriter.getIntegerAttr(int64Type, 0));
+        Value rowIsNonEmpty =
+            rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, ptrDiff, c0_i64);
+
+        ifRowIsNonEmptyBlock = rewriter.create<scf::IfOp>(
+            loc, TypeRange{indexType}, rowIsNonEmpty, true);
+        {
+          rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.thenBlock());
+          {
+            Type valueType =
+                output.getType().dyn_cast<RankedTensorType>().getElementType();
+
+            // TODO should we require the output to have the element type be
+            // index or some integer type?
+            Value rowReduction =
+                llvm::TypeSwitch<Type, Value>(valueType)
+                    .Case<IntegerType>([&](IntegerType type) {
+                      Value ans;
+                      if (type.getWidth() < 64)
+                        ans = rewriter.create<TruncateIOp>(loc, type, ptrDiff);
+                      else
+                        ans =
+                            rewriter.create<SignExtendIOp>(loc, type, ptrDiff);
+                      return ans;
+                    })
+                    .Case<FloatType>([&](FloatType type) {
+                      return rewriter.create<SIToFPOp>(loc, type, ptrDiff);
+                    });
+            rewriter.create<memref::StoreOp>(loc, rowReduction, outputValues,
+                                             outputValuesPosition);
+            Value rowIndex64 =
+                rewriter.create<IndexCastOp>(loc, rowIndex, int64Type);
+            rewriter.create<memref::StoreOp>(loc, rowIndex64, outputIndices,
+                                             outputValuesPosition);
+            Value updatedOutputValuesPosition =
+                rewriter.create<AddIOp>(loc, outputValuesPosition, c1)
+                    .getResult();
+            rewriter.create<scf::YieldOp>(
+                loc, ValueRange{updatedOutputValuesPosition});
+          }
+
+          rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.elseBlock());
+          {
+            rewriter.create<scf::YieldOp>(loc,
+                                          ValueRange{outputValuesPosition});
+          }
+
+          rewriter.setInsertionPointAfter(ifRowIsNonEmptyBlock);
+        }
+      } else if (aggregator == "argmin" || aggregator == "argmax") {
+        Value rowIsNonEmpty =
+            rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, ptr64, nextPtr64);
+        ifRowIsNonEmptyBlock = rewriter.create<scf::IfOp>(
+            loc, TypeRange{indexType}, rowIsNonEmpty, true);
+        {
+
+          rewriter.setInsertionPointAfter(matrixValues.getDefiningOp());
+          Value matrixIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
+              loc, memref1DI64Type, matrix, c1);
+
+          rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.thenBlock());
+          {
+
+            Value ptr = rewriter.create<IndexCastOp>(loc, ptr64, indexType);
+            Value initialExtremum =
+                rewriter.create<memref::LoadOp>(loc, matrixValues, ptr);
+            Value initialExtremumTensorIndex =
+                rewriter.create<memref::LoadOp>(loc, matrixIndices, ptr);
+            Value ptrPlusOne =
+                rewriter.create<AddIOp>(loc, ptr, c1).getResult();
+            Value nextPtr =
+                rewriter.create<IndexCastOp>(loc, nextPtr64, indexType);
+            scf::ForOp rowAggregationLoop = rewriter.create<scf::ForOp>(
+                loc, ptrPlusOne, nextPtr, c1,
+                ValueRange{initialExtremum, initialExtremumTensorIndex});
+            {
+              rewriter.setInsertionPointToStart(rowAggregationLoop.getBody());
+              Value currentExtremum =
+                  rowAggregationLoop.getLoopBody().getArgument(1);
+              Value currentExtremumTensorIndex =
+                  rowAggregationLoop.getLoopBody().getArgument(2);
+
+              Value currentPtr = rowAggregationLoop.getInductionVar();
+              Value rowValue = rewriter.create<memref::LoadOp>(
+                  loc, matrixValues, currentPtr);
+
+              bool useMinimum = aggregator == "argmin";
+              Value mustUpdate = llvm::TypeSwitch<Type, Value>(elementType)
+                                     .Case<IntegerType>([&](IntegerType type) {
+                                       return rewriter.create<CmpIOp>(
+                                           loc,
+                                           useMinimum ? CmpIPredicate::slt
+                                                      : CmpIPredicate::sgt,
+                                           rowValue, currentExtremum);
+                                     })
+                                     .Case<FloatType>([&](FloatType type) {
+                                       return rewriter.create<CmpFOp>(
+                                           loc,
+                                           useMinimum ? CmpFPredicate::OLT
+                                                      : CmpFPredicate::OGT,
+                                           rowValue, currentExtremum);
+                                     });
+
+              scf::IfOp ifMustUpdateBlock = rewriter.create<scf::IfOp>(
+                  loc, TypeRange{elementType, int64Type}, mustUpdate, true);
+              {
+                rewriter.setInsertionPointToStart(
+                    ifMustUpdateBlock.thenBlock());
+                Value tensorIndex = rewriter.create<memref::LoadOp>(
+                    loc, matrixIndices, currentPtr);
+                rewriter.create<scf::YieldOp>(
+                    loc, ValueRange{rowValue, tensorIndex});
+              }
+              {
+                rewriter.setInsertionPointToStart(
+                    ifMustUpdateBlock.elseBlock());
+                rewriter.create<scf::YieldOp>(
+                    loc,
+                    ValueRange{currentExtremum, currentExtremumTensorIndex});
+                rewriter.setInsertionPointAfter(ifMustUpdateBlock);
+              }
+              Value updatedExtremum = ifMustUpdateBlock.getResult(0);
+              Value updatedExtremumTensorIndex = ifMustUpdateBlock.getResult(1);
+
+              rewriter.create<scf::YieldOp>(
+                  loc, ValueRange{updatedExtremum, updatedExtremumTensorIndex});
+              rewriter.setInsertionPointAfter(rowAggregationLoop);
+            }
+
+            Value rowAggregation = rowAggregationLoop.getResult(1);
+            rewriter.create<memref::StoreOp>(loc, rowAggregation, outputValues,
+                                             outputValuesPosition);
+            Value rowIndex64 =
+                rewriter.create<IndexCastOp>(loc, rowIndex, int64Type);
+            rewriter.create<memref::StoreOp>(loc, rowIndex64, outputIndices,
+                                             outputValuesPosition);
+
+            Value updatedOutputValuesPosition =
+                rewriter.create<AddIOp>(loc, outputValuesPosition, c1)
+                    .getResult();
+            rewriter.create<scf::YieldOp>(
+                loc, ValueRange{updatedOutputValuesPosition});
+          }
+
+          rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.elseBlock());
+          {
+            rewriter.create<scf::YieldOp>(loc,
+                                          ValueRange{outputValuesPosition});
+          }
+
+          rewriter.setInsertionPointAfter(ifRowIsNonEmptyBlock);
+        }
+      } else if (aggregator == "plus") {
         Value rowIsNonEmpty =
             rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, ptr64, nextPtr64);
         ifRowIsNonEmptyBlock = rewriter.create<scf::IfOp>(
@@ -818,60 +982,6 @@ public:
             }
             Value rowSum = rowSumLoop.getResult(0);
             rewriter.create<memref::StoreOp>(loc, rowSum, outputValues,
-                                             outputValuesPosition);
-            Value rowIndex64 =
-                rewriter.create<IndexCastOp>(loc, rowIndex, int64Type);
-            rewriter.create<memref::StoreOp>(loc, rowIndex64, outputIndices,
-                                             outputValuesPosition);
-            Value updatedOutputValuesPosition =
-                rewriter.create<AddIOp>(loc, outputValuesPosition, c1)
-                    .getResult();
-            rewriter.create<scf::YieldOp>(
-                loc, ValueRange{updatedOutputValuesPosition});
-          }
-
-          rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.elseBlock());
-          {
-            rewriter.create<scf::YieldOp>(loc,
-                                          ValueRange{outputValuesPosition});
-          }
-
-          rewriter.setInsertionPointAfter(ifRowIsNonEmptyBlock);
-        }
-      } else if (aggregator == "count") {
-
-        Value ptrDiff = rewriter.create<SubIOp>(loc, nextPtr64, ptr64);
-
-        Value c0_i64 = rewriter.create<ConstantOp>(
-            loc, rewriter.getIntegerAttr(int64Type, 0));
-        Value rowIsNonEmpty =
-            rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, ptrDiff, c0_i64);
-
-        ifRowIsNonEmptyBlock = rewriter.create<scf::IfOp>(
-            loc, TypeRange{indexType}, rowIsNonEmpty, true);
-        {
-          rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.thenBlock());
-          {
-            Type valueType =
-                output.getType().dyn_cast<RankedTensorType>().getElementType();
-
-            // TODO should we require the output to have the element type be
-            // index or some integer type?
-            Value rowReduction =
-                llvm::TypeSwitch<Type, Value>(valueType)
-                    .Case<IntegerType>([&](IntegerType type) {
-                      Value ans;
-                      if (type.getWidth() < 64)
-                        ans = rewriter.create<TruncateIOp>(loc, type, ptrDiff);
-                      else
-                        ans =
-                            rewriter.create<SignExtendIOp>(loc, type, ptrDiff);
-                      return ans;
-                    })
-                    .Case<FloatType>([&](FloatType type) {
-                      return rewriter.create<SIToFPOp>(loc, type, ptrDiff);
-                    });
-            rewriter.create<memref::StoreOp>(loc, rowReduction, outputValues,
                                              outputValuesPosition);
             Value rowIndex64 =
                 rewriter.create<IndexCastOp>(loc, rowIndex, int64Type);
@@ -960,9 +1070,17 @@ public:
               });
       rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::AGG,
                                           aggResult);
+    } else if (aggregator == "argmin") {
+      // TODO implement this and add tests
+      // move the LowerVectorArgMinMaxOpRewrite implementation here
+      return op.emitError("\"" + aggregator + "\" is not yet supported.");
+    } else if (aggregator == "argmin") {
+      // TODO implement this and add tests
+      // move the LowerVectorArgMinMaxOpRewrite implementation here
+      return op.emitError("\"" + aggregator + "\" is not yet supported.");
     } else if (aggregator == "count") {
-      // TODO implement this ; should just be a replacement with
-      // graphblas.num_vals
+      // TODO implement this and add tests ; should just be a replacement
+      // with graphblas.num_vals
       return op.emitError("\"" + aggregator + "\" is not yet supported.");
     } else {
       return op.emitError("\"" + aggregator +
@@ -3143,7 +3261,6 @@ public:
   using OpRewritePattern<graphblas::MatrixSelectRandomOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixSelectRandomOp op,
                                 PatternRewriter &rewriter) const override {
-    ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     Value input = op.input();
