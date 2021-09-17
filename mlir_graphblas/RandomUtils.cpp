@@ -90,7 +90,7 @@ void choose_weighted(void *rngContext, int64_t n, int64_t maxIndex,
   while (selected.size() < (size_t)n) {
     double r = choose_double(*generator);
 
-    // find largest element in cumulative distribution less than r
+    // find smallest element in cumulative distribution greater than r
     int64_t choice = std::distance(
         cumulative.begin(),
         std::upper_bound(cumulative.begin(), cumulative.end(), r));
