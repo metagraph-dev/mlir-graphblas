@@ -3263,6 +3263,8 @@ public:
                                 PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
 
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+
     Value input = op.input();
     Value n = op.n();
     Value rngContext = op.rng_context();
