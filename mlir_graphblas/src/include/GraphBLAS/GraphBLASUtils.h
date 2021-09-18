@@ -10,7 +10,7 @@
 #include <set>
 #include <string>
 
-enum CompressionType { CSR, CSC, EITHER, SPARSE_VEC };
+enum CompressionType { CSR, CSC, EITHER };
 
 static const llvm::StringSet<> supportedIntersectOperators{
     "plus", "minus", "times", "div", "min", "max", "first", "second"};
@@ -30,15 +30,19 @@ static const llvm::StringSet<> supportedSemiringAddNames{"plus", "any", "min"};
 static const llvm::StringSet<> supportedSemiringMultiplyNames{
     "pair", "times", "plus", "first", "second"};
 
-static const llvm::StringSet<> supportedReduceAggregators{"plus", "count"};
+static const llvm::StringSet<> supportedReduceAggregators{"plus", "count",
+                                                          "argmin", "argmax"};
 
 static const llvm::StringSet<> supportedSelectors{"triu", "tril", "gt"};
 static const llvm::StringSet<> supportedThunkNeedingSelectors{"gt"};
 
 static const llvm::StringSet<> supportedBinaryApplyOperators{"min", "div",
                                                              "fill"};
-static const llvm::StringSet<> supportedUnaryApplyOperators{"abs", "minv"};
+static const llvm::StringSet<> supportedUnaryApplyOperators{"abs", "minv",
+                                                            "ainv", "identity"};
 
+bool hasRowOrdering(mlir::Type inputType);
+bool hasColumnOrdering(mlir::Type inputType);
 bool typeIsCSR(mlir::Type inputType);
 bool typeIsCSC(mlir::Type inputType);
 mlir::RankedTensorType getCompressedVectorType(mlir::MLIRContext *context,

@@ -7,7 +7,7 @@ from libc.stdint cimport int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, u
 from libc.stdlib cimport malloc, free
 from libcpp cimport bool
 from libcpp.vector cimport vector
-from numpy cimport float32_t, float64_t, intp_t, ndarray
+from numpy cimport float32_t, float64_t, intp_t, ndarray, set_array_base
 
 np.import_array()
 
@@ -22,8 +22,10 @@ cpdef ndarray claim_buffer(uintptr_t ptr, shape, strides, dtype):
 
 # Heh, there are likely better ways to create a read-only buffer, but
 # it's convenient for us to use the same API as `claim_buffer` above.
-cpdef ndarray view_buffer(uintptr_t ptr, shape, strides, dtype):
-    return _wrap_buffer(ptr, shape, strides, dtype, 0, 0)
+cpdef ndarray view_buffer(uintptr_t ptr, shape, strides, dtype, parent):
+    rv = _wrap_buffer(ptr, shape, strides, dtype, 0, 0)
+    set_array_base(rv, parent)  # keep parent alive for the life of this array
+    return rv
 
 
 @cython.boundscheck(False)
@@ -62,7 +64,7 @@ cdef ndarray _wrap_buffer(uintptr_t ptr, shape, strides, dtype, int init_flags, 
 cdef extern from "SparseUtils.cpp" nogil:
     cdef cppclass SparseTensor[V]:
         SparseTensor(vector[uint64_t], uint64_t) except +
-        void add(const vector[uint64_t], double)
+        void add(const vector[uint64_t], V)
         void sort()
         uint64_t getRank() const
 
@@ -131,8 +133,8 @@ cdef extern from "SparseUtils.cpp" nogil:
         uint64_t strides[1]
 
     cdef struct MemRef1DI64:
-        const int32_t *base
-        const int32_t *data
+        const int64_t *base
+        const int64_t *data
         uint64_t off
         uint64_t sizes[1]
         uint64_t strides[1]
@@ -206,6 +208,7 @@ cdef extern from "SparseUtils.cpp" nogil:
     void *vector_f64_p64i64_to_ptr8(void *tensor)
     void *vector_f32_p64i64_to_ptr8(void *tensor)
     void *vector_i64_p64i64_to_ptr8(void *tensor)
+    void *vector_i32_p64i64_to_ptr8(void *tensor)
     void *ptr8_to_matrix_csr_f64_p64i64(void *tensor)
     void *ptr8_to_matrix_csr_f32_p64i64(void *tensor)
     void *ptr8_to_matrix_csr_i64_p64i64(void *tensor)
@@ -215,6 +218,7 @@ cdef extern from "SparseUtils.cpp" nogil:
     void *ptr8_to_vector_f64_p64i64(void *tensor)
     void *ptr8_to_vector_f32_p64i64(void *tensor)
     void *ptr8_to_vector_i64_p64i64(void *tensor)
+    void *ptr8_to_vector_i32_p64i64(void *tensor)
 
     # Typed constructors
     void *new_matrix_csr_f64_p64i64(uint64_t nrows, uint64_t ncols)
@@ -226,6 +230,7 @@ cdef extern from "SparseUtils.cpp" nogil:
     void *new_vector_f64_p64i64(uint64_t size)
     void *new_vector_f32_p64i64(uint64_t size)
     void *new_vector_i64_p64i64(uint64_t size)
+    void *new_vector_i32_p64i64(uint64_t size)
 
 
 # st for "sparse tensor"
@@ -562,16 +567,16 @@ cdef class MLIRSparseTensor:
             raise IndexError(f'Bad dimension index: {d} >= {self.ndim}')
         if self.pointer_dtype == np.uint8:
             ref8 = sparsePointers8(self._data, d)
-            return view_buffer(<uintptr_t>ref8.data, ref8.sizes[0], ref8.strides[0], self.pointer_dtype)
+            return view_buffer(<uintptr_t>ref8.data, ref8.sizes[0], ref8.strides[0], self.pointer_dtype, self)
         elif self.pointer_dtype == np.uint16:
             ref16 = sparsePointers16(self._data, d)
-            return view_buffer(<uintptr_t>ref16.data, ref16.sizes[0], ref16.strides[0] * 2, self.pointer_dtype)
+            return view_buffer(<uintptr_t>ref16.data, ref16.sizes[0], ref16.strides[0] * 2, self.pointer_dtype, self)
         elif self.pointer_dtype == np.uint32:
             ref32 = sparsePointers32(self._data, d)
-            return view_buffer(<uintptr_t>ref32.data, ref32.sizes[0], ref32.strides[0] * 4, self.pointer_dtype)
+            return view_buffer(<uintptr_t>ref32.data, ref32.sizes[0], ref32.strides[0] * 4, self.pointer_dtype, self)
         elif self.pointer_dtype == np.uint64:
             ref64 = sparsePointers64(self._data, d)
-            return view_buffer(<uintptr_t>ref64.data, ref64.sizes[0], ref64.strides[0] * 8, self.pointer_dtype)
+            return view_buffer(<uintptr_t>ref64.data, ref64.sizes[0], ref64.strides[0] * 8, self.pointer_dtype, self)
         else:
             raise RuntimeError(f'Bad dtype: {self.ptr_dtype}')
 
@@ -588,16 +593,16 @@ cdef class MLIRSparseTensor:
             raise IndexError(f'Bad dimension index: {d} >= {self.ndim}')
         if self.index_dtype == np.uint8:
             ref8 = sparseIndices8(self._data, d)
-            return view_buffer(<uintptr_t>ref8.data, ref8.sizes[0], ref8.strides[0], self.index_dtype)
+            return view_buffer(<uintptr_t>ref8.data, ref8.sizes[0], ref8.strides[0], self.index_dtype, self)
         elif self.index_dtype == np.uint16:
             ref16 = sparseIndices16(self._data, d)
-            return view_buffer(<uintptr_t>ref16.data, ref16.sizes[0], ref16.strides[0] * 2, self.index_dtype)
+            return view_buffer(<uintptr_t>ref16.data, ref16.sizes[0], ref16.strides[0] * 2, self.index_dtype, self)
         elif self.index_dtype == np.uint32:
             ref32 = sparseIndices32(self._data, d)
-            return view_buffer(<uintptr_t>ref32.data, ref32.sizes[0], ref32.strides[0] * 4, self.index_dtype)
+            return view_buffer(<uintptr_t>ref32.data, ref32.sizes[0], ref32.strides[0] * 4, self.index_dtype, self)
         elif self.index_dtype == np.uint64:
             ref64 = sparseIndices64(self._data, d)
-            return view_buffer(<uintptr_t>ref64.data, ref64.sizes[0], ref64.strides[0] * 8, self.index_dtype)
+            return view_buffer(<uintptr_t>ref64.data, ref64.sizes[0], ref64.strides[0] * 8, self.index_dtype, self)
         else:
             raise RuntimeError(f'Bad dtype: {self.index_dtype}')
 
@@ -615,22 +620,22 @@ cdef class MLIRSparseTensor:
         cdef MemRef1DF64 ref64f
         if self.value_dtype == np.int8:
             ref8i = sparseValuesI8(self._data)
-            return view_buffer(<uintptr_t>ref8i.data, ref8i.sizes[0], ref8i.strides[0], self.value_dtype)
+            return view_buffer(<uintptr_t>ref8i.data, ref8i.sizes[0], ref8i.strides[0], self.value_dtype, self)
         elif self.value_dtype == np.int16:
             ref16i = sparseValuesI16(self._data)
-            return view_buffer(<uintptr_t>ref16i.data, ref16i.sizes[0], ref16i.strides[0] * 2, self.value_dtype)
+            return view_buffer(<uintptr_t>ref16i.data, ref16i.sizes[0], ref16i.strides[0] * 2, self.value_dtype, self)
         elif self.value_dtype == np.int32:
             ref32i = sparseValuesI32(self._data)
-            return view_buffer(<uintptr_t>ref32i.data, ref32i.sizes[0], ref32i.strides[0] * 4, self.value_dtype)
+            return view_buffer(<uintptr_t>ref32i.data, ref32i.sizes[0], ref32i.strides[0] * 4, self.value_dtype, self)
         elif self.value_dtype == np.int64:
             ref64i = sparseValuesI64(self._data)
-            return view_buffer(<uintptr_t>ref64i.data, ref64i.sizes[0], ref64i.strides[0] * 4, self.value_dtype)
+            return view_buffer(<uintptr_t>ref64i.data, ref64i.sizes[0], ref64i.strides[0] * 8, self.value_dtype, self)
         elif self.value_dtype == np.float32:
             ref32f = sparseValuesF32(self._data)
-            return view_buffer(<uintptr_t>ref32f.data, ref32f.sizes[0], ref32f.strides[0] * 4, self.value_dtype)
+            return view_buffer(<uintptr_t>ref32f.data, ref32f.sizes[0], ref32f.strides[0] * 4, self.value_dtype, self)
         elif self.value_dtype == np.float64:
             ref64f = sparseValuesF64(self._data)
-            return view_buffer(<uintptr_t>ref64f.data, ref64f.sizes[0], ref64f.strides[0] * 8, self.value_dtype)
+            return view_buffer(<uintptr_t>ref64f.data, ref64f.sizes[0], ref64f.strides[0] * 8, self.value_dtype, self)
             # ALT
             # cdef float64_t[:] view64
             # view64 = <float64_t[:ref64f.sizes[0]]>ref64f.data

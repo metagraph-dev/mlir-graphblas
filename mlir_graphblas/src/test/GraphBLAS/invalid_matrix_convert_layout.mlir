@@ -32,7 +32,7 @@ module {
 
 module {
     func @convert_layout_wrapper(%sparse_tensor: tensor<2x3xi16, #CSR64>) -> tensor<2x3xi16, #CSR_BOGUS> {
-        %answer = graphblas.convert_layout %sparse_tensor : tensor<2x3xi16, #CSR64> to tensor<2x3xi16, #CSR_BOGUS> // expected-error {{Sparse encoding pointer bit widths of input and result tensors do not match.}}
+        %answer = graphblas.convert_layout %sparse_tensor : tensor<2x3xi16, #CSR64> to tensor<2x3xi16, #CSR_BOGUS> // expected-error {{Input and output pointer bit widths do not match: 64!=32}}
         return %answer : tensor<2x3xi16, #CSR_BOGUS>
     }
 }
@@ -55,7 +55,7 @@ module {
 
 module {
     func @convert_layout_wrapper(%sparse_tensor: tensor<2x3xi16, #CSR64>) -> tensor<2x3xi16, #CSR_BOGUS> {
-        %answer = graphblas.convert_layout %sparse_tensor : tensor<2x3xi16, #CSR64> to tensor<2x3xi16, #CSR_BOGUS> // expected-error {{Sparse encoding index bit widths of input and result tensors do not match.}}
+        %answer = graphblas.convert_layout %sparse_tensor : tensor<2x3xi16, #CSR64> to tensor<2x3xi16, #CSR_BOGUS> // expected-error {{Input and output index bit widths do not match: 64!=32}}
         return %answer : tensor<2x3xi16, #CSR_BOGUS>
     }
 }
