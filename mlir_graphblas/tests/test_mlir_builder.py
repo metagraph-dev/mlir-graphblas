@@ -918,13 +918,17 @@ def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
 
-    rng = ChooseUniformContext()
+    rng = ChooseUniformContext(seed=2)
     result = test_select_random_uniform(input_tensor, 2, rng)
     dense_result = densify_csr(result)
 
     expected_row_count = np.minimum((dense_input_tensor != 0).sum(axis=1), 2)
     actual_row_count = (dense_result != 0).sum(axis=1)
     np.testing.assert_equal(expected_row_count, actual_row_count)
+
+    # check for correct truncation
+    assert len(result.indices[1]) == result.pointers[1][-1]
+    assert len(result.values) == result.pointers[1][-1]
 
 
 def test_ir_select_random_weighted(engine: MlirJitEngine, aliases: AliasMap):
@@ -959,7 +963,7 @@ def test_ir_select_random_weighted(engine: MlirJitEngine, aliases: AliasMap):
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
 
     # basic checks
-    rng = ChooseWeightedContext()
+    rng = ChooseWeightedContext(seed=2)
     result = test_select_random_weighted(input_tensor, 2, rng)
     dense_result = densify_csr(result)
 
