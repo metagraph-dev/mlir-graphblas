@@ -3253,6 +3253,13 @@ public:
 
     // Output array is populated
     rewriter.setInsertionPointAfter(rowLoop);
+    // Resize output index and values to match total number of elements
+    Value outputNNZ_64 = rewriter.create<memref::LoadOp>(loc, Bp, nrow);
+    Value outputNNZ =
+        rewriter.create<mlir::IndexCastOp>(loc, outputNNZ_64, indexType);
+    callResizeIndex(rewriter, module, loc, output, c1, outputNNZ);
+    callResizeValues(rewriter, module, loc, output, outputNNZ);
+
     rewriter.replaceOp(op, output);
 
     return success();

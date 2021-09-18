@@ -970,6 +970,10 @@ def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
     actual_row_count = (dense_result != 0).sum(axis=1)
     np.testing.assert_equal(expected_row_count, actual_row_count)
 
+    # check for correct truncation
+    assert len(result.indices[1]) == result.pointers[1][-1]
+    assert len(result.values) == result.pointers[1][-1]
+
 
 def test_ir_select_random_weighted(engine: MlirJitEngine, aliases: AliasMap):
     # Build Function
