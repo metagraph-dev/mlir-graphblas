@@ -277,16 +277,19 @@ class MLIRFunctionBuilder(BaseFunction):
     #########################
 
     def return_vars(self, *returned_values: MLIRVar) -> None:
-        for expected, var in zip(self.return_types, returned_values):
-            if not isinstance(var, MLIRVar):
-                raise TypeError(
-                    f"{var!r} is not a valid return value, expected MLIRVar."
-                )
-            if var.type != expected:
-                raise TypeError(f"Return type of {var!r} does not match {expected}")
-        ret_vals = ", ".join(str(var) for var in returned_values)
-        ret_types = ", ".join(str(rt) for rt in self.return_types)
-        statement = f"return {ret_vals} : {ret_types}"
+        if len(returned_values) > 0:
+            for expected, var in zip(self.return_types, returned_values):
+                if not isinstance(var, MLIRVar):
+                    raise TypeError(
+                        f"{var!r} is not a valid return value, expected MLIRVar."
+                    )
+                if var.type != expected:
+                    raise TypeError(f"Return type of {var!r} does not match {expected}")
+            ret_vals = ", ".join(str(var) for var in returned_values)
+            ret_types = ", ".join(str(rt) for rt in self.return_types)
+            statement = f"return {ret_vals} : {ret_types}"
+        else:
+            statement = f"return"
         self.add_statement(statement)
 
     class ForLoopVars:

@@ -735,6 +735,36 @@ class GraphBLAS_MatrixSelectRandom(BaseOp):
         )
 
 
+class GraphBLAS_Print(BaseOp):
+    dialect = "graphblas"
+    name = "print"
+
+    @classmethod
+    def call(cls, irbuilder, *original_printables):
+        printables = [""]
+        for printable in original_printables:
+            if isinstance(printable, str) and isinstance(printables[-1], str):
+                printables[-1] = printables[-1] + printable
+            elif not isinstance(printable, str) and not isinstance(printables[-1], str):
+                printables.append("")
+                printables.append(printable)
+            else:
+                printables.append(printable)
+
+            if not isinstance(printable, str):
+                cls.ensure_mlirvar(printable)
+        values = printables[1::2]
+        string_attributes = printables[::2]
+        return None, (
+            "graphblas.print "
+            + ", ".join(str(v) for v in values)
+            + " { strings = ["
+            + ", ".join('"' + s.replace('"', '\\"') + '"' for s in string_attributes)
+            + "] } : "
+            + ", ".join(str(v.type) for v in values)
+        )
+
+
 ###########################################
 # util ops
 ###########################################

@@ -380,6 +380,20 @@ module {
 
 module {
 
+    // CHECK: func @print_wrapper() {
+    func @print_wrapper() -> () {
+    	// CHECK-NEXT: %[[VAL_0:.*]] = constant 0.000000e+00 : f32
+        %0 = constant 0.0 : f32
+	// CHECK-NEXT: graphblas.print %[[VAL_0]], %[[VAL_0]] {strings = ["start ", " middle ", " end"]} : f32, f32
+	graphblas.print %0, %0 { strings = ["start ", " middle ", " end"] } : f32, f32
+        // CHECK-NEXT: return
+        return
+    }
+
+}
+
+module {
+
     // CHECK: func @vector_argminmax_min(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
     func @vector_argminmax_min(%vec: tensor<3xi64, #SparseVec64>) -> index {
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_argminmax %[[ARGA]] {minmax = "min"} : [[A_TYPE]]

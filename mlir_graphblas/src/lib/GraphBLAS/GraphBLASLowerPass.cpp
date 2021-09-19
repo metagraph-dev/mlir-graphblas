@@ -3255,6 +3255,37 @@ public:
   };
 };
 
+class LowerPrintRewrite : public OpRewritePattern<graphblas::PrintOp> {
+public:
+  using OpRewritePattern<graphblas::PrintOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::PrintOp op,
+                                PatternRewriter &rewriter) const override {
+
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    for (auto pair : llvm::zip_longest(op.strings(), op.values())) {
+      Optional<Attribute> stringAttribute = std::get<0>(pair);
+      Optional<Value> val = std::get<1>(pair);
+
+      if (stringAttribute) {
+        StringRef currentString = stringAttribute.getValue()
+                                      .dyn_cast_or_null<StringAttr>()
+                                      .getValue();
+        callPrintString(rewriter, module, loc, currentString);
+      }
+
+      if (val)
+        callPrintValue(rewriter, module, loc, val.getValue());
+    }
+    callPrintString(rewriter, module, loc, "\n");
+
+    rewriter.eraseOp(op);
+
+    return success();
+  };
+};
+
 class LowerMatrixSelectRandomRewrite
     : public OpRewritePattern<graphblas::MatrixSelectRandomOp> {
 public:
@@ -3426,18 +3457,18 @@ public:
 };
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
-  patterns.add<LowerMatrixSelectRandomRewrite, LowerMatrixSelectRewrite,
-               LowerReduceToVectorRewrite, LowerReduceToScalarRewrite,
-               LowerReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
-               LowerConvertLayoutRewrite, LowerTransposeRewrite,
-               LowerApplyRewrite, LowerApplyGenericRewrite,
-               LowerMatrixMultiplyReduceToScalarGenericRewrite,
-               LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
-               LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
-               LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
-               LowerVectorArgMaxOpRewrite, LowerDiagOpRewrite,
-               LowerCommentRewrite, LowerSizeRewrite, LowerNumRowsRewrite,
-               LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite>(
+  patterns.add<
+      LowerMatrixSelectRandomRewrite, LowerMatrixSelectRewrite,
+      LowerReduceToVectorRewrite, LowerReduceToScalarRewrite,
+      LowerReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
+      LowerConvertLayoutRewrite, LowerTransposeRewrite, LowerApplyRewrite,
+      LowerApplyGenericRewrite, LowerMatrixMultiplyReduceToScalarGenericRewrite,
+      LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
+      LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
+      LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
+      LowerVectorArgMaxOpRewrite, LowerDiagOpRewrite, LowerCommentRewrite,
+      LowerPrintRewrite, LowerSizeRewrite, LowerNumRowsRewrite,
+      LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite>(
       patterns.getContext());
 }
 
