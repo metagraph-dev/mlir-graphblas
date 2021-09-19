@@ -20,6 +20,7 @@
 #include "GraphBLAS/GraphBLASUtils.h"
 
 #include <numeric>
+#include <unordered_set>
 
 using namespace mlir;
 using namespace mlir::graphblas;
@@ -1001,6 +1002,60 @@ static LogicalResult verify(MatrixSelectRandomOp op) {
   if (nType.getWidth() != inputSparseEncoding.getIndexBitWidth())
     return op.emitError(
         "n must match bit width of input sparse tensor index type");
+
+  return success();
+}
+
+static LogicalResult verify(PrintOp op) {
+  for (OpOperand &opOperand : op->getOpOperands()) {
+    Type operandType = opOperand.get().getType();
+
+    llvm::Optional<std::string> errorString =
+        llvm::TypeSwitch<Type, llvm::Optional<std::string>>(operandType)
+            .Case<IndexType>(
+                [&](IndexType type) -> llvm::Optional<std::string> {
+                  return llvm::None;
+                })
+            .Case<IntegerType>(
+                [&](IntegerType type) -> llvm::Optional<std::string> {
+                  unsigned bitWidth = type.getWidth();
+                  static const std::unordered_set<int> allowedBitWidths = {
+                      1, 8, 16, 32, 64};
+                  if (allowedBitWidths.find(bitWidth) ==
+                      allowedBitWidths.end()) {
+                    std::string errorMessageString =
+                        "Cannot print integer with bit width of ";
+                    errorMessageString += bitWidth;
+                    errorMessageString += ".";
+                    return errorMessageString;
+                  }
+                  return llvm::None;
+                })
+            .Case<FloatType>([&](FloatType type)
+                                 -> llvm::Optional<std::string> {
+              unsigned bitWidth = type.getWidth();
+              static const std::unordered_set<int> allowedBitWidths = {32, 64};
+              if (allowedBitWidths.find(bitWidth) == allowedBitWidths.end()) {
+                std::string errorMessageString =
+                    "Cannot print float with bit width of ";
+                errorMessageString += bitWidth;
+                errorMessageString += ".";
+                return errorMessageString;
+              }
+              return llvm::None;
+            })
+            .Default([&](Type type) -> llvm::Optional<std::string> {
+              std::string errorMessageString = "Printing for the type ";
+              llvm::raw_string_ostream stream(errorMessageString);
+              type.print(stream);
+              stream << " is not yet supported.";
+              stream.flush();
+              return errorMessageString;
+            });
+
+    if (errorString)
+      return op.emitError(errorString.getValue());
+  }
 
   return success();
 }

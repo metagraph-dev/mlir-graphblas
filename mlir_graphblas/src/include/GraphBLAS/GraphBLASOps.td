@@ -777,6 +777,40 @@ def GraphBLAS_CommentOp : GraphBLAS_Op<"comment", []> {
     }];
 }
 
+def GraphBLAS_PrintOp : GraphBLAS_Op<"print", []> {
+    let summary = "graphblas print operation";
+    let description = [{
+        `graphblas.print` is used to pretty print values
+        to stdout.
+        This is intended to be used for debugging only.
+        The strings attribute is a list of strings.
+        This op is variadic and takes an arbitrary number of inputs.
+        The printing alternates between printing the strings
+        and the input values. 
+
+        ```mlir 
+        %c9_9_f32 = constant 9.9 : f32
+        %c1_i32 = constant 1 : i32
+        // prints "start 9.9 middle 1 end".
+        graphblas.print %c9_9_f32, %c1_i32 { strings = ["start ", " middle ", " end"] } : f32, i32
+        // prints "start 9.9 middle end zyx".
+        graphblas.print %c9_9_f32 { strings = ["start ", " middle ", " end", " z", "y", "x"] } : f32
+        // prints "start 9.91111".
+        graphblas.print %c9_9_f32, %c1_i32, %c1_i32, %c1_i32, %c1_i32 { strings = ["start "] } : f32, i32, i32, i32, i32
+        // prints "9.9".
+        graphblas.print %0 { strings = [] } : f32
+        ```
+    }];
+    
+    let arguments = (ins Variadic<AnyType>:$values, StrArrayAttr:$strings);
+
+    let assemblyFormat = [{
+        $values attr-dict `:` type($values)
+    }];
+    
+    let verifier = [{ return ::verify(*this); }];
+}
+
 def GraphBLAS_MatrixSelectRandomOp : GraphBLAS_Op<"matrix_select_random", []> {
     let summary = "random selection of elements from each row of matrix";
     let description = [{

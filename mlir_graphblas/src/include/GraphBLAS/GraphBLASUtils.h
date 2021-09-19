@@ -65,6 +65,10 @@ mlir::RankedTensorType getCSCType(mlir::MLIRContext *context,
 int64_t getRank(mlir::Type inputType);
 int64_t getRank(mlir::Value inputValue);
 
+void callPrintString(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                     mlir::Location loc, mlir::StringRef string);
+void callPrintValue(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                    mlir::Location loc, mlir::Value input);
 mlir::Value castToPtr8(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                        mlir::Location loc, mlir::Value input);
 mlir::Value castToTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,

@@ -229,6 +229,34 @@ std::string buildSparseTypeString(RankedTensorType tensorType) {
     assert(false && "Unexpected tensor type.");
 }
 
+void callPrintString(OpBuilder &builder, ModuleOp &mod, Location loc,
+                     StringRef string) {
+  Type int64Type = builder.getIntegerType(64);
+  FlatSymbolRefAttr funcSymbol =
+      getFunc(mod, loc, "print_int_as_char", TypeRange(), int64Type);
+  for (char character : string) {
+    int64_t character_int = (int64_t)character;
+    Value character_int_i64 =
+        builder.create<ConstantIntOp>(loc, character_int, int64Type);
+    builder.create<CallOp>(loc, funcSymbol, TypeRange(),
+                           llvm::ArrayRef<Value>({character_int_i64}));
+  }
+  return;
+}
+
+void callPrintValue(OpBuilder &builder, ModuleOp &mod, Location loc,
+                    Value input) {
+  std::string funcName = "print_";
+  llvm::raw_string_ostream stream(funcName);
+  Type type = input.getType();
+  type.print(stream);
+  stream.flush();
+  FlatSymbolRefAttr funcSymbol = getFunc(mod, loc, funcName, TypeRange(), type);
+  builder.create<CallOp>(loc, funcSymbol, TypeRange(),
+                         llvm::ArrayRef<Value>({input}));
+  return;
+}
+
 Value castToPtr8(OpBuilder &builder, ModuleOp &mod, Location loc, Value input) {
   MLIRContext *context = mod.getContext();
   RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
