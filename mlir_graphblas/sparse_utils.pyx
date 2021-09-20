@@ -64,7 +64,7 @@ cdef ndarray _wrap_buffer(uintptr_t ptr, shape, strides, dtype, int init_flags, 
 cdef extern from "SparseUtils.cpp" nogil:
     cdef cppclass SparseTensor[V]:
         SparseTensor(vector[uint64_t], uint64_t) except +
-        void add(const vector[uint64_t], double)
+        void add(const vector[uint64_t], V)
         void sort()
         uint64_t getRank() const
 
@@ -133,8 +133,8 @@ cdef extern from "SparseUtils.cpp" nogil:
         uint64_t strides[1]
 
     cdef struct MemRef1DI64:
-        const int32_t *base
-        const int32_t *data
+        const int64_t *base
+        const int64_t *data
         uint64_t off
         uint64_t sizes[1]
         uint64_t strides[1]
@@ -208,6 +208,7 @@ cdef extern from "SparseUtils.cpp" nogil:
     void *vector_f64_p64i64_to_ptr8(void *tensor)
     void *vector_f32_p64i64_to_ptr8(void *tensor)
     void *vector_i64_p64i64_to_ptr8(void *tensor)
+    void *vector_i32_p64i64_to_ptr8(void *tensor)
     void *ptr8_to_matrix_csr_f64_p64i64(void *tensor)
     void *ptr8_to_matrix_csr_f32_p64i64(void *tensor)
     void *ptr8_to_matrix_csr_i64_p64i64(void *tensor)
@@ -217,6 +218,7 @@ cdef extern from "SparseUtils.cpp" nogil:
     void *ptr8_to_vector_f64_p64i64(void *tensor)
     void *ptr8_to_vector_f32_p64i64(void *tensor)
     void *ptr8_to_vector_i64_p64i64(void *tensor)
+    void *ptr8_to_vector_i32_p64i64(void *tensor)
 
     # Typed constructors
     void *new_matrix_csr_f64_p64i64(uint64_t nrows, uint64_t ncols)
@@ -228,6 +230,7 @@ cdef extern from "SparseUtils.cpp" nogil:
     void *new_vector_f64_p64i64(uint64_t size)
     void *new_vector_f32_p64i64(uint64_t size)
     void *new_vector_i64_p64i64(uint64_t size)
+    void *new_vector_i32_p64i64(uint64_t size)
 
 
 # st for "sparse tensor"
@@ -626,7 +629,7 @@ cdef class MLIRSparseTensor:
             return view_buffer(<uintptr_t>ref32i.data, ref32i.sizes[0], ref32i.strides[0] * 4, self.value_dtype, self)
         elif self.value_dtype == np.int64:
             ref64i = sparseValuesI64(self._data)
-            return view_buffer(<uintptr_t>ref64i.data, ref64i.sizes[0], ref64i.strides[0] * 4, self.value_dtype, self)
+            return view_buffer(<uintptr_t>ref64i.data, ref64i.sizes[0], ref64i.strides[0] * 8, self.value_dtype, self)
         elif self.value_dtype == np.float32:
             ref32f = sparseValuesF32(self._data)
             return view_buffer(<uintptr_t>ref32f.data, ref32f.sizes[0], ref32f.strides[0] * 4, self.value_dtype, self)

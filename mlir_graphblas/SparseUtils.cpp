@@ -839,6 +839,9 @@ void *vector_f32_p64i64_to_ptr8(void *tensor) {
 void *vector_i64_p64i64_to_ptr8(void *tensor) {
     return tensor;
 }
+void *vector_i32_p64i64_to_ptr8(void *tensor) {
+    return tensor;
+}
 // Combinations of !llvm.ptr<i8> to real types
 void *ptr8_to_matrix_csr_f64_p64i64(void *tensor) {
     return tensor;
@@ -865,6 +868,9 @@ void *ptr8_to_vector_f32_p64i64(void *tensor) {
     return tensor;
 }
 void *ptr8_to_vector_i64_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_vector_i32_p64i64(void *tensor) {
     return tensor;
 }
 // New tensor generic constructors
@@ -915,6 +921,10 @@ void *new_vector_f32_p64i64(uint64_t size) {
 }
 void *new_vector_i64_p64i64(uint64_t size) {
     SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, int64_t>(1);
+    return vector_prep_size(tensor, size);
+}
+void *new_vector_i32_p64i64(uint64_t size) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, int32_t>(1);
     return vector_prep_size(tensor, size);
 }
 

@@ -30,6 +30,50 @@ module {
 
 // -----
 
+#SparseVec64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @reduce_to_vector_wrapper(%matrix: tensor<?x?xf32, #CSR64>) -> tensor<?xf32, #SparseVec64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "argmin", axis = 0 } : tensor<?x?xf32, #CSR64> to tensor<?xf32, #SparseVec64> // expected-error {{"argmin" requires the output vector to have i64 elements.}}
+        return %vec : tensor<?xf32, #SparseVec64>
+    }
+}
+
+// -----
+
+#SparseVec64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @reduce_to_vector_wrapper(%matrix: tensor<?x?xf32, #CSR64>) -> tensor<?xf32, #SparseVec64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "argmax", axis = 0 } : tensor<?x?xf32, #CSR64> to tensor<?xf32, #SparseVec64> // expected-error {{"argmax" requires the output vector to have i64 elements.}}
+        return %vec : tensor<?xf32, #SparseVec64>
+    }
+}
+
+// -----
+
 #BADENCODING = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed", "dense" ],
   dimOrdering = affine_map<(i,j,k) -> (i,j,k)>,
@@ -68,7 +112,7 @@ module {
 
 // -----
 
-// COM: TODO when https://github.com/metagraph-dev/mlir-graphblas/issues/66 is complete, try alll sorts of bad values for dimLevelType in the bad encoding 
+// COM: TODO when https://github.com/metagraph-dev/mlir-graphblas/issues/66 is complete, try all sorts of bad values for dimLevelType in the bad encoding 
 
 #BADENCODING = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed", "compressed" ],

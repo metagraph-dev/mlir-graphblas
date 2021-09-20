@@ -73,6 +73,7 @@ class BaseFunction:
 module  {
     func private @choose_first(i64, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
     func private @choose_uniform(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
+    func private @choose_weighted(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
 
     {{ body }}
 

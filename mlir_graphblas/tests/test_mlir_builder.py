@@ -1,3 +1,4 @@
+from collections import defaultdict
 import datetime
 import mlir
 import itertools
@@ -7,7 +8,7 @@ import numpy as np
 from mlir_graphblas import MlirJitEngine
 from mlir_graphblas.engine import parse_mlir_functions
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
-from mlir_graphblas.random_utils import ChooseUniformContext
+from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, SparseTensorType
 from mlir_graphblas.functions import ConvertLayout
@@ -646,6 +647,8 @@ def test_ir_reduce_to_vector(
             reduce_columns_output_type,
             reduce_rows_output_type,
             reduce_columns_output_type,
+            "tensor<?xi64, #CV64>",
+            "tensor<?xi64, #CV64>",
         ],
         aliases=aliases,
     )
@@ -667,11 +670,16 @@ def test_ir_reduce_to_vector(
         reduced_columns_negative_abs, "identity"
     )
 
+    reduced_rows_argmin = ir_builder.graphblas.reduce_to_vector(matrix, "argmin", 1)
+    reduced_columns_argmax = ir_builder.graphblas.reduce_to_vector(matrix, "argmax", 0)
+
     ir_builder.return_vars(
         reduced_rows,
         reduced_columns,
         reduced_rows_clamped,
         reduced_columns_negative_abs,
+        reduced_rows_argmin,
+        reduced_columns_argmax,
     )
     reduce_func = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
@@ -679,10 +687,10 @@ def test_ir_reduce_to_vector(
     dense_input_tensor = np.array(
         [
             [1, 0, 0, 0],
-            [-9, 0, 1, 1],
+            [-2, 0, 3, -4],
             [0, 0, 0, 0],
-            [0, 0, 1, 1],
-            [0, 0, 0, -9],
+            [0, 0, 5, -6],
+            [0, -7, 0, 8],
         ],
         dtype=np_type,
     )
@@ -698,12 +706,16 @@ def test_ir_reduce_to_vector(
         reduced_columns,
         reduced_rows_clamped,
         reduced_columns_negative_abs,
+        reduced_rows_argmin,
+        reduced_columns_argmax,
     ) = reduce_func(input_tensor)
 
     reduced_rows = densify_vector(reduced_rows)
     reduced_columns = densify_vector(reduced_columns)
     reduced_rows_clamped = densify_vector(reduced_rows_clamped)
     reduced_columns_negative_abs = densify_vector(reduced_columns_negative_abs)
+    reduced_rows_argmin = densify_vector(reduced_rows_argmin)
+    reduced_columns_argmax = densify_vector(reduced_columns_argmax)
 
     expected_reduced_rows = dense_input_tensor.sum(axis=1)
     expected_reduced_columns = (
@@ -715,10 +727,20 @@ def test_ir_reduce_to_vector(
 
     expected_reduced_columns_negative_abs = -np.abs(expected_reduced_columns)
 
+    M = dense_input_tensor.copy()
+    M[dense_input_tensor == 0] = dense_input_tensor.max() + 1
+    expected_reduced_rows_argmin = np.argmin(M, axis=1)
+
+    M = dense_input_tensor.copy()
+    M[dense_input_tensor == 0] = dense_input_tensor.min() - 1
+    expected_reduced_columns_argmax = np.argmax(M, axis=0)
+
     assert np.all(reduced_rows == expected_reduced_rows)
     assert np.all(reduced_columns == expected_reduced_columns)
     assert np.all(reduced_rows_clamped == expected_reduced_rows_clamped)
     assert np.all(reduced_columns_negative_abs == expected_reduced_columns_negative_abs)
+    assert np.all(reduced_rows_argmin == expected_reduced_rows_argmin)
+    assert np.all(reduced_columns_argmax == expected_reduced_columns_argmax)
 
     return
 
@@ -896,10 +918,77 @@ def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
 
-    rng = ChooseUniformContext()
+    rng = ChooseUniformContext(seed=2)
     result = test_select_random_uniform(input_tensor, 2, rng)
     dense_result = densify_csr(result)
 
     expected_row_count = np.minimum((dense_input_tensor != 0).sum(axis=1), 2)
     actual_row_count = (dense_result != 0).sum(axis=1)
     np.testing.assert_equal(expected_row_count, actual_row_count)
+
+    # check for correct truncation
+    assert len(result.indices[1]) == result.pointers[1][-1]
+    assert len(result.values) == result.pointers[1][-1]
+
+
+def test_ir_select_random_weighted(engine: MlirJitEngine, aliases: AliasMap):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "test_select_random_weighted",
+        input_types=["tensor<?x?xf64, #CSR64>", "i64", "!llvm.ptr<i8>"],
+        return_types=["tensor<?x?xf64, #CSR64>"],
+        aliases=aliases,
+    )
+    M, n, context = ir_builder.inputs
+    filtered = ir_builder.graphblas.matrix_select_random(
+        M, n, context, choose_n="choose_weighted"
+    )
+    ir_builder.return_vars(filtered)
+    test_select_random_weighted = ir_builder.compile(
+        engine=engine, passes=GRAPHBLAS_PASSES
+    )
+
+    # Test Results
+    # for weighted sampling to make sense, weights must all be >= 0
+    dense_input_tensor = np.array(
+        [
+            [1, 0, 0, 0, 0],
+            [1, 2, 4, 0, 0],  # using this row for stats check below
+            [0, 0, 1, 100, 1],
+            [0, 0, 5, 6, 0],
+            [0, 0, 0, 1, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    # basic checks
+    rng = ChooseWeightedContext(seed=2)
+    result = test_select_random_weighted(input_tensor, 2, rng)
+    dense_result = densify_csr(result)
+
+    expected_row_count = np.minimum((dense_input_tensor != 0).sum(axis=1), 2)
+    actual_row_count = (dense_result != 0).sum(axis=1)
+    np.testing.assert_equal(expected_row_count, actual_row_count)
+
+    # rough statistical check of row 1
+    counts = defaultdict(lambda: 0)
+    n = 100
+    for i in range(n):
+        result = test_select_random_weighted(input_tensor, 1, rng)
+        dense_result = densify_csr(result)
+        choice = np.argmax(dense_result[1])
+        counts[choice] += 1
+
+    assert sorted(counts.keys()) == [0, 1, 2]
+    row_1 = dense_input_tensor[1]
+    row_1_sum = row_1.sum()
+    print(counts)
+    for key, actual_count in counts.items():
+        prob = row_1[key] / row_1_sum
+        expected_count = prob * n
+        # binomial standard deviation
+        stddev = (n * prob * (1 - prob)) ** 0.5
+        assert abs(expected_count - actual_count) < (
+            2 * stddev
+        ), f"key: {key}, expected: {expected_count}, actual: {actual_count}, stdev: {stddev}"

@@ -18,6 +18,68 @@ module {
 
 // -----
 
+#SparseVec64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @reduce_to_scalar_wrapper(%sparse_tensor: tensor<?xf64, #SparseVec64>) -> bf16 {
+        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "argmin" } : tensor<?xf64, #SparseVec64> to bf16 // expected-error {{"argmin" requires the output type to be i64.}}
+        return %answer : bf16
+    }
+}
+
+// -----
+
+#SparseVec64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @reduce_to_scalar_wrapper(%sparse_tensor: tensor<?xf64, #SparseVec64>) -> bf16 {
+        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "argmax" } : tensor<?xf64, #SparseVec64> to bf16 // expected-error {{"argmax" requires the output type to be i64.}}
+        return %answer : bf16
+    }
+}
+
+// -----
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> i64 {
+        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "argmin" } : tensor<?x?xf64, #CSR64> to i64 // expected-error {{"argmin" only supported for vectors.}}
+        return %answer : i64
+    }
+}
+
+// -----
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @reduce_to_scalar_wrapper(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> i64 {
+        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "argmax" } : tensor<?x?xf64, #CSR64> to i64 // expected-error {{"argmax" only supported for vectors.}}
+        return %answer : i64
+    }
+}
+
+// -----
+
 #BADENCODING = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed", "dense" ],
   dimOrdering = affine_map<(i,j,k) -> (i,j,k)>,

@@ -626,7 +626,7 @@ class GraphBLAS_MatrixSelect(BaseOp):
 class GraphBLAS_ReduceToVector(BaseOp):
     dialect = "graphblas"
     name = "reduce_to_vector"
-    allowed_aggregators = {"plus", "count"}
+    allowed_aggregators = {"plus", "count", "argmin", "argmax"}
 
     @classmethod
     def call(cls, irbuilder, input, aggregator, axis):
@@ -643,7 +643,10 @@ class GraphBLAS_ReduceToVector(BaseOp):
             input.type.encoding.pointer_bit_width,
             input.type.encoding.index_bit_width,
         )
-        return_type = SparseTensorType([-1], input.type.value_type, sparse_vec_encoding)
+        return_element_type = (
+            IntType(64) if aggregator in ("argmin", "argmax") else input.type.value_type
+        )
+        return_type = SparseTensorType([-1], return_element_type, sparse_vec_encoding)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.reduce_to_vector {input} "
@@ -654,7 +657,7 @@ class GraphBLAS_ReduceToVector(BaseOp):
 class GraphBLAS_ReduceToScalar(BaseOp):
     dialect = "graphblas"
     name = "reduce_to_scalar"
-    allowed_aggregators = {"plus", "count"}
+    allowed_aggregators = {"plus", "count", "argmin", "argmax"}
 
     @classmethod
     def call(cls, irbuilder, input, aggregator):
@@ -816,7 +819,7 @@ class GraphBLAS_Diag(BaseOp):
 class GraphBLAS_MatrixSelectRandom(BaseOp):
     dialect = "graphblas"
     name = "matrix_select_random"
-    allowed_choose_n = set(["choose_first", "choose_uniform"])
+    allowed_choose_n = set(["choose_first", "choose_uniform", "choose_weighted"])
 
     @classmethod
     def call(cls, irbuilder, input, n: MLIRVar, rng_context: MLIRVar, choose_n: str):
