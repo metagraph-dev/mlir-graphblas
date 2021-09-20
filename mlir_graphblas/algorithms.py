@@ -523,26 +523,35 @@ def pagerank(
     return pr
 
 
-_graph_search = None
+# Separate versions of compiled code are stored based on method
+_graph_search = {}
+_allowable_graph_search_methods = ("random", "random_weighted", "argmin", "argmax")
 
 
 def graph_search(
-    graph: MLIRSparseTensor, num_steps, initial_seed_array
+    graph: MLIRSparseTensor, num_steps, initial_seed_array, method="random", *, rand_seed=None
 ) -> MLIRSparseTensor:
-    global _graph_search, _gs_context
-    if _graph_search is None:
-        irb = MLIRFunctionBuilder(
-            "graph_search",
-            input_types=[
+    if method not in _allowable_graph_search_methods:
+        raise ValueError(f"Invalid method: {method}, must be one of {_allowable_graph_search_methods}")
+
+    if method not in _graph_search:
+        input_types = [
                 "tensor<?x?xf64, #CSR64>",
                 "index",
                 "tensor<?xi64>",
-                "!llvm.ptr<i8>",
-            ],
+            ]
+        if method[:6] == "random":
+            input_types.append("!llvm.ptr<i8>")
+        irb = MLIRFunctionBuilder(
+            "graph_search",
+            input_types=input_types,
             return_types=["tensor<?xf64, #CV64>"],
             aliases=_build_common_aliases(),
         )
-        (A, nsteps, seeds, ctx) = irb.inputs
+        if method[:6] == "random":
+            (A, nsteps, seeds, ctx) = irb.inputs
+        else:
+            (A, nsteps, seeds) = irb.inputs
 
         c0 = irb.constant(0, "index")
         c1 = irb.constant(1, "index")
@@ -582,14 +591,21 @@ def graph_search(
         with irb.for_loop(0, nsteps) as for_vars:
             # Compute neighbors of current nodes
             available_neighbors = irb.graphblas.matrix_multiply(
-                B, A_csc, semiring="min_first"
+                B, A_csc, semiring="min_second"
             )
             # Select new neighbors
-            chosen_neighbors = irb.graphblas.matrix_select_random(
-                available_neighbors, ci1, ctx, "choose_uniform"
-            )
+            if method[:6] == "random":
+                rand_method = "choose_weighted" if method == "random_weighted" else "choose_uniform"
+                chosen_neighbors = irb.graphblas.matrix_select_random(
+                    available_neighbors, ci1, ctx, rand_method
+                )
+                chosen_neighbors_idx = irb.sparse_tensor.indices(chosen_neighbors, c1)
+            elif method[:3] == "arg":
+                chosen_neighbors = irb.graphblas.reduce_to_vector(
+                    available_neighbors, method, axis=1
+                )
+                chosen_neighbors_idx = irb.sparse_tensor.values(chosen_neighbors)
             # Update B inplace with new neighbors
-            chosen_neighbors_idx = irb.sparse_tensor.indices(chosen_neighbors, c1)
             with irb.for_loop(0, nseeds) as inner_for:
                 inner_seed_num = inner_for.iter_var_index
                 inner_cur_node = irb.memref.load(chosen_neighbors_idx, inner_seed_num)
@@ -600,13 +616,18 @@ def graph_search(
 
         irb.return_vars(count)
 
-        _graph_search = irb.compile()
+        _graph_search[method] = irb.compile()
 
     import numpy as np
-    from mlir_graphblas.random_utils import ChooseUniformContext
-
     if not isinstance(initial_seed_array, np.ndarray):
         initial_seed_array = np.array(initial_seed_array, dtype=np.int64)
-    ctx = ChooseUniformContext()
-    count = _graph_search(graph, num_steps, initial_seed_array, ctx)
+
+    extra = []
+    if method == "random":
+        from mlir_graphblas.random_utils import ChooseUniformContext
+        extra.append(ChooseUniformContext(rand_seed))
+    elif method == "random_weighted":
+        from mlir_graphblas.random_utils import ChooseWeightedContext
+        extra.append(ChooseWeightedContext(rand_seed))
+    count = _graph_search[method](graph, num_steps, initial_seed_array, *extra)
     return count

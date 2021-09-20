@@ -229,7 +229,7 @@ def test_pagerank():
     ), "Unexpectedly converged in 6 iterations"
 
 
-def test_graph_search_random():
+def test_graph_search():
     # fmt: off
     indices = np.array(
         [[0, 1], [0, 2], [1, 0], [1, 3], [2, 0], [2, 4], [3, 2], [4, 4]],
@@ -241,7 +241,8 @@ def test_graph_search_random():
     sparsity = np.array([False, True], dtype=np.bool8)
     graph = MLIRSparseTensor(indices, values, sizes, sparsity)
 
-    count = mlalgo.graph_search(graph, 3, [2, 4])
+    # Random Uniform (no seed, so truly random)
+    count = mlalgo.graph_search(graph, 3, [2, 4], "random")
 
     # Check for one of the possible solutions:
     # [0, 1, 4] or [0, 1, 3, 4] or [0, 2, 4] or [0, 2, 4] or [4]
@@ -258,3 +259,18 @@ def test_graph_search_random():
                 break
     else:
         assert False, f"Invalid solution: idx={count.indices[1]}, vals={count.values}"
+
+    # Random weighted
+    count = mlalgo.graph_search(graph, 5, [0, 2], "random_weighted", rand_seed=14)
+    assert (count.indices[0] == [0, 1, 2, 3]).all()
+    assert (count.values == [4, 1, 4, 1]).all()
+
+    # argmin
+    count = mlalgo.graph_search(graph, 3, [0, 3], "argmin")
+    assert (count.indices[0] == [0, 1, 2]).all()
+    assert (count.values == [2, 3, 1]).all()
+
+    # argmax
+    count = mlalgo.graph_search(graph, 3, [0, 1], "argmax")
+    assert (count.indices[0] == [2, 3, 4]).all()
+    assert (count.values == [2, 1, 3]).all()
