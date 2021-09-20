@@ -7,8 +7,13 @@ import itertools
 from typing import Tuple, Sequence, Optional, Union
 from .mlir_builder import MLIRFunctionBuilder, MLIRVar
 from .types import (
-    MemrefType, TensorType, SparseTensorType, SparseEncodingType,
-    IndexType, IntType, LlvmPtrType
+    MemrefType,
+    TensorType,
+    SparseTensorType,
+    SparseEncodingType,
+    IndexType,
+    IntType,
+    LlvmPtrType,
 )
 
 
@@ -902,8 +907,10 @@ class NewSparseTensor(BaseOp):
         cls.ensure_mlirvar(ret_val, SparseTensorType)
         rank = ret_val.type.encoding.rank
         if len(dim_sizes) != rank:
-            raise ValueError(f"Type {tensor_type} implies rank {rank}."
-                             "Must provide exactly that many dim_sizes.")
+            raise ValueError(
+                f"Type {tensor_type} implies rank {rank}."
+                "Must provide exactly that many dim_sizes."
+            )
         for ds in dim_sizes:
             cls.ensure_mlirvar(ds, IndexType)
         funcname = f"new_{ret_val.type.to_short_string()}"
@@ -952,7 +959,7 @@ class ResizeSparsePointers(BaseOp):
         irbuilder.needed_function_table["resize_pointers"] = (
             f"func private @resize_pointers(!llvm.ptr<i8>, index, index)",
             ["!llvm.ptr<i8>", "index", "index"],
-            ""
+            "",
         )
 
         return None, (
@@ -972,7 +979,7 @@ class ResizeSparseIndex(BaseOp):
         irbuilder.needed_function_table["resize_index"] = (
             f"func private @resize_index(!llvm.ptr<i8>, index, index)",
             ["!llvm.ptr<i8>", "index", "index"],
-            ""
+            "",
         )
 
         return None, (
@@ -991,7 +998,7 @@ class ResizeSparseValues(BaseOp):
         irbuilder.needed_function_table["resize_values"] = (
             f"func private @resize_values(!llvm.ptr<i8>, index)",
             ["!llvm.ptr<i8>", "index"],
-            ""
+            "",
         )
 
         return None, (

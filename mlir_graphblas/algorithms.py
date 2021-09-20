@@ -533,7 +533,12 @@ def graph_search(
     if _graph_search is None:
         irb = MLIRFunctionBuilder(
             "graph_search",
-            input_types=["tensor<?x?xf64, #CSR64>", "index", "tensor<?xi64>", "!llvm.ptr<i8>"],
+            input_types=[
+                "tensor<?x?xf64, #CSR64>",
+                "index",
+                "tensor<?xi64>",
+                "!llvm.ptr<i8>",
+            ],
             return_types=["tensor<?xf64, #CV64>"],
             aliases=_build_common_aliases(),
         )
@@ -576,9 +581,13 @@ def graph_search(
         # Perform graph search nsteps times
         with irb.for_loop(0, nsteps) as for_vars:
             # Compute neighbors of current nodes
-            available_neighbors = irb.graphblas.matrix_multiply(B, A_csc, semiring="min_first")
+            available_neighbors = irb.graphblas.matrix_multiply(
+                B, A_csc, semiring="min_first"
+            )
             # Select new neighbors
-            chosen_neighbors = irb.graphblas.matrix_select_random(available_neighbors, ci1, ctx, "choose_uniform")
+            chosen_neighbors = irb.graphblas.matrix_select_random(
+                available_neighbors, ci1, ctx, "choose_uniform"
+            )
             # Update B inplace with new neighbors
             chosen_neighbors_idx = irb.sparse_tensor.indices(chosen_neighbors, c1)
             with irb.for_loop(0, nseeds) as inner_for:
@@ -595,6 +604,7 @@ def graph_search(
 
     import numpy as np
     from mlir_graphblas.random_utils import ChooseUniformContext
+
     if not isinstance(initial_seed_array, np.ndarray):
         initial_seed_array = np.array(initial_seed_array, dtype=np.int64)
     ctx = ChooseUniformContext()

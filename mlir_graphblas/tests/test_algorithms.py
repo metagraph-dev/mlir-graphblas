@@ -213,7 +213,9 @@ def test_pagerank():
     sparsity = np.array([False, True], dtype=np.bool8)
     m = MLIRSparseTensor(indices, values, sizes, sparsity)
 
-    expected = np.array([0.2541917746, 0.1380315018, 0.1380315018, 0.2059901768, 0.2637550447])
+    expected = np.array(
+        [0.2541917746, 0.1380315018, 0.1380315018, 0.2059901768, 0.2637550447]
+    )
 
     # Test success
     pr, niters = mlalgo.pagerank(m, tol=1e-7)
@@ -222,7 +224,9 @@ def test_pagerank():
     # Test maxiter reached, failed to converge
     pr, niters = mlalgo.pagerank(m, tol=1e-7, maxiter=6)
     assert niters == 6
-    assert np.abs(pr.values - expected).sum() > 1e-5, "Unexpectedly converged in 6 iterations"
+    assert (
+        np.abs(pr.values - expected).sum() > 1e-5
+    ), "Unexpectedly converged in 6 iterations"
 
 
 def test_graph_search_random():
