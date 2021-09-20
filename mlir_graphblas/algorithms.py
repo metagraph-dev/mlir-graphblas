@@ -1,3 +1,4 @@
+import numpy as np
 from typing import List
 from .functions import (
     ConvertLayout,
@@ -8,6 +9,7 @@ from .functions import (
 )
 from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, Type
+from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from .sparse_utils import MLIRSparseTensor
 from .engine import MlirJitEngine
 
@@ -529,17 +531,24 @@ _allowable_graph_search_methods = ("random", "random_weighted", "argmin", "argma
 
 
 def graph_search(
-    graph: MLIRSparseTensor, num_steps, initial_seed_array, method="random", *, rand_seed=None
+    graph: MLIRSparseTensor,
+    num_steps,
+    initial_seed_array,
+    method="random",
+    *,
+    rand_seed=None,
 ) -> MLIRSparseTensor:
     if method not in _allowable_graph_search_methods:
-        raise ValueError(f"Invalid method: {method}, must be one of {_allowable_graph_search_methods}")
+        raise ValueError(
+            f"Invalid method: {method}, must be one of {_allowable_graph_search_methods}"
+        )
 
     if method not in _graph_search:
         input_types = [
-                "tensor<?x?xf64, #CSR64>",
-                "index",
-                "tensor<?xi64>",
-            ]
+            "tensor<?x?xf64, #CSR64>",
+            "index",
+            "tensor<?xi64>",
+        ]
         if method[:6] == "random":
             input_types.append("!llvm.ptr<i8>")
         irb = MLIRFunctionBuilder(
@@ -595,7 +604,11 @@ def graph_search(
             )
             # Select new neighbors
             if method[:6] == "random":
-                rand_method = "choose_weighted" if method == "random_weighted" else "choose_uniform"
+                rand_method = (
+                    "choose_weighted"
+                    if method == "random_weighted"
+                    else "choose_uniform"
+                )
                 chosen_neighbors = irb.graphblas.matrix_select_random(
                     available_neighbors, ci1, ctx, rand_method
                 )
@@ -618,16 +631,13 @@ def graph_search(
 
         _graph_search[method] = irb.compile()
 
-    import numpy as np
     if not isinstance(initial_seed_array, np.ndarray):
         initial_seed_array = np.array(initial_seed_array, dtype=np.int64)
 
     extra = []
     if method == "random":
-        from mlir_graphblas.random_utils import ChooseUniformContext
         extra.append(ChooseUniformContext(rand_seed))
     elif method == "random_weighted":
-        from mlir_graphblas.random_utils import ChooseWeightedContext
         extra.append(ChooseWeightedContext(rand_seed))
     count = _graph_search[method](graph, num_steps, initial_seed_array, *extra)
     return count
