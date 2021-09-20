@@ -103,7 +103,7 @@ class MemrefType(Type):
 
 
 class TensorType(Type):
-    _patt = re.compile(r"^tensor<\s*((?:(?:.)*x)*)([^,]+)\s*>$")
+    _patt = re.compile(r"^tensor<\s*((?:(?:[^,])*x)*)([^, ]+)\s*>$")
 
     def __init__(self, shape: Sequence[int], value_type: Type):
         shape = tuple(shape)

@@ -249,8 +249,8 @@ def test_graph_search_random():
         ([0, 2, 4], [1, 1, 4]),
         ([4], [6]),
     ]:
-        if len(count.indices[1]) == len(idx):
-            if (count.indices[1] == idx).all() and (count.values == vals).all():
+        if len(count.indices[0]) == len(idx):
+            if (count.indices[0] == idx).all() and (count.values == vals).all():
                 break
     else:
         assert False, f"Invalid solution: idx={count.indices[1]}, vals={count.values}"

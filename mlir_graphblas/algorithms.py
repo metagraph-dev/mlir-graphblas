@@ -524,7 +524,6 @@ def pagerank(
 
 
 _graph_search = None
-_gs_context = None
 
 
 def graph_search(
@@ -593,11 +592,11 @@ def graph_search(
         irb.return_vars(count)
 
         _graph_search = irb.compile()
-        from mlir_graphblas.random_utils import ChooseUniformContext
-        _gs_context = ChooseUniformContext()
 
     import numpy as np
+    from mlir_graphblas.random_utils import ChooseUniformContext
     if not isinstance(initial_seed_array, np.ndarray):
         initial_seed_array = np.array(initial_seed_array, dtype=np.int64)
-    count = _graph_search(graph, num_steps, initial_seed_array, _gs_context)
+    ctx = ChooseUniformContext()
+    count = _graph_search(graph, num_steps, initial_seed_array, ctx)
     return count
