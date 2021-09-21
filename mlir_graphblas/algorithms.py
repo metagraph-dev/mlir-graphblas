@@ -1,3 +1,4 @@
+import numpy as np
 from typing import List
 from .functions import (
     ConvertLayout,
@@ -8,6 +9,7 @@ from .functions import (
 )
 from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, Type
+from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from .sparse_utils import MLIRSparseTensor
 from .engine import MlirJitEngine
 
@@ -521,3 +523,121 @@ def pagerank(
 
     pr = _pagerank(graph, damping, tol, maxiter)
     return pr
+
+
+# Separate versions of compiled code are stored based on method
+_graph_search = {}
+_allowable_graph_search_methods = ("random", "random_weighted", "argmin", "argmax")
+
+
+def graph_search(
+    graph: MLIRSparseTensor,
+    num_steps,
+    initial_seed_array,
+    method="random",
+    *,
+    rand_seed=None,
+) -> MLIRSparseTensor:
+    if method not in _allowable_graph_search_methods:
+        raise ValueError(
+            f"Invalid method: {method}, must be one of {_allowable_graph_search_methods}"
+        )
+
+    if method not in _graph_search:
+        input_types = [
+            "tensor<?x?xf64, #CSR64>",
+            "index",
+            "tensor<?xi64>",
+        ]
+        if method[:6] == "random":
+            input_types.append("!llvm.ptr<i8>")
+        irb = MLIRFunctionBuilder(
+            "graph_search",
+            input_types=input_types,
+            return_types=["tensor<?xf64, #CV64>"],
+            aliases=_build_common_aliases(),
+        )
+        if method[:6] == "random":
+            (A, nsteps, seeds, ctx) = irb.inputs
+        else:
+            (A, nsteps, seeds) = irb.inputs
+
+        c0 = irb.constant(0, "index")
+        c1 = irb.constant(1, "index")
+        ci1 = irb.constant(1, "i64")
+        cf1 = irb.constant(1.0, "f64")
+
+        # Create count vector
+        ncols = irb.graphblas.num_cols(A)
+        count = irb.util.new_sparse_tensor("tensor<?xf64, #CV64>", ncols)
+
+        # Create B matrix, sized (nseeds x ncols) with nnz=nseeds
+        nseeds = irb.tensor.dim(seeds, c0)
+        nseeds_64 = irb.index_cast(nseeds, "i64")
+        B = irb.util.new_sparse_tensor("tensor<?x?xf64, #CSR64>", nseeds, ncols)
+        Bptr8 = irb.util.tensor_to_ptr8(B)
+        irb.util.resize_sparse_index(Bptr8, c1, nseeds)
+        irb.util.resize_sparse_values(Bptr8, nseeds)
+
+        Bp = irb.sparse_tensor.pointers(B, c1)
+        Bi = irb.sparse_tensor.indices(B, c1)
+        Bx = irb.sparse_tensor.values(B)
+
+        # Populate B matrix based on initial seed
+        with irb.for_loop(0, nseeds) as for_vars:
+            seed_num = for_vars.iter_var_index
+            seed_num_64 = irb.index_cast(seed_num, "i64")
+            irb.memref.store(seed_num_64, Bp, seed_num)
+            cur_node = irb.tensor.extract(seeds, seed_num)
+            irb.memref.store(cur_node, Bi, seed_num)
+            irb.memref.store(cf1, Bx, seed_num)
+        irb.memref.store(nseeds_64, Bp, nseeds)
+
+        # Convert layout of A
+        A_csc = irb.graphblas.convert_layout(A, "tensor<?x?xf64, #CSC64>")
+
+        # Perform graph search nsteps times
+        with irb.for_loop(0, nsteps) as for_vars:
+            # Compute neighbors of current nodes
+            available_neighbors = irb.graphblas.matrix_multiply(
+                B, A_csc, semiring="min_second"
+            )
+            # Select new neighbors
+            if method[:6] == "random":
+                rand_method = (
+                    "choose_weighted"
+                    if method == "random_weighted"
+                    else "choose_uniform"
+                )
+                chosen_neighbors = irb.graphblas.matrix_select_random(
+                    available_neighbors, ci1, ctx, rand_method
+                )
+                chosen_neighbors_idx = irb.sparse_tensor.indices(chosen_neighbors, c1)
+            elif method[:3] == "arg":
+                chosen_neighbors = irb.graphblas.reduce_to_vector(
+                    available_neighbors, method, axis=1
+                )
+                chosen_neighbors_idx = irb.sparse_tensor.values(chosen_neighbors)
+            # Update B inplace with new neighbors
+            with irb.for_loop(0, nseeds) as inner_for:
+                inner_seed_num = inner_for.iter_var_index
+                inner_cur_node = irb.memref.load(chosen_neighbors_idx, inner_seed_num)
+                irb.memref.store(inner_cur_node, Bi, inner_seed_num)
+            # Add new nodes to count
+            small_count = irb.graphblas.reduce_to_vector(B, aggregator="plus", axis=0)
+            irb.graphblas.update(small_count, count, accumulate="plus")
+
+        irb.return_vars(count)
+
+        _graph_search[method] = irb.compile()
+
+    if not isinstance(initial_seed_array, np.ndarray):
+        initial_seed_array = np.array(initial_seed_array, dtype=np.int64)
+
+    extra = []
+    if method == "random":
+        extra.append(ChooseUniformContext(rand_seed))
+    elif method == "random_weighted":
+        extra.append(ChooseWeightedContext(rand_seed))
+    count = _graph_search[method](graph, num_steps, initial_seed_array, *extra)
+    return count

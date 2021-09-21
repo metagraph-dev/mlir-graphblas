@@ -207,12 +207,15 @@ def test_pagerank():
         [[0, 1], [0, 2], [1, 3], [2, 3], [2, 4], [3, 4], [4, 0]],
         dtype=np.uint64,
     )
+    # fmt: on
     values = np.array([1.1, 9.8, 4.2, 7.1, 0.2, 6.9, 2.2], dtype=np.float64)
     sizes = np.array([5, 5], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
     m = MLIRSparseTensor(indices, values, sizes, sparsity)
 
-    expected = np.array([0.2541917746, 0.1380315018, 0.1380315018, 0.2059901768, 0.2637550447])
+    expected = np.array(
+        [0.2541917746, 0.1380315018, 0.1380315018, 0.2059901768, 0.2637550447]
+    )
 
     # Test success
     pr, niters = mlalgo.pagerank(m, tol=1e-7)
@@ -221,4 +224,53 @@ def test_pagerank():
     # Test maxiter reached, failed to converge
     pr, niters = mlalgo.pagerank(m, tol=1e-7, maxiter=6)
     assert niters == 6
-    assert np.abs(pr.values - expected).sum() > 1e-5, "Unexpectedly converged in 6 iterations"
+    assert (
+        np.abs(pr.values - expected).sum() > 1e-5
+    ), "Unexpectedly converged in 6 iterations"
+
+
+def test_graph_search():
+    # fmt: off
+    indices = np.array(
+        [[0, 1], [0, 2], [1, 0], [1, 3], [2, 0], [2, 4], [3, 2], [4, 4]],
+        dtype=np.uint64,
+    )
+    values = np.array([100, 200, 300, 400, 175, 222, 333, 200], dtype=np.float64)
+    # fmt: on
+    sizes = np.array([5, 5], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    graph = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    # Random Uniform (no seed, so truly random)
+    count = mlalgo.graph_search(graph, 3, [2, 4], "random")
+
+    # Check for one of the possible solutions:
+    # [0, 1, 4] or [0, 1, 3, 4] or [0, 2, 4] or [0, 2, 4] or [4]
+    # [2, 1, 3]    [1, 1, 1, 3]    [2, 1, 3]    [1, 1, 4]    [6]
+    for idx, vals in [
+        ([0, 1, 4], [2, 1, 3]),
+        ([0, 1, 3, 4], [1, 1, 1, 3]),
+        ([0, 2, 4], [2, 1, 3]),
+        ([0, 2, 4], [1, 1, 4]),
+        ([4], [6]),
+    ]:
+        if len(count.indices[0]) == len(idx):
+            if (count.indices[0] == idx).all() and (count.values == vals).all():
+                break
+    else:
+        assert False, f"Invalid solution: idx={count.indices[1]}, vals={count.values}"
+
+    # Random weighted
+    count = mlalgo.graph_search(graph, 5, [0, 2], "random_weighted", rand_seed=14)
+    assert (count.indices[0] == [0, 2, 4]).all()
+    assert (count.values == [2, 3, 5]).all()
+
+    # argmin
+    count = mlalgo.graph_search(graph, 3, [0, 3], "argmin")
+    assert (count.indices[0] == [0, 1, 2]).all()
+    assert (count.values == [2, 3, 1]).all()
+
+    # argmax
+    count = mlalgo.graph_search(graph, 3, [0, 1], "argmax")
+    assert (count.indices[0] == [2, 3, 4]).all()
+    assert (count.values == [2, 1, 3]).all()

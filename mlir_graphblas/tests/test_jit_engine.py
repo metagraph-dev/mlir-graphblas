@@ -311,7 +311,6 @@ func @{func_name}(%argA: tensor<10x20x30x{mlir_type}, #sparseTensor>) -> {mlir_t
     func_name = f"func_{mlir_type}"
 
     mlir_text = mlir_template.format(func_name=func_name, mlir_type=mlir_type)
-    breakpoint()
 
     indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
     values = np.array([1.2, 3.4], dtype=np_type)
