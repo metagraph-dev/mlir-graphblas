@@ -3,7 +3,7 @@
 GraphBLAS Optimizing Pass
 =======================
 
-These tutorials and examples will cover how to use the GraphBLAS dialect's ``--graphblas-optimize`` pass by using the :ref:`engine` to lower several ops from the GraphBLAS dialect.
+These tutorials and examples will cover how to use the GraphBLAS dialect's ``--graphblas-structuralize`` and ``--graphblas-optimize`` passes by using the :ref:`engine` to lower several ops from the GraphBLAS dialect.
 
 These tutorials assume the completion of the :ref:`graphblas_lowering_pass` tutorials.
 
