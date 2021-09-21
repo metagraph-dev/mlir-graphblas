@@ -10,7 +10,7 @@ from mlir_graphblas.engine import parse_mlir_functions
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
-from mlir_graphblas.types import AliasMap, SparseEncodingType, TensorType
+from mlir_graphblas.types import AliasMap, SparseEncodingType, SparseTensorType
 from mlir_graphblas.functions import ConvertLayout
 from mlir_graphblas.algorithms import (
     triangle_count_combined,
@@ -695,7 +695,7 @@ def test_ir_reduce_to_vector(
         dtype=np_type,
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
-    input_type_is_csc = [1, 0] == TensorType.parse(
+    input_type_is_csc = [1, 0] == SparseTensorType.parse(
         input_type, aliases
     ).encoding.ordering
     if input_type_is_csc:
@@ -819,7 +819,7 @@ def test_ir_diag(
         dtype=np_type,
     )
     input_matrix = sparsify_array(dense_input_matrix, [False, True])
-    matrix_type_is_csc = [1, 0] == TensorType.parse(
+    matrix_type_is_csc = [1, 0] == SparseTensorType.parse(
         matrix_type, aliases
     ).encoding.ordering
     if matrix_type_is_csc:

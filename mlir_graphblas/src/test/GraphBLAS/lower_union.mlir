@@ -70,7 +70,7 @@
 // CHECK:               } else {
 // CHECK:                 scf.yield %[[VAL_49]], %[[VAL_50]], %[[VAL_6]], %[[VAL_6]], %[[VAL_51]] : index, index, i1, i1, index
 // CHECK:               }
-// CHECK:               scf.yield %[[VAL_54:.*]]#0, %[[VAL_54]]#1, %[[VAL_54]]#2, %[[VAL_54]]#3, %[[VAL_54]]#4 : index, index, i1, i1, index
+// CHECK:               scf.yield %[[VAL_53]]#0, %[[VAL_53]]#1, %[[VAL_53]]#2, %[[VAL_53]]#3, %[[VAL_53]]#4 : index, index, i1, i1, index
 // CHECK:             }
 // CHECK:             scf.yield %[[VAL_55:.*]]#0, %[[VAL_55]]#1, %[[VAL_46]], %[[VAL_47]], %[[VAL_55]]#2, %[[VAL_55]]#3, %[[VAL_55]]#4 : index, index, index, index, i1, i1, index
 // CHECK:           }
