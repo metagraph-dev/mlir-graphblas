@@ -854,7 +854,7 @@ class GraphBLAS_Print(BaseOp):
             if isinstance(printable, str) and isinstance(printables[-1], str):
                 printables[-1] = printables[-1] + printable
             elif not isinstance(printable, str) and not isinstance(printables[-1], str):
-                printables.append("")
+                printables.append(" ")
                 printables.append(printable)
             else:
                 printables.append(printable)

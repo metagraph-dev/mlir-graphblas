@@ -791,14 +791,14 @@ def GraphBLAS_PrintOp : GraphBLAS_Op<"print", []> {
         ```mlir 
         %c9_9_f32 = constant 9.9 : f32
         %c1_i32 = constant 1 : i32
-        // prints "start 9.9 middle 1 end".
+        // prints "start 9.9 middle 1 end ".
         graphblas.print %c9_9_f32, %c1_i32 { strings = ["start ", " middle ", " end"] } : f32, i32
-        // prints "start 9.9 middle end zyx".
+        // prints "start 9.9 middle   end  z y x ".
         graphblas.print %c9_9_f32 { strings = ["start ", " middle ", " end", " z", "y", "x"] } : f32
-        // prints "start 9.91111".
+        // prints "start 9.9 1 1 1 1".
         graphblas.print %c9_9_f32, %c1_i32, %c1_i32, %c1_i32, %c1_i32 { strings = ["start "] } : f32, i32, i32, i32, i32
         // prints "9.9".
-        graphblas.print %0 { strings = [] } : f32
+        graphblas.print %c9_9_f32 { strings = [] } : f32
         ```
     }];
     

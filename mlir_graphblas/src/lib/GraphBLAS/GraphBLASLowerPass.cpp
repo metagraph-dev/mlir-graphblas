@@ -3264,19 +3264,23 @@ public:
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
-    for (auto pair : llvm::zip_longest(op.strings(), op.values())) {
+    for (auto enumerated_pair :
+         llvm::enumerate(llvm::zip_longest(op.strings(), op.values()))) {
+      auto pair = enumerated_pair.value();
       Optional<Attribute> stringAttribute = std::get<0>(pair);
       Optional<Value> val = std::get<1>(pair);
 
       if (stringAttribute) {
-        StringRef currentString = stringAttribute.getValue()
-                                      .dyn_cast_or_null<StringAttr>()
-                                      .getValue();
+        StringRef currentString =
+            stringAttribute.getValue().dyn_cast<StringAttr>().getValue();
         callPrintString(rewriter, module, loc, currentString);
-      }
+      } else if (enumerated_pair.index() != 0)
+        callPrintString(rewriter, module, loc, " ");
 
       if (val)
         callPrintValue(rewriter, module, loc, val.getValue());
+      else
+        callPrintString(rewriter, module, loc, " ");
     }
     callPrintString(rewriter, module, loc, "\n");
 
