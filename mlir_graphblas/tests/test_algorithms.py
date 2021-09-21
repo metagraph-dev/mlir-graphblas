@@ -262,8 +262,8 @@ def test_graph_search():
 
     # Random weighted
     count = mlalgo.graph_search(graph, 5, [0, 2], "random_weighted", rand_seed=14)
-    assert (count.indices[0] == [0, 1, 2, 3]).all()
-    assert (count.values == [4, 1, 4, 1]).all()
+    assert (count.indices[0] == [0, 2, 4]).all()
+    assert (count.values == [2, 3, 5]).all()
 
     # argmin
     count = mlalgo.graph_search(graph, 3, [0, 3], "argmin")
