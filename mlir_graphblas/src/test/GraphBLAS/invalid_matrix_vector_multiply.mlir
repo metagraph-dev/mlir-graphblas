@@ -141,31 +141,3 @@ module {
    }
 
 }
-
-// -----
-
-#CSR64 = #sparse_tensor.encoding<{
-  dimLevelType = [ "dense", "compressed" ],
-  dimOrdering = affine_map<(i,j) -> (i,j)>,
-  pointerBitWidth = 64,
-  indexBitWidth = 64
-}>
-
-#SparseVec64 = #sparse_tensor.encoding<{
-  dimLevelType = [ "compressed" ],
-  pointerBitWidth = 64,
-  indexBitWidth = 64
-}>
-
-module {
-
-   func @matrix_vector_multiply_no_blocks(%matrix: tensor<2x3xi64, #CSR64>, %vector: tensor<3xi64, #SparseVec64>, %mask: tensor<2xi64, #SparseVec64>) -> tensor<2xi64, #SparseVec64> {
-       %answer = graphblas.matrix_multiply %matrix, %vector, %mask { semiring = "plus_times" } : (tensor<2x3xi64, #CSR64>, tensor<3xi64, #SparseVec64>, tensor<2xi64, #SparseVec64>) to tensor<2xi64, #SparseVec64> { // expected-error {{graphblas.matrix_multiply should have no blocks.  Did you mean graphblas.matrix_multiply_generic?}}
-            ^bb1(%value1: i64):
-                %result1 = std.addi %value1, %value1: i64
-                graphblas.yield transform_out %result1 : i64
-       }
-       return %answer : tensor<2xi64, #SparseVec64>
-   }
-
-}

@@ -23,7 +23,7 @@ def GraphBLAS_SizeOp : GraphBLAS_Op<"size", [NoSideEffect]> {
         Returns the size of a vector
 
         Example:
-        ```mlir 
+        ```mlir
           %size = graphblas.size %sparse_vector : tensor<?xf64, #CV64>
         ```
     }];
@@ -46,7 +46,7 @@ def GraphBLAS_NumRowsOp : GraphBLAS_Op<"num_rows", [NoSideEffect]> {
         Returns the number of rows in a matrix
 
         Example:
-        ```mlir 
+        ```mlir
           %nrows = graphblas.num_rows %sparse_matrix : tensor<?x?xf64, #CSR64>
         ```
     }];
@@ -69,7 +69,7 @@ def GraphBLAS_NumColsOp : GraphBLAS_Op<"num_cols", [NoSideEffect]> {
         Returns the number of columns in a matrix
 
         Example:
-        ```mlir 
+        ```mlir
           %ncols = graphblas.num_cols %sparse_matrix : tensor<?x?xf64, #CSR64>
         ```
     }];
@@ -153,7 +153,7 @@ def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
 
     let arguments = (ins GraphBlasMatrixOperand:$input);
     let results = (outs GraphBlasMatrixOperand:$output);
-    
+
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
@@ -178,7 +178,7 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
 
     let arguments = (ins GraphBlasMatrixOperand:$input);
     let results = (outs GraphBlasMatrixOperand:$output);
-    
+
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
@@ -219,7 +219,7 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, Variadic<AnyType>:$thunks, StrArrayAttr:$selectors);
     let results = (outs Variadic<GraphBlasMatrixOrVectorOperand>:$outputs);
-    
+
     let assemblyFormat = [{
            $input (`,` $thunks^)? attr-dict `:` type($input) (`,` type($thunks)^)? `to` type($outputs)
     }];
@@ -230,9 +230,9 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
 def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]> {
     let summary = "matrix reduce to vector operation";
     let description = [{
-        Reduces a sparse matrix to a vector according to the given aggregator.
+        Reduces a sparse matrix to a vector according to the given aggregator and given axis.
         The given matrix must have a CSR sparsity or a CSC sparsity.
-        The resulting sparse vector's element type must be the same as the element type of the input tensor.
+        The resulting sparse vector's element type varies according to the given aggregator.
         If the axis attribute is 0, the input tensor will be reduced column-wise, so the resulting
         vector's size must be the number of columns in the input tensor.
         If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
@@ -251,7 +251,7 @@ def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]
 
     let arguments = (ins GraphBlasMatrixOperand:$input, StrAttr:$aggregator, I64Attr:$axis);
     let results = (outs GraphBlasVectorOperand:$output);
-    
+
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
@@ -279,7 +279,7 @@ def GraphBLAS_ReduceToScalarOp : GraphBLAS_Op<"reduce_to_scalar", [NoSideEffect]
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, StrAttr:$aggregator);
     let results = (outs AnyType:$output);
-    
+
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
@@ -300,14 +300,14 @@ def GraphBLAS_ReduceToScalarGenericOp : GraphBLAS_Op<"reduce_to_scalar_generic",
             ^bb0(%a : i64, %b : i64):
               %result = std.addi %a, %b : i64
               graphblas.yield agg %result : i64
-        }        
+          }
         ```
     }];
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
     let results = (outs AnyType:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
-    
+
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output) $extensions
     }];
@@ -331,39 +331,39 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
         Example:
         ```mlir
         %thunk = constant 100 : i64
-        %matrix_answer = 
-          graphblas.apply %sparse_matrix, %thunk { apply_operator = "min" } : 
+        %matrix_answer =
+          graphblas.apply %sparse_matrix, %thunk { apply_operator = "min" } :
             (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
-        %vector_answer = 
-          graphblas.apply %sparse_vector { apply_operator = "abs" } : 
+        %vector_answer =
+          graphblas.apply %sparse_vector { apply_operator = "abs" } :
             (tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
         ```
-        
+
         Some binary operators, e.g. "div", are not symmetric. The sparse tensor and thunk
         should be given in the order they should be given to the binary operator. For
         example, to divide every element of a matrix by 2, use the following:
-        
+
         ```mlir
         %thunk = constant 2 : i64
-        %matrix_answer = 
-          graphblas.apply %sparse_matrix, %thunk { apply_operator = "div" } : 
+        %matrix_answer =
+          graphblas.apply %sparse_matrix, %thunk { apply_operator = "div" } :
             (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
         ```
-        
+
         As another example, to divide 10 by each element of a sparse vector, use the
         following:
-        
+
         ```mlir
         %thunk = constant 10 : i64
-        %vector_answer = 
-          graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } : 
+        %vector_answer =
+          graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } :
             (i64, tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
         ```
     }];
 
     let arguments = (ins AnyType:$left, Optional<AnyType>:$right, StrAttr:$apply_operator);
     let results = (outs GraphBlasMatrixOrVectorOperand:$output);
-    
+
     let assemblyFormat = [{
            $left (`,` $right^)? attr-dict `:` `(` type($left) (`,` type($right)^)? `)` `to` type($output)
     }];
@@ -375,12 +375,23 @@ def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
     let summary = "generic tensor apply operation";
     let description = [{
         Applies an arbitrary transformation to every element of a matrix or vector.
+
+        Example:
+        ```mlir
+        %answer = graphblas.apply_generic %sparse_tensor : tensor<7xf64, #SparseVec64> to tensor<7xf64, #SparseVec64> {
+          ^bb0(%val: f64):
+            %pick = cmpf olt, %val, %thunk : f64
+            %result = select %pick, %val, %thunk : f64
+            graphblas.yield transform_out %result : f64
+        }
+        ```
+
     }];
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
     let results = (outs GraphBlasMatrixOrVectorOperand:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
-    
+
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output) $extensions
     }];
@@ -400,33 +411,20 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
         is a matrix, it must be CSC format.  Matrix times vector will return a vector.
         Vector times matrix will return a vector.  Matrix times matrix will return
         a CSR matrix.  The mask (if provided) must be the same format as the returned
-        object.  This operation also accepts an optional region that specifies
-        element-wise postprocessing to be done on the result of the matrix multiplication.
-        The region must use `graphblas.yield` to indicate the result of the element-wise
-        postprocessing.
+        object.
 
         No Mask Example:
         ```mlir
-          %answer = 
-            graphblas.matrix_multiply %argA, %argB { semiring = "plus_plus" } : 
+          %answer =
+            graphblas.matrix_multiply %argA, %argB { semiring = "plus_plus" } :
               (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to tensor<?x?xi64, #CSR64>
         ```
-        
+
         Mask Example:
         ```mlir
-          %answer = 
-            graphblas.matrix_multiply %argA, %argB, %mask { semiring = "plus_times" } : 
+          %answer =
+            graphblas.matrix_multiply %argA, %argB, %mask { semiring = "plus_times" } :
               (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
-        ```
-
-        Body Example:
-        ```mlir
-        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_times" } : 
-          (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
-            ^bb0(%value: f64):
-                %result = std.mulf %value, %value: f64
-                graphblas.yield %result : f64
-        }
         ```
 
     }];
@@ -438,10 +436,9 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
      StrAttr:$semiring,
      DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
     let results = (outs AnyType:$output);
-    let regions = (region AnyRegion:$body);
-    
+
     let assemblyFormat = [{
-           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) ($body^)?
+           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output)
     }];
 
     let verifier = [{ return ::verify(*this); }];
@@ -450,10 +447,63 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
 def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", [NoSideEffect]> {
     let summary = "generic matrix multiply operation with an optional structural mask";
     let description = [{
-        Performs a matrix multiply according to the given semiring and optional
-        structural mask.  The given sparse tensors must be a matrix, i.e. have rank 2.
-        The first input tensors must be CSR format, while the second input tensor must
-        be CSC format.  The mask (if provided) must be CSR format.
+
+        This op performs computations over the two sparse tensor inputs using the same access pattern
+        as a conventional matrix multiply with the given blocks allowing us to modify the behavior.
+
+        This op takes as input 2 sparse tensor inputs and an optional structural mask.
+
+        Additionally, this op takes 3 required blocks (we'll refer to them as the  "mult",
+        "add", and "add_identity" blocks) and 1 optional block (we'll refer to it as the "transform_out"
+        block).
+
+        In a conventional matrix multiply where the mutiplication between two elements takes place, this
+        op instead performs the behavior specified in the "mult" block. The "mult" block takes two scalar
+        arguments and uses the ``graphblas.yield`` terminator op (with the "kind" attribute set to "mult")
+        to return the result of the element-wise computation.
+
+        In a conventional matrix multiply where the summation over the products from the element-wise
+        multiplications take place, this op instead performs the behavior specified in the "add" block
+        to aggregate the results. The "add" block takes two scalar arguments (the first representing the
+        current aggregation and the second representing the next value to be aggregated) and uses the
+        ``graphblas.yield`` terminator op (with the "kind" attribute set to "add") to return the result
+        of the current aggregation.
+
+        The aggregation taking place in the "add" block requires an initial value (for conventional
+        matrix multiplication, this value is zero). Using the ``graphblas.yield`` terminator op (with
+        the "kind" attribute set to "add_identity") in the "add_identity" block let's us specify this
+        initial value. This block takes no arguments.
+
+        This op additionally takes an optional "transform_out" block that performs an element-wise
+        transformation on the final aggregated values from the "add" block. The "transform_out" block
+        takes one argument and returns one value via the ``graphblas.yield`` terminator op (with
+        the "kind" attribute set to "transform_out").
+
+        The mask (if provided) must be the same format as the returned object. There's an optional
+        boolean `mask_complement` attribute (which has a default value of `false`) that will make
+        the op use the complement of the mask.
+
+
+        Example:
+        ```mlir
+          %answer = graphblas.matrix_multiply_generic %a, %b {mask_complement = false} : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
+              ^bb0:
+                   %identity = constant 0.0 : f64
+                   graphblas.yield add_identity %identity : f64
+            },{
+              ^bb0(%add_a: f64, %add_b: f64):
+                   %add_result = std.addf %add_a, %add_b : f64
+                   graphblas.yield add %add_result : f64
+            },{
+              ^bb0(%mult_a: f64, %mult_b: f64):
+                   %mult_result = std.mulf %mult_a, %mult_b : f64
+                   graphblas.yield mult %mult_result : f64
+            },{
+               ^bb0(%value: f64):
+                   %result = std.addf %value, %c100_f64: f64
+                   graphblas.yield transform_out %result : f64
+            }
+        ```
     }];
 
     let arguments = (ins
@@ -463,7 +513,7 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
       BoolAttr:$mask_complement);
     let results = (outs AnyType:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
-    
+
     let assemblyFormat = [{
            $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b)  (`,` type($mask)^)? `)` `to` type($output) $extensions
     }];
@@ -471,7 +521,7 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
     let verifier = [{ return ::verify(*this); }];
 }
 
-def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp : 
+def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp :
   GraphBLAS_Op<"matrix_multiply_reduce_to_scalar_generic", [NoSideEffect]> {
     let summary = "matrix multiply followed by reduction to a scalar with an optional structural mask";
     let description = [{
@@ -511,7 +561,7 @@ def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
 
     }];
 
-    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a, 
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a,
                          GraphBlasMatrixOrVectorOperand:$b, StrAttr:$union_operator);
     let results = (outs GraphBlasMatrixOrVectorOperand:$output);
 
@@ -536,7 +586,7 @@ def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
 
     }];
 
-    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a, 
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a,
                          GraphBlasMatrixOrVectorOperand:$b, StrAttr:$intersect_operator);
     let results = (outs GraphBlasMatrixOrVectorOperand:$output);
 
@@ -557,13 +607,13 @@ def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
 
         Simple Accumulation Example:
         ```mlir
-        graphblas.update %other_vec -> %vec { accumulate_operator = "plus" } : 
+        graphblas.update %other_vec -> %vec { accumulate_operator = "plus" } :
           tensor<?xi64, #SparseVec64> -> tensor<?xi64, #SparseVec64>
         ```
 
         Complemented Mask + Accumulate + Replace Example:
         ```mlir
-        graphblas.update %other_vec -> %vec(%mask) { accumulate_operator = "plus", replace = true, mask_complement = true } : 
+        graphblas.update %other_vec -> %vec(%mask) { accumulate_operator = "plus", replace = true, mask_complement = true } :
           tensor<?xi64, #SparseVec64> -> tensor<?xi64, #SparseVec64>(tensor<?xi64, #SparseVec64>)
         ```
     }];
@@ -574,7 +624,7 @@ def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
      Optional<GraphBlasMatrixOrVectorOperand>:$mask, OptionalAttr<StrAttr>:$accumulate_operator,
      DefaultValuedAttr<BoolAttr, "false">:$replace, DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
     let results = (outs Index:$fake_output);
-    
+
     let assemblyFormat = [{
            $input `->` $output (`(` $mask^ `)`)? attr-dict `:` type($input) `->` type($output) (`(` type($mask)^ `)`)?
     }];
@@ -597,11 +647,11 @@ def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$a, GraphBlasMatrixOrVectorOperand:$b);
     let results = (outs I1:$output);
-    
+
     let assemblyFormat = [{
            $a `,` $b attr-dict `:` type($a) `,` type($b)
     }];
-  
+
     let verifier = [{ return ::verify(*this); }];
 }
 
@@ -623,7 +673,7 @@ def GraphBLAS_VectorArgMinMaxOp : GraphBLAS_Op<"vector_argminmax", [NoSideEffect
 
     let arguments = (ins GraphBlasVectorOperand:$vec, StrAttr:$minmax);
     let results = (outs Index:$output);
-    
+
     let assemblyFormat = [{
            $vec attr-dict `:` type($vec)
     }];
@@ -647,11 +697,11 @@ def GraphBLAS_VectorArgMinOp : GraphBLAS_Op<"vector_argmin", [NoSideEffect]> {
 
     let arguments = (ins GraphBlasVectorOperand:$vec);
     let results = (outs Index:$output);
-    
+
     let assemblyFormat = [{
            $vec attr-dict `:` type($vec)
     }];
-  
+
     let verifier = [{ return ::verify(*this); }];
 }
 
@@ -671,7 +721,7 @@ def GraphBLAS_VectorArgMaxOp : GraphBLAS_Op<"vector_argmax", [NoSideEffect]> {
 
     let arguments = (ins GraphBlasVectorOperand:$vec);
     let results = (outs Index:$output);
-    
+
     let assemblyFormat = [{
            $vec attr-dict `:` type($vec)
     }];
@@ -697,7 +747,7 @@ def GraphBLAS_DiagOp : GraphBLAS_Op<"diag", [NoSideEffect]> {
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
     let results = (outs GraphBlasMatrixOrVectorOperand:$output);
-    
+
     let assemblyFormat = [{
            $input attr-dict `:` type($input) `to` type($output)
     }];
@@ -725,7 +775,7 @@ def YieldKindAttr : I64EnumAttr<
     [YIELD_TRANSFORM_IN_A, YIELD_TRANSFORM_IN_B, YIELD_TRANSFORM_OUT,
      YIELD_SELECT_IN_A,    YIELD_SELECT_IN_B,    YIELD_SELECT_OUT,
      YIELD_ADD_IDENTITY,   YIELD_ADD,
-     YIELD_MULT_IDENTITY,  YIELD_MULT, 
+     YIELD_MULT_IDENTITY,  YIELD_MULT,
      YIELD_AGG_IDENTITY,   YIELD_AGG]
     > {
   let cppNamespace = "::mlir::graphblas";
@@ -742,7 +792,7 @@ def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Termina
         graphblas.yield transform_out %f0 : f64
         ```
     }];
-    
+
     let arguments = (ins
       YieldKindAttr:$kind,
       Variadic<AnyType>:$values
@@ -766,10 +816,10 @@ def GraphBLAS_CommentOp : GraphBLAS_Op<"comment", []> {
         It lowers into a no-op.
 
         ```mlir
-        graphblas.comment { comment = "here is a comment!" } 
+        graphblas.comment { comment = "here is a comment!" }
         ```
     }];
-    
+
     let arguments = (ins StrAttr:$comment);
 
     let assemblyFormat = [{
@@ -786,9 +836,9 @@ def GraphBLAS_PrintOp : GraphBLAS_Op<"print", []> {
         The strings attribute is a list of strings.
         This op is variadic and takes an arbitrary number of inputs.
         The printing alternates between printing the strings
-        and the input values. 
+        and the input values.
 
-        ```mlir 
+        ```mlir
         %c9_9_f32 = constant 9.9 : f32
         %c1_i32 = constant 1 : i32
         // prints "start 9.9 middle 1 end ".
@@ -801,13 +851,13 @@ def GraphBLAS_PrintOp : GraphBLAS_Op<"print", []> {
         graphblas.print %c9_9_f32 { strings = [] } : f32
         ```
     }];
-    
+
     let arguments = (ins Variadic<AnyType>:$values, StrArrayAttr:$strings);
 
     let assemblyFormat = [{
         $values attr-dict `:` type($values)
     }];
-    
+
     let verifier = [{ return ::verify(*this); }];
 }
 
@@ -817,12 +867,12 @@ def GraphBLAS_MatrixSelectRandomOp : GraphBLAS_Op<"matrix_select_random", []> {
         Selects a random subset of up to `n` elements in each row of a CSR
         matrix.  If there are less than `n` elements in a row, all elements in the row
         are included in the output.
-        
+
         An external function must be provided via the `choose_n` attribute to
         the op with the following signature:
         ```mlir
         func @my_choose_n(%context: !llvm.ptr<i8>,
-                          %n: IndexType, %max_i: IndexType, 
+                          %n: IndexType, %max_i: IndexType,
                           %output_indices: memref<?xIndexType>,
                           %row_values: memref<?xValueType)
         ```
@@ -849,7 +899,7 @@ def GraphBLAS_MatrixSelectRandomOp : GraphBLAS_Op<"matrix_select_random", []> {
 
     }];
 
-    let arguments = (ins GraphBlasMatrixOperand:$input, 
+    let arguments = (ins GraphBlasMatrixOperand:$input,
                          AnyInteger:$n,
                          AnyType:$rng_context,
                          SymbolRefAttr:$choose_n);
