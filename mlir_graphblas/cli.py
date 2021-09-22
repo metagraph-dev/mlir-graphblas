@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 from typing import List, Optional, Union
 import logging
+import sys
 
 log = logging.getLogger("mlir_graphblas")
 
@@ -19,7 +20,7 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 _BUILD_DIR = os.path.join(_SCRIPT_DIR, "src", "build")
 GRAPHBLAS_OPT_EXE = os.path.join(_BUILD_DIR, "bin", "graphblas-opt")
 if os.path.exists(GRAPHBLAS_OPT_EXE):
-    print(f'Using development graphblas-opt: {GRAPHBLAS_OPT_EXE}')
+    print(f'Using development graphblas-opt: {GRAPHBLAS_OPT_EXE}', file=sys.stderr)
 else:
     # A normal install does not have a src/build directory, so assume graphblas-opt 
     # should be available in the path of the environment
