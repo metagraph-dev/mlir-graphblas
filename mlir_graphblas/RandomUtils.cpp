@@ -25,8 +25,8 @@ void choose_first(int64_t rngContext, int64_t n, int64_t maxIndex,
 }
 
 // A uniform sampler using a temporary set
-void *create_choose_uniform_context() {
-  auto generator = new std::default_random_engine;
+void *create_choose_uniform_context(uint64_t seed) {
+  auto generator = new std::mt19937_64(seed);
   return (void *)generator;
 }
 
@@ -39,7 +39,7 @@ void choose_uniform(void *rngContext, int64_t n, int64_t maxIndex,
   std::set<int64_t> selected;
   std::uniform_int_distribution<int64_t> choose_int(0, maxIndex - 1);
 
-  auto generator = (std::default_random_engine *)rngContext;
+  auto generator = (std::mt19937_64 *)rngContext;
 
   while (selected.size() < (size_t)n) {
     int64_t choice = choose_int(*generator);
@@ -56,13 +56,13 @@ void choose_uniform(void *rngContext, int64_t n, int64_t maxIndex,
 }
 
 void destroy_choose_uniform_context(void *rngContext) {
-  auto generator = (std::default_random_engine *)rngContext;
+  auto generator = (std::mt19937_64 *)rngContext;
   delete generator;
 }
 
 // A weighted sampler using a temporary set
-void *create_choose_weighted_context() {
-  auto generator = new std::default_random_engine;
+void *create_choose_weighted_context(uint64_t seed) {
+  auto generator = new std::mt19937_64(seed);
   return (void *)generator;
 }
 
@@ -74,7 +74,7 @@ void choose_weighted(void *rngContext, int64_t n, int64_t maxIndex,
 
   std::set<int64_t> selected;
 
-  auto generator = (std::default_random_engine *)rngContext;
+  auto generator = (std::mt19937_64 *)rngContext;
 
   // compute cumulative distribution
   std::vector<double> cumulative(maxIndex);
@@ -90,7 +90,7 @@ void choose_weighted(void *rngContext, int64_t n, int64_t maxIndex,
   while (selected.size() < (size_t)n) {
     double r = choose_double(*generator);
 
-    // find largest element in cumulative distribution less than r
+    // find smallest element in cumulative distribution greater than r
     int64_t choice = std::distance(
         cumulative.begin(),
         std::upper_bound(cumulative.begin(), cumulative.end(), r));
@@ -108,7 +108,7 @@ void choose_weighted(void *rngContext, int64_t n, int64_t maxIndex,
 }
 
 void destroy_choose_weighted_context(void *rngContext) {
-  auto generator = (std::default_random_engine *)rngContext;
+  auto generator = (std::mt19937_64 *)rngContext;
   delete generator;
 }
 

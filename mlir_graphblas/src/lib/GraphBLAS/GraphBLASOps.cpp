@@ -13,12 +13,14 @@
 #include "llvm/ADT/None.h"
 #include "llvm/ADT/Optional.h"
 #include "llvm/ADT/StringSet.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include "GraphBLAS/GraphBLASOpsDialect.cpp.inc"
 #include "GraphBLAS/GraphBLASOpsEnums.cpp.inc"
 #include "GraphBLAS/GraphBLASUtils.h"
 
 #include <numeric>
+#include <unordered_set>
 
 using namespace mlir;
 using namespace mlir::graphblas;
@@ -742,7 +744,19 @@ static LogicalResult verify(ReduceToVectorOp op) {
   if (errMsg)
     return op.emitError("result " + errMsg.getValue());
 
-  if (resultType.getElementType() != inputType.getElementType())
+  if (aggregator == "argmin" or aggregator == "argmax") {
+    Type valueType = resultType.getElementType();
+    bool valueTypeIsI64 = llvm::TypeSwitch<Type, bool>(valueType)
+                              .Case<IntegerType>([&](IntegerType type) {
+                                unsigned bitWidth = type.getWidth();
+                                return bitWidth == 64;
+                              })
+                              .Default([&](Type type) { return false; });
+    if (!valueTypeIsI64)
+      return op.emitError(
+          "\"" + aggregator +
+          "\" requires the output vector to have i64 elements.");
+  } else if (resultType.getElementType() != inputType.getElementType())
     return op.emitError("Operand and output types are incompatible.");
 
   ArrayRef<int64_t> inputShape = inputType.getShape();
@@ -784,10 +798,6 @@ static LogicalResult verifyReduceToScalarArgs(T op) {
       return op.emitError("operand " + errMsg.getValue());
   }
 
-  Type resultType = op.getResult().getType();
-  if (resultType != operandType.getElementType())
-    return op.emitError("Operand and output types are incompatible.");
-
   return success();
 }
 
@@ -801,6 +811,24 @@ static LogicalResult verify(ReduceToScalarOp op) {
   if (!supportedReduceAggregators.contains(aggregator))
     return op.emitError("\"" + aggregator +
                         "\" is not a supported aggregator.");
+
+  Type operandOrigType = op.input().getType();
+  RankedTensorType operandType = operandOrigType.cast<RankedTensorType>();
+  Type resultType = op.getResult().getType();
+  if (aggregator == "argmin" or aggregator == "argmax") {
+    if (operandType.getRank() != 1)
+      return op.emitError("\"" + aggregator + "\" only supported for vectors.");
+    bool resultTypeIsI64 = llvm::TypeSwitch<Type, bool>(resultType)
+                               .Case<IntegerType>([&](IntegerType type) {
+                                 unsigned bitWidth = type.getWidth();
+                                 return bitWidth == 64;
+                               })
+                               .Default([&](Type type) { return false; });
+    if (!resultTypeIsI64)
+      return op.emitError("\"" + aggregator +
+                          "\" requires the output type to be i64.");
+  } else if (resultType != operandType.getElementType())
+    return op.emitError("Operand and output types are incompatible.");
 
   return success();
 }
@@ -974,6 +1002,60 @@ static LogicalResult verify(MatrixSelectRandomOp op) {
   if (nType.getWidth() != inputSparseEncoding.getIndexBitWidth())
     return op.emitError(
         "n must match bit width of input sparse tensor index type");
+
+  return success();
+}
+
+static LogicalResult verify(PrintOp op) {
+  for (OpOperand &opOperand : op->getOpOperands()) {
+    Type operandType = opOperand.get().getType();
+
+    llvm::Optional<std::string> errorString =
+        llvm::TypeSwitch<Type, llvm::Optional<std::string>>(operandType)
+            .Case<IndexType>(
+                [&](IndexType type) -> llvm::Optional<std::string> {
+                  return llvm::None;
+                })
+            .Case<IntegerType>(
+                [&](IntegerType type) -> llvm::Optional<std::string> {
+                  unsigned bitWidth = type.getWidth();
+                  static const std::unordered_set<int> allowedBitWidths = {
+                      1, 8, 16, 32, 64};
+                  if (allowedBitWidths.find(bitWidth) ==
+                      allowedBitWidths.end()) {
+                    std::string errorMessageString =
+                        "Cannot print integer with bit width of ";
+                    errorMessageString += bitWidth;
+                    errorMessageString += ".";
+                    return errorMessageString;
+                  }
+                  return llvm::None;
+                })
+            .Case<FloatType>([&](FloatType type)
+                                 -> llvm::Optional<std::string> {
+              unsigned bitWidth = type.getWidth();
+              static const std::unordered_set<int> allowedBitWidths = {32, 64};
+              if (allowedBitWidths.find(bitWidth) == allowedBitWidths.end()) {
+                std::string errorMessageString =
+                    "Cannot print float with bit width of ";
+                errorMessageString += bitWidth;
+                errorMessageString += ".";
+                return errorMessageString;
+              }
+              return llvm::None;
+            })
+            .Default([&](Type type) -> llvm::Optional<std::string> {
+              std::string errorMessageString = "Printing for the type ";
+              llvm::raw_string_ostream stream(errorMessageString);
+              type.print(stream);
+              stream << " is not yet supported.";
+              stream.flush();
+              return errorMessageString;
+            });
+
+    if (errorString)
+      return op.emitError(errorString.getValue());
+  }
 
   return success();
 }

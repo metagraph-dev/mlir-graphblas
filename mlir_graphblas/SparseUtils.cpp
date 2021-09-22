@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <iostream>
 
 //// -> MODIFIED
 // forward declaration
@@ -839,6 +840,9 @@ void *vector_f32_p64i64_to_ptr8(void *tensor) {
 void *vector_i64_p64i64_to_ptr8(void *tensor) {
     return tensor;
 }
+void *vector_i32_p64i64_to_ptr8(void *tensor) {
+    return tensor;
+}
 // Combinations of !llvm.ptr<i8> to real types
 void *ptr8_to_matrix_csr_f64_p64i64(void *tensor) {
     return tensor;
@@ -865,6 +869,9 @@ void *ptr8_to_vector_f32_p64i64(void *tensor) {
     return tensor;
 }
 void *ptr8_to_vector_i64_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_vector_i32_p64i64(void *tensor) {
     return tensor;
 }
 // New tensor generic constructors
@@ -917,7 +924,50 @@ void *new_vector_i64_p64i64(uint64_t size) {
     SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, int64_t>(1);
     return vector_prep_size(tensor, size);
 }
-
+void *new_vector_i32_p64i64(uint64_t size) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, int32_t>(1);
+    return vector_prep_size(tensor, size);
+}
+// Print functions
+void print_int_as_char(int64_t character_int) {
+  char character = (char) character_int;
+  std::cout << character;
+  return;
+}
+void print_index(uint64_t val) {
+  std::cout << val;
+  return;
+}
+void print_i1(bool val) {
+  std::cout << val;
+  return;
+}
+void print_i8(int8_t val) {
+  // must cast since a char is an 8-bit int
+  std::cout << (int16_t)val;
+  return;
+}
+void print_i16(int16_t val) {
+  std::cout << val;
+  return;
+}
+void print_i32(int32_t val) {
+  std::cout << val;
+  return;
+}
+void print_i64(int64_t val) {
+  std::cout << val;
+  return;
+}
+void print_f32(float val) {
+  std::cout << val;
+  return;
+}
+void print_f64(double val) {
+  std::cout << val;
+  return;
+}
+  
 //// <- MODIFIED
 } // extern "C"
 

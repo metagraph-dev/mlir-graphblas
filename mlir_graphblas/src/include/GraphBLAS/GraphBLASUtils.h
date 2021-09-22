@@ -30,7 +30,8 @@ static const llvm::StringSet<> supportedSemiringAddNames{"plus", "any", "min"};
 static const llvm::StringSet<> supportedSemiringMultiplyNames{
     "pair", "times", "plus", "first", "second"};
 
-static const llvm::StringSet<> supportedReduceAggregators{"plus", "count"};
+static const llvm::StringSet<> supportedReduceAggregators{"plus", "count",
+                                                          "argmin", "argmax"};
 
 static const llvm::StringSet<> supportedSelectors{"triu", "tril", "gt"};
 static const llvm::StringSet<> supportedThunkNeedingSelectors{"gt"};
@@ -64,6 +65,10 @@ mlir::RankedTensorType getCSCType(mlir::MLIRContext *context,
 int64_t getRank(mlir::Type inputType);
 int64_t getRank(mlir::Value inputValue);
 
+void callPrintString(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                     mlir::Location loc, mlir::StringRef string);
+void callPrintValue(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                    mlir::Location loc, mlir::Value input);
 mlir::Value castToPtr8(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                        mlir::Location loc, mlir::Value input);
 mlir::Value castToTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
