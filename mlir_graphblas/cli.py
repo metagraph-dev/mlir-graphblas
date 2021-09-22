@@ -20,12 +20,11 @@ _SCRIPT_DIR = os.path.dirname(__file__)
 _BUILD_DIR = os.path.join(_SCRIPT_DIR, "src", "build")
 GRAPHBLAS_OPT_EXE = os.path.join(_BUILD_DIR, "bin", "graphblas-opt")
 if os.path.exists(GRAPHBLAS_OPT_EXE):
-    print(f'Using development graphblas-opt: {GRAPHBLAS_OPT_EXE}', file=sys.stderr)
+    print(f"Using development graphblas-opt: {GRAPHBLAS_OPT_EXE}", file=sys.stderr)
 else:
-    # A normal install does not have a src/build directory, so assume graphblas-opt 
+    # A normal install does not have a src/build directory, so assume graphblas-opt
     # should be available in the path of the environment
     GRAPHBLAS_OPT_EXE = "graphblas-opt"
-
 
 
 class MlirOptError(Exception):
@@ -84,7 +83,7 @@ class MlirOptCli:
         err = MlirOptError("\n".join(el.decode() for el in err_lines[:3]))
         # read file contents for debugging (no longer worried about profiling
         if input is None:
-            with open(file, 'rb') as fp:
+            with open(file, "rb") as fp:
                 input = self._read_input(fp)
         err.debug_result = self.debug_passes(input, passes) if passes else None
         raise err
