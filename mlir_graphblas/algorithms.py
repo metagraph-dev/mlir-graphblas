@@ -14,6 +14,20 @@ from .sparse_utils import MLIRSparseTensor
 from .engine import MlirJitEngine
 
 
+class Algorithm:
+    def __init__(self):
+        self.builder = self._build()
+        self._cached = None
+
+    def _build(self):
+        raise NotImplementedError("must override _build")
+
+    def __call__(self, *args, **kwargs):
+        if self._cached is None:
+            self._cached = self.builder.compile()
+        return self._cached(*args, **kwargs)
+
+
 graphblas_opt_passes = (
     "--graphblas-structuralize",
     "--graphblas-optimize",
@@ -71,12 +85,8 @@ def triangle_count(A: MLIRSparseTensor) -> int:
     return int(num_triangles)
 
 
-_triangle_count_compiled = None
-
-
-def triangle_count_combined(A: MLIRSparseTensor) -> int:
-    global _triangle_count_compiled
-    if _triangle_count_compiled is None:
+class TriangleCountCombined(Algorithm):
+    def _build(self):
         irb = MLIRFunctionBuilder(
             "triangle_count",
             input_types=["tensor<?x?xf64, #CSR64>"],
@@ -92,10 +102,13 @@ def triangle_count_combined(A: MLIRSparseTensor) -> int:
         reduce_result = irb.graphblas.reduce_to_scalar(C, "plus")
         irb.return_vars(reduce_result)
 
-        _triangle_count_compiled = irb.compile()
+        return irb
 
-    num_triangles = _triangle_count_compiled(A)
-    return int(num_triangles)
+    def __call__(self, A: MLIRSparseTensor) -> int:
+        return int(super().__call__(A))
+
+
+triangle_count_combined = TriangleCountCombined()
 
 
 def dense_neural_network(
@@ -120,17 +133,8 @@ def dense_neural_network(
     return Y
 
 
-_dense_neural_network_compiled = None
-
-
-def dense_neural_network_combined(
-    W: List[MLIRSparseTensor],
-    Bias: List[MLIRSparseTensor],
-    Y0: MLIRSparseTensor,
-    ymax=32.0,
-) -> MLIRSparseTensor:
-    global _dense_neural_network_compiled
-    if _dense_neural_network_compiled is None:
+class DenseNeuralNetworkCombined(Algorithm):
+    def _build(self):
         aliases = _build_common_aliases()
 
         ##############################################
@@ -229,22 +233,27 @@ def dense_neural_network_combined(
 
         irb.return_vars(Y_final)
 
-        # Test Compiled Function
-        _dense_neural_network_compiled = irb.compile()
+        return irb
 
-    if len(W) != len(Bias):
-        raise TypeError(f"num_layers mismatch: {len(W)} != {len(Bias)}")
+    def __call__(
+        self,
+        W: List[MLIRSparseTensor],
+        Bias: List[MLIRSparseTensor],
+        Y0: MLIRSparseTensor,
+        ymax=32.0,
+    ) -> MLIRSparseTensor:
 
-    Y = _dense_neural_network_compiled(W, Bias, len(W), Y0, ymax)
-    return Y
+        if len(W) != len(Bias):
+            raise TypeError(f"num_layers mismatch: {len(W)} != {len(Bias)}")
+
+        return super().__call__(W, Bias, len(W), Y0, ymax)
 
 
-_sssp = None
+dense_neural_network_combined = DenseNeuralNetworkCombined()
 
 
-def sssp(graph: MLIRSparseTensor, vector: MLIRSparseTensor) -> MLIRSparseTensor:
-    global _sssp
-    if _sssp is None:
+class SSSP(Algorithm):
+    def _build(self):
         irb = MLIRFunctionBuilder(
             "sssp",
             input_types=["tensor<?x?xf64, #CSR64>", "tensor<?xf64, #CV64>"],
@@ -272,18 +281,19 @@ def sssp(graph: MLIRSparseTensor, vector: MLIRSparseTensor) -> MLIRSparseTensor:
 
         irb.return_vars(w)
 
-        _sssp = irb.compile()
+        return irb
 
-    w = _sssp(graph, vector)
-    return w
+    def __call__(
+        self, graph: MLIRSparseTensor, vector: MLIRSparseTensor
+    ) -> MLIRSparseTensor:
+        return super().__call__(graph, vector)
 
 
-_mssp = None
+sssp = SSSP()
 
 
-def mssp(graph: MLIRSparseTensor, matrix: MLIRSparseTensor) -> MLIRSparseTensor:
-    global _mssp
-    if _mssp is None:
+class MSSP(Algorithm):
+    def _build(self):
         irb = MLIRFunctionBuilder(
             "mssp",
             input_types=["tensor<?x?xf64, #CSR64>", "tensor<?x?xf64, #CSR64>"],
@@ -311,19 +321,19 @@ def mssp(graph: MLIRSparseTensor, matrix: MLIRSparseTensor) -> MLIRSparseTensor:
         irb.add_statement("}")
 
         irb.return_vars(w)
+        return irb
 
-        _mssp = irb.compile()
-
-    w = _mssp(graph, matrix)
-    return w
-
-
-_left_bipartite_project_and_filter = None
+    def __call__(
+        self, graph: MLIRSparseTensor, matrix: MLIRSparseTensor
+    ) -> MLIRSparseTensor:
+        return super().__call__(graph, matrix)
 
 
-def left_bipartite_project_and_filter(graph: MLIRSparseTensor) -> MLIRSparseTensor:
-    global _left_bipartite_project_and_filter
-    if _left_bipartite_project_and_filter is None:
+mssp = MSSP()
+
+
+class LeftBipartiteProjectAndFilter(Algorithm):
+    def _build(self):
         # Build Function
         ir_builder = MLIRFunctionBuilder(
             "left_project_and_filter",
@@ -339,19 +349,17 @@ def left_bipartite_project_and_filter(graph: MLIRSparseTensor) -> MLIRSparseTens
             left_projection, [zero_f64], ["gt"]
         )
         ir_builder.return_vars(filtered)
-        _left_bipartite_project_and_filter = ir_builder.compile()
+        return ir_builder
 
-    return _left_bipartite_project_and_filter(graph)
-
-
-_vertex_nomination = None
+    def __call__(self, graph: MLIRSparseTensor) -> MLIRSparseTensor:
+        return super().__call__(graph)
 
 
-def vertex_nomination(
-    graph: MLIRSparseTensor, nodes_of_interest: MLIRSparseTensor
-) -> int:
-    global _vertex_nomination
-    if _vertex_nomination is None:
+left_bipartite_project_and_filter = LeftBipartiteProjectAndFilter()
+
+
+class VertexNomination(Algorithm):
+    def _build(self):
         irb = MLIRFunctionBuilder(
             "vertex_nomination",
             input_types=["tensor<?x?xf64, #CSR64>", "tensor<?xf64, #CV64>"],
@@ -367,18 +375,19 @@ def vertex_nomination(
 
         irb.return_vars(result)
 
-        _vertex_nomination = irb.compile()
+        return irb
 
-    node_of_interest = _vertex_nomination(graph, nodes_of_interest)
-    return node_of_interest
+    def __call__(
+        self, graph: MLIRSparseTensor, nodes_of_interest: MLIRSparseTensor
+    ) -> int:
+        return super().__call__(graph, nodes_of_interest)
 
 
-_scan_statistics = None
+vertex_nomination = VertexNomination()
 
 
-def scan_statistics(graph: MLIRSparseTensor) -> int:
-    global _scan_statistics
-    if _scan_statistics is None:
+class ScanStatistics(Algorithm):
+    def _build(self):
         ir_builder = MLIRFunctionBuilder(
             "scan_statistics",
             input_types=["tensor<?x?xf64, #CSR64>"],
@@ -392,19 +401,17 @@ def scan_statistics(graph: MLIRSparseTensor) -> int:
         tri = ir_builder.graphblas.reduce_to_vector(A_triangles, "plus", 1)
         answer = ir_builder.graphblas.vector_argmax(tri)
         ir_builder.return_vars(answer)
-        _scan_statistics = ir_builder.compile()
+        return ir_builder
 
-    return _scan_statistics(graph)
-
-
-_pagerank = None
+    def scan_statistics(self, graph: MLIRSparseTensor) -> int:
+        return super().__call__(graph)
 
 
-def pagerank(
-    graph: MLIRSparseTensor, damping=0.85, tol=1e-6, *, maxiter=100
-) -> MLIRSparseTensor:
-    global _pagerank
-    if _pagerank is None:
+scan_statistics = ScanStatistics()
+
+
+class Pagerank(Algorithm):
+    def _build(self):
         irb = MLIRFunctionBuilder(
             "pagerank",
             input_types=["tensor<?x?xf64, #CSR64>", "f64", "f64", "index"],
@@ -519,31 +526,27 @@ def pagerank(
         # Return values are: score, iter_count
         irb.return_vars(ret_val, for_vars.returned_variable[2])
 
-        _pagerank = irb.compile()
+        return irb
 
-    pr = _pagerank(graph, damping, tol, maxiter)
-    return pr
-
-
-# Separate versions of compiled code are stored based on method
-_graph_search = {}
-_allowable_graph_search_methods = ("random", "random_weighted", "argmin", "argmax")
+    def __call__(
+        self, graph: MLIRSparseTensor, damping=0.85, tol=1e-6, *, maxiter=100
+    ) -> MLIRSparseTensor:
+        return super().__call__(graph, damping, tol, maxiter)
 
 
-def graph_search(
-    graph: MLIRSparseTensor,
-    num_steps,
-    initial_seed_array,
-    method="random",
-    *,
-    rand_seed=None,
-) -> MLIRSparseTensor:
-    if method not in _allowable_graph_search_methods:
-        raise ValueError(
-            f"Invalid method: {method}, must be one of {_allowable_graph_search_methods}"
-        )
+pagerank = Pagerank()
 
-    if method not in _graph_search:
+
+class GraphSearch(Algorithm):
+    allowable_methods = ("random", "random_weighted", "argmin", "argmax")
+
+    def __init__(self):
+        self.builder = {
+            method: self._build(method) for method in self.allowable_methods
+        }
+        self._cached = {}
+
+    def _build(self, method):
         input_types = [
             "tensor<?x?xf64, #CSR64>",
             "index",
@@ -629,15 +632,35 @@ def graph_search(
 
         irb.return_vars(count)
 
-        _graph_search[method] = irb.compile()
+        return irb
 
-    if not isinstance(initial_seed_array, np.ndarray):
-        initial_seed_array = np.array(initial_seed_array, dtype=np.int64)
+    def __call__(
+        self,
+        graph: MLIRSparseTensor,
+        num_steps,
+        initial_seed_array,
+        method="random",
+        *,
+        rand_seed=None,
+    ) -> MLIRSparseTensor:
+        if method not in self.allowable_methods:
+            raise ValueError(
+                f"Invalid method: {method}, must be one of {self.allowable_methods}"
+            )
 
-    extra = []
-    if method == "random":
-        extra.append(ChooseUniformContext(rand_seed))
-    elif method == "random_weighted":
-        extra.append(ChooseWeightedContext(rand_seed))
-    count = _graph_search[method](graph, num_steps, initial_seed_array, *extra)
-    return count
+        if method not in self._cached:
+            self._cached[method] = self.builder[method].compile()
+
+        if not isinstance(initial_seed_array, np.ndarray):
+            initial_seed_array = np.array(initial_seed_array, dtype=np.int64)
+
+        extra = []
+        if method == "random":
+            extra.append(ChooseUniformContext(rand_seed))
+        elif method == "random_weighted":
+            extra.append(ChooseWeightedContext(rand_seed))
+
+        return self._cached[method](graph, num_steps, initial_seed_array, *extra)
+
+
+graph_search = GraphSearch()

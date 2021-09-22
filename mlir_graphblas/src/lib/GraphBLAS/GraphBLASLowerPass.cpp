@@ -1582,19 +1582,19 @@ private:
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
       if (isMaskComplement) {
         ValueRange mcResult =
-            buildMaskComplement(rewriter, ncol, Mj, mcolStart, mcolEnd);
+            buildMaskComplement(rewriter, loc, ncol, Mj, mcolStart, mcolEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
-        total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi,
-                                   maskComplement, c0, mcSize, valueType);
+        total = computeNumOverlaps(rewriter, loc, nk, Aj, colStart, colEnd, Bp,
+                                   Bi, maskComplement, c0, mcSize, valueType);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
-        total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi,
-                                   Mj, mcolStart, mcolEnd, valueType);
+        total = computeNumOverlaps(rewriter, loc, nk, Aj, colStart, colEnd, Bp,
+                                   Bi, Mj, mcolStart, mcolEnd, valueType);
       }
     } else {
-      total = computeNumOverlaps(rewriter, nk, Aj, colStart, colEnd, Bp, Bi,
-                                 nullptr, c0, ncol, valueType);
+      total = computeNumOverlaps(rewriter, loc, nk, Aj, colStart, colEnd, Bp,
+                                 Bi, nullptr, c0, ncol, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1666,21 +1666,21 @@ private:
       Value mcolEnd = rewriter.create<IndexCastOp>(loc, mcolEnd64, indexType);
       if (isMaskComplement) {
         ValueRange mcResult =
-            buildMaskComplement(rewriter, ncol, Mj, mcolStart, mcolEnd);
+            buildMaskComplement(rewriter, loc, ncol, Mj, mcolStart, mcolEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
-        computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx,
-                            maskComplement, c0, mcSize, valueType, extBlocks,
-                            Cj, Cx, baseIndex, false);
+        computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi,
+                            Bx, maskComplement, c0, mcSize, valueType,
+                            extBlocks, Cj, Cx, baseIndex, false);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
-        computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx,
-                            Mj, mcolStart, mcolEnd, valueType, extBlocks, Cj,
-                            Cx, baseIndex, false);
+        computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi,
+                            Bx, Mj, mcolStart, mcolEnd, valueType, extBlocks,
+                            Cj, Cx, baseIndex, false);
       }
     } else {
-      computeInnerProduct(rewriter, nk, Aj, Ax, colStart, colEnd, Bp, Bi, Bx,
-                          nullptr, c0, ncol, valueType, extBlocks, Cj, Cx,
+      computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi,
+                          Bx, nullptr, c0, ncol, valueType, extBlocks, Cj, Cx,
                           baseIndex, false);
     }
 
@@ -1783,19 +1783,19 @@ private:
     if (mask) {
       if (isMaskComplement) {
         ValueRange mcResult =
-            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+            buildMaskComplement(rewriter, loc, size, Mi, maskStart, maskEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
-        total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj,
-                                   maskComplement, c0, mcSize, valueType);
+        total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap,
+                                   Aj, maskComplement, c0, mcSize, valueType);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
-        total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj,
-                                   Mi, maskStart, maskEnd, valueType);
+        total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap,
+                                   Aj, Mi, maskStart, maskEnd, valueType);
       }
     } else {
-      total = computeNumOverlaps(rewriter, nk, Bi, c0, fixedIndexEnd, Ap, Aj,
-                                 nullptr, c0, size, valueType);
+      total = computeNumOverlaps(rewriter, loc, nk, Bi, c0, fixedIndexEnd, Ap,
+                                 Aj, nullptr, c0, size, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1826,22 +1826,22 @@ private:
     if (mask) {
       if (isMaskComplement) {
         ValueRange mcResult =
-            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+            buildMaskComplement(rewriter, loc, size, Mi, maskStart, maskEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
-        computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
-                            maskComplement, c0, mcSize, valueType, extBlocks,
-                            Ci, Cx, c0, true);
+        computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap,
+                            Aj, Ax, maskComplement, c0, mcSize, valueType,
+                            extBlocks, Ci, Cx, c0, true);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
-        computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
-                            Mi, maskStart, maskEnd, valueType, extBlocks, Ci,
-                            Cx, c0, true);
+        computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap,
+                            Aj, Ax, Mi, maskStart, maskEnd, valueType,
+                            extBlocks, Ci, Cx, c0, true);
       }
     } else {
-      computeInnerProduct(rewriter, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj, Ax,
-                          nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0,
-                          true);
+      computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj,
+                          Ax, nullptr, c0, size, valueType, extBlocks, Ci, Cx,
+                          c0, true);
     }
 
     // end if cmpDiff
@@ -1939,19 +1939,19 @@ private:
     if (mask) {
       if (isMaskComplement) {
         ValueRange mcResult =
-            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+            buildMaskComplement(rewriter, loc, size, Mi, maskStart, maskEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
-        total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi,
-                                   maskComplement, c0, mcSize, valueType);
+        total = computeNumOverlaps(rewriter, loc, nk, Ai, c0, fixedIndexEnd, Bp,
+                                   Bi, maskComplement, c0, mcSize, valueType);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
-        total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi,
-                                   Mi, maskStart, maskEnd, valueType);
+        total = computeNumOverlaps(rewriter, loc, nk, Ai, c0, fixedIndexEnd, Bp,
+                                   Bi, Mi, maskStart, maskEnd, valueType);
       }
     } else {
-      total = computeNumOverlaps(rewriter, nk, Ai, c0, fixedIndexEnd, Bp, Bi,
-                                 nullptr, c0, size, valueType);
+      total = computeNumOverlaps(rewriter, loc, nk, Ai, c0, fixedIndexEnd, Bp,
+                                 Bi, nullptr, c0, size, valueType);
     }
     rewriter.create<scf::YieldOp>(loc, total);
 
@@ -1982,22 +1982,22 @@ private:
     if (mask) {
       if (isMaskComplement) {
         ValueRange mcResult =
-            buildMaskComplement(rewriter, size, Mi, maskStart, maskEnd);
+            buildMaskComplement(rewriter, loc, size, Mi, maskStart, maskEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
-        computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
-                            maskComplement, c0, mcSize, valueType, extBlocks,
-                            Ci, Cx, c0, false);
+        computeInnerProduct(rewriter, loc, nk, Ai, Ax, c0, fixedIndexEnd, Bp,
+                            Bi, Bx, maskComplement, c0, mcSize, valueType,
+                            extBlocks, Ci, Cx, c0, false);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
-        computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
-                            Mi, maskStart, maskEnd, valueType, extBlocks, Ci,
-                            Cx, c0, false);
+        computeInnerProduct(rewriter, loc, nk, Ai, Ax, c0, fixedIndexEnd, Bp,
+                            Bi, Bx, Mi, maskStart, maskEnd, valueType,
+                            extBlocks, Ci, Cx, c0, false);
       }
     } else {
-      computeInnerProduct(rewriter, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
-                          nullptr, c0, size, valueType, extBlocks, Ci, Cx, c0,
-                          false);
+      computeInnerProduct(rewriter, loc, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi,
+                          Bx, nullptr, c0, size, valueType, extBlocks, Ci, Cx,
+                          c0, false);
     }
 
     // end if cmpDiff
@@ -2070,8 +2070,8 @@ private:
     Value fixedIndexEnd =
         rewriter.create<IndexCastOp>(loc, fixedIndexEnd64, indexType);
 
-    computeInnerProduct(rewriter, size, Ai, Ax, c0, fixedIndexEnd, Bp, Bi, Bx,
-                        nullptr, c0, c1, valueType, extBlocks, Ci, Cx, c0,
+    computeInnerProduct(rewriter, loc, size, Ai, Ax, c0, fixedIndexEnd, Bp, Bi,
+                        Bx, nullptr, c0, c1, valueType, extBlocks, Ci, Cx, c0,
                         false);
 
     // extract scalar from C
@@ -2380,10 +2380,12 @@ public:
 
     Value output = callEmptyLike(rewriter, module, loc, a);
     if (rank == 2) {
-      computeMatrixElementWise(rewriter, module, a, b, output, unionOperator,
+      computeMatrixElementWise(rewriter, loc, module, a, b, output,
+                               unionOperator,
                                /* intersect */ false);
     } else {
-      computeVectorElementWise(rewriter, module, a, b, output, unionOperator,
+      computeVectorElementWise(rewriter, loc, module, a, b, output,
+                               unionOperator,
                                /* intersect */ false);
     }
 
@@ -2415,10 +2417,10 @@ public:
 
     Value output = callEmptyLike(rewriter, module, loc, a);
     if (rank == 2) {
-      computeMatrixElementWise(rewriter, module, a, b, output,
+      computeMatrixElementWise(rewriter, loc, module, a, b, output,
                                intersectOperator, /* intersect */ true);
     } else {
-      computeVectorElementWise(rewriter, module, a, b, output,
+      computeVectorElementWise(rewriter, loc, module, a, b, output,
                                intersectOperator, /* intersect */ true);
     }
 
@@ -2472,7 +2474,7 @@ public:
         } else {
           // input -> output { accumulate, replace? }
           Value temp = callDupTensor(rewriter, module, loc, output);
-          computeMatrixElementWise(rewriter, module, input, temp, output,
+          computeMatrixElementWise(rewriter, loc, module, input, temp, output,
                                    accumulateString, /* intersect */ false);
           callDelSparseTensor(rewriter, module, loc, temp);
         }
@@ -2513,7 +2515,7 @@ public:
         } else {
           // input -> output { accumulate, replace? }
           Value temp = callDupTensor(rewriter, module, loc, output);
-          computeVectorElementWise(rewriter, module, input, temp, output,
+          computeVectorElementWise(rewriter, loc, module, input, temp, output,
                                    accumulateString, /* intersect */ false);
           callDelSparseTensor(rewriter, module, loc, temp);
         }
