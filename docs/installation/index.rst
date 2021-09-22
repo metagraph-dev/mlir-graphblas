@@ -32,13 +32,19 @@ Instructions for installing via venv are currently a work in progress.
 Required Dependencies
 ---------------------
 
-These should be automatically installed when mlir-graphblas is installed
+These should be automatically installed when ``mlir-graphblas`` is installed
 
-  - `numpy <https://numpy.org>`__
+  - `NumPy <https://numpy.org>`__
+  - `SciPy <https://scipy.org/>`__
   - `PyMLIR <https://github.com/metagraph-dev/pymlir>`__
   - `llvmlite <https://llvmlite.readthedocs.io/en/latest/>`__
   - `pygments <https://pygments.org/>`__
   - `donfig <https://donfig.readthedocs.io/>`__
   - `panel <https://panel.holoviz.org/>`__
   - `bokeh <https://bokeh.org/>`__
-
+  - `MLIR <https://mlir.llvm.org/>`__
+  - `Cython <https://cython.org/>`__
+  - `CMake <https://cmake.org/>`__
+  - `Ninja <https://ninja-build.org/>`__
+  - `lit <https://llvm.org/docs/CommandGuide/lit.html>`__
+  - `Jinja <https://jinja.palletsprojects.com/>`__

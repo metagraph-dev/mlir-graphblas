@@ -9,15 +9,41 @@ This document is not intended to be a complete tutorial on ``graphblas-opt`` and
 as a reference manual for the passes exclusively available for ``graphblas-opt``. For tutorials
 on these passes specific to ``graphblas-opt``, see our :ref:`graphblas_dialect_tutorials`.
 
-The two passes specific to ``graphblas-opt`` are:
+The three passes specific to ``graphblas-opt`` are:
 
-* ``--graphblas-optimize``: Fuses ``graphblas`` ops together to eliminate
-  temporary tensors and redundant loops.
+* ``--graphblas-structuralize``: Lowers higher-level ``graphblas`` ops
+  into lower-level generic ``graphblas`` ops to enable the
+  ``--graphblas-optimize`` pass to perform optimizations such as op fusion.
+* ``--graphblas-optimize``: Fuses lower-level generic ``graphblas`` ops together
+  to eliminate temporary tensors and redundant loops.
 * ``--graphblas-lower``: Convert ``graphblas`` ops to the ``scf``, ``std``,
   and ``memref`` dialects.
 
-The ``--graphblas-optimize`` pass is optional and unoptimized code can be
-generated and executed with ``--graphblas-lower``.
+The ``--graphblas-structuralize`` and ``--graphblas-optimize`` passes are optional
+and unoptimized code can be generated and executed with ``--graphblas-lower``.
+
+Also, ``--graphblas-optimize`` can be used without uses of ``--graphblas-structuralize``,
+but in these sorts of situations, ``--graphblas-optimize`` may not be able to find all
+the available optimizations as it only transforms lower-level generic ``graphblas`` ops
+(all of which may not yet be present without uses of ``--graphblas-structuralize``).
+It's best practice to always use ``--graphblas-structuralize`` prior to uses of
+``--graphblas-optimize``.
+
+.. _graphblas-structuralize: 
+
+``--graphblas-structuralize`` Pass
+----------------------------------
+
+The structuralization pass performs three transformations:
+
+* Transform ``graphblas.matrix_multiply`` ops intow equivalent
+  ``graphblas.matrix_multiply_generic`` ops.
+* Transform ``graphblas.apply`` ops into equivalent
+  ``graphblas.apply_generic`` ops.
+* Transform ``graphblas.reduce_to_scalar`` ops into equivalent
+  ``graphblas.reduce_to_scalar_generic`` ops.
+
+.. _graphblas-optimize: 
 
 ``--graphblas-optimize`` Pass
 -----------------------------

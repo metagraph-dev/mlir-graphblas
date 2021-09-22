@@ -502,13 +502,6 @@ static LogicalResult verify(MatrixMultiplyOp op) {
     return op.emitError(semiringError.getValue());
   }
 
-  Region &body = op.body();
-  size_t numBlocks = body.getBlocks().size();
-  if (numBlocks > 0) {
-    return op.emitError("graphblas.matrix_multiply should have no blocks.  Did "
-                        "you mean graphblas.matrix_multiply_generic?");
-  }
-
   return success();
 }
 
