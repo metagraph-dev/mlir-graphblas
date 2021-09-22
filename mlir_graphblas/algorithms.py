@@ -537,19 +537,14 @@ class Pagerank(Algorithm):
 pagerank = Pagerank()
 
 
-# Separate versions of compiled code are stored based on method
-_allowable_graph_search_methods = ("random", "random_weighted", "argmin", "argmax")
-
-
 class GraphSearch(Algorithm):
-    def __init__(self, method):
-        if method not in _allowable_graph_search_methods:
-            raise ValueError(
-                f"Invalid method: {method}, must be one of {_allowable_graph_search_methods}"
-            )
-        self.method = method
-        self.builder = self._build(method)
-        self._cached = None
+    allowable_methods = ("random", "random_weighted", "argmin", "argmax")
+
+    def __init__(self):
+        self.builder = {
+            method: self._build(method) for method in self.allowable_methods
+        }
+        self._cached = {}
 
     def _build(self, method):
         input_types = [
@@ -640,38 +635,32 @@ class GraphSearch(Algorithm):
         return irb
 
     def __call__(
-        self, graph: MLIRSparseTensor, num_steps, initial_seed_array, *, rand_seed=None
+        self,
+        graph: MLIRSparseTensor,
+        num_steps,
+        initial_seed_array,
+        method="random",
+        *,
+        rand_seed=None,
     ) -> MLIRSparseTensor:
+        if method not in self.allowable_methods:
+            raise ValueError(
+                f"Invalid method: {method}, must be one of {self.allowable_methods}"
+            )
+
+        if method not in self._cached:
+            self._cached[method] = self.builder[method].compile()
 
         if not isinstance(initial_seed_array, np.ndarray):
             initial_seed_array = np.array(initial_seed_array, dtype=np.int64)
 
         extra = []
-        if self.method == "random":
+        if method == "random":
             extra.append(ChooseUniformContext(rand_seed))
-        elif self.method == "random_weighted":
+        elif method == "random_weighted":
             extra.append(ChooseWeightedContext(rand_seed))
 
-        return super().__call__(graph, num_steps, initial_seed_array, *extra)
+        return self._cached[method](graph, num_steps, initial_seed_array, *extra)
 
 
-graph_search_methods = {
-    method: GraphSearch(method) for method in _allowable_graph_search_methods
-}
-
-
-def graph_search(
-    graph: MLIRSparseTensor,
-    num_steps,
-    initial_seed_array,
-    method="random",
-    *,
-    rand_seed=None,
-) -> MLIRSparseTensor:
-    if method not in _allowable_graph_search_methods:
-        raise ValueError(
-            f"Invalid method: {method}, must be one of {_allowable_graph_search_methods}"
-        )
-    return graph_search_methods[method](
-        graph, num_steps, initial_seed_array, rand_seed=rand_seed
-    )
+graph_search = GraphSearch()
