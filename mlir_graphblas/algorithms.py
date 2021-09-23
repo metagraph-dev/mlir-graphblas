@@ -336,9 +336,7 @@ class BipartiteProjectAndFilter(Algorithm):
     allowable_keep_nodes = ("row", "column")
 
     def __init__(self):
-        self.builder = {
-            kn: self._build(kn) for kn in self.allowable_keep_nodes
-        }
+        self.builder = {kn: self._build(kn) for kn in self.allowable_keep_nodes}
         self._cached = {}
 
     def _build(self, keep_nodes):
@@ -357,13 +355,13 @@ class BipartiteProjectAndFilter(Algorithm):
             M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSR64>")
             M_csc = ir_builder.graphblas.convert_layout(M, "tensor<?x?xf64, #CSC64>")
             projection = ir_builder.graphblas.matrix_multiply(M_T, M_csc, "plus_times")
-        filtered = ir_builder.graphblas.matrix_select(
-            projection, [limit], ["ge"]
-        )
+        filtered = ir_builder.graphblas.matrix_select(projection, [limit], ["ge"])
         ir_builder.return_vars(filtered)
         return ir_builder
 
-    def __call__(self, graph: MLIRSparseTensor, keep_nodes: str = "row", cutoff=0.0) -> MLIRSparseTensor:
+    def __call__(
+        self, graph: MLIRSparseTensor, keep_nodes: str = "row", cutoff=0.0
+    ) -> MLIRSparseTensor:
         if keep_nodes not in self.allowable_keep_nodes:
             raise ValueError(
                 f"Invalid keep_nodes argument: {keep_nodes}, must be one of {self.allowable_keep_nodes}"
