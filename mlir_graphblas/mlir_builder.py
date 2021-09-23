@@ -243,6 +243,11 @@ class MLIRFunctionBuilder(BaseFunction):
             statements=joined_statements,
         )
 
+    def print_mlir(self):
+        from .tools import tersify_mlir
+
+        print(tersify_mlir(self.get_mlir(make_private=False), self.aliases))
+
     ################################
     # MLIR Building Method Helpers #
     ################################

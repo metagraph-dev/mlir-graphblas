@@ -13,8 +13,8 @@ from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, SparseTensorType
 from mlir_graphblas.functions import ConvertLayout
 from mlir_graphblas.algorithms import (
-    triangle_count_combined,
-    dense_neural_network_combined,
+    triangle_count,
+    dense_neural_network,
 )
 
 from .jit_engine_test_utils import (
@@ -238,7 +238,7 @@ def test_ir_builder_triangle_count():
     sparsity = np.array([False, True], dtype=np.bool8)
     input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
 
-    assert 5 == triangle_count_combined(input_tensor)
+    assert 5 == triangle_count(input_tensor)
 
     return
 
@@ -454,7 +454,7 @@ def test_ir_builder_dnn(
             sparsify_matrix(matrix) for matrix in dense_bias_matrices
         ]
         sparse_input_tensor = sparsify_matrix(dense_input_tensor)
-        sparse_result = dense_neural_network_combined(
+        sparse_result = dense_neural_network(
             sparse_weight_matrices,
             sparse_bias_matrices,
             sparse_input_tensor,

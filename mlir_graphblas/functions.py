@@ -46,6 +46,7 @@ class BaseFunction:
         """
         raise NotImplementedError()
 
+    # TODO: generate these from the aliases and add flag to tersify main body
     MODULE_WRAPPER_TEXT = jinja2.Template(
         """\
 #CSR64 = #sparse_tensor.encoding<{
@@ -184,8 +185,8 @@ class MatrixSelect(BaseFunction):
         matrix_select(input: MLIRSparseTensor) -> MLIRSparseTensor
     """
 
-    _valid_selectors = {"triu", "tril", "gt"}
-    _thunk_requiring_selectors = {"gt"}
+    _valid_selectors = {"triu", "tril", "gt", "ge"}
+    _thunk_requiring_selectors = {"gt", "ge"}
 
     def __init__(self, selector="triu"):
         super().__init__()
