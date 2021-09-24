@@ -35,10 +35,10 @@ def test_triangle_count():
     sparsity = np.array([False, True], dtype=np.bool8)
     a = MLIRSparseTensor(indices, values, sizes, sparsity)
 
-    num_triangles = mlalgo.triangle_count(a)
+    num_triangles = mlalgo.triangle_count_separate(a)
     assert num_triangles == 5, num_triangles
 
-    num_triangles = mlalgo.triangle_count_combined(a)
+    num_triangles = mlalgo.triangle_count(a)
     assert num_triangles == 5, num_triangles
 
 
@@ -108,7 +108,7 @@ def test_mssp():
     assert (w.values == [14, 0, 9, 11, 7, 10, 4, 3, 5, 3, 0, 12, 4, 9]).all()
 
 
-def test_left_bipartite_project_and_filter():
+def test_bipartite_project_and_filter():
     # Test Results
     r"""
     0  1  2  3
@@ -130,13 +130,23 @@ def test_left_bipartite_project_and_filter():
     # fmt: on
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
 
-    result = mlalgo.left_bipartite_project_and_filter(input_tensor)
+    # Test row projection
+    result = mlalgo.bipartite_project_and_filter(input_tensor)
     dense_result = densify_csr(result)
 
     expected_dense_result = dense_input_tensor @ dense_input_tensor.T
     expected_dense_result[expected_dense_result < 0] = 0
 
     assert np.all(dense_result == expected_dense_result)
+
+    # Test column projection
+    result2 = mlalgo.bipartite_project_and_filter(input_tensor, "column", cutoff=1.0)
+    dense_result2 = densify_csr(result2)
+
+    expected_dense_result2 = dense_input_tensor.T @ dense_input_tensor
+    expected_dense_result2[expected_dense_result2 < 1] = 0
+
+    assert np.all(dense_result2 == expected_dense_result2)
 
 
 def test_vertex_nomination():

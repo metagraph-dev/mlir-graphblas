@@ -1,9 +1,9 @@
 import re
-
+from collections import OrderedDict
 from typing import Sequence
 
 
-class AliasMap(dict):
+class AliasMap(OrderedDict):
     def __setitem__(self, name, type):
         type = Type.find(type, aliases=self)
         super().__setitem__(name, type)
@@ -217,6 +217,9 @@ class SparseEncodingType(Type):
         return len(self.levels)
 
     def __str__(self):
+        return self.to_pretty_string(multiline=False)
+
+    def to_pretty_string(self, multiline=True):
         internals = []
         if self.levels is not None:
             lvl_str = ", ".join(f'"{lvl}"' for lvl in self.levels)
@@ -229,7 +232,11 @@ class SparseEncodingType(Type):
                 )
         internals.append(f"pointerBitWidth = {self.pointer_bit_width}")
         internals.append(f"indexBitWidth = {self.index_bit_width}")
-        return f"#sparse_tensor.encoding<{{ {', '.join(internals)} }}>"
+        if multiline:
+            internals = ",\n    ".join(internals)
+            return f"#sparse_tensor.encoding<{{\n    {internals}\n}}>"
+        else:
+            return f"#sparse_tensor.encoding<{{ {', '.join(internals)} }}>"
 
     @classmethod
     def parse(cls, text: str, aliases: AliasMap = None):
