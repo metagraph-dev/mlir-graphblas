@@ -526,7 +526,7 @@ class GraphBLAS_Union(BaseOp):
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f'{ret_val.assign} = graphblas.union {lhs}, {rhs} {{ union_operator = "{operator}" }} :'
-            f"({lhs.type}, {rhs.type}) to {return_type}"
+            f"({lhs.type}, {rhs.type}) to {ret_val.type}"
         )
 
 
@@ -555,7 +555,7 @@ class GraphBLAS_Intersect(BaseOp):
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f'{ret_val.assign} = graphblas.intersect {lhs}, {rhs} {{ intersect_operator = "{operator}" }} :'
-            f"({lhs.type}, {rhs.type}) to {return_type}"
+            f"({lhs.type}, {rhs.type}) to {ret_val.type}"
         )
 
 
@@ -596,7 +596,7 @@ class GraphBLAS_Equal(BaseOp):
 class GraphBLAS_MatrixSelect(BaseOp):
     dialect = "graphblas"
     name = "matrix_select"
-    allowed_selectors = {"triu", "tril", "gt"}
+    allowed_selectors = {"triu", "tril", "gt", "ge"}
 
     @classmethod
     def call(
@@ -890,14 +890,14 @@ class PtrToTensorOp(BaseOp):
         ret_val = irbuilder.new_var(return_type)
         funcname = f"ptr8_to_{tensor_type.to_short_string()}"
         irbuilder.needed_function_table[funcname] = (
-            f"func private @{funcname}(!llvm.ptr<i8>) -> {return_type}",
+            f"func private @{funcname}(!llvm.ptr<i8>) -> {ret_val.type}",
             ["!llvm.ptr<i8>"],
             return_type,
         )
 
         return ret_val, (
             f"{ret_val.assign} = call @{funcname}({input}) : "
-            f"(!llvm.ptr<i8>) -> {return_type}"
+            f"(!llvm.ptr<i8>) -> {ret_val.type}"
         )
 
 
@@ -946,14 +946,14 @@ class NewSparseTensor(BaseOp):
         funcname = f"new_{ret_val.type.to_short_string()}"
         input_types = ["index"] * rank
         irbuilder.needed_function_table[funcname] = (
-            f"func private @{funcname}({', '.join(input_types)}) -> {tensor_type}",
+            f"func private @{funcname}({', '.join(input_types)}) -> {ret_val.type}",
             input_types,
             tensor_type,
         )
 
         return ret_val, (
             f"{ret_val.assign} = call @{funcname}({', '.join(str(ds) for ds in dim_sizes)}) :"
-            f"({', '.join(input_types)}) -> {tensor_type}"
+            f"({', '.join(input_types)}) -> {ret_val.type}"
         )
 
 

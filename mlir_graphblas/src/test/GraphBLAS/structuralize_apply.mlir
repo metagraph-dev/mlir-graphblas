@@ -1,6 +1,6 @@
 // RUN: graphblas-opt %s | graphblas-opt --graphblas-structuralize | FileCheck %s
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
     dimLevelType = [ "compressed" ],
     pointerBitWidth = 64,
     indexBitWidth = 64
@@ -40,9 +40,9 @@ module {
 // CHECK:             return %[[VAL_13:.*]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @apply_left_thunk_min_float_vector(%sparse_tensor: tensor<8xf64, #SparseVec64>, %thunk: f64) -> tensor<8xf64, #SparseVec64> {
-        %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "min" } : (f64, tensor<8xf64, #SparseVec64>) to tensor<8xf64, #SparseVec64>
-        return %answer : tensor<8xf64, #SparseVec64>
+    func @apply_left_thunk_min_float_vector(%sparse_tensor: tensor<8xf64, #CV64>, %thunk: f64) -> tensor<8xf64, #CV64> {
+        %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "min" } : (f64, tensor<8xf64, #CV64>) to tensor<8xf64, #CV64>
+        return %answer : tensor<8xf64, #CV64>
     }
 
 // CHECK:           func @apply_right_thunk_min_float_matrix(%[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
@@ -70,9 +70,9 @@ module {
 // CHECK:             return %[[VAL_13:.*]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @apply_right_thunk_min_float_vector(%sparse_tensor: tensor<8xf64, #SparseVec64>, %thunk: f64) -> tensor<8xf64, #SparseVec64> {
-        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<8xf64, #SparseVec64>, f64) to tensor<8xf64, #SparseVec64>
-        return %answer : tensor<8xf64, #SparseVec64>
+    func @apply_right_thunk_min_float_vector(%sparse_tensor: tensor<8xf64, #CV64>, %thunk: f64) -> tensor<8xf64, #CV64> {
+        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<8xf64, #CV64>, f64) to tensor<8xf64, #CV64>
+        return %answer : tensor<8xf64, #CV64>
     }
 
 // CHECK-LABEL:   func @apply_left_thunk_div_float_matrix(
@@ -102,9 +102,9 @@ module {
 // CHECK:           return %[[VAL_5:.*]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
 
-    func @apply_left_thunk_div_float_vector(%sparse_tensor: tensor<8xf64, #SparseVec64>, %thunk: f64) -> tensor<8xf64, #SparseVec64> {
-        %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "div" } : (f64, tensor<8xf64, #SparseVec64>) to tensor<8xf64, #SparseVec64>
-        return %answer : tensor<8xf64, #SparseVec64>
+    func @apply_left_thunk_div_float_vector(%sparse_tensor: tensor<8xf64, #CV64>, %thunk: f64) -> tensor<8xf64, #CV64> {
+        %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "div" } : (f64, tensor<8xf64, #CV64>) to tensor<8xf64, #CV64>
+        return %answer : tensor<8xf64, #CV64>
     }
 
 // CHECK-LABEL:   func @apply_right_thunk_div_float_matrix(
@@ -134,9 +134,9 @@ module {
 // CHECK:           return %[[VAL_5:.*]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
 
-    func @apply_right_thunk_div_float_vector(%sparse_tensor: tensor<8xf64, #SparseVec64>, %thunk: f64) -> tensor<8xf64, #SparseVec64> {
-        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "div" } : (tensor<8xf64, #SparseVec64>, f64) to tensor<8xf64, #SparseVec64>
-        return %answer : tensor<8xf64, #SparseVec64>
+    func @apply_right_thunk_div_float_vector(%sparse_tensor: tensor<8xf64, #CV64>, %thunk: f64) -> tensor<8xf64, #CV64> {
+        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "div" } : (tensor<8xf64, #CV64>, f64) to tensor<8xf64, #CV64>
+        return %answer : tensor<8xf64, #CV64>
     }
 
 // CHECK:           func @apply_abs_float_matrix(%[[VAL_14:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
@@ -162,9 +162,9 @@ module {
 // CHECK:             return %[[VAL_23:.*]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @apply_abs_float_vector(%sparse_tensor: tensor<8xf64, #SparseVec64>) -> tensor<8xf64, #SparseVec64> {
-        %answer = graphblas.apply %sparse_tensor { apply_operator = "abs" } : (tensor<8xf64, #SparseVec64>) to tensor<8xf64, #SparseVec64>
-        return %answer : tensor<8xf64, #SparseVec64>
+    func @apply_abs_float_vector(%sparse_tensor: tensor<8xf64, #CV64>) -> tensor<8xf64, #CV64> {
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "abs" } : (tensor<8xf64, #CV64>) to tensor<8xf64, #CV64>
+        return %answer : tensor<8xf64, #CV64>
     }
 
 // CHECK-LABEL:   func @apply_minv_float_matrix(
@@ -194,9 +194,9 @@ module {
 // CHECK:           return %[[VAL_5:.*]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
 
-    func @apply_minv_float_vector(%sparse_tensor: tensor<8xf64, #SparseVec64>) -> tensor<8xf64, #SparseVec64> {
-        %answer = graphblas.apply %sparse_tensor { apply_operator = "minv" } : (tensor<8xf64, #SparseVec64>) to tensor<8xf64, #SparseVec64>
-        return %answer : tensor<8xf64, #SparseVec64>
+    func @apply_minv_float_vector(%sparse_tensor: tensor<8xf64, #CV64>) -> tensor<8xf64, #CV64> {
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "minv" } : (tensor<8xf64, #CV64>) to tensor<8xf64, #CV64>
+        return %answer : tensor<8xf64, #CV64>
     }
 
 }
@@ -228,9 +228,9 @@ module {
 // CHECK:             return %[[VAL_13:.*]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @apply_left_thunk_min_int_vector(%sparse_tensor: tensor<8xi8, #SparseVec64>, %thunk: i8) -> tensor<8xi8, #SparseVec64> {
-        %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "min" } : (i8, tensor<8xi8, #SparseVec64>) to tensor<8xi8, #SparseVec64>
-        return %answer : tensor<8xi8, #SparseVec64>
+    func @apply_left_thunk_min_int_vector(%sparse_tensor: tensor<8xi8, #CV64>, %thunk: i8) -> tensor<8xi8, #CV64> {
+        %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "min" } : (i8, tensor<8xi8, #CV64>) to tensor<8xi8, #CV64>
+        return %answer : tensor<8xi8, #CV64>
     }
 
 // CHECK:           func @apply_right_thunk_min_int_matrix(%[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: i8) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
@@ -258,9 +258,9 @@ module {
 // CHECK:             return %[[VAL_13:.*]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @apply_right_thunk_min_int_vector(%sparse_tensor: tensor<8xi8, #SparseVec64>, %thunk: i8) -> tensor<8xi8, #SparseVec64> {
-        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<8xi8, #SparseVec64>, i8) to tensor<8xi8, #SparseVec64>
-        return %answer : tensor<8xi8, #SparseVec64>
+    func @apply_right_thunk_min_int_vector(%sparse_tensor: tensor<8xi8, #CV64>, %thunk: i8) -> tensor<8xi8, #CV64> {
+        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<8xi8, #CV64>, i8) to tensor<8xi8, #CV64>
+        return %answer : tensor<8xi8, #CV64>
     }
 
 // CHECK-LABEL:   func @apply_left_thunk_div_int_matrix(
@@ -290,9 +290,9 @@ module {
 // CHECK:           return %[[VAL_5:.*]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
 
-    func @apply_left_thunk_div_int_vector(%sparse_tensor: tensor<8xi8, #SparseVec64>, %thunk: i8) -> tensor<8xi8, #SparseVec64> {
-        %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "div" } : (i8, tensor<8xi8, #SparseVec64>) to tensor<8xi8, #SparseVec64>
-        return %answer : tensor<8xi8, #SparseVec64>
+    func @apply_left_thunk_div_int_vector(%sparse_tensor: tensor<8xi8, #CV64>, %thunk: i8) -> tensor<8xi8, #CV64> {
+        %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "div" } : (i8, tensor<8xi8, #CV64>) to tensor<8xi8, #CV64>
+        return %answer : tensor<8xi8, #CV64>
     }
 
 // CHECK-LABEL:   func @apply_right_thunk_div_int_matrix(
@@ -322,9 +322,9 @@ module {
 // CHECK:           return %[[VAL_5:.*]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
 
-    func @apply_right_thunk_div_int_vector(%sparse_tensor: tensor<8xi8, #SparseVec64>, %thunk: i8) -> tensor<8xi8, #SparseVec64> {
-        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "div" } : (tensor<8xi8, #SparseVec64>, i8) to tensor<8xi8, #SparseVec64>
-        return %answer : tensor<8xi8, #SparseVec64>
+    func @apply_right_thunk_div_int_vector(%sparse_tensor: tensor<8xi8, #CV64>, %thunk: i8) -> tensor<8xi8, #CV64> {
+        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "div" } : (tensor<8xi8, #CV64>, i8) to tensor<8xi8, #CV64>
+        return %answer : tensor<8xi8, #CV64>
     }
 
 // CHECK:           func @apply_abs_int_matrix(%[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
@@ -356,9 +356,9 @@ module {
 // CHECK:             return %[[VAL_15:.*]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @apply_abs_int_vector(%sparse_tensor: tensor<8xi8, #SparseVec64>) -> tensor<8xi8, #SparseVec64> {
-        %answer = graphblas.apply %sparse_tensor { apply_operator = "abs" } : (tensor<8xi8, #SparseVec64>) to tensor<8xi8, #SparseVec64>
-        return %answer : tensor<8xi8, #SparseVec64>
+    func @apply_abs_int_vector(%sparse_tensor: tensor<8xi8, #CV64>) -> tensor<8xi8, #CV64> {
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "abs" } : (tensor<8xi8, #CV64>) to tensor<8xi8, #CV64>
+        return %answer : tensor<8xi8, #CV64>
     }
 
 // CHECK-LABEL:   func @apply_minv_int_matrix(
@@ -400,9 +400,9 @@ module {
 // CHECK:           return %[[VAL_11:.*]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
 
-    func @apply_minv_int_vector(%sparse_tensor: tensor<8xi8, #SparseVec64>) -> tensor<8xi8, #SparseVec64> {
-        %answer = graphblas.apply %sparse_tensor { apply_operator = "minv" } : (tensor<8xi8, #SparseVec64>) to tensor<8xi8, #SparseVec64>
-        return %answer : tensor<8xi8, #SparseVec64>
+    func @apply_minv_int_vector(%sparse_tensor: tensor<8xi8, #CV64>) -> tensor<8xi8, #CV64> {
+        %answer = graphblas.apply %sparse_tensor { apply_operator = "minv" } : (tensor<8xi8, #CV64>) to tensor<8xi8, #CV64>
+        return %answer : tensor<8xi8, #CV64>
     }
 
 }

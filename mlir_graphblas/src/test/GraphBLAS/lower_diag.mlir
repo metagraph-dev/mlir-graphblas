@@ -14,7 +14,7 @@
   indexBitWidth = 64
 }>
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
@@ -69,8 +69,8 @@ module {
 // CHECK:             return %[[VAL_9]] : tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-   func @vec_to_mat_fixed_csr(%sparse_tensor: tensor<7xf64, #SparseVec64>) -> tensor<7x7xf64, #CSR64> {
-       %answer = graphblas.diag %sparse_tensor : tensor<7xf64, #SparseVec64> to tensor<7x7xf64, #CSR64>
+   func @vec_to_mat_fixed_csr(%sparse_tensor: tensor<7xf64, #CV64>) -> tensor<7x7xf64, #CSR64> {
+       %answer = graphblas.diag %sparse_tensor : tensor<7xf64, #CV64> to tensor<7x7xf64, #CSR64>
        return %answer : tensor<7x7xf64, #CSR64>
    }
 
@@ -121,8 +121,8 @@ module {
 // CHECK:             return %[[VAL_45]] : tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-   func @vec_to_mat_fixed_csc(%sparse_tensor: tensor<7xf64, #SparseVec64>) -> tensor<7x7xf64, #CSC64> {
-       %answer = graphblas.diag %sparse_tensor : tensor<7xf64, #SparseVec64> to tensor<7x7xf64, #CSC64>
+   func @vec_to_mat_fixed_csc(%sparse_tensor: tensor<7xf64, #CV64>) -> tensor<7x7xf64, #CSC64> {
+       %answer = graphblas.diag %sparse_tensor : tensor<7xf64, #CV64> to tensor<7x7xf64, #CSC64>
        return %answer : tensor<7x7xf64, #CSC64>
    }
 
@@ -213,9 +213,9 @@ module {
 // CHECK:             return %[[VAL_82]] : tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @mat_to_vec_fixed_csr(%mat: tensor<7x7xi64, #CSC64>) -> tensor<7xi64, #SparseVec64> {
-        %vec = graphblas.diag %mat : tensor<7x7xi64, #CSC64> to tensor<7xi64, #SparseVec64>
-        return %vec : tensor<7xi64, #SparseVec64>
+    func @mat_to_vec_fixed_csr(%mat: tensor<7x7xi64, #CSC64>) -> tensor<7xi64, #CV64> {
+        %vec = graphblas.diag %mat : tensor<7x7xi64, #CSC64> to tensor<7xi64, #CV64>
+        return %vec : tensor<7xi64, #CV64>
     }
 
 // CHECK:           builtin.func @mat_to_vec_fixed_csc(%[[VAL_144:.*]]: tensor<7x7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
@@ -305,9 +305,9 @@ module {
 // CHECK:             return %[[VAL_154]] : tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @mat_to_vec_fixed_csc(%mat: tensor<7x7xi64, #CSC64>) -> tensor<7xi64, #SparseVec64> {
-        %vec = graphblas.diag %mat : tensor<7x7xi64, #CSC64> to tensor<7xi64, #SparseVec64>
-        return %vec : tensor<7xi64, #SparseVec64>
+    func @mat_to_vec_fixed_csc(%mat: tensor<7x7xi64, #CSC64>) -> tensor<7xi64, #CV64> {
+        %vec = graphblas.diag %mat : tensor<7x7xi64, #CSC64> to tensor<7xi64, #CV64>
+        return %vec : tensor<7xi64, #CV64>
     }
 
 }
@@ -361,8 +361,8 @@ module {
 // CHECK:             return %[[VAL_8]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-   func @vec_to_mat_arbitrary_csr(%sparse_tensor: tensor<?xf64, #SparseVec64>) -> tensor<?x?xf64, #CSR64> {
-       %answer = graphblas.diag %sparse_tensor : tensor<?xf64, #SparseVec64> to tensor<?x?xf64, #CSR64>
+   func @vec_to_mat_arbitrary_csr(%sparse_tensor: tensor<?xf64, #CV64>) -> tensor<?x?xf64, #CSR64> {
+       %answer = graphblas.diag %sparse_tensor : tensor<?xf64, #CV64> to tensor<?x?xf64, #CSR64>
        return %answer : tensor<?x?xf64, #CSR64>
    }
 
@@ -413,8 +413,8 @@ module {
 // CHECK:             return %[[VAL_44]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-   func @vec_to_mat_arbitrary_csc(%sparse_tensor: tensor<?xf64, #SparseVec64>) -> tensor<?x?xf64, #CSC64> {
-       %answer = graphblas.diag %sparse_tensor : tensor<?xf64, #SparseVec64> to tensor<?x?xf64, #CSC64>
+   func @vec_to_mat_arbitrary_csc(%sparse_tensor: tensor<?xf64, #CV64>) -> tensor<?x?xf64, #CSC64> {
+       %answer = graphblas.diag %sparse_tensor : tensor<?xf64, #CV64> to tensor<?x?xf64, #CSC64>
        return %answer : tensor<?x?xf64, #CSC64>
    }
 
@@ -505,9 +505,9 @@ module {
 // CHECK:             return %[[VAL_82]] : tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @mat_to_vec_arbitrary_csr(%mat: tensor<?x?xi64, #CSC64>) -> tensor<?xi64, #SparseVec64> {
-        %vec = graphblas.diag %mat : tensor<?x?xi64, #CSC64> to tensor<?xi64, #SparseVec64>
-        return %vec : tensor<?xi64, #SparseVec64>
+    func @mat_to_vec_arbitrary_csr(%mat: tensor<?x?xi64, #CSC64>) -> tensor<?xi64, #CV64> {
+        %vec = graphblas.diag %mat : tensor<?x?xi64, #CSC64> to tensor<?xi64, #CV64>
+        return %vec : tensor<?xi64, #CV64>
     }
 
 // CHECK:           builtin.func @mat_to_vec_arbitrary_csc(%[[VAL_144:.*]]: tensor<?x?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
@@ -597,9 +597,9 @@ module {
 // CHECK:             return %[[VAL_154]] : tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           }
 
-    func @mat_to_vec_arbitrary_csc(%mat: tensor<?x?xi64, #CSC64>) -> tensor<?xi64, #SparseVec64> {
-        %vec = graphblas.diag %mat : tensor<?x?xi64, #CSC64> to tensor<?xi64, #SparseVec64>
-        return %vec : tensor<?xi64, #SparseVec64>
+    func @mat_to_vec_arbitrary_csc(%mat: tensor<?x?xi64, #CSC64>) -> tensor<?xi64, #CV64> {
+        %vec = graphblas.diag %mat : tensor<?x?xi64, #CSC64> to tensor<?xi64, #CV64>
+        return %vec : tensor<?xi64, #CV64>
     }
 
 }

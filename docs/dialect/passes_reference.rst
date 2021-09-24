@@ -36,7 +36,7 @@ It's best practice to always use ``--graphblas-structuralize`` prior to uses of
 
 The structuralization pass performs three transformations:
 
-* Transform ``graphblas.matrix_multiply`` ops intow equivalent
+* Transform ``graphblas.matrix_multiply`` ops into equivalent
   ``graphblas.matrix_multiply_generic`` ops.
 * Transform ``graphblas.apply`` ops into equivalent
   ``graphblas.apply_generic`` ops.

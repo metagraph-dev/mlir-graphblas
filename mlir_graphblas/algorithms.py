@@ -71,7 +71,7 @@ mxm_plus_times = MatrixMultiply("plus_times")
 mxm_plus_plus = MatrixMultiply("plus_plus")
 
 
-def triangle_count(A: MLIRSparseTensor) -> int:
+def triangle_count_separate(A: MLIRSparseTensor) -> int:
     # Create U and L matrices
     U = matrix_select_triu.compile()(A)
     L = matrix_select_tril.compile()(A)
@@ -85,7 +85,7 @@ def triangle_count(A: MLIRSparseTensor) -> int:
     return int(num_triangles)
 
 
-class TriangleCountCombined(Algorithm):
+class TriangleCount(Algorithm):
     def _build(self):
         irb = MLIRFunctionBuilder(
             "triangle_count",
@@ -108,10 +108,10 @@ class TriangleCountCombined(Algorithm):
         return int(super().__call__(A))
 
 
-triangle_count_combined = TriangleCountCombined()
+triangle_count = TriangleCount()
 
 
-def dense_neural_network(
+def dense_neural_network_separate(
     W: List[MLIRSparseTensor],
     Bias: List[MLIRSparseTensor],
     Y0: MLIRSparseTensor,
@@ -133,7 +133,7 @@ def dense_neural_network(
     return Y
 
 
-class DenseNeuralNetworkCombined(Algorithm):
+class DenseNeuralNetwork(Algorithm):
     def _build(self):
         aliases = _build_common_aliases()
 
@@ -249,7 +249,7 @@ class DenseNeuralNetworkCombined(Algorithm):
         return super().__call__(W, Bias, len(W), Y0, ymax)
 
 
-dense_neural_network_combined = DenseNeuralNetworkCombined()
+dense_neural_network = DenseNeuralNetwork()
 
 
 class SSSP(Algorithm):
@@ -332,30 +332,48 @@ class MSSP(Algorithm):
 mssp = MSSP()
 
 
-class LeftBipartiteProjectAndFilter(Algorithm):
-    def _build(self):
+class BipartiteProjectAndFilter(Algorithm):
+    allowable_keep_nodes = ("row", "column")
+
+    def __init__(self):
+        self.builder = {kn: self._build(kn) for kn in self.allowable_keep_nodes}
+        self._cached = {}
+
+    def _build(self, keep_nodes):
         # Build Function
         ir_builder = MLIRFunctionBuilder(
             "left_project_and_filter",
-            input_types=["tensor<?x?xf64, #CSR64>"],
+            input_types=["tensor<?x?xf64, #CSR64>", "f64"],
             return_types=["tensor<?x?xf64, #CSR64>"],
             aliases=_build_common_aliases(),
         )
-        (M,) = ir_builder.inputs
-        M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSC64>")
-        left_projection = ir_builder.graphblas.matrix_multiply(M, M_T, "plus_times")
-        zero_f64 = ir_builder.constant(0.0, "f64")
-        filtered = ir_builder.graphblas.matrix_select(
-            left_projection, [zero_f64], ["gt"]
-        )
+        (M, limit) = ir_builder.inputs
+        if keep_nodes == "row":
+            M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSC64>")
+            projection = ir_builder.graphblas.matrix_multiply(M, M_T, "plus_times")
+        else:
+            M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSR64>")
+            M_csc = ir_builder.graphblas.convert_layout(M, "tensor<?x?xf64, #CSC64>")
+            projection = ir_builder.graphblas.matrix_multiply(M_T, M_csc, "plus_times")
+        filtered = ir_builder.graphblas.matrix_select(projection, [limit], ["ge"])
         ir_builder.return_vars(filtered)
         return ir_builder
 
-    def __call__(self, graph: MLIRSparseTensor) -> MLIRSparseTensor:
-        return super().__call__(graph)
+    def __call__(
+        self, graph: MLIRSparseTensor, keep_nodes: str = "row", cutoff=0.0
+    ) -> MLIRSparseTensor:
+        if keep_nodes not in self.allowable_keep_nodes:
+            raise ValueError(
+                f"Invalid keep_nodes argument: {keep_nodes}, must be one of {self.allowable_keep_nodes}"
+            )
+
+        if keep_nodes not in self._cached:
+            self._cached[keep_nodes] = self.builder[keep_nodes].compile()
+
+        return self._cached[keep_nodes](graph, cutoff)
 
 
-left_bipartite_project_and_filter = LeftBipartiteProjectAndFilter()
+bipartite_project_and_filter = BipartiteProjectAndFilter()
 
 
 class VertexNomination(Algorithm):
@@ -403,7 +421,7 @@ class ScanStatistics(Algorithm):
         ir_builder.return_vars(answer)
         return ir_builder
 
-    def scan_statistics(self, graph: MLIRSparseTensor) -> int:
+    def __call__(self, graph: MLIRSparseTensor) -> int:
         return super().__call__(graph)
 
 

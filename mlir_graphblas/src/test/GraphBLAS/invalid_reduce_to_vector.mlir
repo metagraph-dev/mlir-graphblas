@@ -1,36 +1,36 @@
 // RUN: graphblas-opt %s -split-input-file -verify-diagnostics
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
 module {
-    func @reduce_to_vector_wrapper(%matrix: tensor<*xi32>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "count", axis = 0 } : tensor<*xi32> to tensor<9xi32, #SparseVec64> // expected-error {{operand #0 must be 2D tensor of any type values, but got 'tensor<*xi32>'}}
-        return %vec : tensor<9xi32, #SparseVec64>
+    func @reduce_to_vector_wrapper(%matrix: tensor<*xi32>) -> tensor<9xi32, #CV64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "count", axis = 0 } : tensor<*xi32> to tensor<9xi32, #CV64> // expected-error {{operand #0 must be 2D tensor of any type values, but got 'tensor<*xi32>'}}
+        return %vec : tensor<9xi32, #CV64>
     }
 }
 
 // -----
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
 module {
-    func @reduce_to_vector_wrapper(%matrix: tensor<?x?xi32>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<?x?xi32> to tensor<9xi32, #SparseVec64> // expected-error {{operand must be a sparse tensor.}}
-        return %vec : tensor<9xi32, #SparseVec64>
+    func @reduce_to_vector_wrapper(%matrix: tensor<?x?xi32>) -> tensor<9xi32, #CV64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<?x?xi32> to tensor<9xi32, #CV64> // expected-error {{operand must be a sparse tensor.}}
+        return %vec : tensor<9xi32, #CV64>
     }
 }
 
 // -----
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
@@ -44,15 +44,15 @@ module {
 }>
 
 module {
-    func @reduce_to_vector_wrapper(%matrix: tensor<?x?xf32, #CSR64>) -> tensor<?xf32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "argmin", axis = 0 } : tensor<?x?xf32, #CSR64> to tensor<?xf32, #SparseVec64> // expected-error {{"argmin" requires the output vector to have i64 elements.}}
-        return %vec : tensor<?xf32, #SparseVec64>
+    func @reduce_to_vector_wrapper(%matrix: tensor<?x?xf32, #CSR64>) -> tensor<?xf32, #CV64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "argmin", axis = 0 } : tensor<?x?xf32, #CSR64> to tensor<?xf32, #CV64> // expected-error {{"argmin" requires the output vector to have i64 elements.}}
+        return %vec : tensor<?xf32, #CV64>
     }
 }
 
 // -----
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
@@ -66,9 +66,9 @@ module {
 }>
 
 module {
-    func @reduce_to_vector_wrapper(%matrix: tensor<?x?xf32, #CSR64>) -> tensor<?xf32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "argmax", axis = 0 } : tensor<?x?xf32, #CSR64> to tensor<?xf32, #SparseVec64> // expected-error {{"argmax" requires the output vector to have i64 elements.}}
-        return %vec : tensor<?xf32, #SparseVec64>
+    func @reduce_to_vector_wrapper(%matrix: tensor<?x?xf32, #CSR64>) -> tensor<?xf32, #CV64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "argmax", axis = 0 } : tensor<?x?xf32, #CSR64> to tensor<?xf32, #CV64> // expected-error {{"argmax" requires the output vector to have i64 elements.}}
+        return %vec : tensor<?xf32, #CV64>
     }
 }
 
@@ -81,16 +81,16 @@ module {
   indexBitWidth = 64
 }>
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
 module {
-    func @reduce_to_vector_wrapper(%matrix: tensor<7x9x1xi32, #BADENCODING>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9x1xi32, #BADENCODING> to tensor<9xi32, #SparseVec64> // expected-error {{operand #0 must be 2D tensor of any type values, but got 'tensor<7x9x1xi32, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed", "dense" ], dimOrdering = affine_map<(d0, d1, d2) -> (d0, d1, d2)>, pointerBitWidth = 64, indexBitWidth = 64 }>>}}
-        return %vec : tensor<9xi32, #SparseVec64>
+    func @reduce_to_vector_wrapper(%matrix: tensor<7x9x1xi32, #BADENCODING>) -> tensor<9xi32, #CV64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9x1xi32, #BADENCODING> to tensor<9xi32, #CV64> // expected-error {{operand #0 must be 2D tensor of any type values, but got 'tensor<7x9x1xi32, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed", "dense" ], dimOrdering = affine_map<(d0, d1, d2) -> (d0, d1, d2)>, pointerBitWidth = 64, indexBitWidth = 64 }>>}}
+        return %vec : tensor<9xi32, #CV64>
     }
 }
 
@@ -121,16 +121,16 @@ module {
   indexBitWidth = 64
 }>
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
 module {
-    func @reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #BADENCODING>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #BADENCODING> to tensor<9xi32, #SparseVec64> // expected-error {{operand must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
-        return %vec : tensor<9xi32, #SparseVec64>
+    func @reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #BADENCODING>) -> tensor<9xi32, #CV64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xi32, #BADENCODING> to tensor<9xi32, #CV64> // expected-error {{operand must have CSR or CSC compression, i.e. must have dimLevelType = [ "dense", "compressed" ] in the sparse encoding.}}
+        return %vec : tensor<9xi32, #CV64>
     }
 }
 
@@ -167,16 +167,16 @@ module {
   indexBitWidth = 64
 }>
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
 module {
-    func @reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #CSR64>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "bad_reducer", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64> // expected-error {{"bad_reducer" is not a supported aggregator.}}
-        return %vec : tensor<9xi32, #SparseVec64>
+    func @reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #CSR64>) -> tensor<9xi32, #CV64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "bad_reducer", axis = 0 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #CV64> // expected-error {{"bad_reducer" is not a supported aggregator.}}
+        return %vec : tensor<9xi32, #CV64>
     }
 }
 
@@ -189,16 +189,16 @@ module {
   indexBitWidth = 64
 }>
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
 module {
-    func @reduce_to_vector_wrapper(%matrix: tensor<7x9xf64, #CSR64>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xf64, #CSR64> to tensor<9xi32, #SparseVec64> // expected-error {{Operand and output types are incompatible.}}
-        return %vec : tensor<9xi32, #SparseVec64>
+    func @reduce_to_vector_wrapper(%matrix: tensor<7x9xf64, #CSR64>) -> tensor<9xi32, #CV64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x9xf64, #CSR64> to tensor<9xi32, #CV64> // expected-error {{Operand and output types are incompatible.}}
+        return %vec : tensor<9xi32, #CV64>
     }
 }
 
@@ -211,16 +211,16 @@ module {
   indexBitWidth = 64
 }>
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
 module {
-    func @reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #CSR64>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 3 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #SparseVec64> // expected-error {{The axis attribute is expected to be 0 or 1.}}
-        return %vec : tensor<9xi32, #SparseVec64>
+    func @reduce_to_vector_wrapper(%matrix: tensor<7x9xi32, #CSR64>) -> tensor<9xi32, #CV64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 3 } : tensor<7x9xi32, #CSR64> to tensor<9xi32, #CV64> // expected-error {{The axis attribute is expected to be 0 or 1.}}
+        return %vec : tensor<9xi32, #CV64>
     }
 }
 
@@ -233,15 +233,15 @@ module {
   indexBitWidth = 64
 }>
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
 module {
-    func @reduce_to_vector_wrapper(%matrix: tensor<7x5xi32, #CSR64>) -> tensor<9xi32, #SparseVec64> {
-        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x5xi32, #CSR64> to tensor<9xi32, #SparseVec64> // expected-error {{Operand and output shapes are incompatible.}}
-        return %vec : tensor<9xi32, #SparseVec64>
+    func @reduce_to_vector_wrapper(%matrix: tensor<7x5xi32, #CSR64>) -> tensor<9xi32, #CV64> {
+        %vec = graphblas.reduce_to_vector %matrix { aggregator = "plus", axis = 0 } : tensor<7x5xi32, #CSR64> to tensor<9xi32, #CV64> // expected-error {{Operand and output shapes are incompatible.}}
+        return %vec : tensor<9xi32, #CV64>
     }
 }

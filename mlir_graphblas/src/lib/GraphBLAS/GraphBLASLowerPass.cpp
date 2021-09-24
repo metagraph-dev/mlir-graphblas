@@ -448,8 +448,11 @@ struct MatrixSelectOutputWriter {
     } else if (selector == "gt") {
       keep = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OGT, val,
                                            thunk.getValue());
+    } else if (selector == "ge") {
+      keep = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OGE, val,
+                                           thunk.getValue());
     } else {
-      // this should be impossible becasue of validation
+      // this should be impossible because of validation
       assert(0);
     }
 

@@ -8,8 +8,7 @@ GraphBLAS Ops
 
 The ``graphblas`` dialect describes standard sparse tensor operations that are
 found in the `GraphBLAS spec`_.  The ops are not one-to-one equivalents of
-GraphBLAS function calls in order to fit into MLIR's SSA requirements with
-immutable sparse tensors.
+GraphBLAS function calls in order to fit into MLIR's SSA requirements.
 
 This document is not intended to be a tutorial and acts more as a reference manual for the
 ops in the GraphBLAS dialect. For tutorials, see our :ref:`graphblas_dialect_tutorials`.
@@ -22,7 +21,7 @@ Assumptions
 Although the `sparse tensor encoding
 <https://mlir.llvm.org/docs/Dialects/SparseTensorOps/#sparsetensorencodingattr>`_
 in MLIR is extremely flexible, the ``graphblas`` dialect and associated
-lowering pass only supports two encodings currently.
+lowering pass only supports three encodings currently.
 
 The `CSR64` encoding is usually defined with the alias::
 
@@ -35,7 +34,7 @@ The `CSR64` encoding is usually defined with the alias::
 
 The `CSC64` encoding can be defined with the alias::
 
-    #CSR64 = #sparse_tensor.encoding<{
+    #CSC64 = #sparse_tensor.encoding<{
       dimLevelType = [ "dense", "compressed" ],
       dimOrdering = affine_map<(i,j) -> (j,i)>,
       pointerBitWidth = 64,
@@ -49,13 +48,22 @@ additional encoding attribute::
 
     tensor<?x?xf64, #CSC64>
 
-Note that the :ref:`graphblas-lower` only supports rank 2 tensors with unknown
+The `CV64` encoding (for sparse vectors) is usually defined with the alias::
+
+    #CV64 = #sparse_tensor.encoding<{
+      dimLevelType = [ "compressed" ],
+      pointerBitWidth = 64,
+      indexBitWidth = 64
+    }>
+
+
+Note that the :ref:`graphblas-lower` only supports tensors with unknown
 dimensions (indicated by the ``?``).
 
 ``graphblas.size``
 ------------------
 
-Rewrite the size of a sparse vector.
+Return the size of a sparse vector.
 
 Example:
 ^^^^^^^^
@@ -126,7 +134,8 @@ Operands:
    * - Operand
      - Description
    * - ``input``
-     - Input tensor (CSR or CSC)
+     - Input sparse matrix (CSR or CSC)
+
 
 
 Results:
@@ -145,7 +154,7 @@ Results:
 ``graphblas.num_cols``
 ----------------------
 
-Return the return the number of colummns in a CSR or CSC matrix.
+Return the return the number of columns in a CSR or CSC matrix.
 
 Example:
 ^^^^^^^^
@@ -171,7 +180,8 @@ Operands:
    * - Operand
      - Description
    * - ``input``
-     - Input tensor (CSR or CSC)
+     - Input sparse matrix (CSR or CSC)
+
 
 
 Results:
@@ -218,7 +228,7 @@ Operands:
    * - Operand
      - Description
    * - ``input``
-     - Sparse input tensor
+     - Sparse input tensor (CSR matrix, CSC matrix, or sparse vector)
 
 
 Results:
@@ -311,7 +321,8 @@ Operands:
    * - Operand
      - Description
    * - ``input``
-     - Input tensor (CSR or CSC)
+     - Input sparse matrix (CSR or CSC)
+
 
 
 Results:
@@ -360,7 +371,8 @@ Operands:
    * - Operand
      - Description
    * - ``input``
-     - Input tensor (CSR or CSC)
+     - Input sparse matrix (CSR or CSC)
+
 
 
 Results:
@@ -379,13 +391,13 @@ Results:
 ``graphblas.matrix_select``
 ---------------------------
 
-Returns new sparse tensor(s) with a subset of element from the given matrix. 
+Returns new sparse tensor(s) with a subset of elements from the given matrix. 
 The elements included in the resulting sparse tensor vary depending on the
-selectors given (one of "triu", "tril", or "gt"). Some selectors, e.g. "gt",
-require a thunk value. The ordering of the thunks/selectors determines which
-thunk is used for which selector, i.e. the n\ :sup:`th` thunk is used for the
-n\ :sup:`th` thunk-requiring selector. Multiple selectors may be given, in
-which case multiple results will be returned The given sparse tensor must
+selectors given (one of "triu", "tril", "ge", or "gt"). Some selectors, e.g.
+"gt", require a thunk value. The ordering of the thunks/selectors determines
+which thunk is used for which selector, i.e. the n\ :sup:`th` thunk is used
+for the n\ :sup:`th` thunk-requiring selector. Multiple selectors may be given,
+in which case multiple results will be returned. The given sparse tensor must
 be a matrix, i.e. have rank 2. The input tensor must have a CSR sparsity or
 a CSC sparsity. The resulting sparse tensors will have the same sparsity as
 the given sparse tensor.
@@ -420,7 +432,7 @@ Attributes:
      - Description
    * - ``selectors``
      - ``::mlir::ArrayAttr`` (of string)
-     - List of selectors.  Allowed: "triu" (upper triangle), "tril" (lower triangle), and "gt" (values greater than the given thunk)
+     - List of selectors.  Allowed: "triu" (upper triangle), "tril" (lower triangle), "gt" (values greater than the given thunk), and "ge" (values greater than or equal to the given thunk).
 
 Operands:
 ^^^^^^^^^
@@ -432,7 +444,8 @@ Operands:
    * - Operand
      - Description
    * - ``input``
-     - Input tensor (CSR or CSC)
+     - Input sparse matrix (CSR or CSC)
+
    * - ``thunks``
      - Variadic list of thunk values, matching number of thunk-requiring selectors.
 
@@ -473,9 +486,9 @@ Example:
 
 .. code-block::  text
 
-    %vec1 = graphblas.reduce_to_vector %matrix_1 { aggregator = "plus", axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #SparseVec64>
-    %vec2 = graphblas.reduce_to_vector %matrix_2 { aggregator = "count", axis = 1 } : tensor<7x9xf16, #CSR64> to tensor<7xf16, #SparseVec64>
-    %vec3 = graphblas.reduce_to_vector %matrix_3 { aggregator = "argmin", axis = 1 } : tensor<7x9xf32, #CSR64> to tensor<7xi64, #SparseVec64>
+    %vec1 = graphblas.reduce_to_vector %matrix_1 { aggregator = "plus", axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #CV64>
+    %vec2 = graphblas.reduce_to_vector %matrix_2 { aggregator = "count", axis = 1 } : tensor<7x9xf16, #CSR64> to tensor<7xf16, #CV64>
+    %vec3 = graphblas.reduce_to_vector %matrix_3 { aggregator = "argmin", axis = 1 } : tensor<7x9xf32, #CSR64> to tensor<7xi64, #CV64>
 
 Syntax:
 ^^^^^^^
@@ -511,7 +524,8 @@ Operands:
    * - Operand
      - Description
    * - ``input``
-     - Input tensor (CSR or CSC)
+     - Input sparse matrix (CSR or CSC)
+
 
 
 Results:
@@ -603,7 +617,7 @@ Example:
 
 .. code-block::  text
 
-    %answer = graphblas.reduce_to_scalar_generic %sparse_vector : tensor<?xi64, #SparseVec64> to i64 {
+    %answer = graphblas.reduce_to_scalar_generic %sparse_vector : tensor<?xi64, #CV64> to i64 {
                 ^bb0(%a : i64, %b : i64):
                   %result = std.addi %a, %b : i64
                   graphblas.yield agg %result : i64
@@ -674,7 +688,7 @@ following:
 .. code-block:: text
         
     %thunk = constant 10 : i64
-    %vector_answer = graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } : (i64, tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
+    %vector_answer = graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } : (i64, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
 
 Note that the application only takes place for elements that are present in the
 matrix. Thus, the operation will not apply when the values are missing in the
@@ -691,7 +705,7 @@ Example:
 
     %thunk = constant 100 : i64
     %matrix_answer = graphblas.apply %sparse_matrix, %thunk { apply_operator = "min" } : (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
-    %vector_answer = graphblas.apply %sparse_vector { apply_operator = "abs" } : (tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
+    %vector_answer = graphblas.apply %sparse_vector { apply_operator = "abs" } : (tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
 
 Syntax:
 ^^^^^^^
@@ -755,7 +769,7 @@ Example:
 .. code-block:: text
 
     %thunk = constant 0.0 : f64
-    %answer = graphblas.apply_generic %sparse_tensor : tensor<?xf64, #SparseVec64> to tensor<?xf64, #SparseVec64> {
+    %answer = graphblas.apply_generic %sparse_tensor : tensor<?xf64, #CV64> to tensor<?xf64, #CV64> {
       ^bb0(%val: f64):
         %pick = cmpf olt, %val, %thunk : f64
         %result = select %pick, %val, %thunk : f64
@@ -815,8 +829,10 @@ Vector times matrix will return a vector.  Matrix times matrix will return
 a CSR matrix.
 
 The mask (if provided) must be the same format as the returned object. There's an optional
-boolean `mask_complement` attribute (which has a default value of `false`) that will make
+boolean ``mask_complement`` attribute (which has a default value of ``false``) that will make
 the op use the complement of the mask.
+
+It should be noted that masks are not allowed for vector times vector multiplication.
 	
 Example:
 ^^^^^^^^
@@ -831,15 +847,15 @@ Example:
 
 .. code-block:: text
 
-    %answer = graphblas.matrix_multiply %mat, %vec, %mask { semiring = "any_first", mask_complement = true } : (tensor<?x?xf64, #CSR64>, tensor<?xf64, #CV64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+    %answer = graphblas.matrix_multiply %mat, %vec, %mask { semiring = "any_first", mask_complement = true } : (tensor<?x?xf64, #CSR64>, tensor<?xf64, #CV64>, tensor<?xf64, #CV64>) to tensor<?xf64, #CV64>
 
 .. code-block:: text
 
-    %answer = graphblas.matrix_multiply %vec, %mat { semiring = "min_second", mask_complement = true } : (tensor<?xf64, #CV64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+    %answer = graphblas.matrix_multiply %vec, %mat { semiring = "min_second", mask_complement = true } : (tensor<?xf64, #CV64>, tensor<?x?xf64, #CSC64>) to tensor<?xf64, #CV64>
 
 .. code-block:: text
 
-    %answer = graphblas.matrix_multiply %vecA, %vecB, %mask { semiring = "any_pair" } : (tensor<?xf64, #CV64>, tensor<?xf64, #CV64>, tensor<?xf64, #CV64>) to tensor<?xf64, #CV64>
+    %answer = graphblas.matrix_multiply %vecA, %vecB { semiring = "any_pair" } : (tensor<?xf64, #CV64>, tensor<?xf64, #CV64>) to tensor<?xf64, #CV64>
 
 Syntax:
 ^^^^^^^
@@ -891,7 +907,7 @@ Results:
    * - Result
      - Description
    * - ``output``
-     - Output tensor (CSR matrix or sparse vector).
+     - Output tensor (CSR matrix or sparse vector or scalar).
 
 
 ``graphblas.matrix_multiply_generic``
@@ -906,7 +922,7 @@ Additionally, this op takes 3 required blocks (we'll refer to them as the  "mult
 "add", and "add_identity" blocks) and 1 optional block (we'll refer to it as the "transform_out"
 block).
 
-In a conventional matrix multiply where the mutiplication between two elements takes place, this
+In a conventional matrix multiply where the multiplication between two elements takes place, this
 op instead performs the behavior specified in the "mult" block. The "mult" block takes two scalar
 arguments and uses the ``graphblas.yield`` terminator op (with the "kind" attribute set to "mult")
 to return the result of the element-wise computation. 
@@ -929,7 +945,7 @@ takes one argument and returns one value via the ``graphblas.yield`` terminator 
 the "kind" attribute set to "transform_out").
 
 The mask (if provided) must be the same format as the returned object. There's an optional
-boolean `mask_complement` attribute (which has a default value of `false`) that will make
+boolean ``mask_complement`` attribute (which has a default value of ``false``) that will make
 the op use the complement of the mask.
 
 
@@ -1242,7 +1258,7 @@ Example:
 
 .. code-block::  text
 
-    graphblas.update %other_vec -> %vec { accumulate_operator = "plus" } : tensor<?xi64, #SparseVec64> -> tensor<?xi64, #SparseVec64>
+    graphblas.update %other_vec -> %vec { accumulate_operator = "plus" } : tensor<?xi64, #CV64> -> tensor<?xi64, #CV64>
 
 .. code-block::  text
 
@@ -1307,7 +1323,7 @@ Example:
 
 .. code-block::  text
 
-    %answer = graphblas.equal %vec, %other_vec : tensor<?xi64, #SparseVec64>, tensor<?xi64, #SparseVec64>
+    %answer = graphblas.equal %vec, %other_vec : tensor<?xi64, #CV64>, tensor<?xi64, #CV64>
 
 
 Syntax:
@@ -1360,7 +1376,7 @@ Example:
 
 .. code-block::  text
 
-    %ans = graphblas.vector_argminmax %vec { minmax = "min" } : tensor<?xi64, #SparseVec64>
+    %ans = graphblas.vector_argminmax %vec { minmax = "min" } : tensor<?xi64, #CV64>
 
 
 Syntax:
@@ -1424,7 +1440,7 @@ Example:
 
 .. code-block::  text
 
-    %ans = graphblas.vector_argmin %vec : tensor<?xi64, #SparseVec64>
+    %ans = graphblas.vector_argmin %vec : tensor<?xi64, #CV64>
 
 
 Syntax:
@@ -1474,7 +1490,7 @@ Example:
 
 .. code-block::  text
 
-    %ans = graphblas.vector_argmax %vec : tensor<?xi64, #SparseVec64>
+    %ans = graphblas.vector_argmax %vec : tensor<?xi64, #CV64>
 
 
 Syntax:
@@ -1524,9 +1540,9 @@ Example:
 
 .. code-block::  text
 
-    %csr_matrix_answer = graphblas.diag %vec : tensor<?xi64, #SparseVec64> to tensor<?x?xi64, #CSR64>
-    %csc_matrix_answer = graphblas.diag %vec : tensor<?xi64, #SparseVec64> to tensor<?x?xi64, #CSC64>
-    %vector_answer = graphblas.diag %mat : tensor<?x?xi64, #CSR64> to tensor<?xi64, #SparseVec64>
+    %csr_matrix_answer = graphblas.diag %vec : tensor<?xi64, #CV64> to tensor<?x?xi64, #CSR64>
+    %csc_matrix_answer = graphblas.diag %vec : tensor<?xi64, #CV64> to tensor<?x?xi64, #CSC64>
+    %vector_answer = graphblas.diag %mat : tensor<?x?xi64, #CSR64> to tensor<?xi64, #CV64>
 
 
 Syntax:

@@ -193,7 +193,7 @@ def GraphBLAS_MatrixSelectOp : GraphBLAS_Op<"matrix_select", [NoSideEffect]> {
     let summary = "matrix select operation";
     let description = [{
         Returns new sparse tensors, each with a subset of elements from the given matrix.
-        The elements included in the resulting sparse tensor vary depending on the selectors given (one of "triu", "tril", or "gt").
+        The elements included in the resulting sparse tensor vary depending on the selectors given (one of "triu", "tril", "ge", or "gt").
         Multiple selectors may be given, in which case multiple results will be returned.
         Some selectors, e.g. "gt", require a thunk. The thunks should be passed as extra operands to the op.
         The number of given thunks must match the number of thunk-requiring selectors.
@@ -246,9 +246,9 @@ def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]
 
         Example:
         ```mlir
-        %vec1 = graphblas.reduce_to_vector %matrix_1 { aggregator = "plus", axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #SparseVec64>
-        %vec2 = graphblas.reduce_to_vector %matrix_2 { aggregator = "count", axis = 1 } : tensor<7x9xf16, #CSR64> to tensor<7xf16, #SparseVec64>
-        %vec3 = graphblas.reduce_to_vector %matrix_3 { aggregator = "argmin", axis = 1 } : tensor<7x9xf32, #CSR64> to tensor<7xi64, #SparseVec64>
+        %vec1 = graphblas.reduce_to_vector %matrix_1 { aggregator = "plus", axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #CV64>
+        %vec2 = graphblas.reduce_to_vector %matrix_2 { aggregator = "count", axis = 1 } : tensor<7x9xf16, #CSR64> to tensor<7xf16, #CV64>
+        %vec3 = graphblas.reduce_to_vector %matrix_3 { aggregator = "argmin", axis = 1 } : tensor<7x9xf32, #CSR64> to tensor<7xi64, #CV64>
         ```
     }];
 
@@ -299,7 +299,7 @@ def GraphBLAS_ReduceToScalarGenericOp : GraphBLAS_Op<"reduce_to_scalar_generic",
 
         Example:
         ```mlir
-          %answer = graphblas.reduce_to_scalar_generic %sparse_vector : tensor<?xi64, #SparseVec64> to i64 {
+          %answer = graphblas.reduce_to_scalar_generic %sparse_vector : tensor<?xi64, #CV64> to i64 {
             ^bb0(%a : i64, %b : i64):
               %result = std.addi %a, %b : i64
               graphblas.yield agg %result : i64
@@ -339,7 +339,7 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
             (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
         %vector_answer =
           graphblas.apply %sparse_vector { apply_operator = "abs" } :
-            (tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
+            (tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
         ```
 
         Some binary operators, e.g. "div", are not symmetric. The sparse tensor and thunk
@@ -360,7 +360,7 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
         %thunk = constant 10 : i64
         %vector_answer =
           graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } :
-            (i64, tensor<?xi64, #SparseVec64>) to tensor<?xi64, #SparseVec64>
+            (i64, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
         ```
     }];
 
@@ -381,7 +381,7 @@ def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
 
         Example:
         ```mlir
-        %answer = graphblas.apply_generic %sparse_tensor : tensor<7xf64, #SparseVec64> to tensor<7xf64, #SparseVec64> {
+        %answer = graphblas.apply_generic %sparse_tensor : tensor<7xf64, #CV64> to tensor<7xf64, #CV64> {
           ^bb0(%val: f64):
             %pick = cmpf olt, %val, %thunk : f64
             %result = select %pick, %val, %thunk : f64
@@ -460,7 +460,7 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
         "add", and "add_identity" blocks) and 1 optional block (we'll refer to it as the "transform_out"
         block).
 
-        In a conventional matrix multiply where the mutiplication between two elements takes place, this
+        In a conventional matrix multiply where the multiplication between two elements takes place, this
         op instead performs the behavior specified in the "mult" block. The "mult" block takes two scalar
         arguments and uses the ``graphblas.yield`` terminator op (with the "kind" attribute set to "mult")
         to return the result of the element-wise computation.
@@ -639,13 +639,13 @@ def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
         Simple Accumulation Example:
         ```mlir
         graphblas.update %other_vec -> %vec { accumulate_operator = "plus" } :
-          tensor<?xi64, #SparseVec64> -> tensor<?xi64, #SparseVec64>
+          tensor<?xi64, #CV64> -> tensor<?xi64, #CV64>
         ```
 
         Complemented Mask + Accumulate + Replace Example:
         ```mlir
         graphblas.update %other_vec -> %vec(%mask) { accumulate_operator = "plus", replace = true, mask_complement = true } :
-          tensor<?xi64, #SparseVec64> -> tensor<?xi64, #SparseVec64>(tensor<?xi64, #SparseVec64>)
+          tensor<?xi64, #CV64> -> tensor<?xi64, #CV64>(tensor<?xi64, #CV64>)
         ```
     }];
 
@@ -673,7 +673,7 @@ def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
 
         Example:
         ```mlir
-        %answer = graphblas.equal %vec, %other_vec : tensor<?xi64, #SparseVec64>, tensor<?xi64, #SparseVec64>
+        %answer = graphblas.equal %vec, %other_vec : tensor<?xi64, #CV64>, tensor<?xi64, #CV64>
         ```
 
     }];
@@ -699,7 +699,7 @@ def GraphBLAS_VectorArgMinMaxOp : GraphBLAS_Op<"vector_argminmax", [NoSideEffect
 
         Example:
         ```mlir
-        %ans = graphblas.vector_argminmax %vec { minmax = "min" } : tensor<?xi64, #SparseVec64>
+        %ans = graphblas.vector_argminmax %vec { minmax = "min" } : tensor<?xi64, #CV64>
         ```
 
     }];
@@ -723,7 +723,7 @@ def GraphBLAS_VectorArgMinOp : GraphBLAS_Op<"vector_argmin", [NoSideEffect]> {
 
         Example:
         ```mlir
-        graphblas.vector_argmin %vec : tensor<?xi64, #SparseVec64>
+        graphblas.vector_argmin %vec : tensor<?xi64, #CV64>
         ```
 
     }];
@@ -747,7 +747,7 @@ def GraphBLAS_VectorArgMaxOp : GraphBLAS_Op<"vector_argmax", [NoSideEffect]> {
 
         Example:
         ```mlir
-        %ans = graphblas.vector_argmax %vec : tensor<?xi64, #SparseVec64>
+        %ans = graphblas.vector_argmax %vec : tensor<?xi64, #CV64>
         ```
 
     }];
@@ -771,9 +771,9 @@ def GraphBLAS_DiagOp : GraphBLAS_Op<"diag", [NoSideEffect]> {
 
         Example:
         ```mlir
-        %csr_matrix_answer = graphblas.diag %vec : tensor<?xi64, #SparseVec64> to tensor<?x?xi64, #CSR64>
-        %csc_matrix_answer = graphblas.diag %vec : tensor<?xi64, #SparseVec64> to tensor<?x?xi64, #CSC64>
-        %vector_answer = graphblas.diag %mat : tensor<?x?xi64, #CSR64> to tensor<?xi64, #SparseVec64>
+        %csr_matrix_answer = graphblas.diag %vec : tensor<?xi64, #CV64> to tensor<?x?xi64, #CSR64>
+        %csc_matrix_answer = graphblas.diag %vec : tensor<?xi64, #CV64> to tensor<?x?xi64, #CSC64>
+        %vector_answer = graphblas.diag %mat : tensor<?x?xi64, #CSR64> to tensor<?xi64, #CV64>
         ```
 
     }];

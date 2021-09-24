@@ -1,6 +1,6 @@
 // RUN: graphblas-opt %s | graphblas-opt --graphblas-lower | FileCheck %s
 
-#SparseVec64 = #sparse_tensor.encoding<{ 
+#CV64 = #sparse_tensor.encoding<{ 
     dimLevelType = [ "compressed" ], 
     pointerBitWidth = 64, 
     indexBitWidth = 64 
@@ -70,12 +70,12 @@ func @apply_min_matrix(%sparse_tensor: tensor<?x?xf64, #CSR64>, %thunk: f64) -> 
 // CHECK:           return %[[VAL_6]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
 
-func @apply_min_vector(%sparse_tensor: tensor<7xf64, #SparseVec64>, %thunk: f64) -> tensor<7xf64, #SparseVec64> {
-    %answer = graphblas.apply_generic %sparse_tensor : tensor<7xf64, #SparseVec64> to tensor<7xf64, #SparseVec64> {
+func @apply_min_vector(%sparse_tensor: tensor<7xf64, #CV64>, %thunk: f64) -> tensor<7xf64, #CV64> {
+    %answer = graphblas.apply_generic %sparse_tensor : tensor<7xf64, #CV64> to tensor<7xf64, #CV64> {
       ^bb0(%val: f64):
         %pick = cmpf olt, %val, %thunk : f64
         %result = select %pick, %val, %thunk : f64
         graphblas.yield transform_out %result : f64
     }
-    return %answer : tensor<7xf64, #SparseVec64>
+    return %answer : tensor<7xf64, #CV64>
 }
