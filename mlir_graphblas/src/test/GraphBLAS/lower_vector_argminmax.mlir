@@ -1,6 +1,6 @@
 // RUN: graphblas-opt %s | graphblas-opt --graphblas-lower | FileCheck %s
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
@@ -32,8 +32,8 @@ module {
 // CHECK:           return %[[VAL_19]] : index
 // CHECK:         }
 
-   func @vector_argminmax_min(%argA: tensor<3xi64, #SparseVec64>) -> index {
-       %answer = graphblas.vector_argminmax %argA { minmax = "min" } : tensor<3xi64, #SparseVec64>
+   func @vector_argminmax_min(%argA: tensor<3xi64, #CV64>) -> index {
+       %answer = graphblas.vector_argminmax %argA { minmax = "min" } : tensor<3xi64, #CV64>
        return %answer : index
    }
    
@@ -61,8 +61,8 @@ module {
 // CHECK:           return %[[VAL_19]] : index
 // CHECK:         }
 
-   func @vector_argminmax_max(%argA: tensor<?xi64, #SparseVec64>) -> index {
-       %answer = graphblas.vector_argminmax %argA { minmax = "max" } : tensor<?xi64, #SparseVec64>
+   func @vector_argminmax_max(%argA: tensor<?xi64, #CV64>) -> index {
+       %answer = graphblas.vector_argminmax %argA { minmax = "max" } : tensor<?xi64, #CV64>
        return %answer : index
    }
 

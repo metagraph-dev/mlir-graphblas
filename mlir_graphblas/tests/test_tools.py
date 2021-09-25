@@ -94,20 +94,20 @@ builtin.module  {
 }
 """,
         """
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
     dimLevelType = [ "compressed" ],
     pointerBitWidth = 64,
     indexBitWidth = 64
 }>
 
 builtin.module  {
-  builtin.func @vector_argminmax_min(%arg0: tensor<3xi64, #SparseVec64>) -> index {
-    %0 = graphblas.vector_argminmax %arg0 {minmax = "min"} : tensor<3xi64, #SparseVec64>
+  builtin.func @vector_argminmax_min(%arg0: tensor<3xi64, #CV64>) -> index {
+    %0 = graphblas.vector_argminmax %arg0 {minmax = "min"} : tensor<3xi64, #CV64>
     return %0 : index
   }
 }
 """,
-        id="SparseVec64",
+        id="CV64",
     ),
 )
 

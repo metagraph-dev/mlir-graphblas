@@ -10,11 +10,11 @@ DEFAULT_ALIASES = AliasMap()
 csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
 csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
 csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
-sparsevec64 = SparseEncodingType(["compressed"], None, 64, 64)
+cv64 = SparseEncodingType(["compressed"], None, 64, 64)
 DEFAULT_ALIASES["CSR64"] = csr64
 DEFAULT_ALIASES["CSC64"] = csc64
 DEFAULT_ALIASES["CSX64"] = csx64
-DEFAULT_ALIASES["SparseVec64"] = sparsevec64
+DEFAULT_ALIASES["CV64"] = cv64
 
 CLI = None
 

@@ -12,12 +12,12 @@
 
 enum CompressionType { CSR, CSC, EITHER };
 
+static const llvm::StringSet<> supportedUnionOperators{
+    "plus", "times", "min", "max", "first", "second"};
+
 static const llvm::StringSet<> supportedIntersectOperators{
     "plus", "minus", "times", "div", "min", "max", "first", "second"};
 //"eq", "ne", "lt", "le", "gt", "ge"};
-
-static const llvm::StringSet<> supportedUnionOperators{
-    "plus", "times", "min", "max", "first", "second"};
 
 static const llvm::StringSet<> supportedUpdateAccumulateOperators{
     "plus", "times", "min", "max"};

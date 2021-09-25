@@ -18,30 +18,30 @@ module {
 
 // -----
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
 module {
-    func @reduce_to_scalar_wrapper(%sparse_tensor: tensor<?xf64, #SparseVec64>) -> bf16 {
-        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "argmin" } : tensor<?xf64, #SparseVec64> to bf16 // expected-error {{"argmin" requires the output type to be i64.}}
+    func @reduce_to_scalar_wrapper(%sparse_tensor: tensor<?xf64, #CV64>) -> bf16 {
+        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "argmin" } : tensor<?xf64, #CV64> to bf16 // expected-error {{"argmin" requires the output type to be i64.}}
         return %answer : bf16
     }
 }
 
 // -----
 
-#SparseVec64 = #sparse_tensor.encoding<{
+#CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
 module {
-    func @reduce_to_scalar_wrapper(%sparse_tensor: tensor<?xf64, #SparseVec64>) -> bf16 {
-        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "argmax" } : tensor<?xf64, #SparseVec64> to bf16 // expected-error {{"argmax" requires the output type to be i64.}}
+    func @reduce_to_scalar_wrapper(%sparse_tensor: tensor<?xf64, #CV64>) -> bf16 {
+        %answer = graphblas.reduce_to_scalar %sparse_tensor { aggregator = "argmax" } : tensor<?xf64, #CV64> to bf16 // expected-error {{"argmax" requires the output type to be i64.}}
         return %answer : bf16
     }
 }
