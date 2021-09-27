@@ -1,9 +1,13 @@
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
-#include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
-#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "llvm/ADT/None.h"
+#include "llvm/ADT/Optional.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include "GraphBLAS/GraphBLASOps.h"
 #include "GraphBLAS/GraphBLASUtils.h"
@@ -12,34 +16,43 @@ using namespace std;
 using namespace mlir;
 using namespace mlir::sparse_tensor;
 
-bool typeIsCSX(Type inputType) {
-  sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
-    sparse_tensor::getSparseTensorEncoding(inputType);
-
-  if (!inputSparseEncoding)
-    return false;
-  
-  AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
-  if (inputDimOrdering) 
-    return false;
-  
-  llvm::ArrayRef<SparseTensorEncodingAttr::DimLevelType> dlt = inputSparseEncoding.getDimLevelType();
-  if (dlt.size() != 2)
-    return false;
-  
+bool hasRowOrdering(Type inputType) {
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(inputType);
+  AffineMap dimOrdering = sparseEncoding.getDimOrdering();
+  unsigned dimSize = dimOrdering.getNumResults();
+  for (unsigned i = 0; i < dimSize; i++) {
+    if (dimOrdering.getDimPosition(i) != i)
+      return false;
+  }
   return true;
 }
 
+bool hasColumnOrdering(Type inputType) {
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(inputType);
+  AffineMap dimOrdering = sparseEncoding.getDimOrdering();
+  unsigned dimSize = dimOrdering.getNumResults();
+  for (unsigned i = 0; i < dimSize; i++) {
+    if (dimOrdering.getDimPosition(i) != dimSize - (i + 1))
+      return false;
+  }
+  return true;
+}
+
+// TODO: this is very heavyweight; we already check for CSR/CSC/EITHER in the
+// verify methods; prefer hasRow/ColumnOrdering methods above
 bool typeIsCSR(Type inputType) {
 
   sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
-    sparse_tensor::getSparseTensorEncoding(inputType);
-  
+      sparse_tensor::getSparseTensorEncoding(inputType);
+
   if (!inputSparseEncoding)
     return false;
-  
+
   AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
-  if (!inputDimOrdering) // if inputDimOrdering.map != nullptr ; i.e. if the dimOrdering exists
+  if (!inputDimOrdering) // if inputDimOrdering.map != nullptr ; i.e. if the
+                         // dimOrdering exists
     return false;
   if (inputDimOrdering.getNumDims() != 2) {
     return false;
@@ -49,27 +62,33 @@ bool typeIsCSR(Type inputType) {
     if (inputDimOrdering0 != 0 || inputDimOrdering1 != 1)
       return false;
   }
-  llvm::ArrayRef<SparseTensorEncodingAttr::DimLevelType> dlt = inputSparseEncoding.getDimLevelType();
+  llvm::ArrayRef<SparseTensorEncodingAttr::DimLevelType> dlt =
+      inputSparseEncoding.getDimLevelType();
   if (dlt.size() != 2) {
     return false;
   } else {
-    if (dlt[0] != sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense
-        || dlt[1] != sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
+    if (dlt[0] !=
+            sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense ||
+        dlt[1] !=
+            sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
       return false;
   }
 
   return true;
 }
 
+// TODO: this is very heavyweight; we already check for CSR/CSC/EITHER in the
+// verify methods; prefer hasRow/ColumnOrdering methods above
 bool typeIsCSC(Type inputType) {
   sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
-    sparse_tensor::getSparseTensorEncoding(inputType);
-  
+      sparse_tensor::getSparseTensorEncoding(inputType);
+
   if (!inputSparseEncoding)
     return false;
-  
+
   AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
-  if (!inputDimOrdering) // if inputDimOrdering.map != nullptr ; i.e. if the dimOrdering exists
+  if (!inputDimOrdering) // if inputDimOrdering.map != nullptr ; i.e. if the
+                         // dimOrdering exists
     return false;
   if (inputDimOrdering.getNumDims() != 2) {
     return false;
@@ -79,378 +98,311 @@ bool typeIsCSC(Type inputType) {
     if (inputDimOrdering0 != 1 || inputDimOrdering1 != 0)
       return false;
   }
-  
-  llvm::ArrayRef<SparseTensorEncodingAttr::DimLevelType> dlt = inputSparseEncoding.getDimLevelType();
+
+  llvm::ArrayRef<SparseTensorEncodingAttr::DimLevelType> dlt =
+      inputSparseEncoding.getDimLevelType();
   if (dlt.size() != 2) {
     return false;
   } else {
-    if (dlt[0] != sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense
-        || dlt[1] != sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
+    if (dlt[0] !=
+            sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense ||
+        dlt[1] !=
+            sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
       return false;
   }
-  
+
   return true;
 }
 
-int64_t getRank(Type inputType)
-{
+int64_t getRank(Type inputType) {
   mlir::sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
       mlir::sparse_tensor::getSparseTensorEncoding(inputType);
   if (!sparseEncoding)
     return -1;
 
-  RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
   return inputTensorType.getRank();
 }
 
-int64_t getRank(Value inputValue)
-{
+int64_t getRank(Value inputValue) {
   Type inputType = inputValue.getType();
   return getRank(inputType);
 }
 
 // make Compressed Vector type
-RankedTensorType getCompressedVectorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
-{
-    SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 1> dlt;
-    dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
-    unsigned ptr = 64;
-    unsigned ind = 64;
-    AffineMap map = {};
+RankedTensorType getCompressedVectorType(MLIRContext *context,
+                                         ArrayRef<int64_t> shape,
+                                         Type valueType, unsigned ptrBitWidth,
+                                         unsigned idxBitWidth) {
+  SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 1> dlt;
+  dlt.push_back(
+      sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
+  AffineMap map = {};
 
-    RankedTensorType rtt = RankedTensorType::get(
-        shape,
-        valueType,
-        sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
+  RankedTensorType rtt =
+      RankedTensorType::get(shape, valueType,
+                            sparse_tensor::SparseTensorEncodingAttr::get(
+                                context, dlt, map, ptrBitWidth, idxBitWidth));
 
-    return rtt;
+  return rtt;
 }
 
-// make CSX tensor type
-RankedTensorType getCSXTensorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
-{
-    SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 2> dlt;
-    dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense);
-    dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
-    unsigned ptr = 64;
-    unsigned ind = 64;
-    AffineMap map = {};
-    
-    RankedTensorType rtt = RankedTensorType::get(
-        shape,
-        valueType,
-        sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
-    
-    return rtt;
+RankedTensorType getCompressedVectorType(MLIRContext *context, Type valueType) {
+  return getCompressedVectorType(context, ArrayRef<int64_t>{-1}, valueType, 64,
+                                 64);
 }
 
-// make CSR tensor type
-RankedTensorType getCSRTensorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
-{
-    SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 2> dlt;
-    dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense);
-    dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
-    unsigned ptr = 64;
-    unsigned ind = 64;
-    AffineMap map = AffineMap::getMultiDimIdentityMap(2, context);
+RankedTensorType
+getSingleCompressedMatrixType(MLIRContext *context, ArrayRef<int64_t> shape,
+                              bool columnOriented, Type valueType,
+                              unsigned ptrBitWidth, unsigned idxBitWidth) {
+  SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 2> dlt;
+  dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense);
+  dlt.push_back(
+      sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
+  AffineMap map;
+  if (columnOriented)
+    map = AffineMap::getPermutationMap(ArrayRef<unsigned>{1, 0}, context);
+  else
+    map = AffineMap::getPermutationMap(ArrayRef<unsigned>{0, 1}, context);
 
-    RankedTensorType rtt = RankedTensorType::get(
-        shape,
-        valueType,
-        sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
+  RankedTensorType rtt =
+      RankedTensorType::get(shape, valueType,
+                            sparse_tensor::SparseTensorEncodingAttr::get(
+                                context, dlt, map, ptrBitWidth, idxBitWidth));
 
-    return rtt;
+  return rtt;
 }
 
-// make CSC tensor type
-RankedTensorType getCSCTensorType(MLIRContext *context, ArrayRef<int64_t> shape, Type valueType)
-{
-    SmallVector<sparse_tensor::SparseTensorEncodingAttr::DimLevelType, 2> dlt;
-    dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense);
-    dlt.push_back(sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed);
-    unsigned ptr = 64;
-    unsigned ind = 64;
-    AffineMap map = AffineMap::getPermutationMap(ArrayRef<unsigned>{1, 0}, context);
+RankedTensorType getCSRType(MLIRContext *context, Type valueType) {
+  return getSingleCompressedMatrixType(context, ArrayRef<int64_t>{-1, -1},
+                                       false, valueType, 64, 64);
+}
 
-    RankedTensorType rtt = RankedTensorType::get(
-        shape,
-        valueType,
-        sparse_tensor::SparseTensorEncodingAttr::get(context, dlt, map, ptr, ind));
-
-    return rtt;
+RankedTensorType getCSCType(MLIRContext *context, Type valueType) {
+  return getSingleCompressedMatrixType(context, ArrayRef<int64_t>{-1, -1}, true,
+                                       valueType, 64, 64);
 }
 
 /// Returns function reference (first hit also inserts into module).
-// from: llvm/llvm-project/mlir/lib/Dialect/SparseTensor/Transforms/SparseTensorConversion.cpp
-static FlatSymbolRefAttr getFunc(ModuleOp &mod, Location &loc, StringRef name, TypeRange result,
-                                 TypeRange operands)
-{
-    MLIRContext *context = mod.getContext();
-    FuncOp func = mod.lookupSymbol<FuncOp>(name);
-    if (!func)
-    {
-        OpBuilder moduleBuilder(mod.getBodyRegion());
-        moduleBuilder
-            .create<FuncOp>(loc, name,
-                            FunctionType::get(context, operands, result))
-            .setPrivate();
-    }
-    return SymbolRefAttr::get(context, name);
+// from:
+// llvm/llvm-project/mlir/lib/Dialect/SparseTensor/Transforms/SparseTensorConversion.cpp
+static FlatSymbolRefAttr getFunc(ModuleOp &mod, Location &loc, StringRef name,
+                                 TypeRange result, TypeRange operands) {
+  MLIRContext *context = mod.getContext();
+  FuncOp func = mod.lookupSymbol<FuncOp>(name);
+  if (!func) {
+    OpBuilder moduleBuilder(mod.getBodyRegion());
+    moduleBuilder
+        .create<FuncOp>(loc, name, FunctionType::get(context, operands, result))
+        .setPrivate();
+  }
+  return SymbolRefAttr::get(context, name);
 }
 
-Value convertToExternalCSX(OpBuilder &builder, ModuleOp &mod, Location loc, Value input)
-{
-  MLIRContext *context = mod.getContext();
-  RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
-  if (typeIsCSX(inputType))
-    return input;
-  
-  llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
-  Type inputTensorValueType = inputType.getElementType();
-  RankedTensorType csxType = getCSXTensorType(context, inputShape, inputTensorValueType);
-  FlatSymbolRefAttr castFuncSymbol;
-  if (typeIsCSC(inputType))
-    castFuncSymbol = getFunc(mod, loc, "cast_csc_to_csx", csxType, inputType);
-  else if (typeIsCSR(inputType))
-    castFuncSymbol = getFunc(mod, loc, "cast_csr_to_csx", csxType, inputType);
-  else 
+std::string buildSparseTypeString(RankedTensorType tensorType) {
+  int64_t rank = tensorType.getRank();
+  Type valueType = tensorType.getElementType();
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(tensorType);
+  std::string piString =
+      "p" + std::to_string(sparseEncoding.getPointerBitWidth()) + "i" +
+      std::to_string(sparseEncoding.getIndexBitWidth());
+  std::string dtype = llvm::TypeSwitch<Type, std::string>(valueType)
+                          .Case<IntegerType>([&](IntegerType type) {
+                            return "i" + std::to_string(type.getWidth());
+                          })
+                          .Case<FloatType>([&](FloatType type) {
+                            return "f" + std::to_string(type.getWidth());
+                          });
+
+  if (rank == 2) {
+    AffineMap dimOrdering = sparseEncoding.getDimOrdering();
+    unsigned dimOrdering0 = dimOrdering.getDimPosition(0);
+    unsigned dimOrdering1 = dimOrdering.getDimPosition(1);
+    bool isCSC = (dimOrdering0 == 1 && dimOrdering1 == 0);
+    std::string compressType = isCSC ? "csc" : "csr";
+    return "matrix_" + compressType + "_" + dtype + "_" + piString;
+  } else if (rank == 1) {
+    return "vector_" + dtype + "_" + piString;
+  } else
     assert(false && "Unexpected tensor type.");
-  CallOp castCallOp = builder.create<CallOp>(loc,
-                                             castFuncSymbol,
-                                             csxType,
-                                             llvm::ArrayRef<Value>({input})
-                                             );
-
-  Value result = castCallOp->getResult(0);
-  return result;
 }
 
-Value convertToExternalCSR(OpBuilder &builder, ModuleOp &mod, Location loc, Value input)
-{
-  // Cast the tensor to the CSR type that our external functions expect
-  // since these are passed via opaque pointer (ultimately) to these functions
-  // this is OK.
-  MLIRContext *context = mod.getContext();
-  RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
-  if (typeIsCSR(inputType))
-    return input;
-
-  if (typeIsCSC(inputType)) {
-    input = convertToExternalCSX(builder, mod, loc, input);
-    inputType = input.getType().dyn_cast<RankedTensorType>();
+void callPrintString(OpBuilder &builder, ModuleOp &mod, Location loc,
+                     StringRef string) {
+  Type int64Type = builder.getIntegerType(64);
+  FlatSymbolRefAttr funcSymbol =
+      getFunc(mod, loc, "print_int_as_char", TypeRange(), int64Type);
+  for (char character : string) {
+    int64_t character_int = (int64_t)character;
+    Value character_int_i64 =
+        builder.create<ConstantIntOp>(loc, character_int, int64Type);
+    builder.create<CallOp>(loc, funcSymbol, TypeRange(),
+                           llvm::ArrayRef<Value>({character_int_i64}));
   }
-  
-  // all external calls are currently for unknown size float64 tensors
-  llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
-  Type inputTensorValueType = inputType.getElementType();
-  RankedTensorType csrType = getCSRTensorType(context, inputShape, inputTensorValueType); 
-  FlatSymbolRefAttr castFuncSymbol = getFunc(mod, loc, "cast_csx_to_csr", csrType, inputType);
-  CallOp castCallOp = builder.create<CallOp>(loc,
-                                             castFuncSymbol,
-                                             csrType,
-                                             llvm::ArrayRef<Value>({input})
-                                             );
-
-  Value result = castCallOp->getResult(0);
-  return result;
-}
-
-Value convertToExternalCSC(OpBuilder &builder, ModuleOp &mod, Location loc, Value input)
-{
-  MLIRContext *context = mod.getContext();
-  RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
-  if (typeIsCSC(inputType))
-    return input;
-
-  if (typeIsCSR(inputType)) {
-    input = convertToExternalCSX(builder, mod, loc, input);
-    inputType = input.getType().dyn_cast<RankedTensorType>();
-  }
-  
-  llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
-  Type inputTensorValueType = inputType.getElementType();
-  RankedTensorType cscType = getCSCTensorType(context, inputShape, inputTensorValueType); 
-  FlatSymbolRefAttr castFuncSymbol = getFunc(mod, loc, "cast_csx_to_csc", cscType, inputType);
-  CallOp castCallOp = builder.create<CallOp>(loc,
-                                             castFuncSymbol,
-                                             cscType,
-                                             llvm::ArrayRef<Value>({input})
-                                             );
-
-  Value result = castCallOp->getResult(0);
-  return result;
-}
-
-void callDelSparseTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
-  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
-  int64_t rank = inputTensorType.getRank();
-
-  std::string funcName;
-  if (rank == 2)
-  {
-    tensor = convertToExternalCSX(builder, mod, loc, tensor);
-    funcName = "delSparseMatrix";
-  }
-  else
-  {
-    funcName = "delSparseVector";
-  }
-  Type tensorType = tensor.getType();
-
-  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, ArrayRef<Type>({}), tensorType);
-  builder.create<mlir::CallOp>(loc, func, TypeRange(), tensor);
   return;
 }
 
-mlir::Value callEmptyLike(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
-  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
-  int64_t rank = inputTensorType.getRank();
+void callPrintValue(OpBuilder &builder, ModuleOp &mod, Location loc,
+                    Value input) {
+  std::string funcName = "print_";
+  llvm::raw_string_ostream stream(funcName);
+  Type type = input.getType();
+  type.print(stream);
+  stream.flush();
+  FlatSymbolRefAttr funcSymbol = getFunc(mod, loc, funcName, TypeRange(), type);
+  builder.create<CallOp>(loc, funcSymbol, TypeRange(),
+                         llvm::ArrayRef<Value>({input}));
+  return;
+}
 
-  std::string funcName;
+Value castToPtr8(OpBuilder &builder, ModuleOp &mod, Location loc, Value input) {
+  MLIRContext *context = mod.getContext();
+  RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
+  if (!inputType) // Assume this means it is already !llvm.ptr<i8>
+    return input;
+
+  Type ptr8Type = LLVM::LLVMPointerType::get(IntegerType::get(context, 8));
+
+  std::string funcName = buildSparseTypeString(inputType) + "_to_ptr8";
+  FlatSymbolRefAttr castFuncSymbol =
+      getFunc(mod, loc, funcName, ptr8Type, inputType);
+  CallOp castCallOp = builder.create<CallOp>(loc, castFuncSymbol, ptr8Type,
+                                             llvm::ArrayRef<Value>({input}));
+  Value result = castCallOp->getResult(0);
+  return result;
+}
+
+Value castToTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
+                   Value ptrInput, RankedTensorType tensorType) {
+  Type inputType = ptrInput.getType();
+
+  std::string funcName = "ptr8_to_" + buildSparseTypeString(tensorType);
+  FlatSymbolRefAttr castFuncSymbol =
+      getFunc(mod, loc, funcName, tensorType, inputType);
+  CallOp castCallOp = builder.create<CallOp>(loc, castFuncSymbol, tensorType,
+                                             llvm::ArrayRef<Value>({ptrInput}));
+
+  Value result = castCallOp->getResult(0);
+  return result;
+}
+
+void callDelSparseTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
+                         Value tensor) {
+  Value ptr = castToPtr8(builder, mod, loc, tensor);
+  Type ptr8Type = ptr.getType();
+
+  FlatSymbolRefAttr func = getFunc(mod, loc, "delSparseTensor", {}, ptr8Type);
+  builder.create<mlir::CallOp>(loc, func, TypeRange(), ptr);
+  return;
+}
+
+Value callNewTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
+                    ValueRange shape, RankedTensorType tensorType) {
+  Type indexType = builder.getIndexType();
+  int64_t rank = tensorType.getRank();
+
+  std::string funcName = "new_" + buildSparseTypeString(tensorType);
+  FlatSymbolRefAttr func;
   if (rank == 2)
-  {
-    tensor = convertToExternalCSX(builder, mod, loc, tensor);
-    funcName = "matrix_empty_like";
-  }
+    func = getFunc(mod, loc, funcName, tensorType,
+                   TypeRange{indexType, indexType});
   else
-  {
-    funcName = "vector_empty_like";
-  }
-  Type tensorType = tensor.getType();
-
-  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, tensorType, tensorType);
-  mlir::CallOp callOpResult = builder.create<mlir::CallOp>(loc, func, tensorType, tensor);
+    func = getFunc(mod, loc, funcName, tensorType, TypeRange{indexType});
+  CallOp callOpResult = builder.create<CallOp>(loc, func, tensorType, shape);
   Value result = callOpResult->getResult(0);
   return result;
 }
 
-mlir::Value callDupTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
-  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
-  int64_t rank = inputTensorType.getRank();
+Value callEmptyLike(OpBuilder &builder, ModuleOp &mod, Location loc,
+                    Value tensor) {
+  RankedTensorType tensorType = tensor.getType().dyn_cast<RankedTensorType>();
+  Value ptr = castToPtr8(builder, mod, loc, tensor);
+  Type ptr8Type = ptr.getType();
 
-  std::string funcName;
-  if (rank == 2)
-  {
-    tensor = convertToExternalCSX(builder, mod, loc, tensor);
-    funcName = "dup_matrix";
-  }
-  else
-  {
-    funcName = "dup_vector";
-  }
-  Type tensorType = tensor.getType();
-
-  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, tensorType, tensorType);
-    mlir::CallOp callOpResult = builder.create<mlir::CallOp>(loc, func, tensorType, tensor);
-    Value result = callOpResult->getResult(0);
-    return result;
-  
+  FlatSymbolRefAttr func = getFunc(mod, loc, "empty_like", ptr8Type, ptr8Type);
+  CallOp callOpResult = builder.create<mlir::CallOp>(loc, func, ptr8Type, ptr);
+  Value result = callOpResult->getResult(0);
+  tensor = castToTensor(builder, mod, loc, result, tensorType);
+  return tensor;
 }
 
-mlir::CallOp callResizeDim(OpBuilder &builder, ModuleOp &mod, Location loc,
-                           Value tensor, Value d, Value size)
-{
-  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
-  int64_t rank = inputTensorType.getRank();
+Value callDupTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
+                    Value tensor) {
+  RankedTensorType tensorType = tensor.getType().dyn_cast<RankedTensorType>();
+  Value ptr = castToPtr8(builder, mod, loc, tensor);
+  Type ptr8Type = ptr.getType();
 
-  std::string funcName;
-  if (rank == 2)
-  {
-    tensor = convertToExternalCSX(builder, mod, loc, tensor);
-    funcName = "matrix_resize_dim";
-  }
-  else
-  {
-    funcName = "vector_resize_dim";
-  }
-  Type tensorType = tensor.getType();
+  FlatSymbolRefAttr func = getFunc(mod, loc, "dup_tensor", ptr8Type, ptr8Type);
+  CallOp callOpResult = builder.create<mlir::CallOp>(loc, func, ptr8Type, ptr);
+  Value result = callOpResult->getResult(0);
+  tensor = castToTensor(builder, mod, loc, result, tensorType);
+  return tensor;
+}
+
+CallOp callResizeDim(OpBuilder &builder, ModuleOp &mod, Location loc,
+                     Value tensor, Value d, Value size) {
+  Value ptr = castToPtr8(builder, mod, loc, tensor);
+  Type ptr8Type = ptr.getType();
 
   Type indexType = builder.getIndexType();
-  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, TypeRange(), {tensorType, indexType, indexType});
-  mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, d, size}));
+  FlatSymbolRefAttr func = getFunc(mod, loc, "resize_dim", TypeRange(),
+                                   {ptr8Type, indexType, indexType});
+  CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(),
+                                               ArrayRef<Value>({ptr, d, size}));
 
   return result;
 }
 
-mlir::CallOp callResizePointers(OpBuilder &builder, ModuleOp &mod, Location loc,
-                                Value tensor, Value d, Value size)
-{
-  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
-  int64_t rank = inputTensorType.getRank();
-
-  std::string funcName;
-  if (rank == 2)
-  {
-    tensor = convertToExternalCSX(builder, mod, loc, tensor);
-    funcName = "matrix_resize_pointers";
-  }
-  else
-  {
-    funcName = "vector_resize_pointers";
-  }
-  Type tensorType = tensor.getType();
+CallOp callResizePointers(OpBuilder &builder, ModuleOp &mod, Location loc,
+                          Value tensor, Value d, Value size) {
+  Value ptr = castToPtr8(builder, mod, loc, tensor);
+  Type ptr8Type = ptr.getType();
 
   Type indexType = builder.getIndexType();
-  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, TypeRange(), {tensorType, indexType, indexType});
-  mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, d, size}));
+  FlatSymbolRefAttr func = getFunc(mod, loc, "resize_pointers", TypeRange(),
+                                   {ptr8Type, indexType, indexType});
+  CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(),
+                                               ArrayRef<Value>({ptr, d, size}));
 
   return result;
 }
 
 mlir::CallOp callResizeIndex(OpBuilder &builder, ModuleOp &mod, Location loc,
-                             Value tensor, Value d, Value size)
-{
-  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
-  int64_t rank = inputTensorType.getRank();
-
-  std::string funcName;
-  if (rank == 2)
-  {
-    tensor = convertToExternalCSX(builder, mod, loc, tensor);
-    funcName = "matrix_resize_index";
-  }
-  else
-  {
-    funcName = "vector_resize_index";
-  }
-  Type tensorType = tensor.getType();
+                             Value tensor, Value d, Value size) {
+  Value ptr = castToPtr8(builder, mod, loc, tensor);
+  Type ptr8Type = ptr.getType();
 
   Type indexType = builder.getIndexType();
-  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, TypeRange(), {tensorType, indexType, indexType});
-  mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, d, size}));
+  FlatSymbolRefAttr func = getFunc(mod, loc, "resize_index", TypeRange(),
+                                   {ptr8Type, indexType, indexType});
+  mlir::CallOp result = builder.create<mlir::CallOp>(
+      loc, func, TypeRange(), ArrayRef<Value>({ptr, d, size}));
 
   return result;
 }
 
-mlir::CallOp callResizeValues(OpBuilder &builder, ModuleOp &mod, Location loc,
-                              Value tensor, Value size)
-{
-  RankedTensorType inputTensorType = tensor.getType().dyn_cast<RankedTensorType>();
-  int64_t rank = inputTensorType.getRank();
-
-  std::string funcName;
-  if (rank == 2)
-  {
-    tensor = convertToExternalCSX(builder, mod, loc, tensor);
-    funcName = "matrix_resize_values";
-  }
-  else
-  {
-    funcName = "vector_resize_values";
-  }
-  Type tensorType = tensor.getType();
+CallOp callResizeValues(OpBuilder &builder, ModuleOp &mod, Location loc,
+                        Value tensor, Value size) {
+  Value ptr = castToPtr8(builder, mod, loc, tensor);
+  Type ptr8Type = ptr.getType();
 
   Type indexType = builder.getIndexType();
-  FlatSymbolRefAttr func = getFunc(mod, loc, funcName, TypeRange(), {tensorType, indexType});
-  mlir::CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(), ArrayRef<Value>({tensor, size}));
+  FlatSymbolRefAttr func =
+      getFunc(mod, loc, "resize_values", TypeRange(), {ptr8Type, indexType});
+  CallOp result = builder.create<mlir::CallOp>(loc, func, TypeRange(),
+                                               ArrayRef<Value>({ptr, size}));
 
   return result;
 }
 
-void cleanupIntermediateTensor(OpBuilder &builder, ModuleOp &mod, Location loc, Value tensor) {
+void cleanupIntermediateTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
+                               Value tensor) {
   // Clean up sparse tensor unless it is returned by the function
-  Block * outputBlock = tensor.getParentBlock();
-  ReturnOp lastStatement = llvm::dyn_cast_or_null<ReturnOp>(outputBlock->getTerminator());
+  Block *outputBlock = tensor.getParentBlock();
+  ReturnOp lastStatement =
+      llvm::dyn_cast_or_null<ReturnOp>(outputBlock->getTerminator());
   bool toDelete = true;
   if (lastStatement != nullptr) {
     for (Value result : lastStatement->getOperands()) {
@@ -466,31 +418,31 @@ void cleanupIntermediateTensor(OpBuilder &builder, ModuleOp &mod, Location loc, 
   }
 }
 
-LogicalResult ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions,
-                                             const std::set<graphblas::YieldKind> &required,
-                                             const std::set<graphblas::YieldKind> &optional)
-{
+LogicalResult
+ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions,
+                               const std::set<graphblas::YieldKind> &required,
+                               const std::set<graphblas::YieldKind> &optional) {
   std::set<graphblas::YieldKind> allowed(required);
   allowed.insert(optional.begin(), optional.end());
   std::set<graphblas::YieldKind> seen;
 
-  for (Region *ext : regions)
-  {
+  for (Region *ext : regions) {
     Block &block = ext->front();
-    graphblas::YieldOp yield = llvm::dyn_cast_or_null<graphblas::YieldOp>(block.getTerminator());
-    if (yield == nullptr)
-    {
+    graphblas::YieldOp yield =
+        llvm::dyn_cast_or_null<graphblas::YieldOp>(block.getTerminator());
+    if (yield == nullptr) {
       // must have graphblas.yield as terminator
-      return op->emitError("extension blocks must have a graphblas.yield terminator");
+      return op->emitError(
+          "extension blocks must have a graphblas.yield terminator");
     }
 
     graphblas::YieldKind kind = yield.kind();
     if (allowed.count(kind) == 0) {
-      return op->emitError("extension block " + stringifyYieldKind(kind) + " not allowed for this op");
+      return op->emitError("extension block " + stringifyYieldKind(kind) +
+                           " not allowed for this op");
     }
 
-    switch (kind)
-    {
+    switch (kind) {
     case graphblas::YieldKind::TRANSFORM_IN_A:
       this->transformInA = &block;
       break;
@@ -532,9 +484,187 @@ LogicalResult ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions
 
   for (auto requiredKind : required) {
     if (seen.count(requiredKind) != 1) {
-      return op->emitError("required extension block " + stringifyYieldKind(requiredKind) + " not found");
+      return op->emitError("required extension block " +
+                           stringifyYieldKind(requiredKind) + " not found");
     }
   }
 
   return success();
 };
+
+LogicalResult populateSemiringAdd(OpBuilder &builder, Location loc,
+                                  StringRef addName, Type valueType,
+                                  RegionRange regions) {
+  // This function must match the options supported by
+  // GraphBLASOps.cpp::checkSemiringAdd()
+
+  // Insert additive identity
+  Region *addIdentityRegion = regions[0];
+  Value addIdentity;
+  /*Block *addIdentityBlock = */ builder.createBlock(addIdentityRegion, {}, {});
+  if (addName == "plus" || addName == "any") {
+    // Add identity
+    addIdentity =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<ConstantIntOp>(loc, 0, type.getWidth());
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return builder.create<ConstantFloatOp>(loc, APFloat(0.0), type);
+            });
+  } else if (addName == "min") {
+    addIdentity =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<ConstantOp>(
+                  loc,
+                  builder.getIntegerAttr(
+                      valueType, APInt::getSignedMaxValue(type.getWidth())));
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return builder.create<ConstantOp>(
+                  loc, builder.getFloatAttr(
+                           valueType, APFloat::getLargest(
+                                          type.getFloatSemantics(), false)));
+            });
+  } else {
+    return addIdentityRegion->getParentOp()->emitError(
+        "\"" + addName + "\" is not a supported semiring add.");
+  }
+  builder.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD_IDENTITY,
+                                     addIdentity);
+
+  // Insert additive operation
+  Region *addRegion = regions[1];
+  Block *addBlock = builder.createBlock(addRegion, {}, {valueType, valueType});
+  Value addBlockArg0 = addBlock->getArgument(0);
+  Value addBlockArg1 = addBlock->getArgument(1);
+  Value addResult;
+  if (addName == "plus") {
+    // Insert add operation
+    addResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<AddIOp>(loc, addBlockArg0, addBlockArg1);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return builder.create<AddFOp>(loc, addBlockArg0, addBlockArg1);
+            });
+  } else if (addName == "min") {
+    Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+                    .Case<IntegerType>([&](IntegerType type) {
+                      return builder.create<CmpIOp>(loc, CmpIPredicate::slt,
+                                                    addBlockArg0, addBlockArg1);
+                    })
+                    .Case<FloatType>([&](FloatType type) {
+                      return builder.create<CmpFOp>(loc, CmpFPredicate::OLT,
+                                                    addBlockArg0, addBlockArg1);
+                    });
+    addResult = builder.create<SelectOp>(loc, cmp, addBlockArg0, addBlockArg1);
+  } else if (addName == "any") {
+    // Same as "second" for multiplicative op?
+    // https://github.com/DrTimothyAldenDavis/SuiteSparse/blob/master/GraphBLAS/Source/Template/GB_binop_factory.c#L243-L244
+    addResult = addBlockArg1;
+  } else {
+    return addRegion->getParentOp()->emitError(
+        "\"" + addName + "\" is not a supported semiring add.");
+  }
+  builder.create<graphblas::YieldOp>(loc, graphblas::YieldKind::ADD, addResult);
+
+  return success();
+}
+
+LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
+                                       StringRef multiplyName, Type valueType,
+                                       RegionRange regions) {
+  // This function must match the options supported by
+  // GraphBLASOps.cpp::checkSemiringMultiply()
+
+  // Insert multiplicative operation
+  Region *multRegion = regions[0];
+  Block *multBlock =
+      builder.createBlock(multRegion, {}, {valueType, valueType});
+  Value multBlockArg0 = multBlock->getArgument(0);
+  Value multBlockArg1 = multBlock->getArgument(1);
+  Value multResult;
+
+  if (multiplyName == "pair") {
+    multResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<ConstantIntOp>(loc, 1, type.getWidth());
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return builder.create<ConstantFloatOp>(loc, APFloat(1.0), type);
+            });
+  } else if (multiplyName == "times") {
+    multResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<MulIOp>(loc, multBlockArg0, multBlockArg1);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return builder.create<MulFOp>(loc, multBlockArg0, multBlockArg1);
+            });
+  } else if (multiplyName == "plus") {
+    multResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<AddIOp>(loc, multBlockArg0, multBlockArg1);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return builder.create<AddFOp>(loc, multBlockArg0, multBlockArg1);
+            });
+  } else if (multiplyName == "first") {
+    multResult = multBlockArg0;
+  } else if (multiplyName == "second") {
+    multResult = multBlockArg1;
+  } else {
+    return multRegion->getParentOp()->emitError(
+        "\"" + multiplyName + "\" is not a supported semiring multiply.");
+  }
+  builder.create<graphblas::YieldOp>(loc, graphblas::YieldKind::MULT,
+                                     multResult);
+
+  return success();
+}
+
+LogicalResult populateSemiringRegions(OpBuilder &builder, Location loc,
+                                      StringRef semiring, Type valueType,
+                                      RegionRange regions) {
+  auto semiringParts = semiring.split('_');
+
+  if (failed(populateSemiringAdd(builder, loc, semiringParts.first, valueType,
+                                 regions.slice(0, 2))))
+    return failure();
+
+  if (failed(populateSemiringMultiply(
+          builder, loc, semiringParts.second, valueType,
+          regions.slice(2, 1) /* no multiply identity block currently */)))
+    return failure();
+
+  return success();
+}
+
+LogicalResult extractApplyOpArgs(mlir::graphblas::ApplyOp op, Value &input,
+                                 Value &thunk) {
+  Value left = op.left();
+  Value right = op.right();
+
+  bool left_is_tensor = (bool)left.getType().dyn_cast<RankedTensorType>();
+  bool right_is_tensor = right && right.getType().dyn_cast<RankedTensorType>();
+
+  if (left_is_tensor == right_is_tensor) {
+    return op.emitError("Exactly one operand must be a ranked tensor.");
+  }
+
+  if (left_is_tensor) {
+    input = left;
+    thunk = right;
+  } else {
+    input = right;
+    thunk = left;
+  }
+
+  return success();
+}

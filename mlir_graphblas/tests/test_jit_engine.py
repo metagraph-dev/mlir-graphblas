@@ -1,4 +1,4 @@
-from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
+from .jit_engine_test_utils import densify_csr, MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
 
 import itertools
 import mlir_graphblas
@@ -521,7 +521,7 @@ def test_jit_engine_sequence_of_sparse_tensors_input(engine):
   indexBitWidth = 64
 }>
 
-func private @ptr8_to_matrix(!llvm.ptr<i8>) -> tensor<2x3xf64, #sparseTensor>
+func private @ptr8_to_matrix_csr_f64_p64i64(!llvm.ptr<i8>) -> tensor<2x3xf64, #sparseTensor>
 
 func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_length: index) -> f64 {
   // Take an array of sparse 2x3 matrices
@@ -546,7 +546,7 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
     // dereference %sparse_tensor_ptr_ptr to get an !llvm.ptr<i8>
     %sparse_tensor_ptr = llvm.load %sparse_tensor_ptr_ptr : !llvm.ptr<!llvm.ptr<i8>>
 
-    %sparse_tensor = call @ptr8_to_matrix(%sparse_tensor_ptr) : (!llvm.ptr<i8>) -> tensor<2x3xf64, #sparseTensor>
+    %sparse_tensor = call @ptr8_to_matrix_csr_f64_p64i64(%sparse_tensor_ptr) : (!llvm.ptr<i8>) -> tensor<2x3xf64, #sparseTensor>
 
     %reduction = linalg.generic #trait_sum_reduction
         ins(%sparse_tensor: tensor<2x3xf64, #sparseTensor>)
@@ -702,10 +702,8 @@ def test_jit_engine_zero_values(engine):
 
     assert engine.add(mlir_text, STANDARD_PASSES) == ["transpose"]
     assert engine.transpose(output_tensor, input_tensor) is None
-    assert np.isclose(engine.densify2x2(input_tensor), np.array([[8, 0], [9, 0]])).all()
-    assert np.isclose(
-        engine.densify2x2(output_tensor), np.array([[8, 9], [0, 0]])
-    ).all()
+    assert np.isclose(densify_csr(input_tensor), np.array([[8, 0], [9, 0]])).all()
+    assert np.isclose(densify_csr(output_tensor), np.array([[8, 9], [0, 0]])).all()
 
     return
 
@@ -736,34 +734,4 @@ func @test_func(%arg0: f32) -> f32 {
 @pytest.fixture(scope="module")
 def engine():
     engine = mlir_graphblas.MlirJitEngine()
-    engine.add(
-        """
-#trait_densify = {
-  indexing_maps = [
-    affine_map<(i,j) -> (i,j)>,
-    affine_map<(i,j) -> (i,j)>
-  ],
-  iterator_types = ["parallel", "parallel"]
-}
-
-#sparseTensor = #sparse_tensor.encoding<{
-  dimLevelType = [ "dense", "compressed" ],
-  dimOrdering = affine_map<(i,j) -> (i,j)>,
-  pointerBitWidth = 64,
-  indexBitWidth = 64
-}>
-
-func @densify2x2(%argA: tensor<2x2xf64, #sparseTensor>) -> tensor<2x2xf64> {
-  %output_storage = constant dense<0.0> : tensor<2x2xf64>
-  %0 = linalg.generic #trait_densify
-    ins(%argA: tensor<2x2xf64, #sparseTensor>)
-    outs(%output_storage: tensor<2x2xf64>) {
-      ^bb(%A: f64, %x: f64):
-        linalg.yield %A : f64
-    } -> tensor<2x2xf64>
-  return %0 : tensor<2x2xf64>
-}
-""",
-        STANDARD_PASSES,
-    )
     return engine

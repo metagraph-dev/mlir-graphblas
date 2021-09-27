@@ -1,3 +1,4 @@
+from collections import defaultdict
 import datetime
 import mlir
 import itertools
@@ -7,15 +8,23 @@ import numpy as np
 from mlir_graphblas import MlirJitEngine
 from mlir_graphblas.engine import parse_mlir_functions
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
+from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
-from mlir_graphblas.types import AliasMap, SparseEncodingType
+from mlir_graphblas.types import AliasMap, SparseEncodingType, SparseTensorType
 from mlir_graphblas.functions import ConvertLayout
 from mlir_graphblas.algorithms import (
-    triangle_count_combined,
-    dense_neural_network_combined,
+    triangle_count,
+    dense_neural_network,
 )
 
-from .jit_engine_test_utils import sparsify_array, GRAPHBLAS_PASSES
+from .jit_engine_test_utils import (
+    sparsify_array,
+    densify_csr,
+    densify_csc,
+    densify_vector,
+    MLIR_TYPE_TO_NP_TYPE,
+    GRAPHBLAS_PASSES,
+)
 
 from typing import List, Callable
 
@@ -30,42 +39,12 @@ def engine():
 
     jit_engine.add(
         """
-#trait_densify = {
-  indexing_maps = [
-    affine_map<(i,j) -> (i,j)>,
-    affine_map<(i,j) -> (i,j)>
-  ],
-  iterator_types = ["parallel", "parallel"]
-}
-
 #CSR64 = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],
   dimOrdering = affine_map<(i,j) -> (i,j)>,
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
-
-func @csr_densify5x5(%argA: tensor<5x5xf64, #CSR64>) -> tensor<5x5xf64> {
-  %output_storage = constant dense<0.0> : tensor<5x5xf64>
-  %0 = linalg.generic #trait_densify
-    ins(%argA: tensor<5x5xf64, #CSR64>)
-    outs(%output_storage: tensor<5x5xf64>) {
-      ^bb(%A: f64, %x: f64):
-        linalg.yield %A : f64
-    } -> tensor<5x5xf64>
-  return %0 : tensor<5x5xf64>
-}
-
-func @csr_densify8x8(%argA: tensor<8x8xf64, #CSR64>) -> tensor<8x8xf64> {
-  %output_storage = constant dense<0.0> : tensor<8x8xf64>
-  %0 = linalg.generic #trait_densify
-    ins(%argA: tensor<8x8xf64, #CSR64>)
-    outs(%output_storage: tensor<8x8xf64>) {
-      ^bb(%A: f64, %x: f64):
-        linalg.yield %A : f64
-    } -> tensor<8x8xf64>
-  return %0 : tensor<8x8xf64>
-}
 
 #CSC64 = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],
@@ -74,19 +53,15 @@ func @csr_densify8x8(%argA: tensor<8x8xf64, #CSR64>) -> tensor<8x8xf64> {
   indexBitWidth = 64
 }>
 
-func @csc_densify8x8(%argA: tensor<8x8xf64, #CSC64>) -> tensor<8x8xf64> {
-  %output_storage = constant dense<0.0> : tensor<8x8xf64>
-  %0 = linalg.generic #trait_densify
-    ins(%argA: tensor<8x8xf64, #CSC64>)
-    outs(%output_storage: tensor<8x8xf64>) {
-      ^bb(%A: f64, %x: f64):
-        linalg.yield %A : f64
-    } -> tensor<8x8xf64>
-  return %0 : tensor<8x8xf64>
+func @csr_to_csc(%matrix: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSC64> {
+  %converted = graphblas.convert_layout %matrix : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSC64>
+  return %converted : tensor<?x?xf64, #CSC64>
 }
+
 """,
         GRAPHBLAS_PASSES,
     )
+
     return jit_engine
 
 
@@ -94,11 +69,11 @@ func @csc_densify8x8(%argA: tensor<8x8xf64, #CSC64>) -> tensor<8x8xf64> {
 def aliases() -> AliasMap:
     csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
     csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-    sparsevec64 = SparseEncodingType(["compressed"], None, 64, 64)
+    cv64 = SparseEncodingType(["compressed"], None, 64, 64)
     aliases = AliasMap()
     aliases["CSR64"] = csr64
     aliases["CSC64"] = csc64
-    aliases["SparseVec64"] = sparsevec64
+    aliases["CV64"] = cv64
     return aliases
 
 
@@ -139,11 +114,25 @@ def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine, aliases: Alias
     dense_input_tensor = np.zeros([8, 8], dtype=np.float64)
     dense_input_tensor[1, 2] = 1.2
     dense_input_tensor[4, 3] = 4.3
-    assert np.isclose(dense_input_tensor, engine.csr_densify8x8(input_tensor)).all()
-
+    assert np.isclose(dense_input_tensor, densify_csr(input_tensor)).all()
     output_tensor = convert_layout_wrapper_callable(input_tensor)
 
-    assert np.isclose(dense_input_tensor, engine.csc_densify8x8(output_tensor)).all()
+    assert np.isclose(dense_input_tensor, densify_csc(output_tensor)).all()
+
+
+def test_builder_attribute(engine: MlirJitEngine, aliases: AliasMap):
+    ir_builder = MLIRFunctionBuilder(
+        "no_op",
+        input_types=["tensor<?x?xf64, #CSR64>"],
+        return_types=("tensor<?x?xf64, #CSR64>",),
+        aliases=aliases,
+    )
+    (input_var,) = ir_builder.inputs
+    ir_builder.return_vars(input_var)
+
+    no_op = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    assert no_op.builder == ir_builder
 
 
 def test_ir_builder_triple_convert_layout(engine: MlirJitEngine, aliases: AliasMap):
@@ -198,11 +187,11 @@ def test_ir_builder_triple_convert_layout(engine: MlirJitEngine, aliases: AliasM
     dense_input_tensor = np.zeros([8, 8], dtype=np.float64)
     dense_input_tensor[1, 2] = 1.2
     dense_input_tensor[4, 3] = 4.3
-    assert np.isclose(dense_input_tensor, engine.csr_densify8x8(input_tensor)).all()
+    assert np.isclose(dense_input_tensor, densify_csr(input_tensor)).all()
 
     output_tensor = triple_convert_layout_callable(input_tensor)
 
-    assert np.isclose(dense_input_tensor, engine.csc_densify8x8(output_tensor)).all()
+    assert np.isclose(dense_input_tensor, densify_csc(output_tensor)).all()
 
     return
 
@@ -249,7 +238,7 @@ def test_ir_builder_triangle_count():
     sparsity = np.array([False, True], dtype=np.bool8)
     input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
 
-    assert 5 == triangle_count_combined(input_tensor)
+    assert 5 == triangle_count(input_tensor)
 
     return
 
@@ -465,13 +454,13 @@ def test_ir_builder_dnn(
             sparsify_matrix(matrix) for matrix in dense_bias_matrices
         ]
         sparse_input_tensor = sparsify_matrix(dense_input_tensor)
-        sparse_result = dense_neural_network_combined(
+        sparse_result = dense_neural_network(
             sparse_weight_matrices,
             sparse_bias_matrices,
             sparse_input_tensor,
             clamp_threshold,
         )
-        dense_result = engine.csr_densify8x8(sparse_result)
+        dense_result = densify_csr(sparse_result)
 
         with np.printoptions(suppress=True):
             assert np.isclose(
@@ -496,53 +485,6 @@ np.isclose(dense_result, numpy_dense_result)
     return
 
 
-def test_ir_project_and_filter(engine: MlirJitEngine, aliases: AliasMap):
-    # Build Function
-    ir_builder = MLIRFunctionBuilder(
-        "left_project_and_filter",
-        input_types=["tensor<?x?xf64, #CSR64>"],
-        return_types=["tensor<?x?xf64, #CSR64>"],
-        aliases=aliases,
-    )
-    (M,) = ir_builder.inputs
-    M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSC64>")
-    left_projection = ir_builder.graphblas.matrix_multiply(M, M_T, "plus_times")
-    filtered = ir_builder.graphblas.matrix_select(left_projection, "gt0")
-    ir_builder.return_vars(filtered)
-    left_project_and_filter = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
-
-    # Test Results
-    r"""
-    0  1  2  3
-    |\ | /|\ |\
-    | \|/ | \| \
-    5  6  7  8  9
-    """
-    # fmt: off
-    dense_input_tensor = np.array(
-        [  #   0   1   2   3
-            [  1,  0,  0,  0], # 5
-            [ -9,  1,  1,  0], # 6
-            [  0,  0,  1,  0], # 7
-            [  0,  0,  1,  1], # 8
-            [  0,  0,  0, -9], # 9
-        ],
-        dtype=np.float64,
-    )
-    # fmt: on
-    input_tensor = sparsify_array(dense_input_tensor, [False, True])
-
-    result = left_project_and_filter(input_tensor)
-    dense_result = engine.csr_densify5x5(result)
-
-    expected_dense_result = dense_input_tensor @ dense_input_tensor.T
-    expected_dense_result[expected_dense_result < 0] = 0
-
-    assert np.all(dense_result == expected_dense_result)
-
-    return
-
-
 ARGMINMAX_CASES = [
     # np.array([0], dtype=np.int32), # TODO do we care about this case?
     np.array([10, 15, 3, 11], dtype=np.int32),
@@ -563,7 +505,7 @@ def test_ir_builder_vector_argminmax(
     # Build Function
     ir_builder = MLIRFunctionBuilder(
         "vector_arg_min_and_max",
-        input_types=["tensor<?xi32, #SparseVec64>"],
+        input_types=["tensor<?xi32, #CV64>"],
         return_types=["index", "index", "index", "index"],
         aliases=aliases,
     )
@@ -598,3 +540,455 @@ def test_ir_builder_vector_argminmax(
     assert result_arg_max == np.argmax(dwimmed_dense_input_tensor)
 
     return
+
+
+def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "gt_thunk",
+        input_types=["tensor<?x?xf64, #CSR64>", "f64"],
+        return_types=["tensor<?x?xf64, #CSR64>"],
+        aliases=aliases,
+    )
+    M, threshold = ir_builder.inputs
+    twelve_scalar = ir_builder.constant(12, "f64")
+    thirty_four_scalar = ir_builder.constant(34, "f64")
+    M2 = ir_builder.graphblas.apply(M, "div", left=twelve_scalar)
+    M3 = ir_builder.graphblas.apply(M2, "div", right=thirty_four_scalar)
+    filtered = ir_builder.graphblas.matrix_select(M3, [threshold], ["gt"])
+    ir_builder.return_vars(filtered)
+    gt_thunk = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [1, 0, 0, 0, 0],
+            [-9, 2, 3, 0, 0],
+            [0, 0, 4, 0, 0],
+            [0, 0, 5, 6, 0],
+            [0, 0, 0, -9, 0],
+        ],
+        dtype=np.float64,
+    )
+    dense_input_tensor_mask = dense_input_tensor.astype(bool)
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    for threshold in np.unique(dense_input_tensor):
+        result = gt_thunk(input_tensor, threshold)
+        dense_result = densify_csr(result)
+
+        expected_dense_result = np.copy(dense_input_tensor)
+        expected_dense_result[dense_input_tensor_mask] /= 12.0
+        expected_dense_result[dense_input_tensor_mask] **= -1
+        expected_dense_result[dense_input_tensor_mask] /= 34.0
+        expected_dense_result[expected_dense_result <= threshold] = 0
+
+        assert np.all(dense_result == expected_dense_result)
+
+    return
+
+
+REDUCE_TO_VECTOR_CASES = [
+    # pytest.param(
+    #     "tensor<5x4x{scalar_type}, #CSR64>",
+    #     "tensor<5x{scalar_type}, #CV64>",
+    #     "tensor<4x{scalar_type}, #CV64>"
+    #     id="csr_fixed"
+    # ), # TODO make this work
+    # pytest.param(
+    #     "tensor<5x4x{scalar_type}, #CSC64>",
+    #     "tensor<5x{scalar_type}, #CV64>",
+    #     "tensor<4x{scalar_type}, #CV64>"
+    #     id="csc_fixed"
+    # ), # TODO make this work
+    pytest.param(
+        "tensor<?x?x{scalar_type}, #CSR64>",
+        "tensor<?x{scalar_type}, #CV64>",
+        "tensor<?x{scalar_type}, #CV64>",
+        id="csr_arbitrary",
+    ),
+    pytest.param(
+        "tensor<?x?x{scalar_type}, #CSC64>",
+        "tensor<?x{scalar_type}, #CV64>",
+        "tensor<?x{scalar_type}, #CV64>",
+        id="csc_arbitrary",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "input_type_template, reduce_rows_output_type_template, reduce_columns_output_type_template",
+    REDUCE_TO_VECTOR_CASES,
+)
+@pytest.mark.parametrize("mlir_type", ["f64"])  # TODO make this work for other types
+def test_ir_reduce_to_vector(
+    input_type_template: str,
+    reduce_rows_output_type_template: str,
+    reduce_columns_output_type_template: str,
+    mlir_type: str,
+    engine: MlirJitEngine,
+    aliases: AliasMap,
+):
+    input_type = input_type_template.format(scalar_type=mlir_type)
+    reduce_rows_output_type = reduce_rows_output_type_template.format(
+        scalar_type=mlir_type
+    )
+    reduce_columns_output_type = reduce_columns_output_type_template.format(
+        scalar_type=mlir_type
+    )
+    np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
+
+    # Build Functions
+    ir_builder = MLIRFunctionBuilder(
+        f"reduce_func_{mlir_type}",
+        input_types=[input_type],
+        return_types=[
+            reduce_rows_output_type,
+            reduce_columns_output_type,
+            reduce_rows_output_type,
+            reduce_columns_output_type,
+            "tensor<?xi64, #CV64>",
+            "tensor<?xi64, #CV64>",
+        ],
+        aliases=aliases,
+    )
+    (matrix,) = ir_builder.inputs
+
+    reduced_rows = ir_builder.graphblas.reduce_to_vector(matrix, "plus", 1)
+    reduced_columns = ir_builder.graphblas.reduce_to_vector(matrix, "count", 0)
+
+    zero_scalar = ir_builder.constant(0, mlir_type)
+    reduced_rows_clamped = ir_builder.graphblas.apply(
+        reduced_rows, "min", right=zero_scalar
+    )
+    reduced_rows_clamped = ir_builder.graphblas.apply(reduced_rows_clamped, "identity")
+
+    reduced_columns_abs = ir_builder.graphblas.apply(reduced_columns, "abs")
+    reduced_columns_abs = ir_builder.graphblas.apply(reduced_columns_abs, "identity")
+    reduced_columns_negative_abs = ir_builder.graphblas.apply(reduced_columns, "ainv")
+    reduced_columns_negative_abs = ir_builder.graphblas.apply(
+        reduced_columns_negative_abs, "identity"
+    )
+
+    reduced_rows_argmin = ir_builder.graphblas.reduce_to_vector(matrix, "argmin", 1)
+    reduced_columns_argmax = ir_builder.graphblas.reduce_to_vector(matrix, "argmax", 0)
+
+    ir_builder.return_vars(
+        reduced_rows,
+        reduced_columns,
+        reduced_rows_clamped,
+        reduced_columns_negative_abs,
+        reduced_rows_argmin,
+        reduced_columns_argmax,
+    )
+    reduce_func = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [1, 0, 0, 0],
+            [-2, 0, 3, -4],
+            [0, 0, 0, 0],
+            [0, 0, 5, -6],
+            [0, -7, 0, 8],
+        ],
+        dtype=np_type,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+    input_type_is_csc = [1, 0] == SparseTensorType.parse(
+        input_type, aliases
+    ).encoding.ordering
+    if input_type_is_csc:
+        input_tensor = engine.csr_to_csc(input_tensor)
+
+    (
+        reduced_rows,
+        reduced_columns,
+        reduced_rows_clamped,
+        reduced_columns_negative_abs,
+        reduced_rows_argmin,
+        reduced_columns_argmax,
+    ) = reduce_func(input_tensor)
+
+    reduced_rows = densify_vector(reduced_rows)
+    reduced_columns = densify_vector(reduced_columns)
+    reduced_rows_clamped = densify_vector(reduced_rows_clamped)
+    reduced_columns_negative_abs = densify_vector(reduced_columns_negative_abs)
+    reduced_rows_argmin = densify_vector(reduced_rows_argmin)
+    reduced_columns_argmax = densify_vector(reduced_columns_argmax)
+
+    expected_reduced_rows = dense_input_tensor.sum(axis=1)
+    expected_reduced_columns = (
+        dense_input_tensor.astype(bool).sum(axis=0).astype(np_type)
+    )
+
+    expected_reduced_rows_clamped = np.copy(expected_reduced_rows)
+    expected_reduced_rows_clamped[expected_reduced_rows_clamped > 0] = 0
+
+    expected_reduced_columns_negative_abs = -np.abs(expected_reduced_columns)
+
+    M = dense_input_tensor.copy()
+    M[dense_input_tensor == 0] = dense_input_tensor.max() + 1
+    expected_reduced_rows_argmin = np.argmin(M, axis=1)
+
+    M = dense_input_tensor.copy()
+    M[dense_input_tensor == 0] = dense_input_tensor.min() - 1
+    expected_reduced_columns_argmax = np.argmax(M, axis=0)
+
+    assert np.all(reduced_rows == expected_reduced_rows)
+    assert np.all(reduced_columns == expected_reduced_columns)
+    assert np.all(reduced_rows_clamped == expected_reduced_rows_clamped)
+    assert np.all(reduced_columns_negative_abs == expected_reduced_columns_negative_abs)
+    assert np.all(reduced_rows_argmin == expected_reduced_rows_argmin)
+    assert np.all(reduced_columns_argmax == expected_reduced_columns_argmax)
+
+    return
+
+
+DIAG_CASES = [
+    # pytest.param(
+    #     "tensor<4x4x{scalar_type}, #CSR64>",
+    #     "tensor<4x{scalar_type}, #CV64>",
+    #     id="csr_fixed"
+    # ), # TODO make this work
+    # pytest.param(
+    #     "tensor<4x4x{scalar_type}, #CSC64>",
+    #     "tensor<4x{scalar_type}, #CV64>",
+    #     id="csc_fixed"
+    # ), # TODO make this work
+    pytest.param(
+        "tensor<?x?x{scalar_type}, #CSR64>",
+        "tensor<?x{scalar_type}, #CV64>",
+        id="csr_arbitrary",
+    ),
+    pytest.param(
+        "tensor<?x?x{scalar_type}, #CSC64>",
+        "tensor<?x{scalar_type}, #CV64>",
+        id="csc_arbitrary",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "matrix_type_template, vector_type_template",
+    DIAG_CASES,
+)
+@pytest.mark.parametrize("mlir_type", ["f64"])  # TODO make this work for other types
+def test_ir_diag(
+    matrix_type_template: str,
+    vector_type_template: str,
+    mlir_type: str,
+    engine: MlirJitEngine,
+    aliases: AliasMap,
+):
+    matrix_type = matrix_type_template.format(scalar_type=mlir_type)
+    vector_type = vector_type_template.format(scalar_type=mlir_type)
+    np_type = MLIR_TYPE_TO_NP_TYPE[mlir_type]
+
+    # Build Functions
+    ir_builder = MLIRFunctionBuilder(
+        f"diag_func_{mlir_type}",
+        input_types=[vector_type, matrix_type],
+        return_types=[
+            matrix_type,
+            vector_type,
+        ],
+        aliases=aliases,
+    )
+    (input_vector, input_matrix) = ir_builder.inputs
+
+    output_matrix = ir_builder.graphblas.diag(input_vector, matrix_type)
+    output_vector = ir_builder.graphblas.diag(input_matrix, vector_type)
+    ir_builder.return_vars(output_matrix, output_vector)
+    diag_func = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    dense_input_vector = np.array(
+        [0, 0, 0, 1, 0, -2, 0, 0],
+        dtype=np_type,
+    )
+    input_vector = sparsify_array(dense_input_vector, [True])
+    dense_input_matrix = np.array(
+        [
+            [0, 7, 7, 0, 7],
+            [0, 1, 7, 0, 0],
+            [0, 1, 0, 7, 0],
+            [0, 7, 0, 2, 0],
+            [7, 7, 0, 0, 0],
+        ],
+        dtype=np_type,
+    )
+    input_matrix = sparsify_array(dense_input_matrix, [False, True])
+    matrix_type_is_csc = [1, 0] == SparseTensorType.parse(
+        matrix_type, aliases
+    ).encoding.ordering
+    if matrix_type_is_csc:
+        input_matrix = engine.csr_to_csc(input_matrix)
+
+    output_matrix, output_vector = diag_func(input_vector, input_matrix)
+
+    if matrix_type_is_csc:
+        output_matrix = densify_csc(output_matrix)
+    else:
+        output_matrix = densify_csr(output_matrix)
+    output_vector = densify_vector(output_vector)
+
+    expected_output_matrix = np.diagflat(dense_input_vector)
+    expected_output_vector = np.diag(dense_input_matrix)
+
+    assert np.all(expected_output_matrix == output_matrix)
+    assert np.all(expected_output_vector == output_vector)
+
+    return
+
+
+def test_ir_select_random(engine: MlirJitEngine, aliases: AliasMap):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "test_select_random",
+        input_types=["tensor<?x?xf64, #CSR64>", "i64", "i64"],
+        return_types=["tensor<?x?xf64, #CSR64>"],
+        aliases=aliases,
+    )
+    M, n, context = ir_builder.inputs
+    filtered = ir_builder.graphblas.matrix_select_random(
+        M, n, context, choose_n="choose_first"
+    )
+    ir_builder.return_vars(filtered)
+    test_select_random = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [1, 0, 0, 0, 0],
+            [-9, 2, 3, 0, 0],
+            [0, 0, 4, 1, 1],
+            [0, 0, 5, 6, 0],
+            [0, 0, 0, -9, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    result = test_select_random(input_tensor, 2, 0xB00)
+    dense_result = densify_csr(result)
+
+    # choose_first always selects the first N elements on the row
+    expected_output_tensor = np.array(
+        [
+            [1, 0, 0, 0, 0],
+            [-9, 2, 0, 0, 0],
+            [0, 0, 4, 1, 0],
+            [0, 0, 5, 6, 0],
+            [0, 0, 0, -9, 0],
+        ],
+        dtype=np.float64,
+    )
+
+    np.testing.assert_equal(expected_output_tensor, dense_result)
+
+
+def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "test_select_random_uniform",
+        input_types=["tensor<?x?xf64, #CSR64>", "i64", "!llvm.ptr<i8>"],
+        return_types=["tensor<?x?xf64, #CSR64>"],
+        aliases=aliases,
+    )
+    M, n, context = ir_builder.inputs
+    filtered = ir_builder.graphblas.matrix_select_random(
+        M, n, context, choose_n="choose_uniform"
+    )
+    ir_builder.return_vars(filtered)
+    test_select_random_uniform = ir_builder.compile(
+        engine=engine, passes=GRAPHBLAS_PASSES
+    )
+
+    # Test Results
+    dense_input_tensor = np.array(
+        [
+            [1, 0, 0, 0, 0],
+            [-9, 2, 3, 0, 0],
+            [0, 0, 4, 1, 1],
+            [0, 0, 5, 6, 0],
+            [0, 0, 0, -9, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    rng = ChooseUniformContext(seed=2)
+    result = test_select_random_uniform(input_tensor, 2, rng)
+    dense_result = densify_csr(result)
+
+    expected_row_count = np.minimum((dense_input_tensor != 0).sum(axis=1), 2)
+    actual_row_count = (dense_result != 0).sum(axis=1)
+    np.testing.assert_equal(expected_row_count, actual_row_count)
+
+    # check for correct truncation
+    assert len(result.indices[1]) == result.pointers[1][-1]
+    assert len(result.values) == result.pointers[1][-1]
+
+
+def test_ir_select_random_weighted(engine: MlirJitEngine, aliases: AliasMap):
+    # Build Function
+    ir_builder = MLIRFunctionBuilder(
+        "test_select_random_weighted",
+        input_types=["tensor<?x?xf64, #CSR64>", "i64", "!llvm.ptr<i8>"],
+        return_types=["tensor<?x?xf64, #CSR64>"],
+        aliases=aliases,
+    )
+    M, n, context = ir_builder.inputs
+    filtered = ir_builder.graphblas.matrix_select_random(
+        M, n, context, choose_n="choose_weighted"
+    )
+    ir_builder.return_vars(filtered)
+    test_select_random_weighted = ir_builder.compile(
+        engine=engine, passes=GRAPHBLAS_PASSES
+    )
+
+    # Test Results
+    # for weighted sampling to make sense, weights must all be >= 0
+    dense_input_tensor = np.array(
+        [
+            [1, 0, 0, 0, 0],
+            [1, 2, 4, 0, 0],  # using this row for stats check below
+            [0, 0, 1, 100, 1],
+            [0, 0, 5, 6, 0],
+            [0, 0, 0, 1, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_tensor = sparsify_array(dense_input_tensor, [False, True])
+
+    # basic checks
+    rng = ChooseWeightedContext(seed=2)
+    result = test_select_random_weighted(input_tensor, 2, rng)
+    dense_result = densify_csr(result)
+
+    expected_row_count = np.minimum((dense_input_tensor != 0).sum(axis=1), 2)
+    actual_row_count = (dense_result != 0).sum(axis=1)
+    np.testing.assert_equal(expected_row_count, actual_row_count)
+
+    # rough statistical check of row 1
+    counts = defaultdict(lambda: 0)
+    n = 100
+    for i in range(n):
+        result = test_select_random_weighted(input_tensor, 1, rng)
+        dense_result = densify_csr(result)
+        choice = np.argmax(dense_result[1])
+        counts[choice] += 1
+
+    assert sorted(counts.keys()) == [0, 1, 2]
+    row_1 = dense_input_tensor[1]
+    row_1_sum = row_1.sum()
+    print(counts)
+    for key, actual_count in counts.items():
+        prob = row_1[key] / row_1_sum
+        expected_count = prob * n
+        # binomial standard deviation
+        stddev = (n * prob * (1 - prob)) ** 0.5
+        assert abs(expected_count - actual_count) < (
+            2 * stddev
+        ), f"key: {key}, expected: {expected_count}, actual: {actual_count}, stdev: {stddev}"

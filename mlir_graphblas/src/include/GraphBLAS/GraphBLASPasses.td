@@ -17,6 +17,7 @@ def GraphBLASLowering : Pass<"graphblas-lower", "ModuleOp"> {
   let summary = "TODO add documentation";
   let constructor = "mlir::createGraphBLASLoweringPass()";
   let dependentDialects = [
+    "LLVM::LLVMDialect",
     "linalg::LinalgDialect",
     "AffineDialect",
     "memref::MemRefDialect",

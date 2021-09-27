@@ -26,6 +26,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <iostream>
 
 //// -> MODIFIED
 // forward declaration
@@ -387,7 +388,7 @@ public:
         SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(sizes, this);
         return tensor;
     }
-    // New tensor of dimentions `ndims` (no shape; must use `resize_dim`)
+    // New tensor of dimensions `ndims` (no shape; must use `resize_dim`)
     void *empty(uint64_t ndims) override {
         SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(ndims);
         return tensor;
@@ -744,17 +745,10 @@ IMPL1(MemRef1DI16, sparseValuesI16, int16_t, getValues)
 IMPL1(MemRef1DI8, sparseValuesI8, int8_t, getValues)
 
 /// Releases sparse tensor storage.
-//// --> MODIFIED
-void delSparseVector(void *tensor)
+void delSparseTensor(void *tensor)
 {
   delete static_cast<SparseTensorStorageBase *>(tensor);
 }
-
-void delSparseMatrix(void *tensor)
-{
-  delete static_cast<SparseTensorStorageBase *>(tensor);
-}
-//// <- MODIFIED
 
 /// Helper to get pointer, one per value type.
 PTR(getPtrF64)
@@ -797,75 +791,183 @@ void swap_indices(void *tensor, void *new_indices) {
 void swap_values(void *tensor, void *new_values) {
     static_cast<SparseTensorStorageBase *>(tensor)->swap_values(new_values);
 }
-// Vector versions
-void vector_resize_pointers(void *tensor, uint64_t d, uint64_t size) {
+void resize_pointers(void *tensor, uint64_t d, uint64_t size) {
     static_cast<SparseTensorStorageBase *>(tensor)->resize_pointers(d, size);
 }
-void vector_resize_index(void *tensor, uint64_t d, uint64_t size) {
+void resize_index(void *tensor, uint64_t d, uint64_t size) {
     static_cast<SparseTensorStorageBase *>(tensor)->resize_index(d, size);
 }
-void vector_resize_values(void *tensor, uint64_t size) {
+void resize_values(void *tensor, uint64_t size) {
     static_cast<SparseTensorStorageBase *>(tensor)->resize_values(size);
 }
-void vector_resize_dim(void *tensor, uint64_t d, uint64_t size) {
+void resize_dim(void *tensor, uint64_t d, uint64_t size) {
     static_cast<SparseTensorStorageBase *>(tensor)->resize_dim(d, size);
 }
-void *dup_vector(void *tensor) {
+void *dup_tensor(void *tensor) {
     return static_cast<SparseTensorStorageBase *>(tensor)->dup();
 }
-void *ptr8_to_vector(void *tensor) {
-    return tensor;
-}
-void *vector_to_ptr8(void *tensor) {
-    return tensor;
-}
-void *vector_empty_like(void *tensor) {
+void *empty_like(void *tensor) {
     return static_cast<SparseTensorStorageBase *>(tensor)->empty_like();
 }
-void *vector_empty(void *tensor, uint64_t ndims) {
+void *empty(void *tensor, uint64_t ndims) {
     return static_cast<SparseTensorStorageBase *>(tensor)->empty(ndims);
 }
-// Matrix versions
-void matrix_resize_pointers(void *tensor, uint64_t d, uint64_t size) {
-    static_cast<SparseTensorStorageBase *>(tensor)->resize_pointers(d, size);
-}
-void matrix_resize_index(void *tensor, uint64_t d, uint64_t size) {
-    static_cast<SparseTensorStorageBase *>(tensor)->resize_index(d, size);
-}
-void matrix_resize_values(void *tensor, uint64_t size) {
-    static_cast<SparseTensorStorageBase *>(tensor)->resize_values(size);
-}
-void matrix_resize_dim(void *tensor, uint64_t d, uint64_t size) {
-    static_cast<SparseTensorStorageBase *>(tensor)->resize_dim(d, size);
-}
-void *dup_matrix(void *tensor) {
-    return static_cast<SparseTensorStorageBase *>(tensor)->dup();
-}
-void *ptr8_to_matrix(void *tensor) {
+// Combinations of real types to !llvm.ptr<i8>
+void *matrix_csr_f64_p64i64_to_ptr8(void *tensor) {
     return tensor;
 }
-void *matrix_to_ptr8(void *tensor) {
+void *matrix_csc_f64_p64i64_to_ptr8(void *tensor) {
     return tensor;
 }
-void *cast_csr_to_csx(void *tensor) {
+void *matrix_csr_f32_p64i64_to_ptr8(void *tensor) {
     return tensor;
 }
-void *cast_csc_to_csx(void *tensor) {
+void *matrix_csc_f32_p64i64_to_ptr8(void *tensor) {
     return tensor;
 }
-void *cast_csx_to_csc(void *tensor) {
+void *matrix_csr_i64_p64i64_to_ptr8(void *tensor) {
     return tensor;
 }
-void *cast_csx_to_csr(void *tensor) {
+void *matrix_csc_i64_p64i64_to_ptr8(void *tensor) {
     return tensor;
 }
-void *matrix_empty_like(void *tensor) {
-    return static_cast<SparseTensorStorageBase *>(tensor)->empty_like();
+void *vector_f64_p64i64_to_ptr8(void *tensor) {
+    return tensor;
 }
-void *matrix_empty(void *tensor, uint64_t ndims) {
-    return static_cast<SparseTensorStorageBase *>(tensor)->empty(ndims);
+void *vector_f32_p64i64_to_ptr8(void *tensor) {
+    return tensor;
 }
-
+void *vector_i64_p64i64_to_ptr8(void *tensor) {
+    return tensor;
+}
+void *vector_i32_p64i64_to_ptr8(void *tensor) {
+    return tensor;
+}
+// Combinations of !llvm.ptr<i8> to real types
+void *ptr8_to_matrix_csr_f64_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_matrix_csc_f64_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_matrix_csr_f32_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_matrix_csc_f32_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_matrix_csr_i64_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_matrix_csc_i64_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_vector_f64_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_vector_f32_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_vector_i64_p64i64(void *tensor) {
+    return tensor;
+}
+void *ptr8_to_vector_i32_p64i64(void *tensor) {
+    return tensor;
+}
+// New tensor generic constructors
+void *matrix_prep_size(SparseTensorStorageBase *matrix, uint64_t nrows, uint64_t ncols, bool columnOriented) {
+    matrix->resize_dim(0, nrows);
+    matrix->resize_dim(1, ncols);
+    matrix->resize_pointers(1, (columnOriented ? ncols : nrows) + 1);
+    return matrix;
+}
+void *vector_prep_size(SparseTensorStorageBase *vector, uint64_t size) {
+    vector->resize_dim(0, size);
+    vector->resize_pointers(0, 2);
+    return vector;
+}
+// New matrix specialized constructors
+void *new_matrix_csr_f64_p64i64(uint64_t nrows, uint64_t ncols) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, double>(2);
+    return matrix_prep_size(tensor, nrows, ncols, false);
+}
+void *new_matrix_csc_f64_p64i64(uint64_t nrows, uint64_t ncols) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, double>(2);
+    return matrix_prep_size(tensor, nrows, ncols, true);
+}
+void *new_matrix_csr_f32_p64i64(uint64_t nrows, uint64_t ncols) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, float>(2);
+    return matrix_prep_size(tensor, nrows, ncols, false);
+}
+void *new_matrix_csc_f32_p64i64(uint64_t nrows, uint64_t ncols) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, float>(2);
+    return matrix_prep_size(tensor, nrows, ncols, true);
+}
+void *new_matrix_csr_i64_p64i64(uint64_t nrows, uint64_t ncols) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, int64_t>(2);
+    return matrix_prep_size(tensor, nrows, ncols, false);
+}
+void *new_matrix_csc_i64_p64i64(uint64_t nrows, uint64_t ncols) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, int64_t>(2);
+    return matrix_prep_size(tensor, nrows, ncols, true);
+}
+// New vector specialized constructors
+void *new_vector_f64_p64i64(uint64_t size) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, double>(1);
+    return vector_prep_size(tensor, size);
+}
+void *new_vector_f32_p64i64(uint64_t size) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, float>(1);
+    return vector_prep_size(tensor, size);
+}
+void *new_vector_i64_p64i64(uint64_t size) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, int64_t>(1);
+    return vector_prep_size(tensor, size);
+}
+void *new_vector_i32_p64i64(uint64_t size) {
+    SparseTensorStorageBase *tensor = new SparseTensorStorage<uint64_t, uint64_t, int32_t>(1);
+    return vector_prep_size(tensor, size);
+}
+// Print functions
+void print_int_as_char(int64_t character_int) {
+  char character = (char) character_int;
+  std::cout << character;
+  return;
+}
+void print_index(uint64_t val) {
+  std::cout << val;
+  return;
+}
+void print_i1(bool val) {
+  std::cout << val;
+  return;
+}
+void print_i8(int8_t val) {
+  // must cast since a char is an 8-bit int
+  std::cout << (int16_t)val;
+  return;
+}
+void print_i16(int16_t val) {
+  std::cout << val;
+  return;
+}
+void print_i32(int32_t val) {
+  std::cout << val;
+  return;
+}
+void print_i64(int64_t val) {
+  std::cout << val;
+  return;
+}
+void print_f32(float val) {
+  std::cout << val;
+  return;
+}
+void print_f64(double val) {
+  std::cout << val;
+  return;
+}
+  
 //// <- MODIFIED
 } // extern "C"
 

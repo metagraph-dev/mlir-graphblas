@@ -11,6 +11,7 @@ dependencies:
   - pytest
   - pytest-cov
   - black
+  - clang-tools
 
 # documentation
   - sphinx=3.0.4
@@ -25,6 +26,7 @@ dependencies:
 # dependencies (so setup.py develop doesn't pip install them)
   - metagraph/label/dev::mlir # temp restriction to use metagraph dev label
   - metagraph::pymlir
+  - scipy
   - llvmlite
   - donfig
   - pygments

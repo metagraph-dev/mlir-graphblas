@@ -1,7 +1,9 @@
 import re
+from collections import OrderedDict
+from typing import Sequence
 
 
-class AliasMap(dict):
+class AliasMap(OrderedDict):
     def __setitem__(self, name, type):
         type = Type.find(type, aliases=self)
         super().__setitem__(name, type)
@@ -101,29 +103,92 @@ class MemrefType(Type):
 
 
 class TensorType(Type):
-    _patt = re.compile(r"^tensor<\s*((?:\?x)*)(.+),\s*(#.+)\s*>$")
+    _patt = re.compile(r"^tensor<\s*((?:(?:[^,])*x)*)([^, ]+)\s*>$")
 
-    def __init__(self, rank: int, value_type: Type, encoding: "SparseEncodingType"):
+    def __init__(self, shape: Sequence[int], value_type: Type):
+        shape = tuple(shape)
         if not isinstance(value_type, Type):
             raise TypeError(f"value_type must be a Type, not {type(value_type)}")
-        if not isinstance(encoding, SparseEncodingType):
-            raise TypeError(
-                f"encoding must be a SparseEncodingType, not {type(encoding)}"
-            )
-        self.rank = rank
+        elif not all(isinstance(dim, int) for dim in shape):
+            raise TypeError(f"shape must be a sequence of ints, not {type(shape)}")
+        self.shape = shape
         self.value_type = value_type
-        self.encoding = encoding
 
     def __str__(self):
-        return f"tensor<{'?x'*self.rank}{self.value_type}, {self.encoding}>"
+        shape_string = "x".join("?" if dim == -1 else str(dim) for dim in self.shape)
+        return f"tensor<{shape_string}x{self.value_type}>"
 
     @classmethod
     def parse(cls, text: str, aliases: AliasMap = None):
         if m := cls._patt.match(text):
-            rank = m.group(1).count("?x")
+            dim_strings = m.group(1).split("x")[:-1]
+            if dim_strings == ["*"]:
+                raise NotImplementedError(f"Unranked tensors not currently supported.")
+            elif (
+                any(not s.isdigit() for s in dim_strings if s != "?")
+                or len(dim_strings) == 0
+            ):
+                raise ValueError(f"{repr(text)} does not have a valid shape.")
+            shape = [int(dim) if dim.isdigit() else -1 for dim in dim_strings]
+            value_type = Type.find(m.group(2), aliases=aliases)
+            return TensorType(shape, value_type)
+
+
+class SparseTensorType(Type):
+    _patt = re.compile(r"^tensor<\s*((?:(?:.)*x)*)(.+),\s*(#.+)\s*>$")
+
+    def __init__(
+        self, shape: Sequence[int], value_type: Type, encoding: "SparseEncodingType"
+    ):
+        shape = tuple(shape)
+        if not isinstance(value_type, Type):
+            raise TypeError(f"value_type must be a Type, not {type(value_type)}")
+        elif not isinstance(encoding, SparseEncodingType):
+            raise TypeError(
+                f"encoding must be a SparseEncodingType, not {type(encoding)}"
+            )
+        elif not all(isinstance(dim, int) for dim in shape):
+            raise TypeError(f"shape must be a sequence of ints, not {type(shape)}")
+        self.shape = shape
+        self.value_type = value_type
+        self.encoding = encoding
+
+    def __str__(self):
+        shape_string = "x".join("?" if dim == -1 else str(dim) for dim in self.shape)
+        return f"tensor<{shape_string}x{self.value_type}, {self.encoding}>"
+
+    def to_short_string(self):
+        ret = []
+        if self.encoding.rank == 2:
+            ret.append("matrix")
+            ret.append("csc" if self.encoding.ordering == [1, 0] else "csr")
+        elif self.encoding.rank == 1:
+            ret.append("vector")
+        else:
+            raise ValueError(f"Invalid rank: {self.encoding.rank}")
+        ret.append(str(self.value_type))
+        ret.append(
+            f"p{self.encoding.pointer_bit_width}i{self.encoding.index_bit_width}"
+        )
+        return "_".join(ret)
+
+    @classmethod
+    def parse(cls, text: str, aliases: AliasMap = None):
+        if m := cls._patt.match(text):
+            dim_strings = m.group(1).split("x")[:-1]
+            if dim_strings == ["*"]:
+                raise NotImplementedError(f"Unranked tensors not currently supported.")
+            elif (
+                any(not s.isdigit() for s in dim_strings if s != "?")
+                or len(dim_strings) == 0
+            ):
+                raise ValueError(f"{repr(text)} does not have a valid shape.")
+            shape = [int(dim) if dim.isdigit() else -1 for dim in dim_strings]
+
             value_type = Type.find(m.group(2), aliases=aliases)
             encoding = Type.find(m.group(3), aliases=aliases)
-            return TensorType(rank, value_type, encoding)
+
+            return SparseTensorType(shape, value_type, encoding)
 
 
 class SparseEncodingType(Type):
@@ -152,6 +217,9 @@ class SparseEncodingType(Type):
         return len(self.levels)
 
     def __str__(self):
+        return self.to_pretty_string(multiline=False)
+
+    def to_pretty_string(self, multiline=True):
         internals = []
         if self.levels is not None:
             lvl_str = ", ".join(f'"{lvl}"' for lvl in self.levels)
@@ -164,7 +232,11 @@ class SparseEncodingType(Type):
                 )
         internals.append(f"pointerBitWidth = {self.pointer_bit_width}")
         internals.append(f"indexBitWidth = {self.index_bit_width}")
-        return f"#sparse_tensor.encoding<{{ {', '.join(internals)} }}>"
+        if multiline:
+            internals = ",\n    ".join(internals)
+            return f"#sparse_tensor.encoding<{{\n    {internals}\n}}>"
+        else:
+            return f"#sparse_tensor.encoding<{{ {', '.join(internals)} }}>"
 
     @classmethod
     def parse(cls, text: str, aliases: AliasMap = None):

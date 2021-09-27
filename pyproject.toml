@@ -1,2 +1,8 @@
 [build-system]
 requires = ["setuptools", "wheel", "numpy >= 1.15", "cython"]
+[tool.black]
+extend-exclude = '''
+# A regex preceded with ^/ will apply only to files and directories
+# in the root of the project.
+^/run-clang-format.py  # exclude a file named foo.py in the root of the project (in addition to the defaults)
+'''

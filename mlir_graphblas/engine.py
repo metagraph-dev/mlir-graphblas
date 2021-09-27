@@ -37,23 +37,24 @@ _DIALECT_TYPES = {
     for dialect in mlir.dialects.STANDARD_DIALECTS
 }
 
-_CURRENT_MODULE_DIR = os.path.dirname(__file__)
-_SPARSE_UTILS_SO_FILE_PATTERN = os.path.join(_CURRENT_MODULE_DIR, "SparseUtils*.so")
-_SPARSE_UTILS_SO_FILES = glob.glob(_SPARSE_UTILS_SO_FILE_PATTERN)
-if len(_SPARSE_UTILS_SO_FILES) == 0:
-    # TODO this hard-codes the setup.py option and the location of setup.py
-    raise RuntimeError(
-        f"{_SPARSE_UTILS_SO_FILE_PATTERN} not found. This can typically be solved "
-        f'by running "python setup.py build_ext" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
-    )
-elif len(_SPARSE_UTILS_SO_FILES) > 1:
-    raise RuntimeError(
-        f"Multiple files matching {_SPARSE_UTILS_SO_FILE_PATTERN} found."
-    )
-[_SPARSE_UTILS_SO] = _SPARSE_UTILS_SO_FILES
-llvm.load_library_permanently(
-    _SPARSE_UTILS_SO
-)  # TODO will this cause name collisions with other uses of llvmlite by third-party libraries?
+EXTERNAL_LIBS = []
+for extlib_pattern in ["SparseUtils*.so", "RandomUtils*.so"]:
+    _CURRENT_MODULE_DIR = os.path.dirname(__file__)
+    SO_FILE_PATTERN = os.path.join(_CURRENT_MODULE_DIR, extlib_pattern)
+    SO_FILES = glob.glob(SO_FILE_PATTERN)
+    if len(SO_FILES) == 0:
+        # TODO this hard-codes the setup.py option and the location of setup.py
+        raise RuntimeError(
+            f"{SO_FILE_PATTERN} not found. This can typically be solved "
+            f'by running "python setup.py build_ext" from {os.path.dirname(_CURRENT_MODULE_DIR)}.'
+        )
+    elif len(SO_FILES) > 1:
+        raise RuntimeError(f"Multiple files matching {SO_FILE_PATTERN} found.")
+    [SO_FILE] = SO_FILES
+    llvm.load_library_permanently(
+        SO_FILE
+    )  # TODO will this cause name collisions with other uses of llvmlite by third-party libraries?
+    EXTERNAL_LIBS.append(SO_FILE)
 llvm.initialize()
 llvm.initialize_native_target()
 llvm.initialize_native_asmprinter()
@@ -150,12 +151,11 @@ def return_tensor_to_ctypes(
         else:
             pointer_type = "uint64"
             index_type = "uint64"
-        value_type = {
-            "i32": "int32",
-            "i64": "int64",
-            "f32": "float32",
-            "f64": "float64",
-        }[tensor_type.element_type.type.name]
+
+        if isinstance(tensor_type.element_type, mlir.astnodes.IntegerType):
+            value_type = f"int{tensor_type.element_type.width}"
+        else:
+            value_type = f"float{tensor_type.element_type.type.name[1:]}"
 
         def decoder(arg, ptype=pointer_type, itype=index_type, vtype=value_type) -> int:
             ptr = ctypes.cast(arg, ctypes.c_void_p).value
@@ -358,22 +358,24 @@ def input_llvm_pointer_to_ctypes(
         isinstance(mlir_type.type, mlir.astnodes.IntegerType)
         and int(mlir_type.type.width) == 8
     ):
-        # We blindly assume that an i8 pointer points to a sparse tensor
-        # since MLIR's sparse tensor object isn't supported inside an LLVMPtr
-        # Instead, we pass a ptr<ptr<i8>> and blindly assume it means a list of sparse tensors
+
         type_string = mlir_type.type.dump()
         ctypes_type = LLVM_DIALECT_TYPE_STRING_TO_CTYPES_POINTER_TYPE[type_string]
         ctypes_input_types = [ctypes_type]
 
-        def encoder(arg: MLIRSparseTensor) -> list:
-            # protocol for indicating an object can be interpreted as a MLIRSparseTensor
-            if hasattr(arg, "__mlir_sparse__"):
-                arg = arg.__mlir_sparse__
-            if not isinstance(arg, MLIRSparseTensor):
-                raise TypeError(
-                    f"{repr(arg)} is expected to be an instance of {MLIRSparseTensor.__qualname__}"
-                )
-            return [ctypes.cast(arg.data, ctypes_type)]
+        def encoder(arg) -> list:
+            if isinstance(arg, MLIRSparseTensor):
+                data = arg.data
+            elif hasattr(arg, "__mlir_sparse__"):
+                # if the argument is MLIRSparseTensor compatible, grab that object
+                data = arg.__mlir_sparse__.data
+            elif hasattr(arg, "__mlir_void_ptr__"):
+                # for generic void pointer pass-through
+                data = arg.__mlir_void_ptr__
+            else:
+                raise TypeError(f"Cannot cast object of type {type(arg)} to void*")
+
+            return [ctypes.cast(data, ctypes_type)]
 
     else:
         # Treat the pointer as an array (intended to represent a Python sequence).
@@ -658,7 +660,9 @@ class MlirJitEngine:
         self._engine.run_static_constructors()
 
         if profile:
-            files_to_link = [_SPARSE_UTILS_SO]
+            files_to_link = list(
+                EXTERNAL_LIBS
+            )  # make copy since we are going to append
             # On the first call (globally) to self._engine.add_module,
             # the notify_func is called twice. The first time is on some
             # buffer with no symbols and the second is on the buffer

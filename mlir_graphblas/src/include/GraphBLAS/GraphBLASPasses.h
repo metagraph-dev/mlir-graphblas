@@ -1,5 +1,6 @@
 
-//===- GraphBLASPasses.h - GraphBLAS dialect passes -----------------*- C++ -*-===//
+//===- GraphBLASPasses.h - GraphBLAS dialect passes -----------------*- C++
+//-*-===//
 //
 // TODO add documentation
 //
@@ -14,15 +15,7 @@ namespace mlir {
 std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASLoweringPass();
 std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASOptimizePass();
 std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASStructuralizePass();
-}
-
-//===----------------------------------------------------------------------===//
-// Ops declaration.
-//===----------------------------------------------------------------------===//
-#include "GraphBLAS/GraphBLASOpsEnums.h.inc"
-
-#define GET_OP_CLASSES
-#include "GraphBLAS/GraphBLASOps.h.inc"
+} // namespace mlir
 
 //===----------------------------------------------------------------------===//
 // Registration.

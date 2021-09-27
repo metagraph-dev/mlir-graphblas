@@ -13,6 +13,8 @@ class MLIRCompileError(Exception):
 _default_engine = MlirJitEngine()
 
 _standard_passes = (
+    "--graphblas-structuralize",
+    "--graphblas-optimize",
     "--graphblas-lower",
     "--sparsification",
     "--sparse-tensor-conversion",
@@ -29,6 +31,7 @@ _standard_passes = (
 )
 
 
+# TODO: eliminate this and all functions; extract required pieces into MLIRFunctionBuilder
 class BaseFunction:
     func_name = None
     _compiled = None  # (engine, passes, callable)
@@ -43,6 +46,7 @@ class BaseFunction:
         """
         raise NotImplementedError()
 
+    # TODO: generate these from the aliases and add flag to tersify main body
     MODULE_WRAPPER_TEXT = jinja2.Template(
         """\
 #CSR64 = #sparse_tensor.encoding<{
@@ -59,28 +63,24 @@ class BaseFunction:
   indexBitWidth = 64
 }>
 
-#CSX64 = #sparse_tensor.encoding<{
-  dimLevelType = [ "dense", "compressed" ],
+#CV64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
   pointerBitWidth = 64,
   indexBitWidth = 64
 }>
 
+#map1d = affine_map<(d0)[s0, s1] -> (d0 * s1 + s0)>
+
 module  {
-    func private @cast_csr_to_csx(tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSX64>
-    func private @cast_csc_to_csx(tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSX64>
-    func private @cast_csx_to_csr(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSR64>
-    func private @cast_csx_to_csc(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSC64>
-    
-    func private @ptr8_to_matrix(!llvm.ptr<i8>) -> tensor<?x?xf64, #CSX64>
-    func private @matrix_to_ptr8(tensor<?x?xf64, #CSX64>) -> !llvm.ptr<i8>
-    
-    func private @delSparseMatrix(tensor<?x?xf64, #CSX64>) -> ()
-    func private @dup_matrix(tensor<?x?xf64, #CSX64>) -> tensor<?x?xf64, #CSX64>
+    func private @choose_first(i64, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
+    func private @choose_uniform(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
+    func private @choose_weighted(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()
 
     {{ body }}
 
 }
-        """
+        """,
+        undefined=jinja2.StrictUndefined,
     )
 
     def get_mlir_module(self, make_private=False):
@@ -115,6 +115,7 @@ module  {
 
         engine.add(mlir, passes)
         func = engine[self.func_name]
+        func.builder = self
         self._compiled = (engine, tuple(passes), func)
         return func
 
@@ -170,20 +171,27 @@ class ConvertLayout(BaseFunction):
 
       {% endif %}
       }
-    """
+    """,
+        undefined=jinja2.StrictUndefined,
     )
 
 
 class MatrixSelect(BaseFunction):
     """
     Call signature:
-      matrix_select(input: MLIRSparseTensor) -> MLIRSparseTensor
+      If using a thunk-requiring selector:
+        matrix_select(input: MLIRSparseTensor, thunk: float) -> MLIRSparseTensor
+      Otherwise:
+        matrix_select(input: MLIRSparseTensor) -> MLIRSparseTensor
     """
 
-    _valid_selectors = {"triu", "tril", "gt0"}
+    _valid_selectors = {"triu", "tril", "gt", "ge"}
+    _thunk_requiring_selectors = {"gt", "ge"}
 
     def __init__(self, selector="triu"):
         super().__init__()
+
+        # TODO support multiple selectors
 
         sel = selector.lower()
         if sel not in self._valid_selectors:
@@ -201,15 +209,22 @@ class MatrixSelect(BaseFunction):
             func_name=self.func_name,
             private_func=make_private,
             selector=self.selector,
+            needs_thunk=self.selector in self._thunk_requiring_selectors,
         )
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
-        %output = graphblas.matrix_select %input { selectors = ["{{ selector }}"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+      func {% if private_func %}private {% endif %}@{{ func_name }}(
+          %input: tensor<?x?xf64, #CSR64>
+          {%- if needs_thunk -%}
+          , %thunk: f64
+          {%- endif -%}
+      ) -> tensor<?x?xf64, #CSR64> {
+        %output = graphblas.matrix_select %input{% if needs_thunk %}, %thunk{% endif %} { selectors = ["{{ selector }}"] } : tensor<?x?xf64, #CSR64>{% if needs_thunk %}, f64{% endif %} to tensor<?x?xf64, #CSR64>
         return %output : tensor<?x?xf64, #CSR64>
       }
-    """
+    """,
+        undefined=jinja2.StrictUndefined,
     )
 
 
@@ -219,12 +234,12 @@ class MatrixReduceToScalar(BaseFunction):
       matrix_reduce_to_scalar(input: MLIRSparseTensor) -> float64
     """
 
-    _valid_aggregators = {"sum"}
+    _valid_aggregators = {"plus", "count"}
     _agg_aliases = {
-        "plus": "sum",
+        "sum": "plus",
     }
 
-    def __init__(self, aggregator="sum"):
+    def __init__(self, aggregator="plus"):
         super().__init__()
 
         agg = aggregator.lower()
@@ -247,23 +262,29 @@ class MatrixReduceToScalar(BaseFunction):
     mlir_template = jinja2.Template(
         """
       func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>) -> f64 {
-        %total = graphblas.matrix_reduce_to_scalar %input { aggregator = "{{ agg }}" } : tensor<?x?xf64, #CSR64> to f64
+        %total = graphblas.reduce_to_scalar %input { aggregator = "{{ agg }}" } : tensor<?x?xf64, #CSR64> to f64
 
         return %total : f64
       }
-    """
+    """,
+        undefined=jinja2.StrictUndefined,
     )
 
 
-class MatrixApply(BaseFunction):
+class Apply(BaseFunction):
     """
     Call signature:
-      matrix_apply(input: MLIRSparseTensor, thunk: f64) -> MLIRSparseTensor
+      If using a thunk-requiring operator:
+        apply(input: MLIRSparseTensor, thunk: f64) -> MLIRSparseTensor
+      If not using a thunk-requiring operator:
+        apply(input: MLIRSparseTensor) -> MLIRSparseTensor
     """
 
-    _valid_operators = {"min"}
+    _unary_operators = {"abs", "minv", "ainv", "identity"}
+    _binary_operators = {"min", "div", "fill"}
+    _valid_operators = _unary_operators | _binary_operators
 
-    def __init__(self, operator="min"):
+    def __init__(self, operator="abs", thunk_is_left_operand=False):
         super().__init__()
 
         op = operator.lower()
@@ -272,24 +293,39 @@ class MatrixApply(BaseFunction):
                 f"Invalid operator: {operator}, must be one of {list(self._valid_operators)}"
             )
 
-        self.func_name = f"matrix_apply_{op}"
+        self.func_name = f"apply_{op}"
         self.op = op
+        self.thunk_is_left_operand = thunk_is_left_operand
 
     def get_mlir(self, *, make_private=True):
         return self.mlir_template.render(
             func_name=self.func_name,
             private_func=make_private,
             op=self.op,
+            needs_thunk=self.op in self._binary_operators,
+            thunk_is_left_operand=self.thunk_is_left_operand,
         )
 
     mlir_template = jinja2.Template(
         """
-      func {% if private_func %}private {% endif %}@{{ func_name }}(%input: tensor<?x?xf64, #CSR64>, %thunk: f64) -> tensor<?x?xf64, #CSR64> {
-        %output = graphblas.matrix_apply %input, %thunk { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
+      func {% if private_func %}private {% endif %}@{{ func_name }}(
+          %input: tensor<?x?xf64, #CSR64>
+          {%- if needs_thunk -%}
+          , %thunk: f64
+          {%- endif -%}
+      ) -> tensor<?x?xf64, #CSR64> {
+        {% if not needs_thunk %}
+        %output = graphblas.apply %input { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+        {% elif thunk_is_left_operand %}
+        %output = graphblas.apply %thunk, %input { apply_operator = "{{ op }}" } : (f64, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+        {% else %}
+        %output = graphblas.apply %input, %thunk { apply_operator = "{{ op }}" } : (tensor<?x?xf64, #CSR64>, f64) to tensor<?x?xf64, #CSR64>
+        {% endif %}
 
         return %output : tensor<?x?xf64, #CSR64>
       }
-    """
+    """,
+        undefined=jinja2.StrictUndefined,
     )
 
 
@@ -349,5 +385,6 @@ class MatrixMultiply(BaseFunction):
 
         return %output : tensor<?x?xf64, #CSR64>
       }
-    """
+    """,
+        undefined=jinja2.StrictUndefined,
     )

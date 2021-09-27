@@ -1,9 +1,20 @@
 """
 Various ops written in MLIR which implement dialects or other utilities
 """
+
+import itertools
+
 from typing import Tuple, Sequence, Optional, Union
 from .mlir_builder import MLIRFunctionBuilder, MLIRVar
-from .types import MemrefType, TensorType, SparseEncodingType, IntType
+from .types import (
+    MemrefType,
+    TensorType,
+    SparseTensorType,
+    SparseEncodingType,
+    IndexType,
+    IntType,
+    LlvmPtrType,
+)
 
 
 class BaseOp:
@@ -62,6 +73,18 @@ class IndexCastOp(BaseOp):
         )
 
 
+class SignedIntToFloatOp(BaseOp):
+    name = "sitofp"
+
+    @classmethod
+    def call(cls, irbuilder, value: MLIRVar, result_type):
+        cls.ensure_mlirvar(value)
+        ret_val = irbuilder.new_var(result_type)
+        return ret_val, (
+            f"{ret_val.assign} = std.sitofp {value} : {value.type} to {ret_val.type}"
+        )
+
+
 class AddIOp(BaseOp):
     name = "addi"
 
@@ -73,6 +96,19 @@ class AddIOp(BaseOp):
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
         return ret_val, (f"{ret_val.assign} = addi {lhs}, {rhs} : {lhs.type}")
+
+
+class SubIOp(BaseOp):
+    name = "subi"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var(lhs.type)
+        return ret_val, (f"{ret_val.assign} = subi {lhs}, {rhs} : {lhs.type}")
 
 
 class MulIOp(BaseOp):
@@ -101,6 +137,19 @@ class AddFOp(BaseOp):
         return ret_val, (f"{ret_val.assign} = addf {lhs}, {rhs} : {lhs.type}")
 
 
+class SubFOp(BaseOp):
+    name = "subf"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var(lhs.type)
+        return ret_val, (f"{ret_val.assign} = subf {lhs}, {rhs} : {lhs.type}")
+
+
 class MulFOp(BaseOp):
     name = "mulf"
 
@@ -112,6 +161,19 @@ class MulFOp(BaseOp):
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
         return ret_val, (f"{ret_val.assign} = mulf {lhs}, {rhs} : {lhs.type}")
+
+
+class DivFOp(BaseOp):
+    name = "divf"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var(lhs.type)
+        return ret_val, (f"{ret_val.assign} = divf {lhs}, {rhs} : {lhs.type}")
 
 
 class SelectOp(BaseOp):
@@ -128,6 +190,56 @@ class SelectOp(BaseOp):
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
         return ret_val, (f"{ret_val.assign} = select {cond}, {lhs}, {rhs}: {lhs.type}")
+
+
+class CmpIOp(BaseOp):
+    name = "cmpi"
+    # fmt: off
+    allowed_cmpstr = {
+        "eq", "ne",
+        "slt", "sle", "sgt", "sge",
+        "ult", "ule", "ugt", "uge"
+    }
+    # fmt: on
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs, cmpstr):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        cmpstr = cmpstr.lower()
+        if cmpstr not in cls.allowed_cmpstr:
+            raise ValueError(f"Unknown cmpstr: {cmpstr}")
+        ret_val = irbuilder.new_var("i1")
+        return ret_val, (
+            f'{ret_val.assign} = cmpi "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
+        )
+
+
+class CmpFOp(BaseOp):
+    name = "cmpf"
+    # fmt: off
+    # See https://llvm.org/docs/LangRef.html#fcmp-instruction for explanation
+    allowed_cmpstr = {
+        "false", "oeq", "ogt", "oge", "olt", "ole", "one", "ord",
+        "ueq", "ugt", "uge", "ult", "ule", "une", "uno", "true"
+    }
+    # fmt: on
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs, cmpstr):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        cmpstr = cmpstr.lower()
+        if cmpstr not in cls.allowed_cmpstr:
+            raise ValueError(f"Unknown cmpstr: {cmpstr}")
+        ret_val = irbuilder.new_var("i1")
+        return ret_val, (
+            f'{ret_val.assign} = cmpf "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
+        )
 
 
 ###########################################
@@ -158,6 +270,9 @@ class MemrefStoreOp(BaseOp):
         indices: Sequence[Union[MLIRVar, int]],
     ):
         cls.ensure_mlirvar(destination)
+        # Be forgiving if a single index is provided
+        if not hasattr(indices, "__len__"):
+            indices = [indices]
         indices_string = ", ".join(map(str, indices))
         return None, (
             f"memref.store {value}, {destination}[{indices_string}] : {destination.type}"
@@ -173,10 +288,52 @@ class MemrefLoadOp(BaseOp):
         cls, irbuilder, input_memref: MLIRVar, indices: Sequence[Union[MLIRVar, int]]
     ):
         cls.ensure_mlirvar(input_memref, MemrefType)
+        # Be forgiving if a single index is provided
+        if not hasattr(indices, "__len__"):
+            indices = [indices]
         indices_string = ", ".join(map(str, indices))
         ret_val = irbuilder.new_var(input_memref.type.value_type)
         return ret_val, (
             f"{ret_val.assign} = memref.load {input_memref}[{indices_string}] : {input_memref.type}"
+        )
+
+
+###########################################
+# tensor ops
+###########################################
+
+
+class TensorDimOp(BaseOp):
+    dialect = "tensor"
+    name = "dim"
+
+    @classmethod
+    def call(cls, irbuilder, input_tensor: MLIRVar, index: Union[MLIRVar, int]):
+        cls.ensure_mlirvar(input_tensor, (TensorType, SparseTensorType))
+        if not isinstance(index, MLIRVar):
+            index_value = index
+            index = irbuilder.new_var("i64")
+            priors = f"{index.assign} = constant {index_value} : i64\n"
+        else:
+            priors = ""
+        ret_val = irbuilder.new_var("index")
+        return ret_val, priors + (
+            f"{ret_val.assign} = tensor.dim {input_tensor}, {index} : "
+            f"{input_tensor.type}"
+        )
+
+
+class TensorExtractOp(BaseOp):
+    dialect = "tensor"
+    name = "extract"
+
+    @classmethod
+    def call(cls, irbuilder, input, dim):
+        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(dim, IndexType)
+        ret_val = irbuilder.new_var(input.type.value_type)
+        return ret_val, (
+            f"{ret_val.assign} = tensor.extract {input}[{dim}] : {input.type}"
         )
 
 
@@ -204,10 +361,59 @@ class LLVMLoadOp(BaseOp):
     name = "load"
 
     @classmethod
-    def call(cls, irbuilder, pointer, return_type):
+    def call(cls, irbuilder, pointer, return_type: str):
         cls.ensure_mlirvar(pointer)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (f"{ret_val.assign} = llvm.load {pointer} : {pointer.type}")
+
+
+###########################################
+# sparse_tensor ops
+###########################################
+
+
+class SparseTensorPointers(BaseOp):
+    dialect = "sparse_tensor"
+    name = "pointers"
+
+    @classmethod
+    def call(cls, irbuilder, input, dim):
+        cls.ensure_mlirvar(input, SparseTensorType)
+        cls.ensure_mlirvar(dim, IndexType)
+        ret_val = irbuilder.new_var("memref<?xi64>")
+        return ret_val, (
+            f"{ret_val.assign} = sparse_tensor.pointers {input}, {dim} : "
+            f"{input.type} to memref<?xi64>"
+        )
+
+
+class SparseTensorIndices(BaseOp):
+    dialect = "sparse_tensor"
+    name = "indices"
+
+    @classmethod
+    def call(cls, irbuilder, input, dim):
+        cls.ensure_mlirvar(input, SparseTensorType)
+        cls.ensure_mlirvar(dim, IndexType)
+        ret_val = irbuilder.new_var("memref<?xi64>")
+        return ret_val, (
+            f"{ret_val.assign} = sparse_tensor.indices {input}, {dim} : "
+            f"{input.type} to memref<?xi64>"
+        )
+
+
+class SparseTensorValues(BaseOp):
+    dialect = "sparse_tensor"
+    name = "values"
+
+    @classmethod
+    def call(cls, irbuilder, input):
+        cls.ensure_mlirvar(input, SparseTensorType)
+        ret_val = irbuilder.new_var(f"memref<?x{input.type.value_type}>")
+        return ret_val, (
+            f"{ret_val.assign} = sparse_tensor.values {input} : "
+            f"{input.type} to memref<?x{input.type.value_type}>"
+        )
 
 
 ###########################################
@@ -221,7 +427,7 @@ class GraphBLAS_Size(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var("index")
         return ret_val, (f"{ret_val.assign} = graphblas.size {input} : {input.type}")
 
@@ -232,7 +438,7 @@ class GraphBLAS_NumRows(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var("index")
         return ret_val, (
             f"{ret_val.assign} = graphblas.num_rows {input} : {input.type}"
@@ -245,7 +451,7 @@ class GraphBLAS_NumCols(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var("index")
         return ret_val, (
             f"{ret_val.assign} = graphblas.num_cols {input} : {input.type}"
@@ -258,7 +464,7 @@ class GraphBLAS_NumVals(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var("index")
         return ret_val, (
             f"{ret_val.assign} = graphblas.num_vals {input} : {input.type}"
@@ -271,7 +477,7 @@ class GraphBLAS_Dup(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var(input.type)
         return ret_val, (f"{ret_val.assign} = graphblas.dup {input} : {input.type}")
 
@@ -281,8 +487,8 @@ class GraphBLAS_ConvertLayout(BaseOp):
     name = "convert_layout"
 
     @classmethod
-    def call(cls, irbuilder, input, return_type):
-        cls.ensure_mlirvar(input, TensorType)
+    def call(cls, irbuilder, input, return_type: str):
+        cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.convert_layout {input} : "
@@ -295,8 +501,8 @@ class GraphBLAS_Transpose(BaseOp):
     name = "transpose"
 
     @classmethod
-    def call(cls, irbuilder, input, return_type):
-        cls.ensure_mlirvar(input, TensorType)
+    def call(cls, irbuilder, input, return_type: str):
+        cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.transpose {input} : "
@@ -304,15 +510,64 @@ class GraphBLAS_Transpose(BaseOp):
         )
 
 
+class GraphBLAS_Union(BaseOp):
+    dialect = "graphblas"
+    name = "union"
+    allowed_operators = {"plus", "times", "min", "max", "first", "second"}
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs, operator, return_type: str):
+        cls.ensure_mlirvar(lhs, SparseTensorType)
+        cls.ensure_mlirvar(rhs, SparseTensorType)
+        if operator not in cls.allowed_operators:
+            raise TypeError(
+                f"Illegal operator: {operator}, must be one of {cls.allowed_operators}"
+            )
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f'{ret_val.assign} = graphblas.union {lhs}, {rhs} {{ union_operator = "{operator}" }} :'
+            f"({lhs.type}, {rhs.type}) to {ret_val.type}"
+        )
+
+
+class GraphBLAS_Intersect(BaseOp):
+    dialect = "graphblas"
+    name = "intersect"
+    allowed_operators = {
+        "plus",
+        "minus",
+        "times",
+        "div",
+        "min",
+        "max",
+        "first",
+        "second",
+    }
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs, operator, return_type: str):
+        cls.ensure_mlirvar(lhs, SparseTensorType)
+        cls.ensure_mlirvar(rhs, SparseTensorType)
+        if operator not in cls.allowed_operators:
+            raise TypeError(
+                f"Illegal operator: {operator}, must be one of {cls.allowed_operators}"
+            )
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f'{ret_val.assign} = graphblas.intersect {lhs}, {rhs} {{ intersect_operator = "{operator}" }} :'
+            f"({lhs.type}, {rhs.type}) to {ret_val.type}"
+        )
+
+
 class GraphBLAS_Update(BaseOp):
     dialect = "graphblas"
     name = "update"
-    allowed_accumulators = {"plus", "min"}
+    allowed_accumulators = {"plus", "times", "min", "max"}
 
     @classmethod
     def call(cls, irbuilder, input, output, accumulate="plus"):
-        cls.ensure_mlirvar(input, TensorType)
-        cls.ensure_mlirvar(output, TensorType)
+        cls.ensure_mlirvar(input, SparseTensorType)
+        cls.ensure_mlirvar(output, SparseTensorType)
         if accumulate not in cls.allowed_accumulators:
             raise TypeError(
                 f"Illegal accumulator: {accumulate}, must be one of {cls.allowed_accumulators}"
@@ -330,8 +585,8 @@ class GraphBLAS_Equal(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, lhs, rhs):
-        cls.ensure_mlirvar(lhs, TensorType)
-        cls.ensure_mlirvar(rhs, TensorType)
+        cls.ensure_mlirvar(lhs, SparseTensorType)
+        cls.ensure_mlirvar(rhs, SparseTensorType)
         ret_val = irbuilder.new_var("i1")
         return ret_val, (
             f"{ret_val.assign} = graphblas.equal {lhs}, {rhs} : {lhs.type}, {rhs.type}"
@@ -341,25 +596,77 @@ class GraphBLAS_Equal(BaseOp):
 class GraphBLAS_MatrixSelect(BaseOp):
     dialect = "graphblas"
     name = "matrix_select"
+    allowed_selectors = {"triu", "tril", "gt", "ge"}
 
     @classmethod
-    def call(cls, irbuilder, input, selector):
-        cls.ensure_mlirvar(input, TensorType)
+    def call(
+        cls, irbuilder, input, thunks: Sequence[MLIRVar], selectors: Sequence[str]
+    ):
+        cls.ensure_mlirvar(input, SparseTensorType)
+        # Be forgiving if a single thunk or single selector is provided
+        if not hasattr(thunks, "__len__"):
+            thunks = [thunks]
+        if isinstance(selectors, str):
+            selectors = [selectors]
+
+        for thunk in thunks:
+            cls.ensure_mlirvar(thunk)
+        for selector in selectors:
+            if selector not in cls.allowed_selectors:
+                raise TypeError(
+                    f"Illegal selector: {selector}, must be one of {cls.allowed_selectors}"
+                )
         ret_val = irbuilder.new_var(input.type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_select {input} "
-            f'{{ selectors = ["{selector}"] }} : {input.type} to {input.type}'
+            + "".join(f", {thunk}" for thunk in thunks)
+            + f"{{ selectors = ["
+            + ", ".join(f'"{selector}"' for selector in selectors)
+            + f"] }} : {input.type}"
+            + "".join(f", {thunk.type}" for thunk in thunks)
+            + f" to {input.type}"
         )
 
 
-class GraphBLAS_MatrixReduceToScalar(BaseOp):
+class GraphBLAS_ReduceToVector(BaseOp):
     dialect = "graphblas"
-    name = "matrix_reduce_to_scalar"
-    allowed_aggregators = {"sum"}
+    name = "reduce_to_vector"
+    allowed_aggregators = {"plus", "count", "argmin", "argmax"}
+
+    @classmethod
+    def call(cls, irbuilder, input, aggregator, axis):
+        cls.ensure_mlirvar(input, SparseTensorType)
+        if aggregator not in cls.allowed_aggregators:
+            raise TypeError(
+                f"Illegal aggregator: {aggregator}, must be one of {cls.allowed_aggregators}"
+            )
+        elif axis not in (0, 1):
+            raise TypeError(f"Illegal axis: {axis}, must be 0 or 1")
+        sparse_vec_encoding = SparseEncodingType(
+            ["compressed"],
+            None,
+            input.type.encoding.pointer_bit_width,
+            input.type.encoding.index_bit_width,
+        )
+        return_element_type = (
+            IntType(64) if aggregator in ("argmin", "argmax") else input.type.value_type
+        )
+        return_type = SparseTensorType([-1], return_element_type, sparse_vec_encoding)
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.reduce_to_vector {input} "
+            f'{{ aggregator = "{aggregator}" , axis = {axis} }} : {input.type} to {ret_val.type}'
+        )
+
+
+class GraphBLAS_ReduceToScalar(BaseOp):
+    dialect = "graphblas"
+    name = "reduce_to_scalar"
+    allowed_aggregators = {"plus", "count", "argmin", "argmax"}
 
     @classmethod
     def call(cls, irbuilder, input, aggregator):
-        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(input, SparseTensorType)
         if aggregator not in cls.allowed_aggregators:
             raise TypeError(
                 f"Illegal aggregator: {aggregator}, must be one of {cls.allowed_aggregators}"
@@ -368,55 +675,90 @@ class GraphBLAS_MatrixReduceToScalar(BaseOp):
         # TODO: return_type might be influenced by future allowable aggregators
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{ret_val.assign} = graphblas.matrix_reduce_to_scalar {input} "
+            f"{ret_val.assign} = graphblas.reduce_to_scalar {input} "
             f'{{ aggregator = "{aggregator}" }} : {input.type} to {ret_val.type}'
         )
 
 
-class GraphBLAS_MatrixApply(BaseOp):
+class GraphBLAS_Apply(BaseOp):
     dialect = "graphblas"
-    name = "matrix_apply"
-    allowed_ops = {"min"}
+    name = "apply"
+    allowed_unary_ops = {"abs", "minv", "ainv", "identity"}
+    allowed_binary_ops = {"min", "div", "fill"}
+    allowed_ops = allowed_unary_ops | allowed_binary_ops
 
     @classmethod
-    def call(cls, irbuilder, input, apply_op, thunk):
-        cls.ensure_mlirvar(input, TensorType)
-        cls.ensure_mlirvar(thunk)
+    def call(cls, irbuilder, input, apply_op, *, left=None, right=None):
+        cls.ensure_mlirvar(input, SparseTensorType)
         if apply_op not in cls.allowed_ops:
             raise TypeError(
                 f"Illegal apply_op: {apply_op}, must be one of {cls.allowed_ops}"
             )
-        return_type = input.type
+
         # TODO: return_type might be influenced by future allowable ops
+        return_type = input.type
         ret_val = irbuilder.new_var(return_type)
-        return ret_val, (
-            f"{ret_val.assign} = graphblas.matrix_apply {input}, {thunk} "
-            f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {thunk.type}) to {ret_val.type}'
-        )
+
+        if apply_op in cls.allowed_binary_ops:
+            if left is not None:
+                if right is not None:
+                    raise TypeError("Exactly one thunk allowed.")
+                cls.ensure_mlirvar(left)
+                code = (
+                    f"{ret_val.assign} = graphblas.apply {left}, {input} "
+                    f'{{ apply_operator = "{apply_op}" }} : ({left.type}, {input.type}) to {ret_val.type}'
+                )
+            elif right is not None:
+                cls.ensure_mlirvar(right)
+                code = (
+                    f"{ret_val.assign} = graphblas.apply {input}, {right} "
+                    f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {right.type}) to {ret_val.type}'
+                )
+            else:
+                raise TypeError("A thunk is required.")
+
+        elif apply_op in cls.allowed_unary_ops:
+            if left is not None or right is not None:
+                raise TypeError(f"apply_op misuse: {apply_op} cannot take a thunk.")
+            code = (
+                f"{ret_val.assign} = graphblas.apply {input} "
+                f'{{ apply_operator = "{apply_op}" }} : ({input.type}) to {ret_val.type}'
+            )
+
+        return ret_val, code
 
 
 class GraphBLAS_MatrixMultiply(BaseOp):
     dialect = "graphblas"
     name = "matrix_multiply"
-    allowed_semirings = {"plus_plus", "plus_times", "plus_pair", "min_plus"}
+
+    allowed_semiring_adds = {"plus", "any", "min"}
+    allowed_semiring_muls = {"pair", "times", "plus", "first", "second"}
+    allowed_semirings = {
+        f"{add}_{mul}"
+        for add, mul in itertools.product(allowed_semiring_adds, allowed_semiring_muls)
+    }
 
     @classmethod
-    def call(cls, irbuilder, a, b, semiring, *, mask=None):
-        cls.ensure_mlirvar(a, TensorType)
-        cls.ensure_mlirvar(b, TensorType)
+    def call(cls, irbuilder, a, b, semiring, *, mask=None, mask_complement=False):
+        cls.ensure_mlirvar(a, SparseTensorType)
+        cls.ensure_mlirvar(b, SparseTensorType)
         if semiring not in cls.allowed_semirings:
             raise TypeError(
                 f"Illegal semiring: {semiring}, must be one of {cls.allowed_semirings}"
             )
-        return_type = a.type
+        if len(b.type.shape) == 1:
+            return_type = b.type
+        else:
+            return_type = a.type
         # TODO: make the return type more robust; may depend on a, b, and/or semiring
         ret_val = irbuilder.new_var(return_type)
         if mask:
             cls.ensure_mlirvar(mask)
             mlir = (
-                f"{ret_val.assign} = graphblas.matrix_multiply {a}, {b}, "
-                f"{mask} "
-                f'{{ semiring = "{semiring}" }} : ({a.type}, {b.type}, {mask.type}) to {ret_val.type}'
+                f"{ret_val.assign} = graphblas.matrix_multiply {a}, {b}, {mask} "
+                f'{{ semiring = "{semiring}", mask_complement = {"true" if mask_complement else "false"} }}'
+                f": ({a.type}, {b.type}, {mask.type}) to {ret_val.type}"
             )
         else:
             mlir = (
@@ -432,7 +774,7 @@ class GraphBLAS_VectorArgMinMax(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input, minmax):
-        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var("index")
         return ret_val, (
             f"{ret_val.assign} = graphblas.vector_argminmax {input} "
@@ -446,7 +788,7 @@ class GraphBLAS_VectorArgMin(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var("index")
         return ret_val, (
             f"{ret_val.assign} = graphblas.vector_argmin {input} : {input.type}"
@@ -459,10 +801,75 @@ class GraphBLAS_VectorArgMax(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
+        cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var("index")
         return ret_val, (
             f"{ret_val.assign} = graphblas.vector_argmax {input} : {input.type}"
+        )
+
+
+class GraphBLAS_Diag(BaseOp):
+    dialect = "graphblas"
+    name = "diag"
+
+    @classmethod
+    def call(cls, irbuilder, input, return_type: str):
+        cls.ensure_mlirvar(input, SparseTensorType)
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.diag {input} : {input.type} to {return_type}"
+        )
+
+
+class GraphBLAS_MatrixSelectRandom(BaseOp):
+    dialect = "graphblas"
+    name = "matrix_select_random"
+    allowed_choose_n = set(["choose_first", "choose_uniform", "choose_weighted"])
+
+    @classmethod
+    def call(cls, irbuilder, input, n: MLIRVar, rng_context: MLIRVar, choose_n: str):
+        cls.ensure_mlirvar(input, SparseTensorType)
+        cls.ensure_mlirvar(n, IntType)
+        cls.ensure_mlirvar(rng_context)
+        if choose_n not in cls.allowed_choose_n:
+            raise TypeError(
+                f"Illegal choose_n function: {choose_n}, must be one of {cls.allowed_choose_n}"
+            )
+        ret_val = irbuilder.new_var(input.type)
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.matrix_select_random {input}, {n}, {rng_context} "
+            + f"{{ choose_n = @{choose_n} }}"
+            + f" : ({input.type}, {n.type}, {rng_context.type}) to {input.type}"
+        )
+
+
+class GraphBLAS_Print(BaseOp):
+    dialect = "graphblas"
+    name = "print"
+
+    @classmethod
+    def call(cls, irbuilder, *original_printables):
+        printables = [""]
+        for printable in original_printables:
+            if isinstance(printable, str) and isinstance(printables[-1], str):
+                printables[-1] = printables[-1] + printable
+            elif not isinstance(printable, str) and not isinstance(printables[-1], str):
+                printables.append(" ")
+                printables.append(printable)
+            else:
+                printables.append(printable)
+
+            if not isinstance(printable, str):
+                cls.ensure_mlirvar(printable)
+        values = printables[1::2]
+        string_attributes = printables[::2]
+        return None, (
+            "graphblas.print "
+            + ", ".join(str(v) for v in values)
+            + " { strings = ["
+            + ", ".join('"' + s.replace('"', '\\"') + '"' for s in string_attributes)
+            + "] } : "
+            + ", ".join(str(v.type) for v in values)
         )
 
 
@@ -470,100 +877,28 @@ class GraphBLAS_VectorArgMax(BaseOp):
 # util ops
 ###########################################
 
-# TODO these are used by the ops below ; should we inspect the
-# inputs to get the bitwidths instead of assuming 64?
-CSR64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
-CSC64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-CSX64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
-
-
-class CastCsrToCsxOp(BaseOp):
-    dialect = "util"
-    name = "cast_csr_to_csx"
-
-    @classmethod
-    def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input)
-        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
-        return ret_val, (
-            f"{ret_val.assign} = call @cast_csr_to_csx({input}) : "
-            f"({input.type}) -> tensor<?x?xf64, {CSX64}>"
-        )
-
-
-class CastCscToCsxOp(BaseOp):
-    dialect = "util"
-    name = "cast_csc_to_csx"
-
-    @classmethod
-    def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input)
-        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
-        return ret_val, (
-            f"{ret_val.assign} = call @cast_csc_to_csx({input}) : "
-            f"({input.type}) -> tensor<?x?xf64, {CSX64}>"
-        )
-
-
-class CastCsxToCsrOp(BaseOp):
-    dialect = "util"
-    name = "cast_csx_to_csr"
-
-    @classmethod
-    def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input)
-        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSR64}>")
-        return ret_val, (
-            f"{ret_val.assign} = call @cast_csx_to_csr({input}) : "
-            f"({input.type}) -> tensor<?x?xf64, {CSR64}>"
-        )
-
-
-class CastCsxToCscOp(BaseOp):
-    dialect = "util"
-    name = "cast_csx_to_csc"
-
-    @classmethod
-    def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input)
-        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSC64}>")
-        return ret_val, (
-            f"{ret_val.assign} = call @cast_csx_to_csc({input}) : "
-            f"({input.type}) -> tensor<?x?xf64, {CSC64}>"
-        )
-
 
 class PtrToTensorOp(BaseOp):
     dialect = "util"
     name = "ptr8_to_tensor"
 
     @classmethod
-    def call(cls, irbuilder, input, return_type):
+    def call(cls, irbuilder, input, return_type: str):
         cls.ensure_mlirvar(input)
-        tensor_type = TensorType.parse(return_type, irbuilder.aliases)
-        encoding = tensor_type.encoding
-        if encoding.levels != ["dense", "compressed"]:
-            raise TypeError(
-                f"Return type must denote a CSR or CSC tensor (got {return_type})."
-            )
-        ret_val = irbuilder.new_var(f"tensor<?x?xf64, {CSX64}>")
-        ret_string = (
-            f"{ret_val.assign} = call @ptr8_to_matrix({input}) : "
-            f"(!llvm.ptr<i8>) -> tensor<?x?xf64, {CSX64}>"
+        tensor_type = SparseTensorType.parse(return_type, irbuilder.aliases)
+
+        ret_val = irbuilder.new_var(return_type)
+        funcname = f"ptr8_to_{tensor_type.to_short_string()}"
+        irbuilder.needed_function_table[funcname] = (
+            f"func private @{funcname}(!llvm.ptr<i8>) -> {ret_val.type}",
+            ["!llvm.ptr<i8>"],
+            return_type,
         )
-        if encoding.ordering is None:
-            pass
-        elif encoding.ordering == [0, 1]:
-            ret_val, cast_string = CastCsxToCsrOp.call(irbuilder, ret_val)
-            ret_string = ret_string + "\n" + cast_string
-        elif encoding.ordering == [1, 0]:
-            ret_val, cast_string = CastCsxToCscOp.call(irbuilder, ret_val)
-            ret_string = ret_string + "\n" + cast_string
-        else:
-            raise TypeError(
-                f"Return type must denote a CSR or CSC tensor (got {return_type})."
-            )
-        return ret_val, ret_string
+
+        return ret_val, (
+            f"{ret_val.assign} = call @{funcname}({input}) : "
+            f"(!llvm.ptr<i8>) -> {ret_val.type}"
+        )
 
 
 class TensorToPtrOp(BaseOp):
@@ -572,31 +907,53 @@ class TensorToPtrOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
-
-        encoding = input.type.encoding
-        if encoding.levels != ["dense", "compressed"]:
-            raise TypeError(
-                f"Input type must denote a CSR or CSC tensor (got {input.type})."
-            )
-
-        if encoding.ordering is None:
-            cast_string = ""
-        elif encoding.ordering == [0, 1]:
-            input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-        elif encoding.ordering == [1, 0]:
-            input, cast_string = CastCscToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-        else:
-            raise TypeError(
-                f"Return type must denote a CSR or CSC tensor (got {input.type})."
-            )
+        cls.ensure_mlirvar(input, SparseTensorType)
 
         ret_val = irbuilder.new_var("!llvm.ptr<i8>")
-        return ret_val, cast_string + (
-            f"{ret_val.assign} = call @matrix_to_ptr8({input}) : "
+        funcname = f"{input.type.to_short_string()}_to_ptr8"
+        irbuilder.needed_function_table[funcname] = (
+            f"func private @{funcname}({input.type}) -> !llvm.ptr<i8>",
+            [str(input.type)],
+            "!llvm.ptr<i8>",
+        )
+
+        return ret_val, (
+            f"{ret_val.assign} = call @{funcname}({input}) : "
             f"({input.type}) -> !llvm.ptr<i8>"
+        )
+
+
+class NewSparseTensor(BaseOp):
+    dialect = "util"
+    name = "new_sparse_tensor"
+
+    @classmethod
+    def call(cls, irbuilder, tensor_type: str, *dim_sizes):
+        """
+        Vectors take a single dim_size
+        Matrices need nrows, ncols
+        """
+        ret_val = irbuilder.new_var(tensor_type)
+        cls.ensure_mlirvar(ret_val, SparseTensorType)
+        rank = ret_val.type.encoding.rank
+        if len(dim_sizes) != rank:
+            raise ValueError(
+                f"Type {tensor_type} implies rank {rank}."
+                "Must provide exactly that many dim_sizes."
+            )
+        for ds in dim_sizes:
+            cls.ensure_mlirvar(ds, IndexType)
+        funcname = f"new_{ret_val.type.to_short_string()}"
+        input_types = ["index"] * rank
+        irbuilder.needed_function_table[funcname] = (
+            f"func private @{funcname}({', '.join(input_types)}) -> {ret_val.type}",
+            input_types,
+            tensor_type,
+        )
+
+        return ret_val, (
+            f"{ret_val.assign} = call @{funcname}({', '.join(str(ds) for ds in dim_sizes)}) :"
+            f"({', '.join(input_types)}) -> {ret_val.type}"
         )
 
 
@@ -606,40 +963,74 @@ class DelSparseTensor(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
-        encoding = input.type.encoding
-        if encoding.ordering is None:
-            cast_string = ""
-        elif encoding.ordering == [0, 1]:
-            input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-        elif encoding.ordering == [1, 0]:
-            input, cast_string = CastCscToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
+        cls.ensure_mlirvar(input, SparseTensorType)
+        input, cast_string = TensorToPtrOp.call(irbuilder, input)
+        cast_string += "\n"
+        irbuilder.needed_function_table["delSparseTensor"] = (
+            f"func private @delSparseTensor(!llvm.ptr<i8>) -> ()",
+            ["!llvm.ptr<i8>"],
+            "",
+        )
 
         return None, cast_string + (
-            f"call @delSparseMatrix({input}) : ({input.type}) -> ()"
+            f"call @delSparseTensor({input}) : (!llvm.ptr<i8>) -> ()"
         )
 
 
-class DupTensor(BaseOp):
+class ResizeSparsePointers(BaseOp):
     dialect = "util"
-    name = "dup_tensor"
+    name = "resize_sparse_pointers"
 
     @classmethod
-    def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, TensorType)
-        encoding = input.type.encoding
-        if encoding.ordering is None:
-            cast_string = ""
-        elif encoding.ordering == [0, 1]:
-            input, cast_string = CastCsrToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
-        elif encoding.ordering == [1, 0]:
-            input, cast_string = CastCscToCsxOp.call(irbuilder, input)
-            cast_string += "\n"
+    def call(cls, irbuilder, input, dim, size):
+        cls.ensure_mlirvar(input, LlvmPtrType)
+        cls.ensure_mlirvar(dim, IndexType)
+        cls.ensure_mlirvar(size, IndexType)
+        irbuilder.needed_function_table["resize_pointers"] = (
+            f"func private @resize_pointers(!llvm.ptr<i8>, index, index)",
+            ["!llvm.ptr<i8>", "index", "index"],
+            "",
+        )
 
-        ret_val = irbuilder.new_var(input.type)
-        return ret_val, cast_string + (
-            f"{ret_val.assign} = call @dup_matrix({input}) : ({input.type}) -> {input.type}"
+        return None, (
+            f"call @resize_pointers({input}, {dim}, {size}) : (!llvm.ptr<i8>, index, index) -> ()"
+        )
+
+
+class ResizeSparseIndex(BaseOp):
+    dialect = "util"
+    name = "resize_sparse_index"
+
+    @classmethod
+    def call(cls, irbuilder, input, dim, size):
+        cls.ensure_mlirvar(input, LlvmPtrType)
+        cls.ensure_mlirvar(dim, IndexType)
+        cls.ensure_mlirvar(size, IndexType)
+        irbuilder.needed_function_table["resize_index"] = (
+            f"func private @resize_index(!llvm.ptr<i8>, index, index)",
+            ["!llvm.ptr<i8>", "index", "index"],
+            "",
+        )
+
+        return None, (
+            f"call @resize_index({input}, {dim}, {size}) : (!llvm.ptr<i8>, index, index) -> ()"
+        )
+
+
+class ResizeSparseValues(BaseOp):
+    dialect = "util"
+    name = "resize_sparse_values"
+
+    @classmethod
+    def call(cls, irbuilder, input, size):
+        cls.ensure_mlirvar(input, LlvmPtrType)
+        cls.ensure_mlirvar(size, IndexType)
+        irbuilder.needed_function_table["resize_values"] = (
+            f"func private @resize_values(!llvm.ptr<i8>, index)",
+            ["!llvm.ptr<i8>", "index"],
+            "",
+        )
+
+        return None, (
+            f"call @resize_values({input}, {size}) : (!llvm.ptr<i8>, index) -> ()"
         )

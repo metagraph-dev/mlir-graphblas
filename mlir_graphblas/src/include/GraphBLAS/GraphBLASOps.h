@@ -7,11 +7,11 @@
 #ifndef GRAPHBLAS_GRAPHBLASOPS_H
 #define GRAPHBLAS_GRAPHBLASOPS_H
 
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Dialect.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
 
 #include "GraphBLAS/GraphBLASOpsEnums.h.inc"
 
