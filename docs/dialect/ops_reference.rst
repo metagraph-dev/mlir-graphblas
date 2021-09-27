@@ -826,7 +826,7 @@ The options for "<ADD_NAME>" are "plus", "any", and "min". The options for
 If the first input is a matrix, it must be CSR format. If the second input
 is a matrix, it must be CSC format.  Matrix times vector will return a vector.
 Vector times matrix will return a vector.  Matrix times matrix will return
-a CSR matrix.
+a CSR matrix. Vector times vector will return a scalar.
 
 The mask (if provided) must be the same format as the returned object. There's an optional
 boolean ``mask_complement`` attribute (which has a default value of ``false``) that will make

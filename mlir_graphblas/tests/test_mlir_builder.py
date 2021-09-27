@@ -17,11 +17,14 @@ from mlir_graphblas.algorithms import (
     dense_neural_network,
 )
 
-from .jit_engine_test_utils import (
+from mlir_graphblas.tools.utils import (
     sparsify_array,
     densify_csr,
     densify_csc,
     densify_vector,
+)
+
+from .jit_engine_test_utils import (
     MLIR_TYPE_TO_NP_TYPE,
     GRAPHBLAS_PASSES,
 )
@@ -145,7 +148,7 @@ def test_ir_builder_triple_convert_layout(engine: MlirJitEngine, aliases: AliasM
         aliases=aliases,
     )
     (input_var,) = ir_builder.inputs
-    # Use different instances of Tranpose to ideally get exactly one convert_layout helper in the final MLIR text
+    # Use different instances of Transpose to ideally get exactly one convert_layout helper in the final MLIR text
     inter1 = ir_builder.call(ConvertLayout("csc"), input_var)
     inter2 = ir_builder.call(ConvertLayout("csr"), inter1)
     return_var = ir_builder.call(ConvertLayout("csc"), inter2)
