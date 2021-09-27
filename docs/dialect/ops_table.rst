@@ -2,24 +2,24 @@ Supported GraphBLAS Operations
 ==============================
 
 .. csv-table:: Supported GraphBLAS operations
-    :header: Operation, Matrix, Vector, accum, mask (with replace), mask (w/o replace), comment
+    :header: Operation, Matrix, Vector, accum, mask, complemented mask, comment
     :widths: 20, 10, 10, 10, 10, 10, 30
 
-    mxm             , Y ,   , Y , P , N ,
-    vxm             ,   , Y , Y , P , N ,
-    mxv             ,   , Y , Y , N , N ,
+    mxm             , Y ,   , Y , Y , Y ,
+    vxm             ,   , Y , Y , Y , Y ,
+    mxv             ,   , Y , Y , Y , Y ,
     eWiseMult       , Y , Y , Y , N , N ,
     eWiseAdd        , Y , Y , Y , N , N ,
-    apply           , N , N , Y , N , N ,
-    apply_Binop1st  , N , N , Y , N , N ,
+    apply           , Y , Y , Y , N , N ,
+    apply_Binop1st  , Y , Y , Y , N , N ,
     apply_Binop2nd  , Y , N , Y , N , N ,
     select (no val) , Y , N , Y , N , N ,
-    select (w/ val) , N , N , Y , N , N ,
-    reduce_to_scalar, Y , N , N ,   ,   ,
-    reduce_to_vector, N ,   , Y , N , N ,
+    select (w/ val) , Y , N , Y , N , N ,
+    reduce_to_scalar, Y , Y , N ,   ,   ,
+    reduce_to_vector, Y ,   , Y , N , N ,
     transpose       , Y ,   , Y , N , N ,
     kronecker       , N ,   , Y , N , N ,
-    diag            , N , N ,   ,   ,   ,
+    diag            , Y , Y ,   ,   ,   ,
     assign          , N , N , N , N , N ,
     col/row assign  , N ,   , N , N , N ,
     subassign       , N , N , N , N , N , GxB
@@ -40,7 +40,18 @@ Supported GraphBLAS Operations
     concat          , N ,   ,   ,   ,   , GxB
     split           , N ,   ,   ,   ,   , GxB
     isequal         , Y , Y ,   ,   ,   , custom
-    vxv/inner       , N , N ,   ,   ,   , custom
-    argmin/argmax   , N , Y , Y , N , N , custom
-    select_rows("random")   , N ,   , Y , N , . , custom
-    select("random_weighted")   , N , N , Y , N , N , custom
+    vxv/inner       ,   , Y , N ,   ,   , custom
+    argmin/argmax   , Y , Y , Y , N , N , custom
+    select_rows("random")   , Y ,   , Y , N , . , custom
+    select("random_weighted")   , Y , N , Y , N , N , custom
+
+.. csv-table:: Supported GraphBLAS operations for updating
+    :header: accumulation, mask, replace, is supported
+    :widths: 10, 10, 10, 10
+
+    True , True , True , N
+    True , True , False, N
+    True , False,      , Y
+    False, True , True , N
+    False, True , False, N
+    False, False,      , Y
