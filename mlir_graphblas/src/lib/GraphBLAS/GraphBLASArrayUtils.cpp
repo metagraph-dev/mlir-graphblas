@@ -39,13 +39,29 @@ ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
   Value compIndices =
       rewriter.create<memref::AllocOp>(loc, memref1DI64Type, compSize);
 
+  // Handle case of empty row
+  Value rowIsEmpty =
+      rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, maskStart, maskEnd);
+  scf::IfOp if_empty_row =
+      rewriter.create<scf::IfOp>(loc, indexType, rowIsEmpty, true);
+  {
+    rewriter.setInsertionPointToStart(if_empty_row.thenBlock());
+    rewriter.create<scf::YieldOp>(loc, fullSize);
+  }
+  {
+    rewriter.setInsertionPointToStart(if_empty_row.elseBlock());
+    rewriter.create<scf::YieldOp>(loc, maskStart);
+    rewriter.setInsertionPointAfter(if_empty_row);
+  }
+  Value startPos = if_empty_row.getResult(0);
+
   // Populate memref
   Value firstMaskIndex64 =
-      rewriter.create<memref::LoadOp>(loc, maskIndices, maskStart);
+      rewriter.create<memref::LoadOp>(loc, maskIndices, startPos);
   Value firstMaskIndex =
       rewriter.create<IndexCastOp>(loc, firstMaskIndex64, indexType);
   scf::ForOp loop = rewriter.create<scf::ForOp>(
-      loc, c0, fullSize, c1, ValueRange{c0, maskStart, firstMaskIndex});
+      loc, c0, fullSize, c1, ValueRange{c0, startPos, firstMaskIndex});
   Value idx = loop.getInductionVar();
   Value compPos = loop.getLoopBody().getArgument(1);
   Value maskPos = loop.getLoopBody().getArgument(2);
