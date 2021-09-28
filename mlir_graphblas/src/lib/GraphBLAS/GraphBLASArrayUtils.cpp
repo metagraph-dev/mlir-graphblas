@@ -40,8 +40,10 @@ ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
       rewriter.create<memref::AllocOp>(loc, memref1DI64Type, compSize);
 
   // Handle case of empty row
-  Value rowIsEmpty = rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, maskStart, maskEnd);
-  scf::IfOp if_empty_row = rewriter.create<scf::IfOp>(loc, indexType, rowIsEmpty, true);
+  Value rowIsEmpty =
+      rewriter.create<CmpIOp>(loc, CmpIPredicate::eq, maskStart, maskEnd);
+  scf::IfOp if_empty_row =
+      rewriter.create<scf::IfOp>(loc, indexType, rowIsEmpty, true);
   {
     rewriter.setInsertionPointToStart(if_empty_row.thenBlock());
     rewriter.create<scf::YieldOp>(loc, fullSize);
