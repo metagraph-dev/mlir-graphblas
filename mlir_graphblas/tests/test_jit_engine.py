@@ -1,8 +1,9 @@
-from .jit_engine_test_utils import densify_csr, MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
+from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
 
 import itertools
 import mlir_graphblas
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
+from mlir_graphblas.tools.utils import densify_csr
 import pytest
 import numpy as np
 

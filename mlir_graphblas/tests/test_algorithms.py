@@ -1,7 +1,7 @@
 import numpy as np
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 import mlir_graphblas.algorithms as mlalgo
-from .jit_engine_test_utils import (
+from mlir_graphblas.tools.utils import (
     sparsify_array,
     densify_csr,
     densify_csc,
