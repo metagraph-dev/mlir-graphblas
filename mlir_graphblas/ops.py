@@ -824,7 +824,11 @@ class GraphBLAS_Diag(BaseOp):
 class GraphBLAS_MatrixSelectRandom(BaseOp):
     dialect = "graphblas"
     name = "matrix_select_random"
-    allowed_choose_n = set(["choose_first", "choose_uniform", "choose_weighted"])
+    allowed_choose_n = {
+        "choose_first": "i64",
+        "choose_uniform": "!llvm.ptr<i8>",
+        "choose_weighted": "!llvm.ptr<i8>",
+    }
 
     @classmethod
     def call(cls, irbuilder, input, n: MLIRVar, rng_context: MLIRVar, choose_n: str):
@@ -835,6 +839,21 @@ class GraphBLAS_MatrixSelectRandom(BaseOp):
             raise TypeError(
                 f"Illegal choose_n function: {choose_n}, must be one of {cls.allowed_choose_n}"
             )
+
+        first_rand_ret_type = cls.allowed_choose_n[choose_n]
+        irbuilder.needed_function_table[choose_n] = (
+            f"func private @{choose_n}({first_rand_ret_type}, i64, i64,"
+            "memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()",
+            [
+                first_rand_ret_type,
+                "i64",
+                "i64",
+                "memref<?xi64, #map1d>",
+                "memref<?xf64, #map1d>",
+            ],
+            "",
+        )
+
         ret_val = irbuilder.new_var(input.type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.matrix_select_random {input}, {n}, {rng_context} "

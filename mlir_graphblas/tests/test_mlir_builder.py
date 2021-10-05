@@ -1,17 +1,19 @@
 from collections import defaultdict
 import datetime
-import mlir
 import itertools
 import pytest
 import numpy as np
 
 from mlir_graphblas import MlirJitEngine
-from mlir_graphblas.engine import parse_mlir_functions
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
-from mlir_graphblas.types import AliasMap, SparseEncodingType, SparseTensorType
-from mlir_graphblas.functions import ConvertLayout
+from mlir_graphblas.types import (
+    AliasMap,
+    SparseEncodingType,
+    SparseTensorType,
+    AffineMap,
+)
 from mlir_graphblas.algorithms import (
     triangle_count,
     dense_neural_network,
@@ -24,16 +26,10 @@ from mlir_graphblas.tools.utils import (
     densify_vector,
 )
 
-from .jit_engine_test_utils import (
-    MLIR_TYPE_TO_NP_TYPE,
-    GRAPHBLAS_PASSES,
-)
+from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE
+from mlir_graphblas.mlir_builder import GRAPHBLAS_PASSES
 
-from typing import List, Callable
-
-# TODO a lot of these tests take sums or reductions over an scf.for loop by storing into a memref
-# It's better practice to use as demonstrated
-# at https://mlir.llvm.org/docs/Dialects/SCFDialect/#scffor-mlirscfforop
+from typing import Callable
 
 
 @pytest.fixture(scope="module")
@@ -77,13 +73,11 @@ def aliases() -> AliasMap:
     aliases["CSR64"] = csr64
     aliases["CSC64"] = csc64
     aliases["CV64"] = cv64
+    aliases["map1d"] = AffineMap("(d0)[s0, s1] -> (d0 * s1 + s0)")
     return aliases
 
 
 def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine, aliases: AliasMap):
-    # Build Function
-    convert_layout_function = ConvertLayout()
-
     ir_builder = MLIRFunctionBuilder(
         "convert_layout_wrapper",
         input_types=["tensor<?x?xf64, #CSR64>"],
@@ -91,7 +85,9 @@ def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine, aliases: Alias
         aliases=aliases,
     )
     (input_var,) = ir_builder.inputs
-    convert_layout_result = ir_builder.call(convert_layout_function, input_var)
+    convert_layout_result = ir_builder.graphblas.convert_layout(
+        input_var, "tensor<?x?xf64, #CSC64>"
+    )
     ir_builder.return_vars(convert_layout_result)
 
     assert ir_builder.get_mlir()
@@ -136,67 +132,6 @@ def test_builder_attribute(engine: MlirJitEngine, aliases: AliasMap):
     no_op = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
     assert no_op.builder == ir_builder
-
-
-def test_ir_builder_triple_convert_layout(engine: MlirJitEngine, aliases: AliasMap):
-    # Build Function
-
-    ir_builder = MLIRFunctionBuilder(
-        "triple_convert_layout",
-        input_types=["tensor<?x?xf64, #CSR64>"],
-        return_types=["tensor<?x?xf64, #CSC64>"],
-        aliases=aliases,
-    )
-    (input_var,) = ir_builder.inputs
-    # Use different instances of Transpose to ideally get exactly one convert_layout helper in the final MLIR text
-    inter1 = ir_builder.call(ConvertLayout("csc"), input_var)
-    inter2 = ir_builder.call(ConvertLayout("csr"), inter1)
-    return_var = ir_builder.call(ConvertLayout("csc"), inter2)
-    ir_builder.return_vars(return_var)
-
-    mlir_text = ir_builder.get_mlir_module()
-    ast = parse_mlir_functions(mlir_text, engine._cli)
-    # verify there are exactly two functions
-    functions = [
-        node
-        for node in engine._walk_module(ast)
-        if isinstance(node, mlir.astnodes.Function)
-    ]
-    triple_convert_func = functions.pop(-1)
-    assert triple_convert_func.visibility == "public"
-    convert_layout_funcs = [
-        func for func in functions if func.name.value.startswith("convert_layout_to_cs")
-    ]
-    assert len(convert_layout_funcs) == 2
-
-    # Test Compiled Function
-    triple_convert_layout_callable = ir_builder.compile(
-        engine=engine, passes=GRAPHBLAS_PASSES
-    )
-
-    indices = np.array(
-        [
-            [1, 2],
-            [4, 3],
-        ],
-        dtype=np.uint64,
-    )
-    values = np.array([1.2, 4.3], dtype=np.float64)
-    sizes = np.array([8, 8], dtype=np.uint64)
-    sparsity = np.array([False, True], dtype=np.bool8)
-
-    input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
-
-    dense_input_tensor = np.zeros([8, 8], dtype=np.float64)
-    dense_input_tensor[1, 2] = 1.2
-    dense_input_tensor[4, 3] = 4.3
-    assert np.isclose(dense_input_tensor, densify_csr(input_tensor)).all()
-
-    output_tensor = triple_convert_layout_callable(input_tensor)
-
-    assert np.isclose(dense_input_tensor, densify_csc(output_tensor)).all()
-
-    return
 
 
 def test_ir_builder_triangle_count():
@@ -246,7 +181,7 @@ def test_ir_builder_triangle_count():
     return
 
 
-def test_ir_builder_for_loop_simple(engine: MlirJitEngine, aliases: AliasMap):
+def test_ir_builder_for_loop_float_iter(engine: MlirJitEngine, aliases: AliasMap):
     # Build Function
 
     ir_builder = MLIRFunctionBuilder(
@@ -254,16 +189,13 @@ def test_ir_builder_for_loop_simple(engine: MlirJitEngine, aliases: AliasMap):
     )
     (input_var,) = ir_builder.inputs
     zero_f64 = ir_builder.constant(0.0, "f64")
-    sum_memref = ir_builder.memref.alloc("memref<f64>")
-    ir_builder.memref.store(zero_f64, sum_memref, [])
+    total = ir_builder.new_var("f64")
 
-    with ir_builder.for_loop(0, 3) as for_vars:
-        current_sum = ir_builder.memref.load(sum_memref, [])
-        updated_sum = ir_builder.addf(input_var, current_sum)
-        ir_builder.memref.store(updated_sum, sum_memref, [])
-    assert for_vars.returned_variable is None
+    with ir_builder.for_loop(0, 3, iter_vars=[(total, zero_f64)]) as for_vars:
+        updated_sum = ir_builder.addf(input_var, total)
+        for_vars.yield_vars(updated_sum)
 
-    result_var = ir_builder.memref.load(sum_memref, [])
+    result_var = for_vars.returned_variable[0]
     ir_builder.return_vars(result_var)
 
     assert ir_builder.get_mlir()
@@ -271,50 +203,6 @@ def test_ir_builder_for_loop_simple(engine: MlirJitEngine, aliases: AliasMap):
     # Test Compiled Function
     times_three = ir_builder.compile(engine=engine)
     assert np.isclose(times_three(1.3), 3.9)
-
-    return
-
-
-def test_ir_builder_for_loop_float_iter(engine: MlirJitEngine, aliases: AliasMap):
-    # Build Function
-
-    lower_i = 0
-    upper_i = 4
-    delta_i = 1
-    lower_float = 0.0
-    delta_float = 7.8
-
-    ir_builder = MLIRFunctionBuilder(
-        "plus_6x7_8", input_types=["f64"], return_types=["f64"], aliases=aliases
-    )
-    (input_var,) = ir_builder.inputs
-    sum_memref = ir_builder.memref.alloc("memref<f64>")
-    ir_builder.memref.store(input_var, sum_memref, [])
-
-    float_lower_var = ir_builder.constant(lower_float, "f64")
-    float_iter_var = ir_builder.new_var("f64")
-    float_delta_var = ir_builder.constant(delta_float, "f64")
-    with ir_builder.for_loop(
-        lower_i, upper_i, delta_i, iter_vars=[(float_iter_var, float_lower_var)]
-    ) as for_vars:
-        assert [float_iter_var] == for_vars.iter_vars
-        current_sum = ir_builder.memref.load(sum_memref, [])
-        updated_sum = ir_builder.addf(float_iter_var, current_sum)
-        ir_builder.memref.store(updated_sum, sum_memref, [])
-        incremented_float_var = ir_builder.addf(float_iter_var, float_delta_var)
-        for_vars.yield_vars(incremented_float_var)
-
-    result_var = ir_builder.memref.load(sum_memref, [])
-    ir_builder.return_vars(result_var)
-
-    assert ir_builder.get_mlir()
-
-    # Test Compiled Function
-    func = ir_builder.compile(engine=engine)
-    expected_sum = 1.3 + sum(range(lower_i, upper_i, delta_i)) * delta_float
-    assert np.isclose(func(1.3), expected_sum)
-
-    return
 
 
 def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
@@ -337,11 +225,12 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
 
     # Build IR
     ir_builder = MLIRFunctionBuilder(
-        "add_user_specified_vars", input_types=["i64"], return_types=["i64"]
+        "add_user_specified_vars",
+        input_types=["i64"],
+        return_types=["i64"],
     )
     (input_var,) = ir_builder.inputs
-    sum_memref = ir_builder.memref.alloc("memref<i64>")
-    ir_builder.memref.store(input_var, sum_memref, [])
+    total = ir_builder.new_var("i64")
 
     lower_index_var = ir_builder.constant(lower_index, "index")
     upper_index_var = ir_builder.constant(upper_index, "index")
@@ -354,13 +243,12 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
         lower_index_var,
         upper_index_var,
         delta_index_var,
-        iter_vars=[(iter_i64_var, lower_i64_var)],
+        iter_vars=[(iter_i64_var, lower_i64_var), (total, input_var)],
     ) as for_vars:
         assert lower_index_var == for_vars.lower_var_index
         assert upper_index_var == for_vars.upper_var_index
         assert delta_index_var == for_vars.step_var_index
-        assert [iter_i64_var] == for_vars.iter_vars
-        current_sum = ir_builder.memref.load(sum_memref, [])
+        assert [iter_i64_var, total] == for_vars.iter_vars
         prod_of_index_vars_0 = ir_builder.muli(
             for_vars.lower_var_index, for_vars.upper_var_index
         )
@@ -371,15 +259,14 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
         prod_of_i64_vars = ir_builder.muli(lower_i64_var, delta_i64_var)
         iter_index_i64 = ir_builder.index_cast(for_vars.iter_var_index, "i64")
         prod_of_iter_vars = ir_builder.muli(iter_index_i64, iter_i64_var)
-        updated_sum_0 = ir_builder.addi(current_sum, prod_of_index_vars)
+        updated_sum_0 = ir_builder.addi(total, prod_of_index_vars)
         updated_sum_1 = ir_builder.addi(updated_sum_0, prod_of_i64_vars)
         updated_sum = ir_builder.addi(updated_sum_1, prod_of_iter_vars)
-        ir_builder.memref.store(updated_sum, sum_memref, [])
 
         incremented_iter_i64_var = ir_builder.addi(iter_i64_var, delta_i64_var)
-        for_vars.yield_vars(incremented_iter_i64_var)
+        for_vars.yield_vars(incremented_iter_i64_var, updated_sum)
 
-    result_var = ir_builder.memref.load(sum_memref, [])
+    result_var = for_vars.returned_variable[1]
     ir_builder.return_vars(result_var)
 
     assert (
@@ -391,8 +278,6 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
 
     calculated_sum = func(7)
     assert np.isclose(calculated_sum, expected_sum)
-
-    return
 
 
 DNN_CASES = [
@@ -542,8 +427,6 @@ def test_ir_builder_vector_argminmax(
     assert result_arg_minmax_max == np.argmax(dwimmed_dense_input_tensor)
     assert result_arg_max == np.argmax(dwimmed_dense_input_tensor)
 
-    return
-
 
 def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
     # Build Function
@@ -587,8 +470,6 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
         expected_dense_result[expected_dense_result <= threshold] = 0
 
         assert np.all(dense_result == expected_dense_result)
-
-    return
 
 
 REDUCE_TO_VECTOR_CASES = [
@@ -745,8 +626,6 @@ def test_ir_reduce_to_vector(
     assert np.all(reduced_rows_argmin == expected_reduced_rows_argmin)
     assert np.all(reduced_columns_argmax == expected_reduced_columns_argmax)
 
-    return
-
 
 DIAG_CASES = [
     # pytest.param(
@@ -841,8 +720,6 @@ def test_ir_diag(
 
     assert np.all(expected_output_matrix == output_matrix)
     assert np.all(expected_output_vector == output_vector)
-
-    return
 
 
 def test_ir_select_random(engine: MlirJitEngine, aliases: AliasMap):
