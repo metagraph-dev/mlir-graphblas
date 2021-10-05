@@ -286,6 +286,25 @@ def input_tensor_to_ctypes(
     tensor_type: mlir.astnodes.RankedTensorType,
 ) -> Tuple[list, Callable]:
 
+    element_np_type, element_pointer_type = convert_mlir_atomic_type(
+        tensor_type.element_type, return_pointer_type=True
+    )
+
+    dimensions = [dim.value for dim in tensor_type.dimensions]
+
+    def validate_arg_shape(arg: Union[MLIRSparseTensor, np.ndarray]):
+        for dim_index, dim_size in enumerate(arg.shape):
+            expected_dim_size = dimensions[dim_index]
+            if (
+                expected_dim_size is not None
+                and arg.shape[dim_index] != expected_dim_size
+            ):
+                raise ValueError(
+                    f"{repr(arg)} is expected to have size {expected_dim_size} in the "
+                    f"{dim_index}th dimension but has size {arg.shape[dim_index]}."
+                )
+        return
+
     if tensor_type.encoding is not None:
         # We assume anything with an encoding must be a sparse tensor
         # After lowering, this will become !llvm.ptr<i8>
@@ -301,50 +320,80 @@ def input_tensor_to_ctypes(
                 raise TypeError(
                     f"{repr(arg)} is expected to be an instance of {MLIRSparseTensor.__qualname__}"
                 )
+
+            # TODO this doesn't handle "singleton"
+            sparsity = [
+                "compressed" if is_sparse else "dense" for is_sparse in arg.sparsity
+            ]
+            expected_sparsity = [s.value for s in tensor_type.encoding.dim_level_type]
+            if sparsity != expected_sparsity:  # this indirectly checks the rank
+                raise TypeError(
+                    f"{repr(arg)} is expected to have a sparsity of {expected_sparsity} "
+                    f"(got {sparsity})"
+                )
+
+            assert issubclass(arg.index_dtype.type, np.unsignedinteger)
+            assert issubclass(arg.pointer_dtype.type, np.unsignedinteger)
+
+            if (
+                arg.index_dtype.type().nbytes * 8
+                != tensor_type.encoding.pointer_bit_width
+            ):
+                raise TypeError(
+                    f"{repr(arg)} is expected to have a {tensor_type.encoding.pointer_bit_width}-bit "
+                    f"unsigned integer index type (got a {arg.index_dtype.nbytes*8}-bit type instead)"
+                )
+
+            if (
+                arg.pointer_dtype.type().nbytes * 8
+                != tensor_type.encoding.pointer_bit_width
+            ):
+                raise TypeError(
+                    f"{repr(arg)} is expected to have a {tensor_type.encoding.pointer_bit_width}-bit "
+                    f"unsigned integer pointer type (got a {arg.pointer_dtype.nbytes*8}-bit type instead)"
+                )
+
+            # we can't check tensor_type.encoding.dim_ordering since MLIR's sparse tensor
+            # data structure currently doesn't store it.
+
+            if element_np_type != arg.values.dtype.type:
+                raise TypeError(
+                    f"{repr(arg)} is expected to contain elements with type "
+                    f" {element_np_type.__name__} (got {arg.values.dtype.type.__name__} "
+                    f"elements instead)"
+                )
+
+            validate_arg_shape(arg)
+
             return [ctypes.cast(arg.data, ctypes_type)]
 
     else:
         input_c_types = []
-        np_type, pointer_type = convert_mlir_atomic_type(
-            tensor_type.element_type, return_pointer_type=True
-        )
-        input_c_types.append(pointer_type)  # allocated pointer (for free())
-        input_c_types.append(pointer_type)  # base pointer
+        input_c_types.append(element_pointer_type)  # allocated pointer (for free())
+        input_c_types.append(element_pointer_type)  # base pointer
         input_c_types.append(ctypes.c_int64)  # offset from base
         for _ in range(2 * len(tensor_type.dimensions)):  # dim sizes and strides
             input_c_types.append(ctypes.c_int64)
-
-        dimensions = [dim.value for dim in tensor_type.dimensions]
 
         def encoder(arg: np.ndarray) -> list:
             if not isinstance(arg, np.ndarray):
                 raise TypeError(
                     f"{repr(arg)} is expected to be an instance of {np.ndarray.__qualname__}"
                 )
-            if not arg.dtype == np_type:
-                raise TypeError(f"{repr(arg)} is expected to have dtype {np_type}")
+            if not arg.dtype == element_np_type:
+                raise TypeError(
+                    f"{repr(arg)} is expected to have dtype {element_np_type}"
+                )
             if not len(dimensions) == len(arg.shape):
                 raise ValueError(
                     f"{repr(arg)} is expected to have rank {len(dimensions)} but has rank {len(arg.shape)}."
                 )
 
+            validate_arg_shape(arg)
+
             encoded_args = [arg, arg, 0]
-
-            for dim_index, dim_size in enumerate(arg.shape):
-                expected_dim_size = dimensions[dim_index]
-                if (
-                    expected_dim_size is not None
-                    and arg.shape[dim_index] != expected_dim_size
-                ):
-                    raise ValueError(
-                        f"{repr(arg)} is expected to have size {expected_dim_size} in the "
-                        f"{dim_index}th dimension but has size {arg.shape[dim_index]}."
-                    )
-                encoded_args.append(arg.shape[dim_index])
-
-            for dimension_index in range(len(arg.shape)):
-                stride = arg.strides[dimension_index] // arg.itemsize
-                encoded_args.append(stride)
+            encoded_args += list(arg.shape)
+            encoded_args += [stride // arg.itemsize for stride in arg.strides]
 
             return encoded_args
 
