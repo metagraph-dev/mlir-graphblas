@@ -584,6 +584,15 @@ cdef class MLIRSparseTensor:
     def pointers(self):
         return tuple([self.get_pointers(i) for i in range(self.ndim)])
 
+    @property
+    def sparsity(self):
+        # We'll need to update this once `kSingleton` DimLevelType is supported.
+        rv = np.empty(self.ndim, dtype=np.uint8)
+        for i in range(self.ndim):
+            pointer = self.get_pointers(i)
+            rv[i] = pointer.size != 0
+        return rv
+
     cpdef ndarray get_indices(self, uint64_t d):
         cdef MemRef1DU8 ref8
         cdef MemRef1DU16 ref16
