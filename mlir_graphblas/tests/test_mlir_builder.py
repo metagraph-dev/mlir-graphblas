@@ -1,12 +1,10 @@
 from collections import defaultdict
 import datetime
-import mlir
 import itertools
 import pytest
 import numpy as np
 
 from mlir_graphblas import MlirJitEngine
-from mlir_graphblas.engine import parse_mlir_functions
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
@@ -29,9 +27,9 @@ from mlir_graphblas.tools.utils import (
 )
 
 from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE
-from mlir_graphblas.mlir_builder import graphblas_opt_passes
+from mlir_graphblas.mlir_builder import GRAPHBLAS_PASSES
 
-from typing import List, Callable
+from typing import Callable
 
 
 @pytest.fixture(scope="module")
@@ -60,7 +58,7 @@ func @csr_to_csc(%matrix: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSC64> {
 }
 
 """,
-        graphblas_opt_passes,
+        GRAPHBLAS_PASSES,
     )
 
     return jit_engine
@@ -96,7 +94,7 @@ def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine, aliases: Alias
 
     # Test Compiled Function
     convert_layout_wrapper_callable = ir_builder.compile(
-        engine=engine, passes=graphblas_opt_passes
+        engine=engine, passes=GRAPHBLAS_PASSES
     )
 
     indices = np.array(
@@ -131,7 +129,7 @@ def test_builder_attribute(engine: MlirJitEngine, aliases: AliasMap):
     (input_var,) = ir_builder.inputs
     ir_builder.return_vars(input_var)
 
-    no_op = ir_builder.compile(engine=engine, passes=graphblas_opt_passes)
+    no_op = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
     assert no_op.builder == ir_builder
 
@@ -405,9 +403,7 @@ def test_ir_builder_vector_argminmax(
     arg_min = ir_builder.graphblas.vector_argmin(vec)
     arg_max = ir_builder.graphblas.vector_argmax(vec)
     ir_builder.return_vars(arg_minmax_min, arg_minmax_max, arg_min, arg_max)
-    vector_arg_min_and_max = ir_builder.compile(
-        engine=engine, passes=graphblas_opt_passes
-    )
+    vector_arg_min_and_max = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
     # Test Results
     input_tensor = sparsify_array(dense_input_tensor, [True])
@@ -447,7 +443,7 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
     M3 = ir_builder.graphblas.apply(M2, "div", right=thirty_four_scalar)
     filtered = ir_builder.graphblas.matrix_select(M3, [threshold], ["gt"])
     ir_builder.return_vars(filtered)
-    gt_thunk = ir_builder.compile(engine=engine, passes=graphblas_opt_passes)
+    gt_thunk = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
     # Test Results
     dense_input_tensor = np.array(
@@ -569,7 +565,7 @@ def test_ir_reduce_to_vector(
         reduced_rows_argmin,
         reduced_columns_argmax,
     )
-    reduce_func = ir_builder.compile(engine=engine, passes=graphblas_opt_passes)
+    reduce_func = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
     # Test Results
     dense_input_tensor = np.array(
@@ -686,7 +682,7 @@ def test_ir_diag(
     output_matrix = ir_builder.graphblas.diag(input_vector, matrix_type)
     output_vector = ir_builder.graphblas.diag(input_matrix, vector_type)
     ir_builder.return_vars(output_matrix, output_vector)
-    diag_func = ir_builder.compile(engine=engine, passes=graphblas_opt_passes)
+    diag_func = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
     # Test Results
     dense_input_vector = np.array(
@@ -739,7 +735,7 @@ def test_ir_select_random(engine: MlirJitEngine, aliases: AliasMap):
         M, n, context, choose_n="choose_first"
     )
     ir_builder.return_vars(filtered)
-    test_select_random = ir_builder.compile(engine=engine, passes=graphblas_opt_passes)
+    test_select_random = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
     # Test Results
     dense_input_tensor = np.array(
@@ -786,7 +782,7 @@ def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
     )
     ir_builder.return_vars(filtered)
     test_select_random_uniform = ir_builder.compile(
-        engine=engine, passes=graphblas_opt_passes
+        engine=engine, passes=GRAPHBLAS_PASSES
     )
 
     # Test Results
@@ -829,7 +825,7 @@ def test_ir_select_random_weighted(engine: MlirJitEngine, aliases: AliasMap):
     )
     ir_builder.return_vars(filtered)
     test_select_random_weighted = ir_builder.compile(
-        engine=engine, passes=graphblas_opt_passes
+        engine=engine, passes=GRAPHBLAS_PASSES
     )
 
     # Test Results

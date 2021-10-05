@@ -27,8 +27,8 @@ class MLIRCompileError(Exception):
     pass
 
 
-_default_engine = MlirJitEngine()
-graphblas_opt_passes = (
+DEFAULT_ENGINE = MlirJitEngine()
+GRAPHBLAS_PASSES = (
     "--graphblas-structuralize",
     "--graphblas-optimize",
     "--graphblas-lower",
@@ -173,7 +173,7 @@ class MLIRFunctionBuilder:
         self.aliases = aliases
 
         if engine is None:
-            engine = _default_engine
+            engine = DEFAULT_ENGINE
         self.engine = engine
 
         # Build input vars and ensure all types are proper Types
@@ -279,7 +279,7 @@ class MLIRFunctionBuilder:
         if engine is None:
             engine = self.engine
         if passes is None:
-            passes = graphblas_opt_passes
+            passes = GRAPHBLAS_PASSES
         passes = tuple(passes)
 
         # Force recompilation if name is already registered

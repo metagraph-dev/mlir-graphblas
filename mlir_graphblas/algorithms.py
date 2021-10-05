@@ -1,10 +1,9 @@
 import numpy as np
 from typing import List
-from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
+from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, AffineMap
 from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from .sparse_utils import MLIRSparseTensor
-from .engine import MlirJitEngine
 
 
 class Algorithm:
