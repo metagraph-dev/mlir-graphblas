@@ -290,5 +290,7 @@ def test_sparsity():
     values = np.array([1.2, 4.3], dtype=np.float64)
     sizes = np.array([8, 8], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
-    tensor = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
+    tensor = mlir_graphblas.sparse_utils.MLIRSparseTensor(
+        indices, values, sizes, sparsity
+    )
     np.testing.assert_array_equal(sparsity, tensor.sparsity)
