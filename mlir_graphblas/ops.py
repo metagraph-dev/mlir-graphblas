@@ -844,7 +844,13 @@ class GraphBLAS_MatrixSelectRandom(BaseOp):
         irbuilder.needed_function_table[choose_n] = (
             f"func private @{choose_n}({first_rand_ret_type}, i64, i64,"
             "memref<?xi64, #map1d>, memref<?xf64, #map1d>) -> ()",
-            [first_rand_ret_type, "i64", "i64", "memref<?xi64, #map1d>", "memref<?xf64, #map1d>"],
+            [
+                first_rand_ret_type,
+                "i64",
+                "i64",
+                "memref<?xi64, #map1d>",
+                "memref<?xf64, #map1d>",
+            ],
             "",
         )
 

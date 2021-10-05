@@ -10,7 +10,12 @@ from mlir_graphblas.engine import parse_mlir_functions
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
-from mlir_graphblas.types import AliasMap, SparseEncodingType, SparseTensorType, AffineMap
+from mlir_graphblas.types import (
+    AliasMap,
+    SparseEncodingType,
+    SparseTensorType,
+    AffineMap,
+)
 from mlir_graphblas.algorithms import (
     triangle_count,
     dense_neural_network,
@@ -82,7 +87,9 @@ def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine, aliases: Alias
         aliases=aliases,
     )
     (input_var,) = ir_builder.inputs
-    convert_layout_result = ir_builder.graphblas.convert_layout(input_var, "tensor<?x?xf64, #CSC64>")
+    convert_layout_result = ir_builder.graphblas.convert_layout(
+        input_var, "tensor<?x?xf64, #CSC64>"
+    )
     ir_builder.return_vars(convert_layout_result)
 
     assert ir_builder.get_mlir()
@@ -220,7 +227,9 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
 
     # Build IR
     ir_builder = MLIRFunctionBuilder(
-        "add_user_specified_vars", input_types=["i64"], return_types=["i64"],
+        "add_user_specified_vars",
+        input_types=["i64"],
+        return_types=["i64"],
     )
     (input_var,) = ir_builder.inputs
     total = ir_builder.new_var("i64")
@@ -396,7 +405,9 @@ def test_ir_builder_vector_argminmax(
     arg_min = ir_builder.graphblas.vector_argmin(vec)
     arg_max = ir_builder.graphblas.vector_argmax(vec)
     ir_builder.return_vars(arg_minmax_min, arg_minmax_max, arg_min, arg_max)
-    vector_arg_min_and_max = ir_builder.compile(engine=engine, passes=graphblas_opt_passes)
+    vector_arg_min_and_max = ir_builder.compile(
+        engine=engine, passes=graphblas_opt_passes
+    )
 
     # Test Results
     input_tensor = sparsify_array(dense_input_tensor, [True])

@@ -144,7 +144,7 @@ class MLIRFunctionBuilder:
     indentation_delta_size = 2
     module_wrapper_text = jinja2.Template(
         "{{ aliases }}\n\nmodule {\n\n    {{ body }}\n}\n",
-        undefined=jinja2.StrictUndefined
+        undefined=jinja2.StrictUndefined,
     )
     function_wrapper_text = jinja2.Template(
         "\n"
@@ -240,7 +240,9 @@ class MLIRFunctionBuilder:
     def get_mlir_module(self, make_private=False):
         """Get the MLIR text for this function wrapped in a MLIR module with
         declarations of external helper functions."""
-        aliases = "\n".join(f"#{name} = {typ.to_pretty_string()}" for name, typ in self.aliases.items())
+        aliases = "\n".join(
+            f"#{name} = {typ.to_pretty_string()}" for name, typ in self.aliases.items()
+        )
         body = self.get_mlir(make_private=make_private)
         return self.module_wrapper_text.render(aliases=aliases, body=body)
 
