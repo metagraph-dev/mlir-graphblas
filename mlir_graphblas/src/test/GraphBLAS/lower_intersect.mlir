@@ -14,7 +14,7 @@
 }>
 
 
-// CHECK-LABEL:   .func @vector_intersect(
+// CHECK-LABEL:   func @vector_intersect(
 // CHECK-SAME:                            %[[VAL_0:.*]]: tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                            %[[VAL_1:.*]]: tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK-DAG:       %[[VAL_2:.*]] = constant 0 : index
