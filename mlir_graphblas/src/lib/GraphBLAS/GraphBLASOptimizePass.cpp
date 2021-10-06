@@ -33,21 +33,19 @@ namespace {
 // Passes implementation.
 //===----------------------------------------------------------------------===//
 
-class FuseMatrixSelectRewrite
-    : public OpRewritePattern<graphblas::MatrixSelectOp> {
+class FuseMatrixSelectRewrite : public OpRewritePattern<graphblas::SelectOp> {
 public:
-  using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op,
+  using OpRewritePattern<graphblas::SelectOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::SelectOp op,
                                 PatternRewriter &rewriter) const override {
     Value input = op.input();
     Location loc = op.getLoc();
 
-    SmallVector<graphblas::MatrixSelectOp, 3> selectOps;
+    SmallVector<graphblas::SelectOp, 3> selectOps;
 
     for (OpOperand &inputUse : input.getUses()) {
-      graphblas::MatrixSelectOp user =
-          llvm::dyn_cast_or_null<graphblas::MatrixSelectOp>(
-              inputUse.getOwner());
+      graphblas::SelectOp user =
+          llvm::dyn_cast_or_null<graphblas::SelectOp>(inputUse.getOwner());
       if (user != nullptr) {
         selectOps.push_back(user);
       }
@@ -58,7 +56,7 @@ public:
       SmallVector<Value, 3> fusedOpInputs{input};
       SmallVector<Type, 3> resultTypes;
 
-      for (graphblas::MatrixSelectOp selectOp : selectOps) {
+      for (graphblas::SelectOp selectOp : selectOps) {
         for (Attribute selectorStr : selectOp.selectors()) {
           selectors.push_back(selectorStr.dyn_cast<StringAttr>().getValue());
         }
@@ -73,13 +71,12 @@ public:
 
       NamedAttrList attrs;
       attrs.set("selectors", rewriter.getStrArrayAttr(selectors));
-      graphblas::MatrixSelectOp fusedOp =
-          rewriter.create<graphblas::MatrixSelectOp>(loc, resultTypes,
-                                                     fusedOpInputs, attrs);
+      graphblas::SelectOp fusedOp = rewriter.create<graphblas::SelectOp>(
+          loc, resultTypes, fusedOpInputs, attrs);
       ValueRange fusedResults = fusedOp.getResults();
 
       unsigned i = 0;
-      for (graphblas::MatrixSelectOp selectOp : selectOps) {
+      for (graphblas::SelectOp selectOp : selectOps) {
         SmallVector<Value, 3> results;
         for (unsigned j = 0; j < selectOp.getNumResults(); j++) {
           results.push_back(fusedResults[i]);

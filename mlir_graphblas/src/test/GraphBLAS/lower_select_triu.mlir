@@ -9,7 +9,6 @@
 
 // CHECK-LABEL:   func @select_triu(
 // CHECK-SAME:                      %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
-// CHECK-DAG:       %[[VAL_1:.*]] = constant 0 : i64
 // CHECK-DAG:       %[[VAL_2:.*]] = constant 1 : i64
 // CHECK-DAG:       %[[VAL_3:.*]] = constant 1 : index
 // CHECK-DAG:       %[[VAL_4:.*]] = constant 0 : index
@@ -23,7 +22,6 @@
 // CHECK:           %[[VAL_12:.*]] = sparse_tensor.pointers %[[VAL_11]], %[[VAL_3]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:           %[[VAL_13:.*]] = sparse_tensor.indices %[[VAL_11]], %[[VAL_3]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:           %[[VAL_14:.*]] = sparse_tensor.values %[[VAL_11]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:           memref.store %[[VAL_1]], %[[VAL_12]]{{\[}}%[[VAL_4]]] : memref<?xi64>
 // CHECK:           scf.for %[[VAL_15:.*]] = %[[VAL_4]] to %[[VAL_5]] step %[[VAL_3]] {
 // CHECK:             %[[VAL_16:.*]] = addi %[[VAL_15]], %[[VAL_3]] : index
 // CHECK:             %[[VAL_17:.*]] = memref.load %[[VAL_12]]{{\[}}%[[VAL_15]]] : memref<?xi64>
@@ -59,7 +57,7 @@
 // CHECK:         }
 
 func @select_triu(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
-    %answer = graphblas.matrix_select %sparse_tensor { selectors = ["triu"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+    %answer = graphblas.select %sparse_tensor { selectors = ["triu"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
     return %answer : tensor<?x?xf64, #CSR64>
 }
 

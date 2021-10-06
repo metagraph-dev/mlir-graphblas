@@ -593,9 +593,9 @@ class GraphBLAS_Equal(BaseOp):
         )
 
 
-class GraphBLAS_MatrixSelect(BaseOp):
+class GraphBLAS_Select(BaseOp):
     dialect = "graphblas"
-    name = "matrix_select"
+    name = "select"
     allowed_selectors = {"triu", "tril", "gt", "ge"}
 
     @classmethod
@@ -618,7 +618,7 @@ class GraphBLAS_MatrixSelect(BaseOp):
                 )
         ret_val = irbuilder.new_var(input.type)
         return ret_val, (
-            f"{ret_val.assign} = graphblas.matrix_select {input} "
+            f"{ret_val.assign} = graphblas.select {input} "
             + "".join(f", {thunk}" for thunk in thunks)
             + f"{{ selectors = ["
             + ", ".join(f'"{selector}"' for selector in selectors)
