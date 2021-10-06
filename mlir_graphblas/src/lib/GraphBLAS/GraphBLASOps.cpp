@@ -840,10 +840,15 @@ static LogicalResult verify(ReduceToScalarGenericOp op) {
   return success();
 }
 
-static LogicalResult verify(MatrixSelectOp op) {
+static LogicalResult verify(graphblas::SelectOp op) {
   RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+  unsigned rank = inputType.getRank();
 
-  llvm::Optional<std::string> errMsg = checkMatrixEncoding(inputType, EITHER);
+  llvm::Optional<std::string> errMsg;
+  if (rank == 2)
+    errMsg = checkMatrixEncoding(inputType, EITHER);
+  else
+    errMsg = checkVectorEncoding(inputType);
   if (errMsg)
     return op.emitError("input " + errMsg.getValue());
 
@@ -863,8 +868,11 @@ static LogicalResult verify(MatrixSelectOp op) {
         selectorAttr.dyn_cast_or_null<StringAttr>().getValue().str();
     if (!supportedSelectors.contains(selector))
       return op.emitError("\"" + selector + "\" is not a supported selector.");
+    if (rank == 1 && !supportedSelectorsComparingValues.contains(selector))
+      return op.emitError("Selector '" + selector +
+                          "' not allowed for vectors.");
 
-    if (supportedThunkNeedingSelectors.contains(selector))
+    if (supportedSelectorsNeedingThunk.contains(selector))
       selectorsNeedingThunk.push_back(selector);
   }
 
@@ -893,7 +901,7 @@ static LogicalResult verify(MatrixSelectOp op) {
        llvm::enumerate(llvm::zip(selectorsNeedingThunk, thunks))) {
     std::tuple<std::string, Value> pair = indexed_pair.value();
     std::string selector = std::get<0>(pair);
-    if (selector == "gt") {
+    if (supportedSelectorsComparingValues.contains(selector)) {
       Value thunk = std::get<1>(pair);
       Type thunkType = thunk.getType();
       if (thunkType != inputType.getElementType()) {
@@ -911,10 +919,8 @@ static LogicalResult verify(MatrixSelectOp op) {
 
 static LogicalResult verify(ConvertLayoutOp op) {
   RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
-  ;
   RankedTensorType resultType =
       op.getResult().getType().cast<RankedTensorType>();
-  ;
 
   llvm::Optional<std::string> errMsg;
   errMsg = checkMatrixEncoding(inputType, EITHER);
