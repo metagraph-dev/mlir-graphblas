@@ -611,9 +611,9 @@ def test_jit_engine_zero_values(engine):
 
     mlir_text = """
     module  {
-      func private @sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
-      func private @sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
-      func private @sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
+      func private @_mlir_ciface_sparseValuesF64(!llvm.ptr<i8>) -> memref<?xf64>
+      func private @_mlir_ciface_sparseIndices64(!llvm.ptr<i8>, index) -> memref<?xindex>
+      func private @_mlir_ciface_sparsePointers64(!llvm.ptr<i8>, index) -> memref<?xindex>
       func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
 
       func @transpose(%output: !llvm.ptr<i8>, %input: !llvm.ptr<i8>) {
@@ -623,12 +623,12 @@ def test_jit_engine_zero_values(engine):
 
         %n_row = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
         %n_col = call @sparseDimSize(%input, %c1) : (!llvm.ptr<i8>, index) -> index
-        %Ap = call @sparsePointers64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
-        %Aj = call @sparseIndices64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
-        %Ax = call @sparseValuesF64(%input) : (!llvm.ptr<i8>) -> memref<?xf64>
-        %Bp = call @sparsePointers64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
-        %Bi = call @sparseIndices64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
-        %Bx = call @sparseValuesF64(%output) : (!llvm.ptr<i8>) -> memref<?xf64>
+        %Ap = call @_mlir_ciface_sparsePointers64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %Aj = call @_mlir_ciface_sparseIndices64(%input, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %Ax = call @_mlir_ciface_sparseValuesF64(%input) : (!llvm.ptr<i8>) -> memref<?xf64>
+        %Bp = call @_mlir_ciface_sparsePointers64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %Bi = call @_mlir_ciface_sparseIndices64(%output, %c1) : (!llvm.ptr<i8>, index) -> memref<?xindex>
+        %Bx = call @_mlir_ciface_sparseValuesF64(%output) : (!llvm.ptr<i8>) -> memref<?xf64>
 
         %nnz = memref.load %Ap[%n_row] : memref<?xindex>
 
