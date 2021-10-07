@@ -462,6 +462,9 @@ public:
     if (is_sparse) {
       pointers[0].resize(2);
     }
+    for (size_t i=1; i < sizes.size(); ++i) {
+      pointers[i].resize(1);
+    }
     indices.resize(sizes.size());
   }
 
