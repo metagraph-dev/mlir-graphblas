@@ -508,6 +508,10 @@ cdef class MLIRSparseTensor:
 
     @property
     def shape(self):
+        return tuple([sparseDimSize(self._data, i) for i in self.rev])
+
+    @property
+    def sizes(self):
         return tuple([sparseDimSize(self._data, i) for i in range(self.ndim)])
 
     cpdef ndarray get_pointers(self, uint64_t d):
