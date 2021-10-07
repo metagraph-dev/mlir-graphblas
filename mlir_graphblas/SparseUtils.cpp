@@ -170,6 +170,10 @@ public:
 
   //// -> MODIFIED
   virtual uint64_t getRank() const { return 0; }
+  virtual void *get_rev_ptr() {
+    fatal("get_rev_ptr");
+    return 0;
+  }
   virtual void *get_sizes_ptr() {
     fatal("get_sizes_ptr");
     return 0;
@@ -187,6 +191,7 @@ public:
     return 0;
   }
 
+  virtual void swap_rev(void *new_rev) { fatal("swap_rev"); }
   virtual void swap_sizes(void *new_sizes) { fatal("swap_sizes"); }
   virtual void swap_pointers(void *new_pointers) { fatal("swap_pointers"); }
   virtual void swap_indices(void *new_indices) { fatal("swap_indices"); }
@@ -425,7 +430,9 @@ public:
 
   // Used by `empty_like`
   SparseTensorStorage(const std::vector<uint64_t> &other_sizes, void *other)
-      : sizes(other_sizes), pointers(other_sizes.size()),
+      : sizes(other_sizes),
+        rev(static_cast<SparseTensorStorage<P, I, V> *>(other)->rev),
+        pointers(other_sizes.size()),
         indices(other_sizes.size()) {
     // Update pointers to have same size as original tensor, but filled with
     // zeros
@@ -439,17 +446,18 @@ public:
   // Used by `empty`
   // Note that `len(pointers[0]) == 0`!
   SparseTensorStorage(uint64_t ndims)
-      : sizes(ndims), pointers(ndims), indices(ndims) {}
+      : sizes(ndims), rev(ndims), pointers(ndims), indices(ndims) {}
 
   // Used by `dup`
   SparseTensorStorage(void *other)
       : sizes(static_cast<SparseTensorStorage<P, I, V> *>(other)->sizes),
+        rev(static_cast<SparseTensorStorage<P, I, V> *>(other)->rev),
         pointers(static_cast<SparseTensorStorage<P, I, V> *>(other)->pointers),
         indices(static_cast<SparseTensorStorage<P, I, V> *>(other)->indices),
         values(static_cast<SparseTensorStorage<P, I, V> *>(other)->values) {}
 
-  SparseTensorStorage(const std::vector<uint64_t> &other_sizes, bool is_sparse)
-      : sizes(other_sizes) {
+  SparseTensorStorage(const std::vector<uint64_t> &other_sizes, const std::vector<uint64_t> &other_rev, bool is_sparse)
+      : sizes(other_sizes), rev(other_rev) {
     pointers.resize(sizes.size());
     if (is_sparse) {
       pointers[0].resize(2);
@@ -457,10 +465,15 @@ public:
     indices.resize(sizes.size());
   }
 
+  void *get_rev_ptr() override { return &rev; }
   void *get_sizes_ptr() override { return &sizes; }
   void *get_pointers_ptr() override { return &pointers; }
   void *get_indices_ptr() override { return &indices; }
   void *get_values_ptr() override { return &values; }
+
+  void swap_rev(void *new_rev) override {
+    rev.swap(*(std::vector<uint64_t> *)new_rev);
+  }
   void swap_sizes(void *new_sizes) override {
     sizes.swap(*(std::vector<uint64_t> *)new_sizes);
   }
@@ -843,6 +856,9 @@ IMPL3(addEltI8, int8_t)
 uint64_t get_rank(void *tensor) {
   return static_cast<SparseTensorStorageBase *>(tensor)->getRank();
 }
+void *get_rev_ptr(void *tensor) {
+  return static_cast<SparseTensorStorageBase *>(tensor)->get_rev_ptr();
+}
 void *get_sizes_ptr(void *tensor) {
   return static_cast<SparseTensorStorageBase *>(tensor)->get_sizes_ptr();
 }
@@ -854,6 +870,9 @@ void *get_indices_ptr(void *tensor) {
 }
 void *get_values_ptr(void *tensor) {
   return static_cast<SparseTensorStorageBase *>(tensor)->get_values_ptr();
+}
+void swap_rev(void *tensor, void *new_rev) {
+  static_cast<SparseTensorStorageBase *>(tensor)->swap_rev(new_rev);
 }
 void swap_sizes(void *tensor, void *new_sizes) {
   static_cast<SparseTensorStorageBase *>(tensor)->swap_sizes(new_sizes);
