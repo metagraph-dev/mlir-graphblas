@@ -72,7 +72,6 @@ instance/
 
 # Sphinx documentation
 docs/_build/
-docs/dialect/ops_reference.ipynb
 
 # PyBuilder
 target/

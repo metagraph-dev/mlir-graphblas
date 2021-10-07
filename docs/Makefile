@@ -17,7 +17,4 @@ help:
 # Catch-all target: route all unknown targets to Sphinx using the new
 # "make mode" option.  $(O) is meant as a shortcut for $(SPHINXOPTS).
 %: Makefile
-        # rebuilds ops reference on every run (even on "make clean")
-        # "make clean" doesn't remove the current ops reference, but this overwrites it
-	python3 $(SOURCEDIR)/dialect/ops_reference.py
 	@$(SPHINXBUILD) -M $@ "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)

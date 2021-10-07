@@ -5,7 +5,7 @@ GraphBLAS Structuralizing Pass
 
 These tutorials and examples will cover how to use the GraphBLAS dialect's ``--graphblas-structuralize`` passes by using the :ref:`engine` to lower several ops from the GraphBLAS dialect into a form that can be more easily optimized by the ``--graphblas-optimize`` pass. This mostly happens by lowering certain ops into their more generic equivalents, e.g. lowering a ``graphblas.apply`` op into a ``graphblas.apply_generic`` op, that are more easily optimizable by the ``--graphblas-optimize`` pass via op fusion and similar optimizations.
 
-These tutorials assume the completion of the :ref:`graphblas_lowering_pass` tutorials and knowledge of the content in the `GraphBLAS Ops Reference <../../ops_reference.ipynb>`_ (in particular, the ``graphblas.*_generic`` ops).
+These tutorials assume the completion of the :ref:`graphblas_lowering_pass` tutorials and knowledge of the content in the :ref:`graphblas_ops_reference` (in particular, the ``graphblas.*_generic`` ops).
 
 The content of the tutorials are somewhat sequentially dependent as some later tutorials assume completion of previous tutorials.
 

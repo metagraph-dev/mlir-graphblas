@@ -19,6 +19,7 @@ dependencies:
   - nbsphinx
   - notebook
   - conda-forge::pydata-sphinx-theme
+  - pypandoc
   - pip
   - pip:
       - rst2pdf
