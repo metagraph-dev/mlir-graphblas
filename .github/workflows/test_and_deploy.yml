@@ -117,7 +117,7 @@ jobs:
           cd ..
           # Install dependencies listed in built package
           # (This is a workaround because conda does not install dependencies for local file installs)
-          conda update -c metagraph/label/dev -c conda-forge mlir-graphblas # temp restriction to use metagraph dev label
+          conda update -c metagraph/label/dev -c conda-forge mlir-graphblas grblas==1.3.13# temp restriction to use metagraph dev label
           conda list
       - name: Pytest
         run: |
