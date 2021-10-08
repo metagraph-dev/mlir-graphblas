@@ -108,8 +108,14 @@ public:
     if (rank == 1) {
       npointers = rewriter.create<ConstantIndexOp>(loc, 1);
     } else {
-      Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-      npointers = rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
+      Value dimForPointers;
+      if (hasRowOrdering(inputType)) {
+        dimForPointers = rewriter.create<ConstantIndexOp>(loc, 0);
+      } else {
+        dimForPointers = rewriter.create<ConstantIndexOp>(loc, 1);
+      }
+      npointers =
+          rewriter.create<tensor::DimOp>(loc, inputTensor, dimForPointers);
     }
 
     // The last value from the pointers is the number of nonzero values
