@@ -671,8 +671,10 @@ class GraphBLAS_ReduceToScalar(BaseOp):
             raise TypeError(
                 f"Illegal aggregator: {aggregator}, must be one of {cls.allowed_aggregators}"
             )
-        return_type = input.type.value_type
-        # TODO: return_type might be influenced by future allowable aggregators
+        if aggregator in {"count", "argmin", "argmax"}:
+            return_type = "i64"
+        else:
+            return_type = input.type.value_type
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f"{ret_val.assign} = graphblas.reduce_to_scalar {input} "
@@ -766,46 +768,6 @@ class GraphBLAS_MatrixMultiply(BaseOp):
                 f'{{ semiring = "{semiring}" }} : ({a.type}, {b.type}) to {ret_val.type}'
             )
         return ret_val, mlir
-
-
-class GraphBLAS_VectorArgMinMax(BaseOp):
-    dialect = "graphblas"
-    name = "vector_argminmax"
-
-    @classmethod
-    def call(cls, irbuilder, input, minmax):
-        cls.ensure_mlirvar(input, SparseTensorType)
-        ret_val = irbuilder.new_var("index")
-        return ret_val, (
-            f"{ret_val.assign} = graphblas.vector_argminmax {input} "
-            f'{{ minmax = "{minmax}" }} : {input.type}'
-        )
-
-
-class GraphBLAS_VectorArgMin(BaseOp):
-    dialect = "graphblas"
-    name = "vector_argmin"
-
-    @classmethod
-    def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, SparseTensorType)
-        ret_val = irbuilder.new_var("index")
-        return ret_val, (
-            f"{ret_val.assign} = graphblas.vector_argmin {input} : {input.type}"
-        )
-
-
-class GraphBLAS_VectorArgMax(BaseOp):
-    dialect = "graphblas"
-    name = "vector_argmax"
-
-    @classmethod
-    def call(cls, irbuilder, input):
-        cls.ensure_mlirvar(input, SparseTensorType)
-        ret_val = irbuilder.new_var("index")
-        return ret_val, (
-            f"{ret_val.assign} = graphblas.vector_argmax {input} : {input.type}"
-        )
 
 
 class GraphBLAS_Diag(BaseOp):

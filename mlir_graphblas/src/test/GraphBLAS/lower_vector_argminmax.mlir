@@ -8,7 +8,7 @@
 
 module {
 
-// CHECK:         func @vector_argminmax_min(%[[VAL_0:.*]]: tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
+// CHECK:         func @vector_argmin(%[[VAL_0:.*]]: tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> i64 {
 // CHECK:           %[[VAL_1:.*]] = constant 0 : index
 // CHECK:           %[[VAL_2:.*]] = constant 1 : index
 // CHECK:           %[[VAL_3:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_1]] : tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
@@ -28,16 +28,15 @@ module {
 // CHECK:           }
 // CHECK:           %[[VAL_16:.*]] = sparse_tensor.indices %[[VAL_0]], %[[VAL_1]] : tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:           %[[VAL_17:.*]] = memref.load %[[VAL_16]]{{\[}}%[[VAL_18:.*]]#1] : memref<?xi64>
-// CHECK:           %[[VAL_19:.*]] = index_cast %[[VAL_17]] : i64 to index
-// CHECK:           return %[[VAL_19]] : index
+// CHECK:           return %[[VAL_17]] : i64
 // CHECK:         }
 
-   func @vector_argminmax_min(%argA: tensor<3xi64, #CV64>) -> index {
-       %answer = graphblas.vector_argminmax %argA { minmax = "min" } : tensor<3xi64, #CV64>
-       return %answer : index
+   func @vector_argmin(%argA: tensor<3xi64, #CV64>) -> i64 {
+       %answer = graphblas.reduce_to_scalar %argA { aggregator = "argmin" } : tensor<3xi64, #CV64> to i64
+       return %answer : i64
    }
    
-// CHECK:         func @vector_argminmax_max(%[[VAL_0:.*]]: tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
+// CHECK:         func @vector_argmax(%[[VAL_0:.*]]: tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> i64 {
 // CHECK:           %[[VAL_1:.*]] = constant 0 : index
 // CHECK:           %[[VAL_2:.*]] = constant 1 : index
 // CHECK:           %[[VAL_3:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_1]] : tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
@@ -57,13 +56,12 @@ module {
 // CHECK:           }
 // CHECK:           %[[VAL_16:.*]] = sparse_tensor.indices %[[VAL_0]], %[[VAL_1]] : tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:           %[[VAL_17:.*]] = memref.load %[[VAL_16]]{{\[}}%[[VAL_18:.*]]#1] : memref<?xi64>
-// CHECK:           %[[VAL_19:.*]] = index_cast %[[VAL_17]] : i64 to index
-// CHECK:           return %[[VAL_19]] : index
+// CHECK:           return %[[VAL_17]] : i64
 // CHECK:         }
 
-   func @vector_argminmax_max(%argA: tensor<?xi64, #CV64>) -> index {
-       %answer = graphblas.vector_argminmax %argA { minmax = "max" } : tensor<?xi64, #CV64>
-       return %answer : index
+   func @vector_argmax(%argA: tensor<?xi64, #CV64>) -> i64 {
+       %answer = graphblas.reduce_to_scalar %argA { aggregator = "argmax" } : tensor<?xi64, #CV64> to i64
+       return %answer : i64
    }
 
 }
