@@ -13,6 +13,7 @@ dependencies:
   - pytest-forked
   - black
   - clang-tools
+  - grblas
 
 
 # dependencies (so setup.py develop doesn't pip install them)
