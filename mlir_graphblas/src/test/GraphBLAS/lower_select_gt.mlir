@@ -10,7 +10,6 @@
 // CHECK-LABEL:   func @select_gt(
 // CHECK-SAME:                    %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK-DAG:       %[[VAL_1:.*]] = constant 0.000000e+00 : f64
-// CHECK-DAG:       %[[VAL_2:.*]] = constant 0 : i64
 // CHECK-DAG:       %[[VAL_3:.*]] = constant 1 : i64
 // CHECK-DAG:       %[[VAL_4:.*]] = constant 1 : index
 // CHECK-DAG:       %[[VAL_5:.*]] = constant 0 : index
@@ -24,7 +23,6 @@
 // CHECK:           %[[VAL_13:.*]] = sparse_tensor.pointers %[[VAL_12]], %[[VAL_4]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:           %[[VAL_14:.*]] = sparse_tensor.indices %[[VAL_12]], %[[VAL_4]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:           %[[VAL_15:.*]] = sparse_tensor.values %[[VAL_12]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:           memref.store %[[VAL_2]], %[[VAL_13]]{{\[}}%[[VAL_5]]] : memref<?xi64>
 // CHECK:           scf.for %[[VAL_16:.*]] = %[[VAL_5]] to %[[VAL_6]] step %[[VAL_4]] {
 // CHECK:             %[[VAL_17:.*]] = addi %[[VAL_16]], %[[VAL_4]] : index
 // CHECK:             %[[VAL_18:.*]] = memref.load %[[VAL_13]]{{\[}}%[[VAL_16]]] : memref<?xi64>
@@ -60,6 +58,6 @@
 
 func @select_gt(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
     %c0_f64 = constant 0.0 : f64
-    %answer = graphblas.matrix_select %sparse_tensor, %c0_f64 { selectors = ["gt"] } : tensor<?x?xf64, #CSR64>, f64 to tensor<?x?xf64, #CSR64>
+    %answer = graphblas.select %sparse_tensor, %c0_f64 { selectors = ["gt"] } : tensor<?x?xf64, #CSR64>, f64 to tensor<?x?xf64, #CSR64>
     return %answer : tensor<?x?xf64, #CSR64>
 }

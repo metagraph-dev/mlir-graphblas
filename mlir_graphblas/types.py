@@ -23,6 +23,9 @@ class Type:
     def __init_subclass__(cls):
         Type._subtypes.append(cls)
 
+    def to_pretty_string(self):
+        return str(self)
+
     @staticmethod
     def find(text: str, aliases: AliasMap = None):
         if isinstance(text, Type):
@@ -271,3 +274,18 @@ class LlvmPtrType(Type):
         if m := cls._patt.match(text):
             internal_type = Type.find(m.group(1), aliases=aliases)
             return LlvmPtrType(internal_type)
+
+
+class AffineMap(Type):
+    _patt = re.compile(r"^affine_map<([^>]+)>$")
+
+    def __init__(self, text_within_angle_brackets):
+        self.text_within_angle_brackets = text_within_angle_brackets
+
+    def __str__(self):
+        return f"affine_map<{self.text_within_angle_brackets}>"
+
+    @classmethod
+    def parse(cls, text: str, aliases: AliasMap = None):
+        if m := cls._patt.match(text):
+            return AffineMap(m.group(1))

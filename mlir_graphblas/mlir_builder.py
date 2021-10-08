@@ -13,15 +13,38 @@ import itertools
 from contextlib import contextmanager
 from collections import OrderedDict
 from .sparse_utils import MLIRSparseTensor
-from .functions import BaseFunction, _default_engine
 from .engine import parse_mlir_functions, MlirJitEngine
 from .types import Type, AliasMap
 
 from typing import Dict, List, Tuple, Sequence, Generator, Optional, Union
 
-#############
-# IR Builer #
-#############
+##############
+# IR Builder #
+##############
+
+
+class MLIRCompileError(Exception):
+    pass
+
+
+DEFAULT_ENGINE = MlirJitEngine()
+GRAPHBLAS_PASSES = (
+    "--graphblas-structuralize",
+    "--graphblas-optimize",
+    "--graphblas-lower",
+    "--sparsification",
+    "--sparse-tensor-conversion",
+    "--linalg-bufferize",
+    "--convert-scf-to-std",
+    "--func-bufferize",
+    "--tensor-bufferize",
+    "--tensor-constant-bufferize",
+    "--finalizing-bufferize",
+    "--convert-linalg-to-loops",
+    "--convert-scf-to-std",
+    "--convert-memref-to-llvm",
+    "--convert-std-to-llvm",
+)
 
 
 class MLIRVar:
@@ -114,19 +137,15 @@ class Dialect:
         return f"{self.name} dialect"
 
 
-class MLIRFunctionBuilder(BaseFunction):
+class MLIRFunctionBuilder:
     _ops = {}
 
-    # TODO consider making this class have a method to return a BaseFunction
-    # and not be a subclass of BaseFunction
-    # In other words, make it a "builder" that creates BaseFunction subclasses
-    # or instances instead of being a BaseFunction itself
-    # TODO Consider defining all the BaseFunction instances in functions.py via
-    # this class.
-
-    # TODO move this indentation to some parent class
-    default_indentation_size = 6
+    default_indentation_size = 4
     indentation_delta_size = 2
+    module_wrapper_text = jinja2.Template(
+        "{{ aliases }}\n\nmodule {\n\n    {{ body }}\n}\n",
+        undefined=jinja2.StrictUndefined,
+    )
     function_wrapper_text = jinja2.Template(
         "\n"
         + (" " * default_indentation_size)
@@ -152,9 +171,9 @@ class MLIRFunctionBuilder(BaseFunction):
         if aliases is None:
             aliases = AliasMap()
         self.aliases = aliases
-        # TODO: unify this with the engine passed into `.compile()`
+
         if engine is None:
-            engine = _default_engine
+            engine = DEFAULT_ENGINE
         self.engine = engine
 
         # Build input vars and ensure all types are proper Types
@@ -218,6 +237,15 @@ class MLIRFunctionBuilder(BaseFunction):
     # MLIR Generation/Compilation Methods #
     #######################################
 
+    def get_mlir_module(self, make_private=False):
+        """Get the MLIR text for this function wrapped in a MLIR module with
+        declarations of external helper functions."""
+        aliases = "\n".join(
+            f"#{name} = {typ.to_pretty_string()}" for name, typ in self.aliases.items()
+        )
+        body = self.get_mlir(make_private=make_private)
+        return self.module_wrapper_text.render(aliases=aliases, body=body)
+
     def get_mlir(self, make_private=True, include_func_defs=True) -> str:
         if include_func_defs:
             needed_function_definitions = "\n    ".join(
@@ -234,7 +262,6 @@ class MLIRFunctionBuilder(BaseFunction):
 
         signature = ", ".join(f"{var}: {var.type}" for var in self.inputs)
 
-        # TODO: add top-level aliases based on self.aliases (instead of hardcoding CSR64 and CSC64)
         return needed_function_definitions + self.function_wrapper_text.render(
             private_func=make_private,
             func_name=self.func_name,
@@ -247,6 +274,24 @@ class MLIRFunctionBuilder(BaseFunction):
         from .tools import tersify_mlir
 
         print(tersify_mlir(self.get_mlir(make_private=False), self.aliases))
+
+    def compile(self, engine=None, passes=None):
+        if engine is None:
+            engine = self.engine
+        if passes is None:
+            passes = GRAPHBLAS_PASSES
+        passes = tuple(passes)
+
+        # Force recompilation if name is already registered
+        if self.func_name in engine.name_to_callable:
+            del engine.name_to_callable[self.func_name]
+
+        mlir = self.get_mlir_module()
+
+        engine.add(mlir, passes)
+        func = engine[self.func_name]
+        func.builder = self
+        return func
 
     ################################
     # MLIR Building Method Helpers #
@@ -391,7 +436,7 @@ class MLIRFunctionBuilder(BaseFunction):
 
     def call(
         self,
-        function: BaseFunction,
+        function: "MlirFunctionBuilder",
         *inputs: MLIRVar,
     ) -> MLIRVar:
         # TODO update this method to handle multiple and zero return types.

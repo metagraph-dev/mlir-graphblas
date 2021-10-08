@@ -4,6 +4,7 @@ import mlir_graphblas
 import mlir_graphblas.sparse_utils
 import pytest
 import numpy as np
+from mlir_graphblas.tools.utils import sparsify_array
 
 #################
 # Test Fixtures #
@@ -13,15 +14,18 @@ import numpy as np
 @pytest.fixture(scope="module")
 def compiled_func_and_valid_args():
     mlir_text = """
-#sparseTensor = #sparse_tensor.encoding<{
-  dimLevelType = [ "dense", "compressed" ]
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
 }>
 
 func @many_inputs_constant_output(
    %arg_arbitrary_size_tensor: tensor<?x?xf32>,
    %arg_fixed_size_tensor: tensor<2x3xf32>,
    %arg_partially_fixed_size_tensor: tensor<2x?xf32>,
-   %arg_sparse_tensor: tensor<?x?xf32, #sparseTensor>,
+   %arg_sparse_tensor: tensor<5x?xf32, #CSR64>,
    %arg_f32: f32,
    %arg_pointer: !llvm.ptr<i64>
 ) -> i32 {
@@ -33,10 +37,10 @@ func @many_inputs_constant_output(
     assert engine.add(mlir_text, STANDARD_PASSES) == ["many_inputs_constant_output"]
     callable_func = engine.many_inputs_constant_output
 
-    indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
+    indices = np.array([[0, 0], [1, 1]], dtype=np.uint64)
     values = np.array([1.2, 3.4], dtype=np.float32)
-    sizes = np.array([10, 20, 30], dtype=np.uint64)
-    sparsity = np.array([True, True, True], dtype=np.bool8)
+    sizes = np.array([5, 2], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
     sparse_tensor = mlir_graphblas.sparse_utils.MLIRSparseTensor(
         indices, values, sizes, sparsity
     )
@@ -61,24 +65,52 @@ func @many_inputs_constant_output(
 
 BAD_INPUT_TEST_CASES = [  # elements are ( error_type, error_match_string, bad_arg_index, bad_arg )
     pytest.param(
+        TypeError,
+        " is expected to have a sparsity of ",
+        3,
+        sparsify_array(np.arange(10, dtype=np.float32), [True]),
+        id="bad_sparse_rank",
+    ),
+    pytest.param(
+        TypeError,
+        " is expected to have a sparsity of ",
+        3,
+        sparsify_array(np.arange(10, dtype=np.float32).reshape([5, 2]), [True, True]),
+        id="bad_sparsity",
+    ),
+    pytest.param(
+        TypeError,
+        " is expected to contain elements with type ",
+        3,
+        sparsify_array(np.arange(10, dtype=np.int16).reshape([5, 2]), [False, True]),
+        id="bad_sparse_dtype",
+    ),
+    pytest.param(
+        ValueError,
+        " is expected to have size ",
+        3,
+        sparsify_array(np.arange(10, dtype=np.float32).reshape([2, 5]), [False, True]),
+        id="bad_sparse_dims",
+    ),
+    pytest.param(
         ValueError,
         "is expected to have rank",
         0,
-        np.arange(10).astype(np.float32),
+        np.arange(10, dtype=np.float32),
         id="bad_rank_for_arbitrary_size_tensor",
     ),
     pytest.param(
         ValueError,
         "is expected to have rank",
         1,
-        np.arange(10).astype(np.float32),
+        np.arange(10, dtype=np.float32),
         id="bad_rank_for_fixed_size_tensor",
     ),
     pytest.param(
         ValueError,
         r"is expected to have size [0-9]+ in the [0-9]+th dimension but has size [0-9]+",
         2,
-        np.arange(10).astype(np.float32).reshape([5, 2]),
+        np.arange(10, dtype=np.float32).reshape([5, 2]),
         id="bad_size_for_partially_fixed_size_tensor",
     ),
     pytest.param(
@@ -134,7 +166,7 @@ BAD_INPUT_TEST_CASES = [  # elements are ( error_type, error_match_string, bad_a
         TypeError,
         "is expected to be a scalar with dtype",
         4,
-        np.arange(10).astype(np.float32).reshape([5, 2]),
+        np.arange(10, dtype=np.float32).reshape([5, 2]),
         id="array_for_scalar",
     ),
     pytest.param(
@@ -155,7 +187,7 @@ BAD_INPUT_TEST_CASES = [  # elements are ( error_type, error_match_string, bad_a
         TypeError,
         "is expected to be an instance of",
         3,
-        np.arange(10).astype(np.float32).reshape([5, 2]),
+        np.arange(10, dtype=np.float32).reshape([5, 2]),
         id="array_for_sparse_tensor",
     ),
     pytest.param(

@@ -35,9 +35,6 @@ def test_triangle_count():
     sparsity = np.array([False, True], dtype=np.bool8)
     a = MLIRSparseTensor(indices, values, sizes, sparsity)
 
-    num_triangles = mlalgo.triangle_count_separate(a)
-    assert num_triangles == 5, num_triangles
-
     num_triangles = mlalgo.triangle_count(a)
     assert num_triangles == 5, num_triangles
 

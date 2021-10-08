@@ -385,32 +385,34 @@ struct MatrixSelectOutputWriter {
 
   void createConstants(PatternRewriter &rewriter, Location loc) {
     Type int64Type = rewriter.getIntegerType(64);
-    FloatType float64Type = rewriter.getF64Type();
 
     c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     c0_64 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
     c1_64 = rewriter.create<ConstantIntOp>(loc, 1, int64Type);
-    // TODO support other element types besides f64
-    cf0 = rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), float64Type);
   }
 
   void createTensor(PatternRewriter &rewriter, Location loc, ModuleOp module,
                     Value input) {
-    Type valueType = input.getType().dyn_cast<TensorType>().getElementType();
+    RankedTensorType inputType = input.getType().cast<RankedTensorType>();
+    Type valueType = inputType.getElementType();
     Type int64Type = rewriter.getIntegerType(64);
 
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
+    rank = inputType.getRank();
     tensor = rewriter.create<graphblas::DupOp>(loc, input);
+    Value indexPos = (rank == 2 ? c1 : c0);
+    if (rank == 2)
+      colWise = hasColumnOrdering(inputType);
+
     Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type,
-                                                      tensor, c1);
+                                                      tensor, indexPos);
     Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
-                                                     tensor, c1);
+                                                     tensor, indexPos);
     Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType,
                                                     tensor);
-    rewriter.create<memref::StoreOp>(loc, c0_64, Bp, c0);
   };
 
   void createUpdateCurrCount(PatternRewriter &rewriter, Location loc, Value row,
@@ -425,11 +427,13 @@ struct MatrixSelectOutputWriter {
 
     Value keep;
     if (selector == "triu") {
-      keep = rewriter.create<mlir::CmpIOp>(loc, mlir::CmpIPredicate::ugt, col,
-                                           row);
+      keep = rewriter.create<mlir::CmpIOp>(loc, mlir::CmpIPredicate::ugt,
+                                           colWise ? row : col,
+                                           colWise ? col : row);
     } else if (selector == "tril") {
-      keep = rewriter.create<mlir::CmpIOp>(loc, mlir::CmpIPredicate::ult, col,
-                                           row);
+      keep = rewriter.create<mlir::CmpIOp>(loc, mlir::CmpIPredicate::ult,
+                                           colWise ? row : col,
+                                           colWise ? col : row);
     } else if (selector == "gt") {
       keep = rewriter.create<mlir::CmpFOp>(loc, mlir::CmpFPredicate::OGT, val,
                                            thunk.getValue());
@@ -463,12 +467,9 @@ struct MatrixSelectOutputWriter {
                         ModuleOp module) {
     Value nnz = rewriter.create<graphblas::NumValsOp>(loc, tensor);
 
-    callResizeIndex(rewriter, module, loc, tensor, c1, nnz);
+    Value indexPos = (rank == 2 ? c1 : c0);
+    callResizeIndex(rewriter, module, loc, tensor, indexPos, nnz);
     callResizeValues(rewriter, module, loc, tensor, nnz);
-
-    assert(typeIsCSR(tensor.getType()) &&
-           "tensor expected to be CSR since createTensor is expected to have "
-           "been called first.");
   };
 
   StringRef selector;
@@ -479,26 +480,27 @@ struct MatrixSelectOutputWriter {
   Value Bp;
   Value Bj;
   Value Bx;
+  unsigned rank;
+  bool colWise = false;
 
   // frequently used constants
   Value c0;
   Value c1;
-  Value cf0;
   Value c0_64;
   Value c1_64;
 };
 
-class LowerMatrixSelectRewrite
-    : public OpRewritePattern<graphblas::MatrixSelectOp> {
+class LowerSelectRewrite : public OpRewritePattern<graphblas::SelectOp> {
 public:
-  using OpRewritePattern<graphblas::MatrixSelectOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::MatrixSelectOp op,
+  using OpRewritePattern<graphblas::SelectOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::SelectOp op,
                                 PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     Value input = op.input();
-    Type valueType = input.getType().dyn_cast<TensorType>().getElementType();
+    RankedTensorType inputType = input.getType().cast<RankedTensorType>();
+    Type valueType = inputType.getElementType();
     Type int64Type = rewriter.getIntegerType(64);
     Type indexType = rewriter.getIndexType();
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
@@ -512,11 +514,20 @@ public:
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
 
     // Get sparse tensor info
-    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, input);
+    unsigned rank = inputType.getRank();
+    Value nrow;
+    if (rank == 2)
+      nrow = rewriter.create<graphblas::NumRowsOp>(loc, input);
+    else
+      // Vectors are stored as a 1xn matrix, so the code works correctly if we
+      // assume a single row
+      nrow = c1;
+
+    Value indexPos = (rank == 2 ? c1 : c0);
     Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(
-        loc, memref1DI64Type, input, c1);
+        loc, memref1DI64Type, input, indexPos);
     Value Aj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
-                                                           input, c1);
+                                                           input, indexPos);
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(
         loc, memref1DValueType, input);
 
@@ -528,7 +539,7 @@ public:
           selectorAttr.dyn_cast_or_null<StringAttr>().getValue();
 
       llvm::Optional<Value> thunk;
-      if (supportedThunkNeedingSelectors.contains(selector)) {
+      if (supportedSelectorsNeedingThunk.contains(selector)) {
         thunk = thunks[thunkIndex++];
       } else {
         thunk = llvm::None;
@@ -3452,7 +3463,7 @@ public:
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
-      LowerMatrixSelectRandomRewrite, LowerMatrixSelectRewrite,
+      LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
       LowerReduceToVectorRewrite, LowerReduceToScalarRewrite,
       LowerReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
       LowerConvertLayoutRewrite, LowerTransposeRewrite, LowerApplyRewrite,

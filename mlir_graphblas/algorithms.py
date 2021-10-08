@@ -1,17 +1,9 @@
 import numpy as np
 from typing import List
-from .functions import (
-    ConvertLayout,
-    MatrixSelect,
-    MatrixReduceToScalar,
-    Apply,
-    MatrixMultiply,
-)
-from mlir_graphblas.mlir_builder import MLIRVar, MLIRFunctionBuilder
-from mlir_graphblas.types import AliasMap, SparseEncodingType, Type
+from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
+from mlir_graphblas.types import AliasMap, SparseEncodingType, AffineMap
 from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from .sparse_utils import MLIRSparseTensor
-from .engine import MlirJitEngine
 
 
 class Algorithm:
@@ -28,62 +20,16 @@ class Algorithm:
         return self._cached(*args, **kwargs)
 
 
-graphblas_opt_passes = (
-    "--graphblas-structuralize",
-    "--graphblas-optimize",
-    "--graphblas-lower",
-    "--sparsification",
-    "--sparse-tensor-conversion",
-    "--linalg-bufferize",
-    "--convert-scf-to-std",
-    "--func-bufferize",
-    "--tensor-constant-bufferize",
-    "--tensor-bufferize",
-    "--finalizing-bufferize",
-    "--convert-linalg-to-loops",
-    "--convert-scf-to-std",
-    "--convert-memref-to-llvm",
-    "--convert-std-to-llvm",
-    "--reconcile-unrealized-casts",
-)
-
-
 def _build_common_aliases():
     csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
     csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-    csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
     cv64 = SparseEncodingType(["compressed"], None, 64, 64)
     aliases = AliasMap()
     aliases["CSR64"] = csr64
     aliases["CSC64"] = csc64
-    aliases["CSX64"] = csx64
     aliases["CV64"] = cv64
+    aliases["map1d"] = AffineMap("(d0)[s0, s1] -> (d0 * s1 + s0)")
     return aliases
-
-
-csr_to_csc = ConvertLayout()
-matrix_select_triu = MatrixSelect("TRIU")
-matrix_select_tril = MatrixSelect("TRIL")
-matrix_select_gt = MatrixSelect("gt")
-matrix_reduce = MatrixReduceToScalar()
-apply_min = Apply("min")
-mxm_plus_pair = MatrixMultiply("plus_pair", mask=True)
-mxm_plus_times = MatrixMultiply("plus_times")
-mxm_plus_plus = MatrixMultiply("plus_plus")
-
-
-def triangle_count_separate(A: MLIRSparseTensor) -> int:
-    # Create U and L matrices
-    U = matrix_select_triu.compile()(A)
-    L = matrix_select_tril.compile()(A)
-    # Count Triangles
-    U_csc = csr_to_csc.compile()(U)
-    C = mxm_plus_pair.compile()(L, U_csc, L)
-    num_triangles = matrix_reduce.compile()(C)
-    assert (
-        int(num_triangles) == num_triangles
-    ), f"{num_triangles} is unexpectedly not a whole number"
-    return int(num_triangles)
 
 
 class TriangleCount(Algorithm):
@@ -95,8 +41,8 @@ class TriangleCount(Algorithm):
             aliases=_build_common_aliases(),
         )
         (inp,) = irb.inputs
-        U = irb.graphblas.matrix_select(inp, [], ["triu"])
-        L = irb.graphblas.matrix_select(inp, [], ["tril"])
+        U = irb.graphblas.select(inp, [], "triu")
+        L = irb.graphblas.select(inp, [], "tril")
         U_csc = irb.graphblas.convert_layout(U, "tensor<?x?xf64, #CSC64>")
         C = irb.graphblas.matrix_multiply(L, U_csc, "plus_pair", mask=L)
 
@@ -110,28 +56,6 @@ class TriangleCount(Algorithm):
 
 
 triangle_count = TriangleCount()
-
-
-def dense_neural_network_separate(
-    W: List[MLIRSparseTensor],
-    Bias: List[MLIRSparseTensor],
-    Y0: MLIRSparseTensor,
-    ymax=32.0,
-) -> MLIRSparseTensor:
-    nlayers = len(W)
-
-    Y = Y0.dup()
-    for layer in range(nlayers):
-        W_csc = csr_to_csc.compile()(W[layer])
-        Y = mxm_plus_times.compile()(Y, W_csc)
-
-        # Normally, I would need to transpose this, but I know these are purely diagonal matrices
-        Y = mxm_plus_plus.compile()(Y, Bias[layer])
-
-        Y = matrix_select_gt.compile()(Y, 0.0)
-        Y = apply_min.compile()(Y, ymax)
-
-    return Y
 
 
 class DenseNeuralNetwork(Algorithm):
@@ -161,9 +85,7 @@ class DenseNeuralNetwork(Algorithm):
             matmul_result, biases, "plus_plus"
         )
         clamp_result = irb_inner.graphblas.apply(add_bias_result, "min", left=threshold)
-        relu_result = irb_inner.graphblas.matrix_select(
-            clamp_result, [zero_f64], ["gt"]
-        )
+        relu_result = irb_inner.graphblas.select(clamp_result, [zero_f64], ["gt"])
 
         irb_inner.util.del_sparse_tensor(Y)
 
@@ -356,7 +278,7 @@ class BipartiteProjectAndFilter(Algorithm):
             M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSR64>")
             M_csc = ir_builder.graphblas.convert_layout(M, "tensor<?x?xf64, #CSC64>")
             projection = ir_builder.graphblas.matrix_multiply(M_T, M_csc, "plus_times")
-        filtered = ir_builder.graphblas.matrix_select(projection, [limit], ["ge"])
+        filtered = ir_builder.graphblas.select(projection, [limit], ["ge"])
         ir_builder.return_vars(filtered)
         return ir_builder
 
@@ -414,7 +336,7 @@ class ScanStatistics(Algorithm):
             aliases=_build_common_aliases(),
         )
         (A,) = ir_builder.inputs
-        L = ir_builder.graphblas.matrix_select(A, [], ["tril"])
+        L = ir_builder.graphblas.select(A, [], ["tril"])
         L_T = ir_builder.graphblas.transpose(L, "tensor<?x?xf64, #CSC64>")
         A_triangles = ir_builder.graphblas.matrix_multiply(A, L_T, "plus_pair", mask=A)
         tri = ir_builder.graphblas.reduce_to_vector(A_triangles, "plus", 1)
