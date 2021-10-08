@@ -109,8 +109,7 @@ public:
       npointers = rewriter.create<ConstantIndexOp>(loc, 1);
     } else {
       Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-      npointers =
-          rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
+      npointers = rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
     }
 
     // The last value from the pointers is the number of nonzero values
@@ -215,8 +214,8 @@ public:
     // the verify function will ensure that this is CSR->CSC or CSC->CSR
     Value output = castToPtr8(rewriter, module, loc, duplicate);
     RankedTensorType flippedType = getSingleCompressedMatrixType(
-        context, inputTensorType.getShape(), outputIsCSC, valueType, ptrBitWidth,
-        idxBitWidth);
+        context, inputTensorType.getShape(), outputIsCSC, valueType,
+        ptrBitWidth, idxBitWidth);
     output = castToTensor(rewriter, module, loc, output, flippedType);
 
     Value outputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(
