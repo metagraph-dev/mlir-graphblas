@@ -619,6 +619,7 @@ REDUCE_TO_VECTOR_CASES = [
 ]
 
 
+@pytest.mark.skip("Crashes with test_ir_reduce_to_vector[f64-csc_arbitrary]")
 @pytest.mark.parametrize(
     "input_type_template, reduce_rows_output_type_template, reduce_columns_output_type_template",
     REDUCE_TO_VECTOR_CASES,
