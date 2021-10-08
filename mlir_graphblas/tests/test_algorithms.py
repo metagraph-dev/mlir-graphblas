@@ -265,7 +265,7 @@ def test_graph_search():
             if (count.indices[0] == idx).all() and (count.values == vals).all():
                 break
     else:
-        assert False, f"Invalid solution: idx={count.indices[1]}, vals={count.values}"
+        assert False, f"Invalid solution: idx={count.indices[0]}, vals={count.values}"
 
     # Random weighted
     count = mlalgo.graph_search(graph, 5, [0, 2], "random_weighted", rand_seed=14)

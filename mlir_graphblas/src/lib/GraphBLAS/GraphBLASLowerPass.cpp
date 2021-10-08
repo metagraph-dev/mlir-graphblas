@@ -109,7 +109,7 @@ public:
       npointers = rewriter.create<ConstantIndexOp>(loc, 1);
     } else {
       Value dimForPointers;
-      if (rank == 1 || typeIsCSR(inputType)) {
+      if (hasRowOrdering(inputType)) {
         dimForPointers = rewriter.create<ConstantIndexOp>(loc, 0);
       } else {
         dimForPointers = rewriter.create<ConstantIndexOp>(loc, 1);
@@ -195,14 +195,18 @@ public:
 
     Value duplicate = callEmptyLike(rewriter, module, loc, inputTensor);
 
-    // Set dimensions in absolute terms of nrow x ncol
-    callResizeDim(rewriter, module, loc, duplicate, c0, nrow);
-    callResizeDim(rewriter, module, loc, duplicate, c1, ncol);
-
     // Beyond this point, the algorithm assumes csr->csc,
     // so swap nrow/ncol for csc->csr
-    bool csr2csc = typeIsCSC(outputType);
-    if (!csr2csc) {
+    bool outputIsCSC = typeIsCSC(outputType);
+
+    // Set dimensions in correct order for CSR or CSC
+    if (outputIsCSC) {
+      callResizeDim(rewriter, module, loc, duplicate, c0, ncol);
+      callResizeDim(rewriter, module, loc, duplicate, c1, nrow);
+    } else {
+      callResizeDim(rewriter, module, loc, duplicate, c0, nrow);
+      callResizeDim(rewriter, module, loc, duplicate, c1, ncol);
+
       Value tmp = nrow;
       nrow = ncol;
       ncol = tmp;
@@ -216,8 +220,8 @@ public:
     // the verify function will ensure that this is CSR->CSC or CSC->CSR
     Value output = castToPtr8(rewriter, module, loc, duplicate);
     RankedTensorType flippedType = getSingleCompressedMatrixType(
-        context, inputTensorType.getShape(), csr2csc, valueType, ptrBitWidth,
-        idxBitWidth);
+        context, inputTensorType.getShape(), outputIsCSC, valueType,
+        ptrBitWidth, idxBitWidth);
     output = castToTensor(rewriter, module, loc, output, flippedType);
 
     Value outputPtrs = rewriter.create<sparse_tensor::ToPointersOp>(
@@ -370,19 +374,6 @@ public:
     Value output = callDupTensor(rewriter, module, loc, inputTensor);
     output = castToPtr8(rewriter, module, loc, output);
     output = castToTensor(rewriter, module, loc, output, flippedInputType);
-
-    // Swap sizes
-    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
-    Value ncol = rewriter.create<graphblas::NumColsOp>(loc, inputTensor);
-    Value cond =
-        rewriter.create<CmpIOp>(op.getLoc(), CmpIPredicate::ne, nrow, ncol);
-    scf::IfOp ifOp =
-        rewriter.create<scf::IfOp>(loc, cond, /*withElseRegion=*/false);
-    rewriter.setInsertionPointToStart(&ifOp.thenRegion().front());
-    callResizeDim(rewriter, module, loc, output, c0, ncol);
-    callResizeDim(rewriter, module, loc, output, c1, nrow);
 
     // TODO we get an error when we have hard-coded/known sizes at compile time.
 
@@ -634,7 +625,6 @@ public:
     RankedTensorType matrixType =
         op.input().getType().dyn_cast<RankedTensorType>();
     Type elementType = matrixType.getElementType();
-    ArrayRef<int64_t> matrixShape = matrixType.getShape();
 
     bool matrixTypeIsCSR = typeIsCSR(matrixType);
     if ((axis == 0 && matrixTypeIsCSR) || (axis == 1 && !matrixTypeIsCSR)) {
@@ -645,8 +635,11 @@ public:
       unsigned ptrBitWidth = sparseEncoding.getPointerBitWidth();
       unsigned idxBitWidth = sparseEncoding.getIndexBitWidth();
 
+      ArrayRef<int64_t> matrixShape = matrixType.getShape();
+      ArrayRef<int64_t> flippedShape =
+          ArrayRef<int64_t>{matrixShape[1], matrixShape[0]};
       RankedTensorType flippedMatrixType =
-          getSingleCompressedMatrixType(context, matrixShape, matrixTypeIsCSR,
+          getSingleCompressedMatrixType(context, flippedShape, matrixTypeIsCSR,
                                         elementType, ptrBitWidth, idxBitWidth);
       Value convertedTensor = rewriter.create<graphblas::ConvertLayoutOp>(
           loc, flippedMatrixType, matrix);

@@ -5,13 +5,14 @@ STANDARD_PASSES = [
     "--sparse-tensor-conversion",
     "--linalg-bufferize",
     "--func-bufferize",
-    "--tensor-bufferize",
     "--tensor-constant-bufferize",
+    "--tensor-bufferize",
     "--finalizing-bufferize",
     "--convert-linalg-to-loops",
     "--convert-scf-to-std",
     "--convert-memref-to-llvm",
     "--convert-std-to-llvm",
+    "--reconcile-unrealized-casts",
 ]
 
 MLIR_TYPE_TO_NP_TYPE = {

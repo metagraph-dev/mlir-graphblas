@@ -7,7 +7,7 @@
   indexBitWidth = 64
 }>
 
-// CHECK-LABEL:   .func @matrix_update_accumulate(
+// CHECK-LABEL:   func @matrix_update_accumulate(
 // CHECK-SAME:                                    %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                                    %[[VAL_1:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
 // CHECK-DAG:       %[[VAL_2:.*]] = constant 0 : index
