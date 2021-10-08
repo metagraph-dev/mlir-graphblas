@@ -625,7 +625,6 @@ public:
     RankedTensorType matrixType =
         op.input().getType().dyn_cast<RankedTensorType>();
     Type elementType = matrixType.getElementType();
-    ArrayRef<int64_t> matrixShape = matrixType.getShape();
 
     bool matrixTypeIsCSR = typeIsCSR(matrixType);
     if ((axis == 0 && matrixTypeIsCSR) || (axis == 1 && !matrixTypeIsCSR)) {
@@ -636,8 +635,11 @@ public:
       unsigned ptrBitWidth = sparseEncoding.getPointerBitWidth();
       unsigned idxBitWidth = sparseEncoding.getIndexBitWidth();
 
+      ArrayRef<int64_t> matrixShape = matrixType.getShape();
+      ArrayRef<int64_t> flippedShape =
+          ArrayRef<int64_t>{matrixShape[1], matrixShape[0]};
       RankedTensorType flippedMatrixType =
-          getSingleCompressedMatrixType(context, matrixShape, matrixTypeIsCSR,
+          getSingleCompressedMatrixType(context, flippedShape, matrixTypeIsCSR,
                                         elementType, ptrBitWidth, idxBitWidth);
       Value convertedTensor = rewriter.create<graphblas::ConvertLayoutOp>(
           loc, flippedMatrixType, matrix);

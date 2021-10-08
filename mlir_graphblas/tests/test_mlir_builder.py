@@ -476,13 +476,13 @@ REDUCE_TO_VECTOR_CASES = [
     # pytest.param(
     #     "tensor<5x4x{scalar_type}, #CSR64>",
     #     "tensor<5x{scalar_type}, #CV64>",
-    #     "tensor<4x{scalar_type}, #CV64>"
+    #     "tensor<4x{scalar_type}, #CV64>",
     #     id="csr_fixed"
     # ), # TODO make this work
     # pytest.param(
     #     "tensor<5x4x{scalar_type}, #CSC64>",
     #     "tensor<5x{scalar_type}, #CV64>",
-    #     "tensor<4x{scalar_type}, #CV64>"
+    #     "tensor<4x{scalar_type}, #CV64>",
     #     id="csc_fixed"
     # ), # TODO make this work
     pytest.param(
