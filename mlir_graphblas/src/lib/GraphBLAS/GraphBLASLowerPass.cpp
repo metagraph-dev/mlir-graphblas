@@ -108,14 +108,9 @@ public:
     if (rank == 1) {
       npointers = rewriter.create<ConstantIndexOp>(loc, 1);
     } else {
-      Value dimForPointers;
-      if (rank == 1 || typeIsCSR(inputType)) {
-        dimForPointers = rewriter.create<ConstantIndexOp>(loc, 0);
-      } else {
-        dimForPointers = rewriter.create<ConstantIndexOp>(loc, 1);
-      }
+      Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
       npointers =
-          rewriter.create<tensor::DimOp>(loc, inputTensor, dimForPointers);
+          rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
     }
 
     // The last value from the pointers is the number of nonzero values
@@ -195,14 +190,18 @@ public:
 
     Value duplicate = callEmptyLike(rewriter, module, loc, inputTensor);
 
-    // Set dimensions in absolute terms of nrow x ncol
-    callResizeDim(rewriter, module, loc, duplicate, c0, nrow);
-    callResizeDim(rewriter, module, loc, duplicate, c1, ncol);
-
     // Beyond this point, the algorithm assumes csr->csc,
     // so swap nrow/ncol for csc->csr
-    bool csr2csc = typeIsCSC(outputType);
-    if (!csr2csc) {
+    bool outputIsCSC = typeIsCSC(outputType);
+
+    // Set dimensions in correct order for CSR or CSC
+    if (outputIsCSC) {
+      callResizeDim(rewriter, module, loc, duplicate, c0, ncol);
+      callResizeDim(rewriter, module, loc, duplicate, c1, nrow);
+    } else {
+      callResizeDim(rewriter, module, loc, duplicate, c0, nrow);
+      callResizeDim(rewriter, module, loc, duplicate, c1, ncol);
+
       Value tmp = nrow;
       nrow = ncol;
       ncol = tmp;
@@ -216,7 +215,7 @@ public:
     // the verify function will ensure that this is CSR->CSC or CSC->CSR
     Value output = castToPtr8(rewriter, module, loc, duplicate);
     RankedTensorType flippedType = getSingleCompressedMatrixType(
-        context, inputTensorType.getShape(), csr2csc, valueType, ptrBitWidth,
+        context, inputTensorType.getShape(), outputIsCSC, valueType, ptrBitWidth,
         idxBitWidth);
     output = castToTensor(rewriter, module, loc, output, flippedType);
 
@@ -370,19 +369,6 @@ public:
     Value output = callDupTensor(rewriter, module, loc, inputTensor);
     output = castToPtr8(rewriter, module, loc, output);
     output = castToTensor(rewriter, module, loc, output, flippedInputType);
-
-    // Swap sizes
-    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-    Value nrow = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
-    Value ncol = rewriter.create<graphblas::NumColsOp>(loc, inputTensor);
-    Value cond =
-        rewriter.create<CmpIOp>(op.getLoc(), CmpIPredicate::ne, nrow, ncol);
-    scf::IfOp ifOp =
-        rewriter.create<scf::IfOp>(loc, cond, /*withElseRegion=*/false);
-    rewriter.setInsertionPointToStart(&ifOp.thenRegion().front());
-    callResizeDim(rewriter, module, loc, output, c0, ncol);
-    callResizeDim(rewriter, module, loc, output, c1, nrow);
 
     // TODO we get an error when we have hard-coded/known sizes at compile time.
 
