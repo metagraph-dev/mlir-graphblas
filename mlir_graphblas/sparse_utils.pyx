@@ -119,6 +119,7 @@ cdef extern from "SparseUtils.cpp" nogil:
 
     # HACKED IN
     uint64_t get_rank(void *tensor)
+    bool verify(void *tensor)
 
     # These return pointers to the vectors
     void *get_rev_ptr(void *)
@@ -478,6 +479,9 @@ cdef class MLIRSparseTensor:
                 if values.dtype.type not in {np.int8, np.int16, np.int32, np.int64, np.float32, np.float64}:
                     raise TypeError("Bad dtype for values: %s.  int{8,16,32,64} or float{32,64} expected." % values.dtype)
             raise
+
+    def verify(self):
+        return verify(self._data)
 
     def __dealloc__(self):
         delSparseTensor(self._data)

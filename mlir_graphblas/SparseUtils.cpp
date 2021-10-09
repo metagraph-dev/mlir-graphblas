@@ -70,6 +70,45 @@
 
 namespace {
 
+//// -> MODIFIED
+// used by verify
+template <typename T>
+bool issorted(const std::vector<T> &arr, uint64_t start, uint64_t stop) {
+  if (stop <= start + 1) {
+    return true;
+  }
+  T prev = arr[start];
+  for(size_t i=start + 1; i < stop; ++i) {
+    T cur = arr[i];
+    if (cur == prev) {
+      continue;
+    } else if (cur < prev) {
+      return false;
+    } else {
+      prev = cur;
+    }
+  }
+  return true;
+}
+
+template <typename T>
+bool isincreasing(const std::vector<T> &arr, uint64_t start, uint64_t stop) {
+  if (stop <= start + 1) {
+    return true;
+  }
+  T prev = arr[start];
+  for(size_t i=start + 1; i < stop; ++i) {
+    T cur = arr[i];
+    if (cur <= prev) {
+      return false;
+    } else {
+      prev = cur;
+    }
+  }
+  return true;
+}
+//// <- MODIFIED
+
 /// A sparse tensor element in coordinate scheme (value and indices).
 /// For example, a rank-1 vector element would look like
 ///   ({i}, a[i])
@@ -217,6 +256,11 @@ public:
   virtual void *empty(uint64_t ndims) {
     fatal("empty");
     return NULL;
+  }
+
+  virtual bool verify() {
+    fatal("verify");
+    return false;
   }
   //// <- MODIFIED
 
@@ -512,6 +556,161 @@ public:
   void *empty(uint64_t ndims) override {
     SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(ndims);
     return tensor;
+  }
+
+  bool verify() override {
+    uint64_t ndim = this->getRank();
+    if (ndim == 0) {
+      fprintf(stderr, "Bad tensor: ndim == 0\n");
+      return false;
+    }
+    if (this->rev.size() != ndim) {
+      fprintf(stderr, "Bad tensor: len(rev) != ndim\n");
+      return false;
+    }
+    if (this->pointers.size() != ndim) {
+      fprintf(stderr, "Bad tensor: len(pointers) != ndim\n");
+      return false;
+    }
+    if (this->indices.size() != ndim) {
+      fprintf(stderr, "Bad tensor: len(indices) != ndim\n");
+      return false;
+    }
+    if (this->sizes.size() != ndim) {
+      fprintf(stderr, "Bad tensor: len(sizes) != ndim\n");
+      return false;
+    }
+
+    std::vector<uint64_t> zeros(ndim, 0);
+    for (uint64_t i: this->rev) {
+      if (i >= ndim) {
+        fprintf(stderr, "Bad tensor: rev[i] >= ndim\n");
+        return false;
+      }
+      zeros[i] = 1;
+    }
+    for (uint64_t i: zeros) {
+      if (i == 0) {
+        fprintf(stderr, "Bad tensor: rev[i] == rev[j]\n");
+        return false;
+      }
+    }
+
+    bool is_dense = true;
+    uint64_t cum_size = 1;
+    uint64_t prev_ptr_len = 0;
+    uint64_t prev_idx_len = 0;
+    for (size_t dim=0; dim < ndim; ++dim) {
+      auto &ptr = this->pointers[dim];
+      auto &idx = this->indices[dim];
+      auto &size = this->sizes[dim];
+      if (size <= 0) {
+        fprintf(stderr, "Bad tensor: size <= 0\n");
+        return false;
+      }
+      cum_size = cum_size * size;
+      if (ptr.size() == 0) {
+        if (idx.size() != 0) {
+          fprintf(stderr, "Bad tensor: len(ptr) == 0 and len(idx) != 0\n");
+          return false;
+        }
+      } else {
+        if (dim == 0) {
+          if (ptr.size() < 2) {
+            fprintf(stderr, "Bad tensor: len(ptr) < 2\n");
+            return false;
+          }
+          if (ptr.size() > ((2 < idx.size() + 1) ? idx.size() + 1 : 2)) {
+            fprintf(stderr, "Bad tensor: len(ptr) > max(2, len(idx) + 1)\n");
+            return false;
+          }
+        } else {
+          if (is_dense) {
+            if (ptr.size() != cum_size / size + 1) {
+              fprintf(stderr, "Bad tensor: len(ptr) != cum_size // size + 1\n");
+              return false;
+            }
+          } else {
+            // works for 2d
+            if (ptr.size() > idx.size() + 1) {
+              fprintf(stderr, "Bad tensor: len(ptr) > len(idx) + 1\n");
+              return false;
+            }
+          }
+          if (ptr.size() < 1) {
+            fprintf(stderr, "Bad tensor: len(ptr) < 1\n");
+            return false;
+          }
+        }
+        if (ptr.size() > cum_size + 1) {
+          fprintf(stderr, "Bad tensor: len(ptr) > cum_size + 1\n");
+          return false;
+        }
+        if (idx.size() > cum_size) {
+          fprintf(stderr, "Bad tensor: len(idx) > cum_size\n");
+          return false;
+        }
+        if (!issorted(ptr, 0, ptr.size())) {
+          fprintf(stderr, "Bad tensor: not issorted(ptr)\n");
+          return false;
+        }
+        if (ptr[0] != 0) {
+          fprintf(stderr, "Bad tensor: ptr[0] != 0\n");
+          return false;
+        }
+        if (ptr[ptr.size() - 1] != idx.size()) {
+          fprintf(stderr, "Bad tensor: ptr[-1] != len(idx)\n");
+          return false;
+        }
+        for (auto i: idx) {
+          if (i >= size) {
+            fprintf(stderr, "Bad tensor: idx[i] >= size\n");
+            return false;
+          }
+        }
+        auto start = ptr[0];
+        for(size_t i=1; i<ptr.size(); ++i) {
+          auto end = ptr[i];
+          if (!isincreasing(idx, start, end)) {
+            fprintf(stderr, "Bad tensor: not isincreasing(idx)\n");
+            return false;
+          }
+          start = end;
+        }
+        // These four checks may be redundant (and will they work for higher rank?)
+        if (prev_idx_len >= ptr.size()) {
+          fprintf(stderr, "Bad tensor: len(prev_idx) >= len(ptr)\n");
+          return false;
+        }
+        if (prev_idx_len > idx.size()) {
+          fprintf(stderr, "Bad tensor: len(prev_idx) >= len(idx)\n");
+          return false;
+        }
+        if (prev_ptr_len > ptr.size() + 1) {
+          fprintf(stderr, "Bad tensor: len(prev_ptr) >= len(ptr) + 1\n");
+          return false;
+        }
+        if (prev_ptr_len > idx.size() + 2) {
+          fprintf(stderr, "Bad tensor: len(prev_ptr) >= len(idx) + 2\n");
+          return false;
+        }
+        prev_ptr_len = ptr.size();
+        prev_idx_len = idx.size();
+        is_dense = false;
+      }
+    }
+    if (is_dense) {
+      if (cum_size != this->values.size()) {
+        fprintf(stderr, "Bad tensor: cum_size != len(values)\n");
+        return false;
+      }
+    } else {
+      if (prev_idx_len != this->values.size()) {
+        fprintf(stderr, "Bad tensor: len(last_idx) != len(values)\n");
+        return false;
+      }
+    }
+    return true;
   }
   //// <- MODIFIED
 };
@@ -1037,6 +1236,9 @@ void print_f64(double val) {
   return;
 }
 
+bool verify(void *tensor) {
+  return static_cast<SparseTensorStorageBase *>(tensor)->verify();
+}
 //// <- MODIFIED
 
 /// Returns size of sparse tensor in given dimension.

@@ -44,11 +44,10 @@ def verify(mt):
     check_rev[rev] = 1
     assert check_rev.all()
 
-    was_dense = True
+    is_dense = True
     cum_size = 1
-    last_idx = None
-    prev_ptr = None
-    prev_idx = None
+    prev_ptr_len = 0
+    prev_idx_len = 0
     for dim in range(mt.ndim):
         ptr = mt.get_pointers(dim)
         idx = mt.get_indices(dim)
@@ -60,9 +59,13 @@ def verify(mt):
         else:
             if dim == 0:
                 assert len(ptr) >= 2
+                assert len(ptr) <= max(2, len(idx) + 1)
             else:
-                if was_dense:
+                if is_dense:
                     assert len(ptr) == cum_size // size + 1
+                else:
+                    # Works for 2d
+                    assert len(ptr) <= len(idx) + 1
                 assert len(ptr) >= 1
             assert len(ptr) <= cum_size + 1
             assert len(idx) <= cum_size
@@ -70,26 +73,24 @@ def verify(mt):
             assert ptr[0] == 0
             assert ptr[-1] == len(idx)
             assert (idx < size).all()
-            if prev_ptr is not None:
-                # These checks are probably redundant (will they work for higher rank?)
-                assert len(prev_idx) < len(ptr)
-                assert len(prev_idx) <= len(idx)
-                assert len(prev_ptr) <= len(ptr) + 1
-                assert len(prev_ptr) <= len(idx) + 2
+            # These checks are probably redundant (will they work for higher rank?)
+            assert prev_idx_len < len(ptr)
+            assert prev_idx_len <= len(idx)
+            assert prev_ptr_len <= len(ptr) + 1
+            assert prev_ptr_len <= len(idx) + 2
             start = ptr[0]
             for end in ptr[1:]:
                 view = idx[start:end]
                 assert isincreasing(view)
                 start = end
-            last_idx = idx
-            was_dense = False
-            prev_ptr = ptr
-            prev_idx = idx
-    if last_idx is not None:
-        assert len(last_idx) == len(mt.values)
+            is_dense = False
+            prev_ptr_len = len(ptr)
+            prev_idx_len = len(idx)
+
+    if is_dense:
+        assert len(mt.values) == cum_size
     else:
-        # fully dense
-        len(mt.values) == cum_size
+        assert prev_idx_len == len(mt.values)
 
 
 @pytest.mark.parametrize("nrows", range(1, 4))
@@ -115,6 +116,7 @@ def test_verify(nrows, ncols):
             np.array([False, True], dtype=np.bool8),
         )
         verify(mt)
+        assert mt.verify()
         np.testing.assert_array_equal(mt.get_pointers(0), [])
         np.testing.assert_array_equal(mt.get_pointers(1), d["indptr"])
         np.testing.assert_array_equal(mt.get_indices(0), [])
@@ -133,6 +135,7 @@ def test_verify(nrows, ncols):
             np.array([True, True], dtype=np.bool8),
         )
         verify(mt)
+        assert mt.verify()
         np.testing.assert_array_equal(mt.get_pointers(0), [0, len(d["rows"])])
         np.testing.assert_array_equal(mt.get_pointers(1), d["indptr"])
         np.testing.assert_array_equal(mt.get_indices(0), d["rows"])
@@ -154,6 +157,7 @@ def test_verify(nrows, ncols):
             np.array([1, 0], dtype=np.uint64),
         )
         verify(mt)
+        assert mt.verify()
         np.testing.assert_array_equal(mt.get_pointers(0), [])
         np.testing.assert_array_equal(mt.get_pointers(1), d["indptr"])
         np.testing.assert_array_equal(mt.get_indices(0), [])
@@ -175,6 +179,7 @@ def test_verify(nrows, ncols):
             np.array([1, 0], dtype=np.uint64),
         )
         verify(mt)
+        assert mt.verify()
         np.testing.assert_array_equal(mt.get_pointers(0), [0, len(d["cols"])])
         np.testing.assert_array_equal(mt.get_pointers(1), d["indptr"])
         np.testing.assert_array_equal(mt.get_indices(0), d["cols"])
@@ -194,6 +199,7 @@ def test_verify(nrows, ncols):
                 np.array([False, False], dtype=np.bool8),
             )
             verify(mt)
+            assert mt.verify()
             np.testing.assert_array_equal(mt.values, d["values"].ravel())
             assert mt.shape == M.shape
             assert mt.sizes == M.shape
@@ -211,6 +217,7 @@ def test_verify(nrows, ncols):
                 np.array([1, 0], dtype=np.uint64),
             )
             verify(mt)
+            assert mt.verify()
             np.testing.assert_array_equal(mt.values, d["values"].T.ravel())
             assert mt.shape == M.shape
             assert mt.sizes[::-1] == M.shape
