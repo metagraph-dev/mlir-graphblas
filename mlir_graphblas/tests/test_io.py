@@ -149,7 +149,7 @@ def test_mlirsparsetensor_empty():
 
     i, j = a1.pointers
     np.testing.assert_array_equal(i, [0, 0])
-    assert j.shape == (0,)
+    np.testing.assert_array_equal(j, [0])
     i, j = a1.indices
     assert i.shape == (0,)
     assert j.shape == (0,)
@@ -169,8 +169,8 @@ def test_mlirsparsetensor_empty():
 
     i, j, k = a1.pointers
     np.testing.assert_array_equal(i, [0, 0])
-    assert j.shape == (0,)
-    assert k.shape == (0,)
+    np.testing.assert_array_equal(j, [0])
+    np.testing.assert_array_equal(k, [0])
     i, j, k = a1.indices
     assert i.shape == (0,)
     assert j.shape == (0,)

@@ -37,13 +37,14 @@ GRAPHBLAS_PASSES = (
     "--linalg-bufferize",
     "--convert-scf-to-std",
     "--func-bufferize",
-    "--tensor-bufferize",
     "--tensor-constant-bufferize",
+    "--tensor-bufferize",
     "--finalizing-bufferize",
     "--convert-linalg-to-loops",
     "--convert-scf-to-std",
     "--convert-memref-to-llvm",
     "--convert-std-to-llvm",
+    "--reconcile-unrealized-casts",
 )
 
 
