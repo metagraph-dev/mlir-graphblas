@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 import mlir_graphblas.algorithms as mlalgo
 from mlir_graphblas.tools.utils import (
@@ -7,9 +8,10 @@ from mlir_graphblas.tools.utils import (
     densify_csc,
     densify_vector,
 )
+from mlir_graphblas.mlir_builder import GRAPHBLAS_OPENMP_PASSES
 
-
-def test_triangle_count():
+@pytest.mark.parametrize("special_passes", [None, GRAPHBLAS_OPENMP_PASSES])
+def test_triangle_count(special_passes):
     # 0 - 1    5 - 6
     # | X |    | /
     # 3 - 4 -- 2 - 7
@@ -35,11 +37,11 @@ def test_triangle_count():
     sparsity = np.array([False, True], dtype=np.bool8)
     a = MLIRSparseTensor(indices, values, sizes, sparsity)
 
-    num_triangles = mlalgo.triangle_count(a)
+    num_triangles = mlalgo.triangle_count(a, compile_with_passes=special_passes)
     assert num_triangles == 5, num_triangles
 
-
-def test_sssp():
+@pytest.mark.parametrize("special_passes", [None, GRAPHBLAS_OPENMP_PASSES])
+def test_sssp(special_passes):
     # This must be in sorted-for-CSR format. Random order breaks the constructor in strange ways.
     # fmt: off
     indices = np.array(
@@ -65,13 +67,14 @@ def test_sssp():
     v = MLIRSparseTensor(indices, values, sizes, sparsity)
 
     # Compute SSSP from node #1 -- correct answer is [14, 0, 9, 11, 7, 10, 4]
-    w = mlalgo.sssp(m, v)
+    w = mlalgo.sssp(m, v, compile_with_passes=special_passes)
 
     assert (w.indices[0] == np.arange(7)).all()
     assert (w.values == [14, 0, 9, 11, 7, 10, 4]).all()
 
 
-def test_mssp():
+@pytest.mark.parametrize("special_passes", [None, GRAPHBLAS_OPENMP_PASSES])
+def test_mssp(special_passes):
     # This must be in sorted-for-CSR format. Random order breaks the constructor in strange ways.
     # fmt: off
     indices = np.array(
@@ -99,13 +102,14 @@ def test_mssp():
     # Compute MSSP
     # correct answer from node #1 -- [14, 0, 9, 11, 7, 10, 4]
     # correct answer from node #3 -- [3,  5,  3,  0, 12,  4,  9]
-    w = mlalgo.mssp(m, v)
+    w = mlalgo.mssp(m, v, compile_with_passes=special_passes)
 
     assert (w.indices[1] == [0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 6]).all()
     assert (w.values == [14, 0, 9, 11, 7, 10, 4, 3, 5, 3, 0, 12, 4, 9]).all()
 
 
-def test_bipartite_project_and_filter():
+@pytest.mark.parametrize("special_passes", [None, GRAPHBLAS_OPENMP_PASSES])
+def test_bipartite_project_and_filter(special_passes):
     # Test Results
     r"""
     0  1  2  3
@@ -137,7 +141,7 @@ def test_bipartite_project_and_filter():
     assert np.all(dense_result == expected_dense_result)
 
     # Test column projection
-    result2 = mlalgo.bipartite_project_and_filter(input_tensor, "column", cutoff=1.0)
+    result2 = mlalgo.bipartite_project_and_filter(input_tensor, "column", cutoff=1.0, compile_with_passes=special_passes)
     dense_result2 = densify_csr(result2)
 
     expected_dense_result2 = dense_input_tensor.T @ dense_input_tensor
@@ -146,7 +150,8 @@ def test_bipartite_project_and_filter():
     assert np.all(dense_result2 == expected_dense_result2)
 
 
-def test_vertex_nomination():
+@pytest.mark.parametrize("special_passes", [None, GRAPHBLAS_OPENMP_PASSES])
+def test_vertex_nomination(special_passes):
     # fmt: off
     indices = np.array(
         [[0, 1], [0, 3],
@@ -172,18 +177,19 @@ def test_vertex_nomination():
 
     # Compute Vertex Nomination
     # correct answer for node #6 is node #4
-    w = mlalgo.vertex_nomination(m, v)
+    w = mlalgo.vertex_nomination(m, v, compile_with_passes=special_passes)
     assert w == 4
 
     # correct answer for nodes #0,1,5 is node #3
     indices = np.array([[0], [1], [5]], dtype=np.uint64)
     values = np.array([0, 0, 0], dtype=np.float64)
     v2 = MLIRSparseTensor(indices, values, sizes, sparsity)
-    w2 = mlalgo.vertex_nomination(m, v2)
+    w2 = mlalgo.vertex_nomination(m, v2, compile_with_passes=special_passes)
     assert w2 == 3
 
 
-def test_scan_statistics():
+@pytest.mark.parametrize("special_passes", [None, GRAPHBLAS_OPENMP_PASSES])
+def test_scan_statistics(special_passes):
     # Test Results
     dense_input_tensor = np.array(
         [
@@ -200,7 +206,7 @@ def test_scan_statistics():
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
 
-    result = mlalgo.scan_statistics(input_tensor)
+    result = mlalgo.scan_statistics(input_tensor, compile_with_passes=special_passes)
 
     # valid results are in {0, 1, 3, 4}, but we choose the lowest index
     expected_result = 0
@@ -208,7 +214,8 @@ def test_scan_statistics():
     assert result == expected_result
 
 
-def test_pagerank():
+@pytest.mark.parametrize("special_passes", [None, GRAPHBLAS_OPENMP_PASSES])
+def test_pagerank(special_passes):
     # fmt: off
     indices = np.array(
         [[0, 1], [0, 2], [1, 3], [2, 3], [2, 4], [3, 4], [4, 0]],
@@ -229,13 +236,14 @@ def test_pagerank():
     assert np.abs(pr.values - expected).sum() < 1e-5, pr.values
 
     # Test maxiter reached, failed to converge
-    pr, niters = mlalgo.pagerank(m, tol=1e-7, maxiter=6)
+    pr, niters = mlalgo.pagerank(m, tol=1e-7, maxiter=6, compile_with_passes=special_passes)
     assert niters == 6
     assert (
         np.abs(pr.values - expected).sum() > 1e-5
     ), "Unexpectedly converged in 6 iterations"
 
 
+# DO NOT RUN THIS ALGORITHM WITH OPENMP UNTIL WE HAVE THREAD SAFE RNG
 def test_graph_search():
     # fmt: off
     indices = np.array(
