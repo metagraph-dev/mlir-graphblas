@@ -623,13 +623,18 @@ public:
             rv = false;
           }
           if (ptr.size() > ((2 < idx.size() + 1) ? idx.size() + 1 : 2)) {
+            // max(2, ...), because len(ptr) >= 2, and len(idx) >= 0 when dim == 0
             fprintf(stderr, "Bad tensor (dim=%lu): len(ptr) > max(2, len(idx) + 1)\n", dim);
             rv = false;
           }
         } else {
           if (is_dense) {
             if (ptr.size() != cum_size / size + 1) {
-              fprintf(stderr, "Bad tensor (dim=%lu): len(ptr) != cum_size // size + 1\n", dim);
+              fprintf(
+                stderr,
+                "Bad tensor (dim=%lu): len(ptr) != cum_size // size + 1 (previous dimensions were dense)\n",
+                dim
+              );
               rv = false;
             }
           } else {
