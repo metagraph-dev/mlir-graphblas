@@ -394,38 +394,29 @@ def test_ir_builder_vector_argminmax(
     ir_builder = MLIRFunctionBuilder(
         "vector_arg_min_and_max",
         input_types=["tensor<?xi32, #CV64>"],
-        return_types=["index", "index", "index", "index"],
+        return_types=["i64", "i64"],
         aliases=aliases,
     )
     (vec,) = ir_builder.inputs
-    arg_minmax_min = ir_builder.graphblas.vector_argminmax(vec, "min")
-    arg_minmax_max = ir_builder.graphblas.vector_argminmax(vec, "max")
-    arg_min = ir_builder.graphblas.vector_argmin(vec)
-    arg_max = ir_builder.graphblas.vector_argmax(vec)
-    ir_builder.return_vars(arg_minmax_min, arg_minmax_max, arg_min, arg_max)
+    arg_min = ir_builder.graphblas.reduce_to_scalar(vec, "argmin")
+    arg_max = ir_builder.graphblas.reduce_to_scalar(vec, "argmax")
+    ir_builder.return_vars(arg_min, arg_max)
     vector_arg_min_and_max = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
     # Test Results
     input_tensor = sparsify_array(dense_input_tensor, [True])
-    (
-        result_arg_minmax_min,
-        result_arg_minmax_max,
-        result_arg_min,
-        result_arg_max,
-    ) = vector_arg_min_and_max(input_tensor)
+    res_min, res_max = vector_arg_min_and_max(input_tensor)
 
     minimum = np.min(dense_input_tensor)
     maximum = np.max(dense_input_tensor)
 
     dwimmed_dense_input_tensor = np.copy(dense_input_tensor)
     dwimmed_dense_input_tensor[dwimmed_dense_input_tensor == 0] = maximum + 1
-    assert result_arg_minmax_min == np.argmin(dwimmed_dense_input_tensor)
-    assert result_arg_min == np.argmin(dwimmed_dense_input_tensor)
+    assert res_min == np.argmin(dwimmed_dense_input_tensor)
 
     dwimmed_dense_input_tensor = np.copy(dense_input_tensor)
     dwimmed_dense_input_tensor[dwimmed_dense_input_tensor == 0] = minimum - 1
-    assert result_arg_minmax_max == np.argmax(dwimmed_dense_input_tensor)
-    assert result_arg_max == np.argmax(dwimmed_dense_input_tensor)
+    assert res_max == np.argmax(dwimmed_dense_input_tensor)
 
 
 def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):

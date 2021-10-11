@@ -87,9 +87,9 @@ module  {
     pytest.param(
         """
 module  {
-  func @vector_argminmax_min(%arg0: tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
-    %0 = graphblas.vector_argminmax %arg0 {minmax = "min"} : tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
-    return %0 : index
+  func @vector_argmin(%arg0: tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> i64 {
+    %0 = graphblas.reduce_to_scalar %arg0 {aggregator = "argmin"} : tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to i64
+    return %0 : i64
   }
 }
 """,
@@ -101,9 +101,9 @@ module  {
 }>
 
 module  {
-  func @vector_argminmax_min(%arg0: tensor<3xi64, #CV64>) -> index {
-    %0 = graphblas.vector_argminmax %arg0 {minmax = "min"} : tensor<3xi64, #CV64>
-    return %0 : index
+  func @vector_argmin(%arg0: tensor<3xi64, #CV64>) -> i64 {
+    %0 = graphblas.reduce_to_scalar %arg0 {aggregator = "argmin"} : tensor<3xi64, #CV64> to i64
+    return %0 : i64
   }
 }
 """,

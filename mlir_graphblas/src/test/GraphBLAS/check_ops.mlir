@@ -394,44 +394,20 @@ module {
 
 module {
 
-    // CHECK: func @vector_argminmax_min(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
-    func @vector_argminmax_min(%vec: tensor<3xi64, #CV64>) -> index {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_argminmax %[[ARGA]] {minmax = "min"} : [[A_TYPE]]
-        %answer = graphblas.vector_argminmax %vec { minmax = "min" } : tensor<3xi64, #CV64>
+    // CHECK: func @vector_argmin(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @vector_argmin(%vec: tensor<3xi64, #CV64>) -> i64 {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.reduce_to_scalar %[[ARGA]] {aggregator = "argmin"} : [[A_TYPE]]
+        %answer = graphblas.reduce_to_scalar %vec { aggregator = "argmin" } : tensor<3xi64, #CV64> to i64
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
-        return %answer : index
+        return %answer : i64
     }
 
-    // CHECK: func @vector_argminmax_max(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
-    func @vector_argminmax_max(%vec: tensor<3xi64, #CV64>) -> index {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_argminmax %[[ARGA]] {minmax = "max"} : [[A_TYPE]]
-        %answer = graphblas.vector_argminmax %vec { minmax = "max" } : tensor<3xi64, #CV64>
+    // CHECK: func @vector_argmax(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
+    func @vector_argmax(%vec: tensor<3xi64, #CV64>) -> i64 {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.reduce_to_scalar %[[ARGA]] {aggregator = "argmax"} : [[A_TYPE]]
+        %answer = graphblas.reduce_to_scalar %vec { aggregator = "argmax" } : tensor<3xi64, #CV64> to i64
         // COM: CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
-        return %answer : index
-    }
-
-}
-
-module {
-
-    // CHECK: func @vector_argmin_wrapper(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
-    func @vector_argmin_wrapper(%vec: tensor<3xi64, #CV64>) -> index {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_argmin %[[ARGA]] : [[A_TYPE]]
-        %answer = graphblas.vector_argmin %vec : tensor<3xi64, #CV64>
-        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
-        return %answer : index
-    }
-
-}
-
-module {
-
-    // CHECK: func @vector_argmax_wrapper(%[[ARGA:.*]]: [[A_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
-    func @vector_argmax_wrapper(%vec: tensor<3xi64, #CV64>) -> index {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.vector_argmax %[[ARGA]] : [[A_TYPE]]
-        %answer = graphblas.vector_argmax %vec : tensor<3xi64, #CV64>
-        // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
-        return %answer : index
+        return %answer : i64
     }
 
 }

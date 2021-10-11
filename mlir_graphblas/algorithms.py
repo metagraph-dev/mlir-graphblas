@@ -312,7 +312,8 @@ class VertexNomination(Algorithm):
         v2 = irb.graphblas.matrix_multiply(
             mT, v, semiring="min_first", mask=v, mask_complement=True
         )
-        result = irb.graphblas.vector_argmin(v2)
+        result_64 = irb.graphblas.reduce_to_scalar(v2, "argmin")
+        result = irb.index_cast(result_64, "index")
 
         irb.return_vars(result)
 
@@ -340,7 +341,8 @@ class ScanStatistics(Algorithm):
         L_T = ir_builder.graphblas.transpose(L, "tensor<?x?xf64, #CSC64>")
         A_triangles = ir_builder.graphblas.matrix_multiply(A, L_T, "plus_pair", mask=A)
         tri = ir_builder.graphblas.reduce_to_vector(A_triangles, "plus", 1)
-        answer = ir_builder.graphblas.vector_argmax(tri)
+        answer_64 = ir_builder.graphblas.reduce_to_scalar(tri, "argmax")
+        answer = ir_builder.index_cast(answer_64, "index")
         ir_builder.return_vars(answer)
         return ir_builder
 

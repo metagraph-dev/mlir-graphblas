@@ -536,42 +536,6 @@ static LogicalResult verify(MatrixMultiplyReduceToScalarGenericOp op) {
   return success();
 }
 
-static LogicalResult verify(VectorArgMinMaxOp op) {
-  RankedTensorType vecType = op.vec().getType().cast<RankedTensorType>();
-
-  llvm::Optional<std::string> errMsg = checkVectorEncoding(vecType);
-  if (errMsg)
-    return op.emitError("operand " + errMsg.getValue());
-
-  std::string minmax = op.minmax().str();
-  if (minmax != "min" && minmax != "max")
-    return op.emitError(
-        "The minmax attribute is expected to be \"min\" or \"max\"; got \"" +
-        minmax + "\" instead.");
-
-  return success();
-}
-
-static LogicalResult verify(VectorArgMinOp op) {
-  RankedTensorType vecType = op.vec().getType().cast<RankedTensorType>();
-
-  llvm::Optional<std::string> errMsg = checkVectorEncoding(vecType);
-  if (errMsg)
-    return op.emitError("operand " + errMsg.getValue());
-
-  return success();
-}
-
-static LogicalResult verify(VectorArgMaxOp op) {
-  RankedTensorType vecType = op.vec().getType().cast<RankedTensorType>();
-
-  llvm::Optional<std::string> errMsg = checkVectorEncoding(vecType);
-  if (errMsg)
-    return op.emitError("operand " + errMsg.getValue());
-
-  return success();
-}
-
 static LogicalResult verify(DiagOp op) {
   RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
   RankedTensorType resultType =
@@ -808,8 +772,9 @@ static LogicalResult verify(ReduceToScalarOp op) {
   Type operandOrigType = op.input().getType();
   RankedTensorType operandType = operandOrigType.cast<RankedTensorType>();
   Type resultType = op.getResult().getType();
-  if (aggregator == "argmin" or aggregator == "argmax") {
-    if (operandType.getRank() != 1)
+  if (aggregator == "argmin" or aggregator == "argmax" or
+      aggregator == "count") {
+    if (operandType.getRank() != 1 and aggregator != "count")
       return op.emitError("\"" + aggregator + "\" only supported for vectors.");
     bool resultTypeIsI64 = llvm::TypeSwitch<Type, bool>(resultType)
                                .Case<IntegerType>([&](IntegerType type) {

@@ -1029,19 +1029,123 @@ public:
   using OpRewritePattern<graphblas::ReduceToScalarOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::ReduceToScalarOp op,
                                 PatternRewriter &rewriter) const override {
+    StringRef aggregator = op.aggregator();
+
+    if (aggregator == "count") {
+      return rewriteCount(op, rewriter);
+    } else if (aggregator == "argmin" or aggregator == "argmax") {
+      return rewriteArgMinMax(op, rewriter);
+    } else {
+      return rewriteStandard(op, rewriter);
+    }
+  };
+
+private:
+  LogicalResult rewriteCount(graphblas::ReduceToScalarOp op,
+                             PatternRewriter &rewriter) const {
+    Value input = op.input();
+    Location loc = op->getLoc();
+    Type int64Type = rewriter.getIntegerType(64);
+
+    Value countOp = rewriter.create<graphblas::NumValsOp>(loc, input);
+    Value countOp_64 = rewriter.create<IndexCastOp>(loc, countOp, int64Type);
+    rewriter.replaceOp(op, countOp_64);
+
+    return success();
+  }
+
+  LogicalResult rewriteArgMinMax(graphblas::ReduceToScalarOp op,
+                                 PatternRewriter &rewriter) const {
+    // TODO we get seg faults if given a size 0 vector or a sparse vector with
+    // no non-zero values. Probably should return a -1 for these cases.
+    Location loc = op->getLoc();
+    StringRef aggregator = op.aggregator();
+
+    Value input = op.input();
+    RankedTensorType inputType = input.getType().cast<RankedTensorType>();
+
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
+
+    Value pointers = rewriter.create<sparse_tensor::ToPointersOp>(
+        loc, memref1DI64Type, input, c0);
+    Value endPosition64 = rewriter.create<memref::LoadOp>(loc, pointers, c1);
+    Value endPosition =
+        rewriter.create<IndexCastOp>(loc, endPosition64, indexType);
+
+    Type inputElementType = inputType.getElementType();
+    Type memref1DValueType = MemRefType::get({-1}, inputElementType);
+    Value values = rewriter.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DValueType, input);
+
+    Value initialExtremum = rewriter.create<memref::LoadOp>(loc, values, c0);
+
+    scf::ForOp loop = rewriter.create<scf::ForOp>(
+        loc, c1, endPosition, c1, ValueRange{initialExtremum, c0});
+    Value currentValuePosition = loop.getInductionVar();
+    Value currentExtremum = loop.getLoopBody().getArgument(1);
+    Value currentExtremumPosition = loop.getLoopBody().getArgument(2);
+    rewriter.setInsertionPointToStart(loop.getBody());
+
+    Value currentValue =
+        rewriter.create<memref::LoadOp>(loc, values, currentValuePosition);
+    bool useMinimum = aggregator == "argmin";
+    Value replace =
+        llvm::TypeSwitch<Type, Value>(inputElementType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return rewriter.create<CmpIOp>(
+                  loc, useMinimum ? CmpIPredicate::slt : CmpIPredicate::sgt,
+                  currentValue, currentExtremum);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return rewriter.create<CmpFOp>(
+                  loc, useMinimum ? CmpFPredicate::OLT : CmpFPredicate::OGT,
+                  currentValue, currentExtremum);
+            });
+
+    scf::IfOp ifBlock = rewriter.create<scf::IfOp>(
+        loc, TypeRange{inputElementType, indexType}, replace, true);
+    rewriter.setInsertionPointToStart(ifBlock.thenBlock());
+    rewriter.create<scf::YieldOp>(
+        loc, ValueRange{currentValue, currentValuePosition});
+    rewriter.setInsertionPointToStart(ifBlock.elseBlock());
+    rewriter.create<scf::YieldOp>(
+        loc, ValueRange{currentExtremum, currentExtremumPosition});
+    rewriter.setInsertionPointAfter(ifBlock);
+
+    Value nextExtremum = ifBlock.getResult(0);
+    Value nextExtremumPosition = ifBlock.getResult(1);
+    rewriter.create<scf::YieldOp>(
+        loc, ValueRange{nextExtremum, nextExtremumPosition});
+
+    rewriter.setInsertionPointAfter(loop);
+
+    Value finalExtremumPosition = loop.getResult(1);
+    Value indices = rewriter.create<sparse_tensor::ToIndicesOp>(
+        loc, memref1DI64Type, input, c0);
+    Value argExtremum =
+        rewriter.create<memref::LoadOp>(loc, indices, finalExtremumPosition);
+    rewriter.replaceOp(op, argExtremum);
+
+    return success();
+  }
+
+  LogicalResult rewriteStandard(graphblas::ReduceToScalarOp op,
+                                PatternRewriter &rewriter) const {
     Value input = op.input();
     StringRef aggregator = op.aggregator();
     Location loc = op->getLoc();
 
     RankedTensorType operandType =
-        op.input().getType().dyn_cast<RankedTensorType>();
+        op.input().getType().cast<RankedTensorType>();
     Type valueType = operandType.getElementType();
 
-    // New op
     graphblas::ReduceToScalarGenericOp newReduceOp =
         rewriter.create<graphblas::ReduceToScalarGenericOp>(
             loc, op->getResultTypes(), input, 2);
-
     if (aggregator == "plus") {
       // Insert agg identity block
       Region &aggIdentityRegion = newReduceOp.getRegion(0);
@@ -1077,27 +1181,15 @@ public:
               });
       rewriter.create<graphblas::YieldOp>(loc, graphblas::YieldKind::AGG,
                                           aggResult);
-    } else if (aggregator == "argmin") {
-      // TODO implement this and add tests
-      // move the LowerVectorArgMinMaxOpRewrite implementation here
-      return op.emitError("\"" + aggregator + "\" is not yet supported.");
-    } else if (aggregator == "argmin") {
-      // TODO implement this and add tests
-      // move the LowerVectorArgMinMaxOpRewrite implementation here
-      return op.emitError("\"" + aggregator + "\" is not yet supported.");
-    } else if (aggregator == "count") {
-      // TODO implement this and add tests ; should just be a replacement
-      // with graphblas.num_vals
-      return op.emitError("\"" + aggregator + "\" is not yet supported.");
+
+      rewriter.replaceOp(op, newReduceOp.getResult());
     } else {
       return op.emitError("\"" + aggregator +
                           "\" is not a supported aggregator.");
     }
 
-    rewriter.replaceOp(op, newReduceOp.getResult());
-
     return success();
-  };
+  }
 };
 
 class LowerReduceToScalarGenericRewrite
@@ -2682,131 +2774,6 @@ public:
   };
 };
 
-class LowerVectorArgMinMaxOpRewrite
-    : public OpRewritePattern<graphblas::VectorArgMinMaxOp> {
-public:
-  using OpRewritePattern<graphblas::VectorArgMinMaxOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::VectorArgMinMaxOp op,
-                                PatternRewriter &rewriter) const override {
-    // TODO we get seg faults if given a size 0 vector or a sparse vector with
-    // no non-zero values.
-    Location loc = op->getLoc();
-
-    Value input = op.vec();
-    RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
-
-    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
-    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
-    Type indexType = rewriter.getIndexType();
-    Type int64Type = rewriter.getIntegerType(64);
-    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
-
-    Value pointers = rewriter.create<sparse_tensor::ToPointersOp>(
-        loc, memref1DI64Type, input, c0);
-    Value endPosition64 = rewriter.create<memref::LoadOp>(loc, pointers, c1);
-    Value endPosition =
-        rewriter.create<IndexCastOp>(loc, endPosition64, indexType);
-
-    Type inputElementType = inputType.getElementType();
-    Type memref1DValueType = MemRefType::get({-1}, inputElementType);
-    Value values = rewriter.create<sparse_tensor::ToValuesOp>(
-        loc, memref1DValueType, input);
-
-    Value initialExtremum = rewriter.create<memref::LoadOp>(loc, values, c0);
-
-    scf::ForOp loop = rewriter.create<scf::ForOp>(
-        loc, c1, endPosition, c1, ValueRange{initialExtremum, c0});
-    Value currentValuePosition = loop.getInductionVar();
-    Value currentExtremum = loop.getLoopBody().getArgument(1);
-    Value currentExtremumPosition = loop.getLoopBody().getArgument(2);
-    rewriter.setInsertionPointToStart(loop.getBody());
-
-    Value currentValue =
-        rewriter.create<memref::LoadOp>(loc, values, currentValuePosition);
-    bool useMinimum = op.minmax().str() == "min";
-    Value replace =
-        llvm::TypeSwitch<Type, Value>(inputElementType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return rewriter.create<CmpIOp>(
-                  loc, useMinimum ? CmpIPredicate::slt : CmpIPredicate::sgt,
-                  currentValue, currentExtremum);
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return rewriter.create<CmpFOp>(
-                  loc, useMinimum ? CmpFPredicate::OLT : CmpFPredicate::OGT,
-                  currentValue, currentExtremum);
-            });
-
-    scf::IfOp ifBlock = rewriter.create<scf::IfOp>(
-        loc, TypeRange{inputElementType, indexType}, replace, true);
-    rewriter.setInsertionPointToStart(ifBlock.thenBlock());
-    rewriter.create<scf::YieldOp>(
-        loc, ValueRange{currentValue, currentValuePosition});
-    rewriter.setInsertionPointToStart(ifBlock.elseBlock());
-    rewriter.create<scf::YieldOp>(
-        loc, ValueRange{currentExtremum, currentExtremumPosition});
-    rewriter.setInsertionPointAfter(ifBlock);
-
-    Value nextExtremum = ifBlock.getResult(0);
-    Value nextExtremumPosition = ifBlock.getResult(1);
-    rewriter.create<scf::YieldOp>(
-        loc, ValueRange{nextExtremum, nextExtremumPosition});
-
-    rewriter.setInsertionPointAfter(loop);
-
-    Value finalExtremumPosition = loop.getResult(1);
-    Value indices = rewriter.create<sparse_tensor::ToIndicesOp>(
-        loc, memref1DI64Type, input, c0);
-    Value argExtremum64 =
-        rewriter.create<memref::LoadOp>(loc, indices, finalExtremumPosition);
-    Value argExtremum =
-        rewriter.create<IndexCastOp>(loc, argExtremum64, indexType);
-    rewriter.replaceOp(op, argExtremum);
-
-    return success();
-  };
-};
-
-class LowerVectorArgMinOpRewrite
-    : public OpRewritePattern<graphblas::VectorArgMinOp> {
-public:
-  using OpRewritePattern<graphblas::VectorArgMinOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::VectorArgMinOp op,
-                                PatternRewriter &rewriter) const override {
-    Location loc = op->getLoc();
-
-    Value inputTensor = op.vec();
-    Type outputType = op->getResultTypes().front();
-
-    Value newVectorArgMinMaxOp = rewriter.create<graphblas::VectorArgMinMaxOp>(
-        loc, outputType, inputTensor, "min");
-
-    rewriter.replaceOp(op, newVectorArgMinMaxOp);
-
-    return success();
-  };
-};
-
-class LowerVectorArgMaxOpRewrite
-    : public OpRewritePattern<graphblas::VectorArgMaxOp> {
-public:
-  using OpRewritePattern<graphblas::VectorArgMaxOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::VectorArgMaxOp op,
-                                PatternRewriter &rewriter) const override {
-    Location loc = op->getLoc();
-
-    Value inputTensor = op.vec();
-    Type outputType = op->getResultTypes().front();
-
-    Value newVectorArgMinMaxOp = rewriter.create<graphblas::VectorArgMinMaxOp>(
-        loc, outputType, inputTensor, "max");
-
-    rewriter.replaceOp(op, newVectorArgMinMaxOp);
-
-    return success();
-  };
-};
-
 class LowerDiagOpRewrite : public OpRewritePattern<graphblas::DiagOp> {
 public:
   using OpRewritePattern<graphblas::DiagOp>::OpRewritePattern;
@@ -3470,19 +3437,17 @@ public:
 };
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
-  patterns.add<
-      LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
-      LowerReduceToVectorRewrite, LowerReduceToScalarRewrite,
-      LowerReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
-      LowerConvertLayoutRewrite, LowerTransposeRewrite, LowerApplyRewrite,
-      LowerApplyGenericRewrite, LowerMatrixMultiplyReduceToScalarGenericRewrite,
-      LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
-      LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
-      LowerVectorArgMinMaxOpRewrite, LowerVectorArgMinOpRewrite,
-      LowerVectorArgMaxOpRewrite, LowerDiagOpRewrite, LowerCommentRewrite,
-      LowerPrintRewrite, LowerSizeRewrite, LowerNumRowsRewrite,
-      LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite>(
-      patterns.getContext());
+  patterns.add<LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
+               LowerReduceToVectorRewrite, LowerReduceToScalarRewrite,
+               LowerReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
+               LowerConvertLayoutRewrite, LowerTransposeRewrite,
+               LowerApplyRewrite, LowerApplyGenericRewrite,
+               LowerMatrixMultiplyReduceToScalarGenericRewrite,
+               LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
+               LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
+               LowerDiagOpRewrite, LowerCommentRewrite, LowerPrintRewrite,
+               LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
+               LowerNumValsRewrite, LowerDupRewrite>(patterns.getContext());
 }
 
 struct GraphBLASLoweringPass

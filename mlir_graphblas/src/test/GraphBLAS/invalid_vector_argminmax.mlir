@@ -8,9 +8,9 @@
 
 module {
 
-   func @vector_argminmax_wrapper(%argA: tensor<3xi64, #CV64>) -> index {
-       %answer = graphblas.vector_argminmax %argA { minmax = "bogus" } : tensor<3xi64, #CV64> // expected-error {{The minmax attribute is expected to be "min" or "max"; got "bogus" instead.}}
-       return %answer : index
+   func @vector_argmin_wrapper(%argA: tensor<3xi64, #CV64>) -> i64 {
+       %answer = graphblas.reduce_to_scalar %argA { aggregator = "bogus" } : tensor<3xi64, #CV64> to i64 // expected-error {{"bogus" is not a supported aggregator.}}
+       return %answer : i64
    }
 
 }
@@ -19,31 +19,10 @@ module {
 
 module {
 
-   func @vector_argminmax_wrapper(%argA: tensor<3xi64>) -> index {
-       %answer = graphblas.vector_argminmax %argA { minmax = "max" } : tensor<3xi64> // expected-error {{operand must be a sparse tensor.}}
-       return %answer : index
+   func @vector_argmax_wrapper(%argA: tensor<3xi64>) -> i64 {
+       %answer = graphblas.reduce_to_scalar %argA { aggregator = "argmax" } : tensor<3xi64> to i64 // expected-error {{operand must be a sparse tensor.}}
+       return %answer : i64
    }
 
 }
 
-// -----
-
-module {
-
-   func @vector_argmin_wrapper(%argA: tensor<3xi64>) -> index {
-       %answer = graphblas.vector_argmin %argA : tensor<3xi64> // expected-error {{operand must be a sparse tensor.}}
-       return %answer : index
-   }
-
-}
-
-// -----
-
-module {
-
-   func @vector_argmax_wrapper(%argA: tensor<3xi64>) -> index {
-       %answer = graphblas.vector_argmax %argA : tensor<3xi64> // expected-error {{operand must be a sparse tensor.}}
-       return %answer : index
-   }
-
-}
