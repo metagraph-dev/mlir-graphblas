@@ -559,6 +559,7 @@ public:
   }
 
   bool verify() override {
+    bool rv = true;
     uint64_t ndim = this->getRank();
     if (ndim == 0) {
       fprintf(stderr, "Bad tensor: ndim == 0\n");
@@ -566,7 +567,23 @@ public:
     }
     if (this->rev.size() != ndim) {
       fprintf(stderr, "Bad tensor: len(rev) != ndim\n");
-      return false;
+      rv = false;
+    } else {
+        std::vector<uint64_t> zeros(ndim, 0);
+        for (uint64_t i: this->rev) {
+          if (i >= ndim) {
+            fprintf(stderr, "Bad tensor: rev[i] >= ndim\n");
+            rv = false;
+          } else {
+            zeros[i] = 1;
+          }
+        }
+        for (uint64_t i: zeros) {
+          if (i == 0) {
+            fprintf(stderr, "Bad tensor: rev[i] == rev[j]\n");
+            rv = false;
+          }
+        }
     }
     if (this->pointers.size() != ndim) {
       fprintf(stderr, "Bad tensor: len(pointers) != ndim\n");
@@ -581,21 +598,6 @@ public:
       return false;
     }
 
-    std::vector<uint64_t> zeros(ndim, 0);
-    for (uint64_t i: this->rev) {
-      if (i >= ndim) {
-        fprintf(stderr, "Bad tensor: rev[i] >= ndim\n");
-        return false;
-      }
-      zeros[i] = 1;
-    }
-    for (uint64_t i: zeros) {
-      if (i == 0) {
-        fprintf(stderr, "Bad tensor: rev[i] == rev[j]\n");
-        return false;
-      }
-    }
-
     bool is_dense = true;
     uint64_t cum_size = 1;
     uint64_t prev_ptr_len = 0;
@@ -605,94 +607,104 @@ public:
       auto &idx = this->indices[dim];
       auto &size = this->sizes[dim];
       if (size <= 0) {
-        fprintf(stderr, "Bad tensor: size <= 0\n");
+        fprintf(stderr, "Bad tensor (dim=%lu): size <= 0\n", dim);
         return false;
       }
       cum_size = cum_size * size;
       if (ptr.size() == 0) {
         if (idx.size() != 0) {
-          fprintf(stderr, "Bad tensor: len(ptr) == 0 and len(idx) != 0\n");
-          return false;
+          fprintf(stderr, "Bad tensor (dim=%lu): len(ptr) == 0 and len(idx) != 0\n", dim);
+          rv = false;
         }
       } else {
         if (dim == 0) {
           if (ptr.size() < 2) {
-            fprintf(stderr, "Bad tensor: len(ptr) < 2\n");
-            return false;
+            fprintf(stderr, "Bad tensor (dim=%lu): len(ptr) < 2\n", dim);
+            rv = false;
           }
           if (ptr.size() > ((2 < idx.size() + 1) ? idx.size() + 1 : 2)) {
-            fprintf(stderr, "Bad tensor: len(ptr) > max(2, len(idx) + 1)\n");
-            return false;
+            fprintf(stderr, "Bad tensor (dim=%lu): len(ptr) > max(2, len(idx) + 1)\n", dim);
+            rv = false;
           }
         } else {
           if (is_dense) {
             if (ptr.size() != cum_size / size + 1) {
-              fprintf(stderr, "Bad tensor: len(ptr) != cum_size // size + 1\n");
-              return false;
+              fprintf(stderr, "Bad tensor (dim=%lu): len(ptr) != cum_size // size + 1\n", dim);
+              rv = false;
             }
           } else {
             // works for 2d
             if (ptr.size() > idx.size() + 1) {
-              fprintf(stderr, "Bad tensor: len(ptr) > len(idx) + 1\n");
-              return false;
+              fprintf(stderr, "Bad tensor (dim=%lu): len(ptr) > len(idx) + 1\n", dim);
+              rv = false;
             }
           }
           if (ptr.size() < 1) {
-            fprintf(stderr, "Bad tensor: len(ptr) < 1\n");
-            return false;
+            fprintf(stderr, "Bad tensor (dim=%lu): len(ptr) < 1\n", dim);
+            rv = false;
           }
         }
+        bool check_idx = true;
         if (ptr.size() > cum_size + 1) {
-          fprintf(stderr, "Bad tensor: len(ptr) > cum_size + 1\n");
-          return false;
+          fprintf(stderr, "Bad tensor (dim=%lu): len(ptr) > cum_size + 1\n", dim);
+          rv = false;
         }
         if (idx.size() > cum_size) {
-          fprintf(stderr, "Bad tensor: len(idx) > cum_size\n");
-          return false;
+          fprintf(stderr, "Bad tensor (dim=%lu): len(idx) > cum_size\n", dim);
+          rv = false;
         }
         if (!issorted(ptr, 0, ptr.size())) {
-          fprintf(stderr, "Bad tensor: not issorted(ptr)\n");
-          return false;
+          fprintf(stderr, "Bad tensor (dim=%lu): not issorted(ptr)\n", dim);
+          rv = false;
+          check_idx = false;
         }
         if (ptr[0] != 0) {
-          fprintf(stderr, "Bad tensor: ptr[0] != 0\n");
-          return false;
+          fprintf(stderr, "Bad tensor (dim=%lu): ptr[0] != 0\n", dim);
+          rv = false;
+          check_idx = false;
         }
         if (ptr[ptr.size() - 1] != idx.size()) {
-          fprintf(stderr, "Bad tensor: ptr[-1] != len(idx)\n");
-          return false;
+          fprintf(stderr, "Bad tensor (dim=%lu): ptr[-1] != len(idx)\n", dim);
+          rv = false;
+          check_idx = false;
         }
         for (auto i: idx) {
           if (i >= size) {
-            fprintf(stderr, "Bad tensor: idx[i] >= size\n");
-            return false;
+            fprintf(stderr, "Bad tensor (dim=%lu): idx[i] >= size\n", dim);
+            rv = false;
+            check_idx = false;
           }
         }
-        auto start = ptr[0];
-        for(size_t i=1; i<ptr.size(); ++i) {
-          auto end = ptr[i];
-          if (!isincreasing(idx, start, end)) {
-            fprintf(stderr, "Bad tensor: not isincreasing(idx)\n");
-            return false;
+        if (check_idx) {
+          auto start = ptr[0];
+          for(size_t i=1; i<ptr.size(); ++i) {
+            auto end = ptr[i];
+            if (end > idx.size()) {
+              // Just in case.  Bad ptr should have been caught above.
+              rv = false;
+            } else if (!isincreasing(idx, start, end)) {
+              fprintf(stderr, "Bad tensor (dim=%lu): not isincreasing(idx)\n", dim);
+              rv = false;
+            }
+            start = end;
           }
-          start = end;
         }
         // These four checks may be redundant (and will they work for higher rank?)
         if (prev_idx_len >= ptr.size()) {
-          fprintf(stderr, "Bad tensor: len(prev_idx) >= len(ptr)\n");
-          return false;
+          fprintf(stderr, "Bad tensor (dim=%lu): len(prev_idx) >= len(ptr)\n", dim);
+          rv = false;
         }
         if (prev_idx_len > idx.size()) {
-          fprintf(stderr, "Bad tensor: len(prev_idx) >= len(idx)\n");
-          return false;
+          fprintf(stderr, "Bad tensor (dim=%lu): len(prev_idx) >= len(idx)\n", dim);
+          rv = false;
         }
         if (prev_ptr_len > ptr.size() + 1) {
-          fprintf(stderr, "Bad tensor: len(prev_ptr) >= len(ptr) + 1\n");
-          return false;
+          fprintf(stderr, "Bad tensor (dim=%lu): len(prev_ptr) >= len(ptr) + 1\n", dim);
+          rv = false;
         }
         if (prev_ptr_len > idx.size() + 2) {
-          fprintf(stderr, "Bad tensor: len(prev_ptr) >= len(idx) + 2\n");
-          return false;
+          fprintf(stderr, "Bad tensor (dim=%lu): len(prev_ptr) >= len(idx) + 2\n", dim);
+          rv = false;
         }
         prev_ptr_len = ptr.size();
         prev_idx_len = idx.size();
@@ -702,15 +714,15 @@ public:
     if (is_dense) {
       if (cum_size != this->values.size()) {
         fprintf(stderr, "Bad tensor: cum_size != len(values)\n");
-        return false;
+        rv = false;
       }
     } else {
       if (prev_idx_len != this->values.size()) {
         fprintf(stderr, "Bad tensor: len(last_idx) != len(values)\n");
-        return false;
+        rv = false;
       }
     }
-    return true;
+    return rv;
   }
   //// <- MODIFIED
 };
