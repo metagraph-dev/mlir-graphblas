@@ -9,48 +9,50 @@
 // CHECK-LABEL:   func @vector_equal(
 // CHECK-SAME:                       %[[VAL_0:.*]]: tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>,
 // CHECK-SAME:                       %[[VAL_1:.*]]: tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> i1 {
-// CHECK-DAG:       %[[VAL_2:.*]] = constant 1 : index
-// CHECK-DAG:       %[[VAL_3:.*]] = constant false
-// CHECK-DAG:       %[[VAL_4:.*]] = constant true
-// CHECK-DAG:       %[[VAL_5:.*]] = constant 0 : index
-// CHECK:           %[[VAL_6:.*]] = tensor.dim %[[VAL_0]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           %[[VAL_7:.*]] = tensor.dim %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:           %[[VAL_2:.*]] = constant 0 : index
+// CHECK:           %[[VAL_3:.*]] = constant 1 : index
+// CHECK:           %[[VAL_4:.*]] = constant false
+// CHECK:           %[[VAL_5:.*]] = constant 1 : i32
+// CHECK:           %[[VAL_6:.*]] = tensor.dim %[[VAL_0]], %[[VAL_2]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:           %[[VAL_7:.*]] = tensor.dim %[[VAL_1]], %[[VAL_2]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           %[[VAL_8:.*]] = cmpi eq, %[[VAL_6]], %[[VAL_7]] : index
 // CHECK:           %[[VAL_9:.*]] = scf.if %[[VAL_8]] -> (i1) {
-// CHECK:             %[[VAL_10:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:             %[[VAL_12:.*]] = memref.load %[[VAL_10]]{{\[}}%[[VAL_2]]] : memref<?xi64>
-// CHECK:             %[[VAL_16:.*]] = index_cast %[[VAL_12]] : i64 to index
-// CHECK:             %[[VAL_11:.*]] = sparse_tensor.pointers %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:             %[[VAL_13:.*]] = memref.load %[[VAL_11]]{{\[}}%[[VAL_2]]] : memref<?xi64>
-// CHECK:             %[[VAL_116:.*]] = index_cast %[[VAL_13]] : i64 to index
-// CHECK:             %[[VAL_14:.*]] = cmpi eq, %[[VAL_16]], %[[VAL_116]] : index
-// CHECK:             %[[VAL_15:.*]] = scf.if %[[VAL_14]] -> (i1) {
-// CHECK:               %[[VAL_17:.*]] = sparse_tensor.indices %[[VAL_0]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:               %[[VAL_18:.*]] = sparse_tensor.indices %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:               %[[VAL_19:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:               %[[VAL_20:.*]] = sparse_tensor.values %[[VAL_1]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:               %[[VAL_21:.*]] = scf.parallel (%[[VAL_22:.*]]) = (%[[VAL_5]]) to (%[[VAL_16]]) step (%[[VAL_2]]) init (%[[VAL_4]]) -> i1 {
-// CHECK:                 %[[VAL_23:.*]] = memref.load %[[VAL_17]]{{\[}}%[[VAL_22]]] : memref<?xi64>
-// CHECK:                 %[[VAL_24:.*]] = memref.load %[[VAL_18]]{{\[}}%[[VAL_22]]] : memref<?xi64>
-// CHECK:                 %[[VAL_25:.*]] = memref.load %[[VAL_19]]{{\[}}%[[VAL_22]]] : memref<?xf64>
-// CHECK:                 %[[VAL_26:.*]] = memref.load %[[VAL_20]]{{\[}}%[[VAL_22]]] : memref<?xf64>
-// CHECK:                 %[[VAL_27:.*]] = cmpi eq, %[[VAL_23]], %[[VAL_24]] : i64
-// CHECK:                 %[[VAL_28:.*]] = cmpf oeq, %[[VAL_25]], %[[VAL_26]] : f64
-// CHECK:                 %[[VAL_29:.*]] = and %[[VAL_27]], %[[VAL_28]] : i1
-// CHECK:                 scf.reduce(%[[VAL_29]])  : i1 {
-// CHECK:                 ^bb0(%[[VAL_30:.*]]: i1, %[[VAL_31:.*]]: i1):
-// CHECK:                   %[[VAL_32:.*]] = and %[[VAL_30]], %[[VAL_31]] : i1
-// CHECK:                   scf.reduce.return %[[VAL_32]] : i1
+// CHECK:             %[[VAL_10:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_2]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
+// CHECK:             %[[VAL_11:.*]] = memref.load %[[VAL_10]]{{\[}}%[[VAL_3]]] : memref<?xi64>
+// CHECK:             %[[VAL_12:.*]] = index_cast %[[VAL_11]] : i64 to index
+// CHECK:             %[[VAL_13:.*]] = sparse_tensor.pointers %[[VAL_1]], %[[VAL_2]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
+// CHECK:             %[[VAL_14:.*]] = memref.load %[[VAL_13]]{{\[}}%[[VAL_3]]] : memref<?xi64>
+// CHECK:             %[[VAL_15:.*]] = index_cast %[[VAL_14]] : i64 to index
+// CHECK:             %[[VAL_16:.*]] = cmpi eq, %[[VAL_12]], %[[VAL_15]] : index
+// CHECK:             %[[VAL_17:.*]] = scf.if %[[VAL_16]] -> (i1) {
+// CHECK:               %[[VAL_18:.*]] = sparse_tensor.indices %[[VAL_0]], %[[VAL_2]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
+// CHECK:               %[[VAL_19:.*]] = sparse_tensor.indices %[[VAL_1]], %[[VAL_2]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
+// CHECK:               %[[VAL_20:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
+// CHECK:               %[[VAL_21:.*]] = sparse_tensor.values %[[VAL_1]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
+// CHECK:               %[[VAL_22:.*]] = scf.parallel (%[[VAL_23:.*]]) = (%[[VAL_2]]) to (%[[VAL_12]]) step (%[[VAL_3]]) init (%[[VAL_5]]) -> i32 {
+// CHECK:                 %[[VAL_24:.*]] = memref.load %[[VAL_18]]{{\[}}%[[VAL_23]]] : memref<?xi64>
+// CHECK:                 %[[VAL_25:.*]] = memref.load %[[VAL_19]]{{\[}}%[[VAL_23]]] : memref<?xi64>
+// CHECK:                 %[[VAL_26:.*]] = memref.load %[[VAL_20]]{{\[}}%[[VAL_23]]] : memref<?xf64>
+// CHECK:                 %[[VAL_27:.*]] = memref.load %[[VAL_21]]{{\[}}%[[VAL_23]]] : memref<?xf64>
+// CHECK:                 %[[VAL_28:.*]] = cmpi eq, %[[VAL_24]], %[[VAL_25]] : i64
+// CHECK:                 %[[VAL_29:.*]] = cmpf oeq, %[[VAL_26]], %[[VAL_27]] : f64
+// CHECK:                 %[[VAL_30:.*]] = and %[[VAL_28]], %[[VAL_29]] : i1
+// CHECK:                 %[[VAL_31:.*]] = sexti %[[VAL_30]] : i1 to i32
+// CHECK:                 scf.reduce(%[[VAL_31]])  : i32 {
+// CHECK:                 ^bb0(%[[VAL_32:.*]]: i32, %[[VAL_33:.*]]: i32):
+// CHECK:                   %[[VAL_34:.*]] = and %[[VAL_32]], %[[VAL_33]] : i32
+// CHECK:                   scf.reduce.return %[[VAL_34]] : i32
 // CHECK:                 }
 // CHECK:                 scf.yield
 // CHECK:               }
-// CHECK:               scf.yield %[[VAL_21:.*]] : i1
+// CHECK:               %[[VAL_35:.*]] = trunci %[[VAL_36:.*]] : i32 to i1
+// CHECK:               scf.yield %[[VAL_35]] : i1
 // CHECK:             } else {
-// CHECK:               scf.yield %[[VAL_3]] : i1
+// CHECK:               scf.yield %[[VAL_4]] : i1
 // CHECK:             }
-// CHECK:             scf.yield %[[VAL_15]] : i1
+// CHECK:             scf.yield %[[VAL_37:.*]] : i1
 // CHECK:           } else {
-// CHECK:             scf.yield %[[VAL_3]] : i1
+// CHECK:             scf.yield %[[VAL_4]] : i1
 // CHECK:           }
 // CHECK:           return %[[VAL_9]] : i1
 // CHECK:         }
