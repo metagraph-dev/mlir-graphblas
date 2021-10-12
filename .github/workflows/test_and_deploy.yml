@@ -108,7 +108,7 @@ jobs:
           python-version: ${{ matrix.pyver }}
       - name: Update env
         run: |
-          conda install pytest coverage pytest-cov
+          conda install pytest coverage pytest-cov pytest-forked
           # Install built_packages
           cd ./artifact_storage
           tar -xvf output.tar
