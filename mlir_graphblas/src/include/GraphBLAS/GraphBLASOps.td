@@ -18,13 +18,13 @@ def GraphBlasVectorOperand : 1DTensorOf<[AnyType]>;
 def GraphBlasMatrixOperand : 2DTensorOf<[AnyType]>;
 
 def GraphBLAS_SizeOp : GraphBLAS_Op<"size", [NoSideEffect]> {
-    let summary = "return the size of a ranked vector";
+    let summary = "Return the size of a sparse vector.";
     let description = [{
-        Returns the size of a vector
+        Returns the size of a vector.
 
         Example:
         ```mlir
-          %size = graphblas.size %sparse_vector : tensor<?xf64, #CV64>
+        %size = graphblas.size %sparse_vector : tensor<?xf64, #CV64>
         ```
     }];
 
@@ -41,13 +41,13 @@ def GraphBLAS_SizeOp : GraphBLAS_Op<"size", [NoSideEffect]> {
 }
 
 def GraphBLAS_NumRowsOp : GraphBLAS_Op<"num_rows", [NoSideEffect]> {
-    let summary = "return the number of rows in a matrix";
+    let summary = "Returns the number of rows in a matrix.";
     let description = [{
-        Returns the number of rows in a matrix
+        Return the return the number of rows in a CSR or CSC matrix.
 
         Example:
         ```mlir
-          %nrows = graphblas.num_rows %sparse_matrix : tensor<?x?xf64, #CSR64>
+        %nrows = graphblas.num_rows %sparse_matrix : tensor<?x?xf64, #CSR64>
         ```
     }];
 
@@ -64,13 +64,13 @@ def GraphBLAS_NumRowsOp : GraphBLAS_Op<"num_rows", [NoSideEffect]> {
 }
 
 def GraphBLAS_NumColsOp : GraphBLAS_Op<"num_cols", [NoSideEffect]> {
-    let summary = "return the number of columns in a matrix";
+    let summary = "Returns the number of columns in a matrix.";
     let description = [{
-        Returns the number of columns in a matrix
+        Return the return the number of columns in a CSR or CSC matrix.
 
         Example:
         ```mlir
-          %ncols = graphblas.num_cols %sparse_matrix : tensor<?x?xf64, #CSR64>
+        %ncols = graphblas.num_cols %sparse_matrix : tensor<?x?xf64, #CSR64>
         ```
     }];
 
@@ -87,9 +87,9 @@ def GraphBLAS_NumColsOp : GraphBLAS_Op<"num_cols", [NoSideEffect]> {
 }
 
 def GraphBLAS_NumValsOp : GraphBLAS_Op<"num_vals", [NoSideEffect]> {
-    let summary = "return the number of values in a sparse tensor";
+    let summary = "Returns the number of values in a sparse tensor.";
     let description = [{
-        Returns the number of values in a sparse tensor
+        Returns the number of values in a CSC matrix, CSR matrix, or sparse vector.
 
         Example:
         ```mlir
@@ -114,9 +114,9 @@ def GraphBLAS_NumValsOp : GraphBLAS_Op<"num_vals", [NoSideEffect]> {
 }
 
 def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input", "output"]>]> {
-    let summary = "return a duplicate of the input sparse tensor";
+    let summary = "Returns a duplicate of the input sparse tensor.";
     let description = [{
-        Returns a duplicate copy of the input sparse tensor
+        Returns a duplicate copy of the input CSC matrix, CSR matrix, or sparse tensor.
 
         Example:
         ```mlir
@@ -141,12 +141,11 @@ def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input",
 
 // TODO: Is this op still needed (see sparse_tensor.convert)
 def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
-    let summary = "convert graph storage layout";
+    let summary = "Converts graph storage layout.";
     let description = [{
-        Returns a new sparse tensor with identical values, but a different
-        storage layout.  The given sparse tensor must be a matrix, i.e. have rank 2.
-        The given tensor must have a CSR sparsity or a CSC sparsity.  The output type
-        must be CSR or CSC.  This operation can convert tensors between these types.
+        Rewrite the contents of a sparse tensor to change it from CSR to CSC, or vice versa.
+
+        Vacuous conversions (e.g. CSC → CSC or CSR → CSR) are equivalent to no-ops and are removed by the `--graphblas-lower` pass.
 
         Example:
         ```mlir
@@ -165,12 +164,15 @@ def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
 }
 
 def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
-    let summary = "transpose";
+    let summary = "Transpose operation.";
     let description = [{
         Returns a new sparse matrix that's the transpose of the input matrix.
         The given sparse tensor must be a matrix, i.e. have rank 2.
         The given tensor must have a CSR sparsity or a CSC sparsity.
         The output type must be CSR or CSC.
+
+        Note that the behavior of this op differs depending on the sparse
+        encoding of the specified output tensor type.
 
         Example:
         ```mlir
@@ -190,15 +192,23 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
 }
 
 def GraphBLAS_SelectOp : GraphBLAS_Op<"select", [NoSideEffect]> {
-    let summary = "select operation";
+    let summary = "Select operation.";
     let description = [{
         Returns new sparse tensors, each with a subset of elements from the given tensor.
-        The elements included in the resulting sparse tensor vary depending on the selectors given (one of "triu", "tril", "ge", or "gt").
+        
+        The elements included in the resulting sparse tensor vary depending on the selectors given
+        (one of "triu", "tril", "ge", or "gt").
         Multiple selectors may be given, in which case multiple results will be returned.
+        
         Some selectors, e.g. "gt", require a thunk. The thunks should be passed as extra operands to the op.
+        
         The number of given thunks must match the number of thunk-requiring selectors.
-        The ordering of the thunks/selectors determines which thunk is used for which selector, i.e. the nth thunk is used for the nth thunk-requiring selector.
+        
+        The ordering of the thunks/selectors determines which thunk is used for which selector, i.e.
+        the nth thunk is used for the nth thunk-requiring selector.
+        
         The given tensor must be a sparse vector or a matrix with CSR or CSC sparsity.
+        
         The resulting sparse tensors will have the same encoding as the input tensor.
 
         Single Selector Example:
@@ -230,19 +240,22 @@ def GraphBLAS_SelectOp : GraphBLAS_Op<"select", [NoSideEffect]> {
 }
 
 def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]> {
-    let summary = "matrix reduce to vector operation";
+    let summary = "Matrix reduce to vector operation.";
     let description = [{
-        Reduces a sparse matrix to a vector according to the given aggregator and given axis.
-        The given matrix must have a CSR sparsity or a CSC sparsity.
+        Reduces a CSR or CSC matrix to a vector according to the given aggregator and axis.
+
         The resulting sparse vector's element type varies according to the given aggregator.
-        If the axis attribute is 0, the input tensor will be reduced column-wise, so the resulting
-        vector's size must be the number of columns in the input tensor.
+        The supported aggregators are "plus", "count", "argmin", and "argmax". Aggregating via
+        "plus" and "count" will cause the output's element type to match that of the input
+        tensor. Aggregating via "argmin" and "argmax" will cause the output's element to be a
+        64-bit integer.
+
+        If the axis attribute is 0, the input tensor will be reduced column-wise, so the
+        resulting vector's size must be the number of columns in the input tensor.
+
         If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
-        vector's size must be the  number of rows in the input tensor.
-        The supported aggregators are "plus", "count", "argmin", and "argmax".
-
-        When using the aggregators "argmin" and "argmax", the output tensor must have 64-bit integer elements.
-
+        vector's size must be the number of rows in the input tensor.
+    
         Example:
         ```mlir
         %vec1 = graphblas.reduce_to_vector %matrix_1 { aggregator = "plus", axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #CV64>
@@ -262,11 +275,14 @@ def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]
 }
 
 def GraphBLAS_ReduceToScalarOp : GraphBLAS_Op<"reduce_to_scalar", [NoSideEffect]> {
-    let summary = "reduce to scalar operation";
+    let summary = "Reduce to scalar operation.";
     let description = [{
-        Reduces a sparse matrix or sparse vector to a scalar according to the given aggregator.
-        Matrices must have a CSR sparsity or a CSC sparsity.  The resulting
-        scalar's type will depend on the type of the input tensor.
+        Reduces a sparse tensor (CSR matrix, CSC matrix, or sparse vector) to a scalar
+        according to the given aggregator.Matrices must have a CSR sparsity or a CSC
+        sparsity.
+
+        The resulting scalar's type will depend on the type of the input tensor.
+        
         The supported aggregators are "plus", "count", "argmin", and "argmax".
 
         When using the aggregators "argmin" and "argmax", the output must be a 64-bit integer,
@@ -290,11 +306,12 @@ def GraphBLAS_ReduceToScalarOp : GraphBLAS_Op<"reduce_to_scalar", [NoSideEffect]
 }
 
 def GraphBLAS_ReduceToScalarGenericOp : GraphBLAS_Op<"reduce_to_scalar_generic", [NoSideEffect]> {
-    let summary = "reduce to scalar generic operation";
+    let summary = "Reduce to scalar generic operation.";
     let description = [{
         Reduces a sparse tensor to a scalar according to the given aggregator
         block.  If the tensor is a matrix, it must have a CSR sparsity or a CSC sparsity.
         The resulting scalar's type will depend on the type of the input tensor.
+        Only one aggregator block is allowed.
 
         Example:
         ```mlir
@@ -318,48 +335,52 @@ def GraphBLAS_ReduceToScalarGenericOp : GraphBLAS_Op<"reduce_to_scalar_generic",
 }
 
 def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
-    let summary = "tensor apply operation";
+    let summary = "Tensor element-wise apply operation.";
     let description = [{
-        Applies an operator to all elements of the given sparse tensor.  The operator
-        can be unary or binary. Binary operators require a thunk. The supported binary
-        operators are "min", "div", and "fill". Unary operators cannot take a thunk.
-        The supported unary operators are "abs", "minv" (i.e. multiplicative inverse
-        or 1/x), "ainv" (i.e. additive inverse or -x), and "identity". The given sparse
-        tensor must either be a CSR matrix, CSC matrix, or a sparse vector.
-
+        Applies in an element-wise fashion the function indicated by the ``apply_operator``
+        attribute to each element of the given sparse tensor. The operator can be unary or
+        binary. Binary operators require a thunk. The supported binary operators are "min",
+        "div", and "fill". Unary operators cannot take a thunk. Unary operators cannot
+        take a thunk. The supported unary operators are "abs", "minv" (i.e. multiplicative
+        inverse or *1/x*), "ainv" (i.e. additive inverse or *-x*), and "identity".
+        
+        The given sparse tensor must either be a CSR matrix, CSC matrix, or a sparse vector.
+        
         Using "minv" with integer types uses signed integer division and rounds towards
-        zero. For example, minv(-2) == 1 / -2 == 0.
+        zero. For example, *minv(-2) == 1 / -2 == 0*.
+        
+        Some binary operators, e.g. "div", are not symmetric. The sparse tensor and thunk
+        should be given in the order they should be given to the binary operator. For
+        example, to divide every element of a matrix by 2, use the following:
+        
+        ```mlir
+        %thunk = constant 2 : i64
+        %matrix_answer = graphblas.apply %sparse_matrix, %thunk { apply_operator = "div" } : (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
+        ```
+        
+        As another example, to divide 10 by each element of a sparse vector, use the
+        following:
+        
+
+        ```mlir
+        %thunk = constant 10 : i64
+        %vector_answer = graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } : (i64, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
+        ```
+        
+        Note that the application only takes place for elements that are present in the
+        matrix. Thus, the operation will not apply when the values are missing in the
+        tensor. For example, *1.0 / [ _ , 2.0,  _ ] == [ _ , 0.5,  _ ]*.
+        
+        Note that using the "identity" operator does not create a copy of the input tensor.
+        
+        The shape of the output tensor will match that of the input tensor.
+
 
         Example:
         ```mlir
         %thunk = constant 100 : i64
-        %matrix_answer =
-          graphblas.apply %sparse_matrix, %thunk { apply_operator = "min" } :
-            (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
-        %vector_answer =
-          graphblas.apply %sparse_vector { apply_operator = "abs" } :
-            (tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
-        ```
-
-        Some binary operators, e.g. "div", are not symmetric. The sparse tensor and thunk
-        should be given in the order they should be given to the binary operator. For
-        example, to divide every element of a matrix by 2, use the following:
-
-        ```mlir
-        %thunk = constant 2 : i64
-        %matrix_answer =
-          graphblas.apply %sparse_matrix, %thunk { apply_operator = "div" } :
-            (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
-        ```
-
-        As another example, to divide 10 by each element of a sparse vector, use the
-        following:
-
-        ```mlir
-        %thunk = constant 10 : i64
-        %vector_answer =
-          graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } :
-            (i64, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
+        %matrix_answer = graphblas.apply %sparse_matrix, %thunk { apply_operator = "min" } : (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
+        %vector_answer = graphblas.apply %sparse_vector { apply_operator = "abs" } : (tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
         ```
     }];
 
@@ -374,20 +395,20 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
 }
 
 def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
-    let summary = "generic tensor apply operation";
+    let summary = "Generic tensor apply operation.";
     let description = [{
-        Applies an arbitrary transformation to every element of a matrix or vector.
+        Applies an arbitrary transformation to every element of a CSR or CSC matrix or sparse vector according to the given transformation block. Only one transformation block is allowed.
 
         Example:
         ```mlir
-        %answer = graphblas.apply_generic %sparse_tensor : tensor<7xf64, #CV64> to tensor<7xf64, #CV64> {
+        %thunk = constant 0.0 : f64
+        %answer = graphblas.apply_generic %sparse_tensor : tensor<?xf64, #CV64> to tensor<?xf64, #CV64> {
           ^bb0(%val: f64):
             %pick = cmpf olt, %val, %thunk : f64
             %result = select %pick, %val, %thunk : f64
             graphblas.yield transform_out %result : f64
         }
         ```
-
     }];
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
@@ -402,31 +423,42 @@ def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
 }
 
 def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]> {
-    let summary = "matrix multiply operation with an optional structural mask";
+    let summary = "Matrix multiply operation with an optional structural mask.";
     let description = [{
-        Performs a matrix multiply according to the given semiring and optional
-        structural mask.  The semiring must be a string of the form "<ADD_NAME>_<MUL_NAME>",
-        e.g. "plus_times". The options for "<ADD_NAME>" are "plus", "any", and "min". The
-        options for "<MUL_NAME>" are "pair", "times", "plus", "first", and "second". The
-        given sparse tensors must be a matrix (i.e. rank 2) or a vector (i.e. rank 1).
-        If the first input is a matrix, it must be CSR format. If the second input
-        is a matrix, it must be CSC format.  Matrix times vector will return a vector.
-        Vector times matrix will return a vector.  Matrix times matrix will return
-        a CSR matrix.  The mask (if provided) must be the same format as the returned
-        object.
+        Performs a matrix multiply according to the given semiring and optional structural
+        mask. The structural mask specifies which values in the output are to be computed
+        and thus must have the same shape as the expected output.
 
-        No Mask Example:
+        The semiring must be a string of the form "<ADD_NAME>_<MUL_NAME>", e.g. "plus_times".
+        The options for "<ADD_NAME>" are "plus", "any", and "min". The options for "<MUL_NAME>"
+        are "pair", "times", "plus", "first", and "second".
+
+        If the first input is a matrix, it must be CSR format. If the second input is a matrix,
+        it must be CSC format. Matrix times vector will return a vector. Vector times matrix
+        will return a vector. Matrix times matrix will return a CSR matrix. Vector times
+        vector will return a scalar.
+
+        The mask (if provided) must be the same format as the returned object. There's an
+        optional boolean `mask_complement` attribute (which has a default value of `false`)
+        that will make the op use the complement of the mask.
+
+        It should be noted that masks are not allowed for vector times vector multiplication.
+
+        Examples:
         ```mlir
-          %answer =
-            graphblas.matrix_multiply %argA, %argB { semiring = "plus_plus" } :
-              (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to tensor<?x?xi64, #CSR64>
+        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_plus" } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to tensor<?x?xi64, #CSR64>
         ```
-
-        Mask Example:
         ```mlir
-          %answer =
-            graphblas.matrix_multiply %argA, %argB, %mask { semiring = "plus_times" } :
-              (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+        %answer = graphblas.matrix_multiply %argA, %argB, %mask { semiring = "min_times" } : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+        ```
+        ```mlir
+        %answer = graphblas.matrix_multiply %mat, %vec, %mask { semiring = "any_first", mask_complement = true } : (tensor<?x?xf64, #CSR64>, tensor<?xf64, #CV64>, tensor<?xf64, #CV64>) to tensor<?xf64, #CV64>
+        ```
+        ```mlir
+        %answer = graphblas.matrix_multiply %vec, %mat { semiring = "min_second", mask_complement = true } : (tensor<?xf64, #CV64>, tensor<?x?xf64, #CSC64>) to tensor<?xf64, #CV64>
+        ```
+        ```mlir
+        %answer = graphblas.matrix_multiply %vecA, %vecB { semiring = "any_pair" } : (tensor<?xf64, #CV64>, tensor<?xf64, #CV64>) to tensor<?xf64, #CV64>
         ```
 
     }];
@@ -447,7 +479,7 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
 }
 
 def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", [NoSideEffect]> {
-    let summary = "generic matrix multiply operation with an optional structural mask";
+    let summary = "Generic matrix multiply operation with an optional structural mask.";
     let description = [{
 
         This op performs computations over the two sparse tensor inputs using the same access pattern
@@ -525,15 +557,14 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
 
 def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp :
       GraphBLAS_Op<"matrix_multiply_reduce_to_scalar_generic", [NoSideEffect]> {
-    let summary = "matrix multiply followed by reduction to a scalar with an optional structural mask";
+    let summary = "Matrix multiply followed by reduction to a scalar with an optional structural mask.";
     let description = [{
-        Performs a matrix multiply followed by a reduction to scalar.  Supports
-        same extension blocks as matrix_multiply_generic and also requires binary
-        aggregation block and aggregation identity.
+        Performs a matrix multiply followed by a reduction to scalar. Supports the same extension blocks
+        as `graphblas.matrix_multiply_generic` and also requires a binary aggregation block and aggregation
+        identity block. These latter two blocks are used for reducing the result of the matrix multiply
+        to a scalar.
 
-        The given sparse tensors must be a matrix, i.e., have rank 2.  The first
-        input tensors must be CSR format, while the second input tensor must be CSC
-        format.  The mask (if provided) must be CSR format.
+
 
         Example:
         ```mlir
@@ -572,7 +603,7 @@ def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp :
 }
 
 def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
-    let summary = "element-wise union operation";
+    let summary = "Element-wise union operation.";
     let description = [{
         Performs an element-wise union between two matrices or two vectors.
         The resulting sparse structure will be the union of the two input structures.
@@ -586,7 +617,6 @@ def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
         %combined = graphblas.union %A, %B { union_operator = "plus" } : (
             tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
         ```
-
     }];
 
     let arguments = (ins GraphBlasMatrixOrVectorOperand:$a,
@@ -601,13 +631,16 @@ def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
 }
 
 def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
-    let summary = "element-wise intersection operation";
+    let summary = "Element-wise intersection operation.";
     let description = [{
-        Performs an element-wise intersection between two matrices or two vectors.
-        The resulting sparse structure will be the intersection of the two input structures.
-        Overlapping elements are combined using an operation passed in. The supported values
-        for this operation are "plus", "minus", "times", "div", "min", "max", "first", and
-        "second".
+        Performs an element-wise intersection between two CSR matrices,
+        CSC matrices, or sparse vectors. The resulting sparse tensor will
+        be the intersection of the two input structures. When either object
+        has a non-overlapping element, it is not included the output. When
+        both objects have an overlapping element in a cell, an operation
+        combines the result according to the given operator. The supported
+        values for the intersect operator are "plus", "minus", "times", "div",
+        "min", "max", "first", and "second".
 
         Example:
         ```mlir
@@ -628,23 +661,25 @@ def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
 }
 
 def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
-    let summary = "update operation handling accumulation, mask, and replacement";
+    let summary = "Update operation handling accumulation, mask, and replacement.";
     let description = [{
         Updates the output tensor based on the input and desired accumulation,
         mask, and replacement.  This returns zero values and modifies the output in
         place.  The supported accumulate operators are "plus", "times", "min", and "max".
         The given tensors must be sparse.
 
-        Simple Accumulation Example:
-        ```mlir
-        graphblas.update %other_vec -> %vec { accumulate_operator = "plus" } :
-          tensor<?xi64, #CV64> -> tensor<?xi64, #CV64>
-        ```
+        There's an optional boolean *mask_complement* attribute (which has a default
+        value of *false*) that will make the op use the complement of the mask.
 
-        Complemented Mask + Accumulate + Replace Example:
+        Example:
         ```mlir
-        graphblas.update %other_vec -> %vec(%mask) { accumulate_operator = "plus", replace = true, mask_complement = true } :
-          tensor<?xi64, #CV64> -> tensor<?xi64, #CV64>(tensor<?xi64, #CV64>)
+        graphblas.update %other_mat -> %mat(%mask) { accumulate_operator = "times", replace = true, mask_complement = true } : tensor<?x?xi64, #CSR64> -> tensor<?x?xi64, #CSR64>(tensor<?x?xi64, #CSR64>)
+        ```
+        ```mlir
+        graphblas.update %other_vec -> %vec { accumulate_operator = "plus" } : tensor<?xi64, #CV64> -> tensor<?xi64, #CV64>
+        ```
+        ```mlir
+        graphblas.update %other_mat -> %mat(%mask) { accumulate_operator = "max", replace = true } : tensor<?x?xi64, #CSC64> -> tensor<?x?xi64, #CSC64>(tensor<?x?xi64, #CSC64>)
         ```
     }];
 
@@ -665,10 +700,11 @@ def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
 }
 
 def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
-    let summary = "Equality checking operation for vectors and matrices";
+    let summary = "Equality checking operation for vectors and matrices.";
     let description = [{
-        Performs an equality check.  The given tensors must be sparse.  Checks
-        equality of rank and size of tensors, as well as values and structure.
+        Performs an equality check. The given tensors must be sparse vectors, CSR matrices,
+        or CSC matrices. Checks equality of rank and size of tensors, as well as values and
+        structure. Returns a single boolean value.
 
         Example:
         ```mlir
@@ -688,11 +724,12 @@ def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
 }
 
 def GraphBLAS_DiagOp : GraphBLAS_Op<"diag", [NoSideEffect]> {
-    let summary = "diag operation";
+    let summary = "Diagonal operation.";
     let description = [{
-        When given a sparse square matrix, returns the diagonal as a vector.
-        When given a sparse vector, returns a square sparse matrix with the
-        vector's values along the diagonal.
+        When given a square CSR or CSC matrix, returns the diagonal
+        as a sparse vector. When given a sparse vector, returns a
+        square CSR or CSC matrix with the vector's values along the
+        diagonal.
 
         Example:
         ```mlir
@@ -714,13 +751,13 @@ def GraphBLAS_DiagOp : GraphBLAS_Op<"diag", [NoSideEffect]> {
 }
 
 def GraphBLAS_MatrixSelectRandomOp : GraphBLAS_Op<"matrix_select_random", []> {
-    let summary = "random selection of elements from each row of matrix";
+    let summary = "Random selection of elements from each row of matrix.";
     let description = [{
-        Selects a random subset of up to `n` elements in each row of a CSR
-        matrix.  If there are less than `n` elements in a row, all elements in the row
+        Selects a random subset of up to *n* elements in each row of a CSR
+        matrix.  If there are less than *n* elements in a row, all elements in the row
         are included in the output.
 
-        An external function must be provided via the `choose_n` attribute to
+        An external function must be provided via the *choose_n* attribute to
         the op with the following signature:
         ```mlir
         func @my_choose_n(%context: !llvm.ptr<i8>,
@@ -729,24 +766,23 @@ def GraphBLAS_MatrixSelectRandomOp : GraphBLAS_Op<"matrix_select_random", []> {
                           %row_values: memref<?xValueType)
         ```
 
-        where `IndexType` corresponds to the index element type of the sparse
-        tensor input and `ValueType` corresponds to the value element type of
-        the sparse tensor input.  This external function selects `n` random
-        indices from the interval `[0, max_i)` and writes them to the
-        `output_indices` memref in increasing order.  If desired, the
+        where *IndexType* corresponds to the index element type of the sparse
+        tensor input and *ValueType* corresponds to the value element type of
+        the sparse tensor input.  This external function selects *n* random
+        indices from the interval *[0, max_i)* and writes them to the
+        *output_indices* memref in increasing order.  If desired, the
         distribution of selected indices can be biased by the values in
-        `row_values`, which will have length `max_i`.  A uniform choice
+        *row_values*, which will have length *max_i*.  A uniform choice
         function will ignore this last argument.
 
-        The implementation of the `choose_n` function is not specified by this
+        The implementation of the *choose_n* function is not specified by this
         op because it will differ significantly depending on use case (uniform
         or weighted sampling) and desired execution target (serial, parallel,
         GPU, etc).
 
         Example:
         ```mlir
-        %output = graphblas.matrix_select_random %a, %n, %rng_context { choose_n = @uniform_choose_n } : (
-            tensor<?x?xf64, #CSR64>, i64, !llvm.ptr<i8>) to tensor<?x?xf64, #CSR64>
+        %output = graphblas.matrix_select_random %a, %n, %rng_context { choose_n = @uniform_choose_n } : (tensor<?x?xf64, #CSR64>, i64, !llvm.ptr<i8>) to tensor<?x?xf64, #CSR64>
         ```
 
     }];
@@ -791,12 +827,28 @@ def YieldKindAttr : I64EnumAttr<
 }
 
 def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Terminator]> {
-    let summary = "graphblas yield operation";
+    let summary = "GraphBLAS yield operation.";
     let description = [{
         `graphblas.yield` is a special terminator operation for blocks inside regions in
         several `graphblas` operations.  It returns a value to the enclosing op, with
         a meaning that depends on the op.
+        
+        Special terminator operation for blocks inside regions in several GraphBLAS dialect operations,
+        e.g. `graphblas.matrix_multiply_generic`. It returns a value to the enclosing op,
+        with a meaning that depends on the required "kind" attribute. It must be one of the following:
+        
+        - transform_in_a
+        - transform_in_b
+        - transform_out
+        - select_in_a
+        - select_in_b
+        - select_out
+        - add_identity
+        - add
+        - mult_identity
+        - mult
 
+        Example:
         ```mlir
         graphblas.yield transform_out %f0 : f64
         ```
@@ -819,11 +871,13 @@ def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Termina
 }
 
 def GraphBLAS_CommentOp : GraphBLAS_Op<"comment", []> {
-    let summary = "graphblas comment operation";
+    let summary = "Comment operation.";
     let description = [{
-        `graphblas.comment` is used to add comments to MLIR assembly.
-        It lowers into a no-op.
+        `graphblas.comment` is intended to be a no-op and
+        returns zero values. It merely contains a string
+        attribute intended to hold code comments.
 
+        Example:
         ```mlir
         graphblas.comment { comment = "here is a comment!" }
         ```
@@ -837,7 +891,7 @@ def GraphBLAS_CommentOp : GraphBLAS_Op<"comment", []> {
 }
 
 def GraphBLAS_PrintOp : GraphBLAS_Op<"print", []> {
-    let summary = "graphblas print operation";
+    let summary = "Print operation.";
     let description = [{
         `graphblas.print` is used to pretty print values
         to stdout.
