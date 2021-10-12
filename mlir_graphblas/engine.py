@@ -776,10 +776,9 @@ class MlirJitEngine:
 
         llvm_ir_text = mlir_translate_run.stdout.decode()
 
-
         # Remove optional align clause from atomicrmw instructions which is
         # only present in LLVM >= 13, which is newer than llvmlite
-        llvm11_ir_text = re.sub(r'align \d+, ', '', llvm_ir_text)
+        llvm11_ir_text = re.sub(r"align \d+, ", "", llvm_ir_text)
 
         # Create a LLVM module object from the IR
         mod = llvm.parse_assembly(llvm11_ir_text)

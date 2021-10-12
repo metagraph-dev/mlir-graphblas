@@ -15,7 +15,7 @@ class Algorithm:
         raise NotImplementedError("must override _build")
 
     def __call__(self, *args, **kwargs):
-        compile_with_passes = kwargs.pop('compile_with_passes', None)
+        compile_with_passes = kwargs.pop("compile_with_passes", None)
         if compile_with_passes is None:
             if self._cached is None:
                 self._cached = self.builder.compile()
@@ -170,7 +170,7 @@ class DenseNeuralNetwork(Algorithm):
         Bias: List[MLIRSparseTensor],
         Y0: MLIRSparseTensor,
         ymax=32.0,
-        **kwargs
+        **kwargs,
     ) -> MLIRSparseTensor:
 
         if len(W) != len(Bias):
@@ -297,7 +297,7 @@ class BipartiteProjectAndFilter(Algorithm):
                 f"Invalid keep_nodes argument: {keep_nodes}, must be one of {self.allowable_keep_nodes}"
             )
 
-        compile_with_passes = kwargs.pop('compile_with_passes', None)
+        compile_with_passes = kwargs.pop("compile_with_passes", None)
         if compile_with_passes is None:
             if keep_nodes not in self._cached:
                 self._cached[keep_nodes] = self.builder[keep_nodes].compile()
@@ -595,7 +595,7 @@ class GraphSearch(Algorithm):
         method="random",
         *,
         rand_seed=None,
-        **kwargs
+        **kwargs,
     ) -> MLIRSparseTensor:
         if method not in self.allowable_methods:
             raise ValueError(
@@ -614,7 +614,9 @@ class GraphSearch(Algorithm):
         elif method == "random_weighted":
             extra.append(ChooseWeightedContext(rand_seed))
 
-        return self._cached[method](graph, num_steps, initial_seed_array, *extra, **kwargs)
+        return self._cached[method](
+            graph, num_steps, initial_seed_array, *extra, **kwargs
+        )
 
 
 graph_search = GraphSearch()

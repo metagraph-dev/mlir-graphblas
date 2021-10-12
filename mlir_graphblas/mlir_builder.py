@@ -52,12 +52,9 @@ SCF_TO_LLVM_PASSES = (
 )
 
 GRAPHBLAS_PASSES = GRAPHBLAS_TO_SCF_PASSES + SCF_TO_LLVM_PASSES
-GRAPHBLAS_OPENMP_PASSES = GRAPHBLAS_TO_SCF_PASSES \
-    + (
-        "--convert-scf-to-openmp",
-    ) \
-    + SCF_TO_LLVM_PASSES
-
+GRAPHBLAS_OPENMP_PASSES = (
+    GRAPHBLAS_TO_SCF_PASSES + ("--convert-scf-to-openmp",) + SCF_TO_LLVM_PASSES
+)
 
 
 class MLIRVar:

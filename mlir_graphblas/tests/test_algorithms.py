@@ -10,6 +10,7 @@ from mlir_graphblas.tools.utils import (
 )
 from mlir_graphblas.mlir_builder import GRAPHBLAS_OPENMP_PASSES
 
+
 @pytest.mark.parametrize("special_passes", [None, GRAPHBLAS_OPENMP_PASSES])
 def test_triangle_count(special_passes):
     # 0 - 1    5 - 6
@@ -39,6 +40,7 @@ def test_triangle_count(special_passes):
 
     num_triangles = mlalgo.triangle_count(a, compile_with_passes=special_passes)
     assert num_triangles == 5, num_triangles
+
 
 @pytest.mark.parametrize("special_passes", [None, GRAPHBLAS_OPENMP_PASSES])
 def test_sssp(special_passes):
@@ -141,7 +143,9 @@ def test_bipartite_project_and_filter(special_passes):
     assert np.all(dense_result == expected_dense_result)
 
     # Test column projection
-    result2 = mlalgo.bipartite_project_and_filter(input_tensor, "column", cutoff=1.0, compile_with_passes=special_passes)
+    result2 = mlalgo.bipartite_project_and_filter(
+        input_tensor, "column", cutoff=1.0, compile_with_passes=special_passes
+    )
     dense_result2 = densify_csr(result2)
 
     expected_dense_result2 = dense_input_tensor.T @ dense_input_tensor
@@ -236,7 +240,9 @@ def test_pagerank(special_passes):
     assert np.abs(pr.values - expected).sum() < 1e-5, pr.values
 
     # Test maxiter reached, failed to converge
-    pr, niters = mlalgo.pagerank(m, tol=1e-7, maxiter=6, compile_with_passes=special_passes)
+    pr, niters = mlalgo.pagerank(
+        m, tol=1e-7, maxiter=6, compile_with_passes=special_passes
+    )
     assert niters == 6
     assert (
         np.abs(pr.values - expected).sum() > 1e-5
