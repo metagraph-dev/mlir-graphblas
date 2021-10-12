@@ -122,7 +122,7 @@ jobs:
           conda list
       - name: Pytest
         run: |
-          python -m mlir_graphblas.tests
+          pytest --forked --pyargs mlir_graphblas.tests
 
   dev_deploy:
     strategy:
