@@ -372,6 +372,10 @@ static LogicalResult verifyMatrixMultiplyArgs(T op,
       resultShape = resultType.getShape();
       resultRank = resultType.getRank();
       resultElementType = resultType.getElementType();
+    } else if (!resultElementType.isIntOrFloat()) {
+      assert(aRank == 1 && bRank == 1);
+      return op.emitError(
+          "Vector-vector multiplication must result in a scalar result-type.");
     }
 
     if (aType.getElementType() != resultElementType)
