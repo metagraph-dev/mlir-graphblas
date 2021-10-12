@@ -59,6 +59,14 @@ llvm.initialize()
 llvm.initialize_native_target()
 llvm.initialize_native_asmprinter()
 
+# try to load libomp on Linux
+SO_FILE_PATTERN = os.path.join(sys.prefix, "lib", "libomp.so")
+SO_FILES = glob.glob(SO_FILE_PATTERN)
+if len(SO_FILES) > 0:
+    print(f"Loading {SO_FILES[0]}", file=sys.stderr)
+    llvm.load_library_permanently(SO_FILES[0])
+
+
 MLIR_FLOAT_ENUM_TO_NP_TYPE = {
     mlir.astnodes.FloatTypeEnum.f16: np.float16,
     mlir.astnodes.FloatTypeEnum.f32: np.float32,
