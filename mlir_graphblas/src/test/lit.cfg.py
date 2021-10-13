@@ -1,5 +1,6 @@
 # -*- Python -*-
 
+import glob
 import os
 import platform
 import re
@@ -31,6 +32,19 @@ config.test_exec_root = os.path.join(config.graphblas_obj_root, "test")
 
 config.substitutions.append(("%PATH%", config.environment["PATH"]))
 config.substitutions.append(("%shlibext", config.llvm_shlib_ext))
+
+
+_SCRIPT_DIR = os.path.dirname(__file__)
+_BUILD_DIR = os.path.join(_SCRIPT_DIR, "..", "..")
+_BUILD_DIR = os.path.abspath(_BUILD_DIR)
+_SPARSE_UTILS_SO_PATTERN = os.path.join(_BUILD_DIR, "SparseUtils*.so")
+[_SPARSE_UTILS_SO] = glob.glob(_SPARSE_UTILS_SO_PATTERN)
+config.substitutions.append(
+    (
+        "%sparse_utils_so",
+        _SPARSE_UTILS_SO,
+    )
+)
 
 llvm_config.with_system_environment(["HOME", "INCLUDE", "LIB", "TMP", "TEMP"])
 
