@@ -312,6 +312,23 @@ Value callNewTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
     func = getFunc(mod, loc, funcName, tensorType, TypeRange{indexType});
   CallOp callOpResult = builder.create<CallOp>(loc, func, tensorType, shape);
   Value result = callOpResult->getResult(0);
+
+  Value c0 = builder.create<ConstantIndexOp>(loc, 0);
+  if (rank == 2) {
+    Value c1 = builder.create<ConstantIndexOp>(loc, 1);
+    bool outputIsCSR = typeIsCSR(tensorType);
+    Value rev0, rev1;
+    if (outputIsCSR) {
+      callAssignRev(builder, mod, loc, result, c0, c0);
+      callAssignRev(builder, mod, loc, result, c1, c1);
+    } else {
+      callAssignRev(builder, mod, loc, result, c0, c1);
+      callAssignRev(builder, mod, loc, result, c1, c0);
+    }
+  } else {
+    callAssignRev(builder, mod, loc, result, c0, c0);
+  }
+
   return result;
 }
 
@@ -339,6 +356,20 @@ Value callDupTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
   Value result = callOpResult->getResult(0);
   tensor = castToTensor(builder, mod, loc, result, tensorType);
   return tensor;
+}
+
+CallOp callAssignRev(OpBuilder &builder, ModuleOp &mod, Location loc,
+                     Value tensor, Value d, Value newIndexValue) {
+  Value ptr = castToPtr8(builder, mod, loc, tensor);
+  Type ptr8Type = ptr.getType();
+
+  Type indexType = builder.getIndexType();
+  FlatSymbolRefAttr func = getFunc(mod, loc, "assign_rev", TypeRange(),
+                                   {ptr8Type, indexType, indexType});
+  CallOp result = builder.create<mlir::CallOp>(
+      loc, func, TypeRange(), ArrayRef<Value>({ptr, d, newIndexValue}));
+
+  return result;
 }
 
 CallOp callResizeDim(OpBuilder &builder, ModuleOp &mod, Location loc,

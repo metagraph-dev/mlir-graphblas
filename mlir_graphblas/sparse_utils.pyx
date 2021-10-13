@@ -2,6 +2,7 @@
 
 cimport cython
 import numpy as np
+import scipy.sparse as ss
 cimport numpy as np
 from libc.stdint cimport int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t, uintptr_t
 from libc.stdlib cimport malloc, free
@@ -553,6 +554,32 @@ cdef class MLIRSparseTensor:
             rv[i] = pointer.size != 0
         return rv
 
+    def toarray(self):
+        """Assumes missing values are zero."""
+        dense_array = None
+        if np.all(self.sparsity == np.array([1])):  # sparse vector
+            (vec_length,) = self.shape
+            dense_array = np.zeros(vec_length, dtype=self.values.dtype)
+            dense_array[self.indices] = self.values
+        elif np.all(self.sparsity == np.array([0, 1])):  # sparse matrix
+            if np.all(self.rev == np.array([0, 1])):  # CSR matrix
+                dense_array = ss.csr_matrix(
+                    (self.values, self.indices[1], self.pointers[1]),
+                    shape=self.shape,
+                ).toarray()
+            elif np.all(self.rev == np.array([1, 0])):  # CSC matrix
+                dense_array = ss.csc_matrix(
+                    (self.values, self.indices[1], self.pointers[1]),
+                    shape=self.shape,
+                ).toarray()
+
+        if dense_array is None:
+            raise NotImplementedError(
+                "Conversion to dense array for given sparsity, index map, and rank not yet supported"
+            )
+
+        return dense_array
+    
     cpdef ndarray get_indices(self, uint64_t d):
         cdef StridedMemRefType[uint8_t, one] ref8
         cdef StridedMemRefType[uint16_t, one] ref16

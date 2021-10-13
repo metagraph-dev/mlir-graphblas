@@ -22,6 +22,7 @@ def test_mlirsparsetensor_dtypes():
         assert a.pointer_dtype == pointer_dtype
         assert a.index_dtype == index_dtype
         assert a.value_dtype == value_dtype
+        assert a.verify()
 
         i, j, k = a.indices
         assert i.dtype == j.dtype == k.dtype == index_dtype
@@ -71,6 +72,7 @@ def test_mlirsparsetensor_bad_dtypes():
             sparsity,
             pointer_type=pointer_dtype,
         )
+    assert tensor.verify()
 
 
 def test_mlirsparsetensor_swap():
@@ -82,6 +84,7 @@ def test_mlirsparsetensor_swap():
     a1 = mlir_graphblas.sparse_utils.MLIRSparseTensor(
         indices1, values1, sizes1, sparsity
     )
+    assert a1.verify()
 
     sizes2 = np.array([100, 200, 300], dtype=np.uint64)
     indices2 = np.array([[2, 2, 2], [3, 3, 3]], dtype=np.uint64)
@@ -89,6 +92,7 @@ def test_mlirsparsetensor_swap():
     a2 = mlir_graphblas.sparse_utils.MLIRSparseTensor(
         indices2, values2, sizes2, sparsity
     )
+    assert a2.verify()
 
     i, j, k = a1.indices
     np.testing.assert_array_equal(i, [0, 1])
@@ -128,6 +132,7 @@ def test_mlirsparsetensor_empty():
     sparsity = np.array([True], dtype=np.bool8)
     sizes = np.array([10], dtype=np.uint64)
     a1 = mlir_graphblas.sparse_utils.empty_mlir_sparse_tensor_safe(sizes, sparsity)
+    assert a1.verify()
 
     (i,) = a1.pointers
     np.testing.assert_array_equal(i, [0, 0])
@@ -136,6 +141,7 @@ def test_mlirsparsetensor_empty():
     assert a1.values.shape == (0,)
 
     a2 = mlir_graphblas.sparse_utils.empty_mlir_sparse_tensor_fast(sizes)
+    assert a2.verify()
     for x, y in zip(a1.pointers, a2.pointers):
         np.testing.assert_array_equal(x, y)
     for x, y in zip(a1.indices, a2.indices):
@@ -146,6 +152,7 @@ def test_mlirsparsetensor_empty():
     sparsity = np.array([True, True], dtype=np.bool8)
     sizes = np.array([10, 20], dtype=np.uint64)
     a1 = mlir_graphblas.sparse_utils.empty_mlir_sparse_tensor_safe(sizes, sparsity)
+    assert a1.verify()
 
     i, j = a1.pointers
     np.testing.assert_array_equal(i, [0, 0])
@@ -161,11 +168,13 @@ def test_mlirsparsetensor_empty():
     for x, y in zip(a1.indices, a2.indices):
         np.testing.assert_array_equal(x, y)
     np.testing.assert_array_equal(a1.values, a2.values)
+    assert a2.verify()
 
     # 3d
     sparsity = np.array([True, True, True], dtype=np.bool8)
     sizes = np.array([10, 20, 30], dtype=np.uint64)
     a1 = mlir_graphblas.sparse_utils.empty_mlir_sparse_tensor_safe(sizes, sparsity)
+    assert a1.verify()
 
     i, j, k = a1.pointers
     np.testing.assert_array_equal(i, [0, 0])
@@ -178,6 +187,7 @@ def test_mlirsparsetensor_empty():
     assert a1.values.shape == (0,)
 
     a2 = mlir_graphblas.sparse_utils.empty_mlir_sparse_tensor_fast(sizes)
+    assert a2.verify()
     for x, y in zip(a1.pointers, a2.pointers):
         np.testing.assert_array_equal(x, y)
     for x, y in zip(a1.indices, a2.indices):
@@ -193,6 +203,8 @@ def test_mlirsparsetensor_dup():
 
     a1 = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
     a2 = a1.dup()
+    assert a1.verify()
+    assert a2.verify()
 
     pointers = p1, p2, p3 = a1.pointers
     indices = i1, i2, i3 = a1.indices
@@ -229,6 +241,7 @@ def test_empty_like():
 
     a = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
     b = a.empty_like()
+
     assert a.ndim == b.ndim
     assert a.shape == b.shape
     # Pointers are the same size as original, but containing all zeros
@@ -251,6 +264,8 @@ def test_from_raw_pointer():
     a2 = mlir_graphblas.sparse_utils.MLIRSparseTensor.from_raw_pointer(
         a1.data, a1.pointer_dtype, a1.index_dtype, a1.value_dtype
     )
+    assert a1.verify()
+    assert a2.verify()
     pointers = p1, p2, p3 = a1.pointers
     indices = i1, i2, i3 = a1.indices
     values = a1.values
@@ -273,6 +288,7 @@ def test_views_have_parent():
     values = np.array([1.2, 3.4], dtype=np.float64)
 
     a1 = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert a1.verify()
     v = a1.values
     assert v.base is a1
     del a1
@@ -293,4 +309,5 @@ def test_sparsity():
     tensor = mlir_graphblas.sparse_utils.MLIRSparseTensor(
         indices, values, sizes, sparsity
     )
+    assert tensor.verify()
     np.testing.assert_array_equal(sparsity, tensor.sparsity)
