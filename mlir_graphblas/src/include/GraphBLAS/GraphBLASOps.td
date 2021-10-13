@@ -278,7 +278,7 @@ def GraphBLAS_ReduceToScalarOp : GraphBLAS_Op<"reduce_to_scalar", [NoSideEffect]
     let summary = "Reduce to scalar operation.";
     let description = [{
         Reduces a sparse tensor (CSR matrix, CSC matrix, or sparse vector) to a scalar
-        according to the given aggregator.Matrices must have a CSR sparsity or a CSC
+        according to the given aggregator. Matrices must have a CSR sparsity or a CSC
         sparsity.
 
         The resulting scalar's type will depend on the type of the input tensor.
@@ -291,7 +291,7 @@ def GraphBLAS_ReduceToScalarOp : GraphBLAS_Op<"reduce_to_scalar", [NoSideEffect]
         Example:
         ```mlir
         %answer_1 = graphblas.reduce_to_scalar %sparse_matrix { aggregator = "plus" } : tensor<?x?xf32, #CSR64> to f32
-        %answer_2 = graphblas.reduce_to_scalar %sparse_vector { aggregator = "argmax" } : tensor<?xf64, #CSR64> to i64
+        %answer_2 = graphblas.reduce_to_scalar %sparse_vector { aggregator = "argmax" } : tensor<?x?xf64, #CSR64> to i64
         ```
     }];
 
