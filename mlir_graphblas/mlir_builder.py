@@ -28,23 +28,32 @@ class MLIRCompileError(Exception):
 
 
 DEFAULT_ENGINE = MlirJitEngine()
-GRAPHBLAS_PASSES = (
+
+GRAPHBLAS_TO_SCF_PASSES = (
     "--graphblas-structuralize",
     "--graphblas-optimize",
     "--graphblas-lower",
     "--sparsification",
     "--sparse-tensor-conversion",
     "--linalg-bufferize",
-    "--convert-scf-to-std",
     "--func-bufferize",
     "--tensor-constant-bufferize",
     "--tensor-bufferize",
     "--finalizing-bufferize",
     "--convert-linalg-to-loops",
+)
+
+SCF_TO_LLVM_PASSES = (
     "--convert-scf-to-std",
     "--convert-memref-to-llvm",
+    "--convert-openmp-to-llvm",
     "--convert-std-to-llvm",
     "--reconcile-unrealized-casts",
+)
+
+GRAPHBLAS_PASSES = GRAPHBLAS_TO_SCF_PASSES + SCF_TO_LLVM_PASSES
+GRAPHBLAS_OPENMP_PASSES = (
+    GRAPHBLAS_TO_SCF_PASSES + ("--convert-scf-to-openmp",) + SCF_TO_LLVM_PASSES
 )
 
 

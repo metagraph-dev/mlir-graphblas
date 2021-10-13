@@ -2662,6 +2662,9 @@ public:
 
     // Types
     Type boolType = rewriter.getI1Type();
+    // Need to use a standard word size in AND-reduction for OpenMP
+    // This could be i8, i32, or i64, but we pick i32
+    Type intReduceType = rewriter.getIntegerType(32);
     Type int64Type = rewriter.getIntegerType(64);
     Type valueType = aType.getElementType();
     MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
@@ -2671,7 +2674,7 @@ public:
     Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
     Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
-    Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
+    Value c1_reduce = rewriter.create<ConstantIntOp>(loc, 1, intReduceType);
 
     unsigned rank = aType.getRank(); // ranks guaranteed to be equal
 
@@ -2722,7 +2725,7 @@ public:
         rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, B);
 
     scf::ParallelOp indexLoop =
-        rewriter.create<scf::ParallelOp>(loc, c0, aNnz, c1, ctrue);
+        rewriter.create<scf::ParallelOp>(loc, c0, aNnz, c1, c1_reduce);
     Value loopIdx = indexLoop.getInductionVars().front();
     rewriter.setInsertionPointToStart(indexLoop.getBody());
 
@@ -2742,8 +2745,13 @@ public:
                                loc, CmpFPredicate::OEQ, aValue, bValue);
                          });
     Value cmpCombined = rewriter.create<AndOp>(loc, cmpIndex, cmpValue);
+    // Need to do reduction with a standard word size (rather than i1) for
+    // OpenMP
+    Value cmpCombined_ext =
+        rewriter.create<SignExtendIOp>(loc, cmpCombined, intReduceType);
 
-    scf::ReduceOp reducer = rewriter.create<scf::ReduceOp>(loc, cmpCombined);
+    scf::ReduceOp reducer =
+        rewriter.create<scf::ReduceOp>(loc, cmpCombined_ext);
     BlockArgument lhs = reducer.getRegion().getArgument(0);
     BlockArgument rhs = reducer.getRegion().getArgument(1);
     rewriter.setInsertionPointToStart(&reducer.getRegion().front());
@@ -2751,7 +2759,9 @@ public:
     rewriter.create<scf::ReduceReturnOp>(loc, cmpFinal);
 
     rewriter.setInsertionPointAfter(indexLoop);
-    rewriter.create<scf::YieldOp>(loc, indexLoop.getResult(0));
+    Value boolResult = rewriter.create<mlir::TruncateIOp>(
+        loc, indexLoop.getResult(0), boolType);
+    rewriter.create<scf::YieldOp>(loc, boolResult);
 
     // else cmpNnz
     rewriter.setInsertionPointToStart(ifNnz.elseBlock());

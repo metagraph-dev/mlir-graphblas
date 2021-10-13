@@ -15,9 +15,15 @@ class Algorithm:
         raise NotImplementedError("must override _build")
 
     def __call__(self, *args, **kwargs):
-        if self._cached is None:
-            self._cached = self.builder.compile()
-        return self._cached(*args, **kwargs)
+        compile_with_passes = kwargs.pop("compile_with_passes", None)
+        if compile_with_passes is None:
+            if self._cached is None:
+                self._cached = self.builder.compile()
+            return self._cached(*args, **kwargs)
+        else:
+            # custom build for testing, is not cached
+            func = self.builder.compile(passes=compile_with_passes)
+            return func(*args, **kwargs)
 
 
 def _build_common_aliases():
@@ -51,8 +57,8 @@ class TriangleCount(Algorithm):
 
         return irb
 
-    def __call__(self, A: MLIRSparseTensor) -> int:
-        return int(super().__call__(A))
+    def __call__(self, A: MLIRSparseTensor, **kwargs) -> int:
+        return int(super().__call__(A, **kwargs))
 
 
 triangle_count = TriangleCount()
@@ -164,12 +170,13 @@ class DenseNeuralNetwork(Algorithm):
         Bias: List[MLIRSparseTensor],
         Y0: MLIRSparseTensor,
         ymax=32.0,
+        **kwargs,
     ) -> MLIRSparseTensor:
 
         if len(W) != len(Bias):
             raise TypeError(f"num_layers mismatch: {len(W)} != {len(Bias)}")
 
-        return super().__call__(W, Bias, len(W), Y0, ymax)
+        return super().__call__(W, Bias, len(W), Y0, ymax, **kwargs)
 
 
 dense_neural_network = DenseNeuralNetwork()
@@ -207,9 +214,9 @@ class SSSP(Algorithm):
         return irb
 
     def __call__(
-        self, graph: MLIRSparseTensor, vector: MLIRSparseTensor
+        self, graph: MLIRSparseTensor, vector: MLIRSparseTensor, **kwargs
     ) -> MLIRSparseTensor:
-        return super().__call__(graph, vector)
+        return super().__call__(graph, vector, **kwargs)
 
 
 sssp = SSSP()
@@ -247,9 +254,9 @@ class MSSP(Algorithm):
         return irb
 
     def __call__(
-        self, graph: MLIRSparseTensor, matrix: MLIRSparseTensor
+        self, graph: MLIRSparseTensor, matrix: MLIRSparseTensor, **kwargs
     ) -> MLIRSparseTensor:
-        return super().__call__(graph, matrix)
+        return super().__call__(graph, matrix, **kwargs)
 
 
 mssp = MSSP()
@@ -283,17 +290,22 @@ class BipartiteProjectAndFilter(Algorithm):
         return ir_builder
 
     def __call__(
-        self, graph: MLIRSparseTensor, keep_nodes: str = "row", cutoff=0.0
+        self, graph: MLIRSparseTensor, keep_nodes: str = "row", cutoff=0.0, **kwargs
     ) -> MLIRSparseTensor:
         if keep_nodes not in self.allowable_keep_nodes:
             raise ValueError(
                 f"Invalid keep_nodes argument: {keep_nodes}, must be one of {self.allowable_keep_nodes}"
             )
 
-        if keep_nodes not in self._cached:
-            self._cached[keep_nodes] = self.builder[keep_nodes].compile()
+        compile_with_passes = kwargs.pop("compile_with_passes", None)
+        if compile_with_passes is None:
+            if keep_nodes not in self._cached:
+                self._cached[keep_nodes] = self.builder[keep_nodes].compile()
 
-        return self._cached[keep_nodes](graph, cutoff)
+            return self._cached[keep_nodes](graph, cutoff)
+        else:
+            func = self.builder[keep_nodes].compile(passes=compile_with_passes)
+            return func(graph, cutoff, **kwargs)
 
 
 bipartite_project_and_filter = BipartiteProjectAndFilter()
@@ -320,9 +332,9 @@ class VertexNomination(Algorithm):
         return irb
 
     def __call__(
-        self, graph: MLIRSparseTensor, nodes_of_interest: MLIRSparseTensor
+        self, graph: MLIRSparseTensor, nodes_of_interest: MLIRSparseTensor, **kwargs
     ) -> int:
-        return super().__call__(graph, nodes_of_interest)
+        return super().__call__(graph, nodes_of_interest, **kwargs)
 
 
 vertex_nomination = VertexNomination()
@@ -346,8 +358,8 @@ class ScanStatistics(Algorithm):
         ir_builder.return_vars(answer)
         return ir_builder
 
-    def __call__(self, graph: MLIRSparseTensor) -> int:
-        return super().__call__(graph)
+    def __call__(self, graph: MLIRSparseTensor, **kwargs) -> int:
+        return super().__call__(graph, **kwargs)
 
 
 scan_statistics = ScanStatistics()
@@ -472,9 +484,9 @@ class Pagerank(Algorithm):
         return irb
 
     def __call__(
-        self, graph: MLIRSparseTensor, damping=0.85, tol=1e-6, *, maxiter=100
+        self, graph: MLIRSparseTensor, damping=0.85, tol=1e-6, *, maxiter=100, **kwargs
     ) -> MLIRSparseTensor:
-        return super().__call__(graph, damping, tol, maxiter)
+        return super().__call__(graph, damping, tol, maxiter, **kwargs)
 
 
 pagerank = Pagerank()
@@ -585,6 +597,7 @@ class GraphSearch(Algorithm):
         method="random",
         *,
         rand_seed=None,
+        **kwargs,
     ) -> MLIRSparseTensor:
         if method not in self.allowable_methods:
             raise ValueError(
@@ -603,7 +616,9 @@ class GraphSearch(Algorithm):
         elif method == "random_weighted":
             extra.append(ChooseWeightedContext(rand_seed))
 
-        return self._cached[method](graph, num_steps, initial_seed_array, *extra)
+        return self._cached[method](
+            graph, num_steps, initial_seed_array, *extra, **kwargs
+        )
 
 
 graph_search = GraphSearch()
