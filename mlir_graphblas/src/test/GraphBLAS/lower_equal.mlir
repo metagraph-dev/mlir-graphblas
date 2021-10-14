@@ -1,4 +1,18 @@
-// RUN: graphblas-opt %s | graphblas-opt --graphblas-lower | FileCheck %s
+// RUN: graphblas-opt %s | graphblas-exec entry | FileCheck %s
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+#CSC64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (j,i)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
 
 #CV64 = #sparse_tensor.encoding<{
   dimLevelType = [ "compressed" ],
@@ -6,58 +20,102 @@
   indexBitWidth = 64
 }>
 
-// CHECK-LABEL:   func @vector_equal(
-// CHECK-SAME:                       %[[VAL_0:.*]]: tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>,
-// CHECK-SAME:                       %[[VAL_1:.*]]: tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> i1 {
-// CHECK-DAG:       %[[VAL_2:.*]] = constant 1 : index
-// CHECK-DAG:       %[[VAL_3:.*]] = constant false
-// CHECK-DAG:       %[[VAL_4:.*]] = constant true
-// CHECK-DAG:       %[[VAL_5:.*]] = constant 0 : index
-// CHECK:           %[[VAL_6:.*]] = tensor.dim %[[VAL_0]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           %[[VAL_7:.*]] = tensor.dim %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           %[[VAL_8:.*]] = cmpi eq, %[[VAL_6]], %[[VAL_7]] : index
-// CHECK:           %[[VAL_9:.*]] = scf.if %[[VAL_8]] -> (i1) {
-// CHECK:             %[[VAL_10:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:             %[[VAL_12:.*]] = memref.load %[[VAL_10]]{{\[}}%[[VAL_2]]] : memref<?xi64>
-// CHECK:             %[[VAL_16:.*]] = index_cast %[[VAL_12]] : i64 to index
-// CHECK:             %[[VAL_11:.*]] = sparse_tensor.pointers %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:             %[[VAL_13:.*]] = memref.load %[[VAL_11]]{{\[}}%[[VAL_2]]] : memref<?xi64>
-// CHECK:             %[[VAL_116:.*]] = index_cast %[[VAL_13]] : i64 to index
-// CHECK:             %[[VAL_14:.*]] = cmpi eq, %[[VAL_16]], %[[VAL_116]] : index
-// CHECK:             %[[VAL_15:.*]] = scf.if %[[VAL_14]] -> (i1) {
-// CHECK:               %[[VAL_17:.*]] = sparse_tensor.indices %[[VAL_0]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:               %[[VAL_18:.*]] = sparse_tensor.indices %[[VAL_1]], %[[VAL_5]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:               %[[VAL_19:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:               %[[VAL_20:.*]] = sparse_tensor.values %[[VAL_1]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:               %[[VAL_21:.*]] = scf.parallel (%[[VAL_22:.*]]) = (%[[VAL_5]]) to (%[[VAL_16]]) step (%[[VAL_2]]) init (%[[VAL_4]]) -> i1 {
-// CHECK:                 %[[VAL_23:.*]] = memref.load %[[VAL_17]]{{\[}}%[[VAL_22]]] : memref<?xi64>
-// CHECK:                 %[[VAL_24:.*]] = memref.load %[[VAL_18]]{{\[}}%[[VAL_22]]] : memref<?xi64>
-// CHECK:                 %[[VAL_25:.*]] = memref.load %[[VAL_19]]{{\[}}%[[VAL_22]]] : memref<?xf64>
-// CHECK:                 %[[VAL_26:.*]] = memref.load %[[VAL_20]]{{\[}}%[[VAL_22]]] : memref<?xf64>
-// CHECK:                 %[[VAL_27:.*]] = cmpi eq, %[[VAL_23]], %[[VAL_24]] : i64
-// CHECK:                 %[[VAL_28:.*]] = cmpf oeq, %[[VAL_25]], %[[VAL_26]] : f64
-// CHECK:                 %[[VAL_29:.*]] = and %[[VAL_27]], %[[VAL_28]] : i1
-// CHECK:                 scf.reduce(%[[VAL_29]])  : i1 {
-// CHECK:                 ^bb0(%[[VAL_30:.*]]: i1, %[[VAL_31:.*]]: i1):
-// CHECK:                   %[[VAL_32:.*]] = and %[[VAL_30]], %[[VAL_31]] : i1
-// CHECK:                   scf.reduce.return %[[VAL_32]] : i1
-// CHECK:                 }
-// CHECK:                 scf.yield
-// CHECK:               }
-// CHECK:               scf.yield %[[VAL_21:.*]] : i1
-// CHECK:             } else {
-// CHECK:               scf.yield %[[VAL_3]] : i1
-// CHECK:             }
-// CHECK:             scf.yield %[[VAL_15]] : i1
-// CHECK:           } else {
-// CHECK:             scf.yield %[[VAL_3]] : i1
-// CHECK:           }
-// CHECK:           return %[[VAL_9]] : i1
-// CHECK:         }
+module {
+  func @entry() {
+    %c2 = constant 2 : index
+    %cf22 = constant 22.0 : f64
 
-func @vector_equal(%a: tensor<?xf64, #CV64>, %b: tensor<?xf64, #CV64>) -> i1 {
-    %answer = graphblas.equal %a, %b : tensor<?xf64, #CV64>, tensor<?xf64, #CV64>
-    return %answer : i1
+    ///////////////
+    // Test Matrix
+    ///////////////
+
+    %m = constant dense<[
+      [ 1.0,  0.0,  2.0,  0.0,  0.0,  0.0,  0.0,  3.0],
+      [ 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0],
+      [ 0.0,  0.0,  4.0,  0.0,  0.0,  0.0,  0.0,  0.0],
+      [ 0.0,  0.0, 10.0,  0.0,  0.0,  0.0, 11.0, 12.0],
+      [ 0.0, 13.0, 14.0,  0.0,  0.0,  0.0, 15.0, 16.0],
+      [ 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0],
+      [ 0.0,  0.0,  0.0,  0.0,  0.0,  0.0, 17.0,  0.0]
+    ]> : tensor<7x8xf64>
+    %m_fixed_csr = sparse_tensor.convert %m : tensor<7x8xf64> to tensor<7x8xf64, #CSR64>
+    %m_csr = sparse_tensor.convert %m : tensor<7x8xf64> to tensor<?x?xf64, #CSR64>
+    %m_csc = sparse_tensor.convert %m : tensor<7x8xf64> to tensor<?x?xf64, #CSC64>
+
+    // Fixed-sized CSR Matrix should be equal to itself
+    //
+    // CHECK:  (0) is_equal=1
+    //
+    %0 = graphblas.equal %m_fixed_csr, %m_fixed_csr : tensor<7x8xf64, #CSR64>, tensor<7x8xf64, #CSR64>
+    graphblas.print %0 { strings=["(0) is_equal="] } : i1
+
+    // Dynamic-sized CSR Matrix should be equal to itself
+    //
+    // CHECK:  (1) is_equal=1
+    //
+    %1 = graphblas.equal %m_csr, %m_csr : tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>
+    graphblas.print %1 { strings=["(1) is_equal="] } : i1
+
+    // Should be equal to its duplicate
+    //
+    // CHECK:  (2) is_equal=1
+    //
+    %m_dup = graphblas.dup %m_csr : tensor<?x?xf64, #CSR64>
+    %2 = graphblas.equal %m_dup, %m_csr : tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>
+    graphblas.print %2 { strings=["(2) is_equal="] } : i1
+
+    // CSR should not be equal to a modified version
+    //
+    // CHECK:  (3) is_equal=0
+    //
+    %m_dup_values = sparse_tensor.values %m_dup : tensor<?x?xf64, #CSR64> to memref<?xf64>
+    memref.store %cf22, %m_dup_values[%c2] : memref<?xf64>
+    %3 = graphblas.equal %m_dup, %m_csr : tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>
+    graphblas.print %3 { strings=["(3) is_equal="] } : i1
+
+    // Dynamic-sized CSC Matrix should be equal to itself
+    //
+    // CHECK:  (10) is_equal=1
+    //
+    %10 = graphblas.equal %m_csc, %m_csc : tensor<?x?xf64, #CSC64>, tensor<?x?xf64, #CSC64>
+    graphblas.print %10 { strings=["(10) is_equal="] } : i1
+
+    ///////////////
+    // Test Vector
+    ///////////////
+
+    %v = constant dense<
+      [ 1.0,  2.0,  0.0, 0.0, -4.0, 0.0, 0.0, 0.0 ]
+    > : tensor<8xf64>
+    %v_fixed_cv = sparse_tensor.convert %v : tensor<8xf64> to tensor<8xf64, #CV64>
+    %v_cv = sparse_tensor.convert %v : tensor<8xf64> to tensor<?xf64, #CV64>
+
+    %v2 = constant dense<
+      [ 1.0, 2.0, 0.0, 3.0]
+    > : tensor<4xf64>
+    %v2_cv = sparse_tensor.convert %v2 : tensor<4xf64> to tensor<?xf64, #CV64>
+
+    // Fixed-sized Vector should be equal to itself
+    //
+    // CHECK:  (20) is_equal=1
+    //
+    %20 = graphblas.equal %v_fixed_cv, %v_fixed_cv : tensor<8xf64, #CV64>, tensor<8xf64, #CV64>
+    graphblas.print %20 { strings=["(20) is_equal="] } : i1
+
+    // Dynamic-sized Vector should be equal to itself
+    //
+    // CHECK:  (21) is_equal=1
+    //
+    %21 = graphblas.equal %v_cv, %v_cv : tensor<?xf64, #CV64>, tensor<?xf64, #CV64>
+    graphblas.print %21 { strings=["(21) is_equal="] } : i1
+
+    // Dynamic-sized Vector should not be equal to a differently sized dynamic vector
+    //
+    // CHECK:  (22) is_equal=0
+    //
+    %22 = graphblas.equal %v2_cv, %v_cv : tensor<?xf64, #CV64>, tensor<?xf64, #CV64>
+    graphblas.print %22 { strings=["(22) is_equal="] } : i1
+
+    return
+  }
 }
-
-// TODO: Check all type combinations

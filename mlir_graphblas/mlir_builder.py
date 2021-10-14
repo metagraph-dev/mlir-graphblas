@@ -42,6 +42,7 @@ GRAPHBLAS_PASSES = (
     "--finalizing-bufferize",
     "--convert-linalg-to-loops",
     "--convert-scf-to-std",
+    "--convert-vector-to-llvm",
     "--convert-memref-to-llvm",
     "--convert-std-to-llvm",
     "--reconcile-unrealized-casts",
