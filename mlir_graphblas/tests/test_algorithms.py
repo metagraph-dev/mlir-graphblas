@@ -2,12 +2,7 @@ import numpy as np
 import pytest
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 import mlir_graphblas.algorithms as mlalgo
-from mlir_graphblas.tools.utils import (
-    sparsify_array,
-    densify_csr,
-    densify_csc,
-    densify_vector,
-)
+from mlir_graphblas.tools.utils import sparsify_array
 from mlir_graphblas.mlir_builder import GRAPHBLAS_OPENMP_PASSES
 
 
@@ -37,6 +32,7 @@ def test_triangle_count(special_passes):
     sizes = np.array([8, 8], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
     a = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert a.verify()
 
     num_triangles = mlalgo.triangle_count(a, compile_with_passes=special_passes)
     assert num_triangles == 5, num_triangles
@@ -61,12 +57,14 @@ def test_sssp(special_passes):
     sizes = np.array([7, 7], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
     m = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert m.verify()
 
     indices = np.array([[1]], dtype=np.uint64)
     values = np.array([0], dtype=np.float64)
     sizes = np.array([7], dtype=np.uint64)
     sparsity = np.array([True], dtype=np.bool8)
     v = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert v.verify()
 
     # Compute SSSP from node #1 -- correct answer is [14, 0, 9, 11, 7, 10, 4]
     w = mlalgo.sssp(m, v, compile_with_passes=special_passes)
@@ -94,12 +92,14 @@ def test_mssp(special_passes):
     sizes = np.array([7, 7], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
     m = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert m.verify()
 
     indices = np.array([[0, 1], [1, 3]], dtype=np.uint64)
     values = np.array([0, 0], dtype=np.float64)
     sizes = np.array([2, 7], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
     v = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert v.verify()
 
     # Compute MSSP
     # correct answer from node #1 -- [14, 0, 9, 11, 7, 10, 4]
@@ -132,10 +132,12 @@ def test_bipartite_project_and_filter(special_passes):
     )
     # fmt: on
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
+    assert input_tensor.verify()
 
     # Test row projection
     result = mlalgo.bipartite_project_and_filter(input_tensor)
-    dense_result = densify_csr(result)
+    assert result.verify()
+    dense_result = result.toarray()
 
     expected_dense_result = dense_input_tensor @ dense_input_tensor.T
     expected_dense_result[expected_dense_result < 0] = 0
@@ -146,7 +148,8 @@ def test_bipartite_project_and_filter(special_passes):
     result2 = mlalgo.bipartite_project_and_filter(
         input_tensor, "column", cutoff=1.0, compile_with_passes=special_passes
     )
-    dense_result2 = densify_csr(result2)
+    assert result2.verify()
+    dense_result2 = result2.toarray()
 
     expected_dense_result2 = dense_input_tensor.T @ dense_input_tensor
     expected_dense_result2[expected_dense_result2 < 1] = 0
@@ -172,12 +175,14 @@ def test_vertex_nomination(special_passes):
     sizes = np.array([7, 7], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
     m = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert m.verify()
 
     indices = np.array([[6]], dtype=np.uint64)
     values = np.array([0], dtype=np.float64)
     sizes = np.array([7], dtype=np.uint64)
     sparsity = np.array([True], dtype=np.bool8)
     v = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert v.verify()
 
     # Compute Vertex Nomination
     # correct answer for node #6 is node #4
@@ -188,6 +193,7 @@ def test_vertex_nomination(special_passes):
     indices = np.array([[0], [1], [5]], dtype=np.uint64)
     values = np.array([0, 0, 0], dtype=np.float64)
     v2 = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert v2.verify()
     w2 = mlalgo.vertex_nomination(m, v2, compile_with_passes=special_passes)
     assert w2 == 3
 
@@ -209,6 +215,7 @@ def test_scan_statistics(special_passes):
         dtype=np.float64,
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
+    assert input_tensor.verify()
 
     result = mlalgo.scan_statistics(input_tensor, compile_with_passes=special_passes)
 
@@ -230,6 +237,7 @@ def test_pagerank(special_passes):
     sizes = np.array([5, 5], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
     m = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert m.verify()
 
     expected = np.array(
         [0.2541917746, 0.1380315018, 0.1380315018, 0.2059901768, 0.2637550447]
@@ -261,6 +269,7 @@ def test_graph_search():
     sizes = np.array([5, 5], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
     graph = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert graph.verify()
 
     # Random Uniform (no seed, so truly random)
     count = mlalgo.graph_search(graph, 3, [2, 4], "random")

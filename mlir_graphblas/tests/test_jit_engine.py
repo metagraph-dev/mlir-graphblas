@@ -3,7 +3,6 @@ from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
 import itertools
 import mlir_graphblas
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
-from mlir_graphblas.tools.utils import densify_csr
 import pytest
 import numpy as np
 
@@ -319,6 +318,7 @@ func @{func_name}(%argA: tensor<10x20x30x{mlir_type}, #sparseTensor>) -> {mlir_t
     sparsity = np.array([True, True, True], dtype=np.bool8)
 
     a = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert a.verify()
 
     assert engine.add(mlir_text, STANDARD_PASSES) == [func_name]
 
@@ -527,7 +527,6 @@ func private @ptr8_to_matrix_csr_f64_p64i64(!llvm.ptr<i8>) -> tensor<2x3xf64, #s
 func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_length: index) -> f64 {
   // Take an array of sparse 2x3 matrices
 
-
   %output_storage = constant dense<0.0> : tensor<f64>
 
   %c0 = constant 0 : index
@@ -584,10 +583,16 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
     )
 
     # generate coordinates
-    coordinate_iter = itertools.cycle(range(2 * 3))
+    coordinate_iter = itertools.count()
     next_indices = lambda: np.array(
-        [next(coordinate_iter) for _ in range(4)], dtype=np.uint64
-    ).reshape([2, 2])
+        sorted(
+            [
+                (next(coordinate_iter) % 2, next(coordinate_iter) % 3),
+                (next(coordinate_iter) % 2, next(coordinate_iter) % 3),
+            ]
+        ),
+        dtype=np.uint64,
+    )
 
     sparse_tensors = []
     for _ in range(num_sparse_tensors):
@@ -596,6 +601,7 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
         sizes = np.array([2, 3], dtype=np.uint64)
         sparsity = np.array([True, True], dtype=np.bool8)
         sparse_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
+        assert sparse_tensor.verify()
         sparse_tensors.append(sparse_tensor)
 
     expected_sum = sqrt_values.sum()
@@ -701,10 +707,14 @@ def test_jit_engine_zero_values(engine):
     input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
     output_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
 
+    assert input_tensor.verify()
+    assert output_tensor.verify()
     assert engine.add(mlir_text, STANDARD_PASSES) == ["transpose"]
     assert engine.transpose(output_tensor, input_tensor) is None
-    assert np.isclose(densify_csr(input_tensor), np.array([[8, 0], [9, 0]])).all()
-    assert np.isclose(densify_csr(output_tensor), np.array([[8, 9], [0, 0]])).all()
+    assert input_tensor.verify()
+    assert np.isclose(input_tensor.toarray(), np.array([[8, 0], [9, 0]])).all()
+    assert output_tensor.verify()
+    assert np.isclose(output_tensor.toarray(), np.array([[8, 9], [0, 0]])).all()
 
     return
 

@@ -199,11 +199,17 @@ public:
     // so swap nrow/ncol for csc->csr
     bool outputIsCSC = typeIsCSC(outputType);
 
-    // Set dimensions in correct order for CSR or CSC
+    // update the reverse index map and dimensions for CSR or CSC
     if (outputIsCSC) {
+      callAssignRev(rewriter, module, loc, duplicate, c0, c1);
+      callAssignRev(rewriter, module, loc, duplicate, c1, c0);
+
       callResizeDim(rewriter, module, loc, duplicate, c0, ncol);
       callResizeDim(rewriter, module, loc, duplicate, c1, nrow);
     } else {
+      callAssignRev(rewriter, module, loc, duplicate, c0, c0);
+      callAssignRev(rewriter, module, loc, duplicate, c1, c1);
+
       callResizeDim(rewriter, module, loc, duplicate, c0, nrow);
       callResizeDim(rewriter, module, loc, duplicate, c1, ncol);
 
@@ -372,6 +378,15 @@ public:
 
     // Cast types
     Value output = callDupTensor(rewriter, module, loc, inputTensor);
+    Value c0 = rewriter.create<ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+    if (outputTypeIsCSR) {
+      callAssignRev(rewriter, module, loc, output, c0, c0);
+      callAssignRev(rewriter, module, loc, output, c1, c1);
+    } else {
+      callAssignRev(rewriter, module, loc, output, c0, c1);
+      callAssignRev(rewriter, module, loc, output, c1, c0);
+    }
     output = castToPtr8(rewriter, module, loc, output);
     output = castToTensor(rewriter, module, loc, output, flippedInputType);
 

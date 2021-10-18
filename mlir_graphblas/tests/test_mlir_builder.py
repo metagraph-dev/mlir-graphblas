@@ -19,12 +19,7 @@ from mlir_graphblas.algorithms import (
     dense_neural_network,
 )
 
-from mlir_graphblas.tools.utils import (
-    sparsify_array,
-    densify_csr,
-    densify_csc,
-    densify_vector,
-)
+from mlir_graphblas.tools.utils import sparsify_array
 
 from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE
 from mlir_graphblas.mlir_builder import GRAPHBLAS_PASSES
@@ -109,14 +104,16 @@ def test_ir_builder_convert_layout_wrapper(engine: MlirJitEngine, aliases: Alias
     sparsity = np.array([False, True], dtype=np.bool8)
 
     input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert input_tensor.verify()
 
     dense_input_tensor = np.zeros([8, 8], dtype=np.float64)
     dense_input_tensor[1, 2] = 1.2
     dense_input_tensor[4, 3] = 4.3
-    assert np.isclose(dense_input_tensor, densify_csr(input_tensor)).all()
+    assert np.isclose(dense_input_tensor, input_tensor.toarray()).all()
     output_tensor = convert_layout_wrapper_callable(input_tensor)
+    assert output_tensor.verify()
 
-    assert np.isclose(dense_input_tensor, densify_csc(output_tensor)).all()
+    assert np.isclose(dense_input_tensor, output_tensor.toarray()).all()
 
 
 def test_builder_attribute(engine: MlirJitEngine, aliases: AliasMap):
@@ -175,6 +172,7 @@ def test_ir_builder_triangle_count():
     sizes = np.array([8, 8], dtype=np.uint64)
     sparsity = np.array([False, True], dtype=np.bool8)
     input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert input_tensor.verify()
 
     assert 5 == triangle_count(input_tensor)
 
@@ -338,17 +336,21 @@ def test_ir_builder_dnn(
         sparse_weight_matrices = [
             sparsify_matrix(matrix) for matrix in dense_weight_matrices
         ]
+        assert all(e.verify() for e in sparse_weight_matrices)
         sparse_bias_matrices = [
             sparsify_matrix(matrix) for matrix in dense_bias_matrices
         ]
+        assert all(e.verify() for e in sparse_bias_matrices)
         sparse_input_tensor = sparsify_matrix(dense_input_tensor)
+        assert sparse_input_tensor.verify()
         sparse_result = dense_neural_network(
             sparse_weight_matrices,
             sparse_bias_matrices,
             sparse_input_tensor,
             clamp_threshold,
         )
-        dense_result = densify_csr(sparse_result)
+        assert sparse_result.verify()
+        dense_result = sparse_result.toarray()
 
         with np.printoptions(suppress=True):
             assert np.isclose(
@@ -405,6 +407,7 @@ def test_ir_builder_vector_argminmax(
 
     # Test Results
     input_tensor = sparsify_array(dense_input_tensor, [True])
+    assert input_tensor.verify()
     res_min, res_max = vector_arg_min_and_max(input_tensor)
 
     minimum = np.min(dense_input_tensor)
@@ -449,10 +452,12 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
     )
     dense_input_tensor_mask = dense_input_tensor.astype(bool)
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
+    assert input_tensor.verify()
 
     for threshold in np.unique(dense_input_tensor):
         result = gt_thunk(input_tensor, threshold)
-        dense_result = densify_csr(result)
+        assert result.verify()
+        dense_result = result.toarray()
 
         expected_dense_result = np.copy(dense_input_tensor)
         expected_dense_result[dense_input_tensor_mask] /= 12.0
@@ -585,12 +590,19 @@ def test_ir_reduce_to_vector(
         reduced_columns_argmax,
     ) = reduce_func(input_tensor)
 
-    reduced_rows = densify_vector(reduced_rows)
-    reduced_columns = densify_vector(reduced_columns)
-    reduced_rows_clamped = densify_vector(reduced_rows_clamped)
-    reduced_columns_negative_abs = densify_vector(reduced_columns_negative_abs)
-    reduced_rows_argmin = densify_vector(reduced_rows_argmin)
-    reduced_columns_argmax = densify_vector(reduced_columns_argmax)
+    assert reduced_rows.verify()
+    assert reduced_columns.verify()
+    assert reduced_rows_clamped.verify()
+    assert reduced_columns_negative_abs.verify()
+    assert reduced_rows_argmin.verify()
+    assert reduced_columns_argmax.verify()
+
+    reduced_rows = reduced_rows.toarray()
+    reduced_columns = reduced_columns.toarray()
+    reduced_rows_clamped = reduced_rows_clamped.toarray()
+    reduced_columns_negative_abs = reduced_columns_negative_abs.toarray()
+    reduced_rows_argmin = reduced_rows_argmin.toarray()
+    reduced_columns_argmax = reduced_columns_argmax.toarray()
 
     expected_reduced_rows = dense_input_tensor.sum(axis=1)
     expected_reduced_columns = (
@@ -681,6 +693,7 @@ def test_ir_diag(
         dtype=np_type,
     )
     input_vector = sparsify_array(dense_input_vector, [True])
+    assert input_vector.verify()
     dense_input_matrix = np.array(
         [
             [0, 7, 7, 0, 7],
@@ -692,6 +705,7 @@ def test_ir_diag(
         dtype=np_type,
     )
     input_matrix = sparsify_array(dense_input_matrix, [False, True])
+    assert input_matrix.verify()
     matrix_type_is_csc = [1, 0] == SparseTensorType.parse(
         matrix_type, aliases
     ).encoding.ordering
@@ -699,12 +713,11 @@ def test_ir_diag(
         input_matrix = engine.csr_to_csc(input_matrix)
 
     output_matrix, output_vector = diag_func(input_vector, input_matrix)
+    assert output_matrix.verify()
+    assert output_vector.verify()
 
-    if matrix_type_is_csc:
-        output_matrix = densify_csc(output_matrix)
-    else:
-        output_matrix = densify_csr(output_matrix)
-    output_vector = densify_vector(output_vector)
+    output_matrix = output_matrix.toarray()
+    output_vector = output_vector.toarray()
 
     expected_output_matrix = np.diagflat(dense_input_vector)
     expected_output_vector = np.diag(dense_input_matrix)
@@ -740,9 +753,11 @@ def test_ir_select_random(engine: MlirJitEngine, aliases: AliasMap):
         dtype=np.float64,
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
+    assert input_tensor.verify()
 
     result = test_select_random(input_tensor, 2, 0xB00)
-    dense_result = densify_csr(result)
+    assert result.verify()
+    dense_result = result.toarray()
 
     # choose_first always selects the first N elements on the row
     expected_output_tensor = np.array(
@@ -788,10 +803,12 @@ def test_ir_select_random_uniform(engine: MlirJitEngine, aliases: AliasMap):
         dtype=np.float64,
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
+    assert input_tensor.verify()
 
     rng = ChooseUniformContext(seed=2)
     result = test_select_random_uniform(input_tensor, 2, rng)
-    dense_result = densify_csr(result)
+    assert result.verify()
+    dense_result = result.toarray()
 
     expected_row_count = np.minimum((dense_input_tensor != 0).sum(axis=1), 2)
     actual_row_count = (dense_result != 0).sum(axis=1)
@@ -832,11 +849,13 @@ def test_ir_select_random_weighted(engine: MlirJitEngine, aliases: AliasMap):
         dtype=np.float64,
     )
     input_tensor = sparsify_array(dense_input_tensor, [False, True])
+    assert input_tensor.verify()
 
     # basic checks
     rng = ChooseWeightedContext(seed=2)
     result = test_select_random_weighted(input_tensor, 2, rng)
-    dense_result = densify_csr(result)
+    assert result.verify()
+    dense_result = result.toarray()
 
     expected_row_count = np.minimum((dense_input_tensor != 0).sum(axis=1), 2)
     actual_row_count = (dense_result != 0).sum(axis=1)
@@ -847,7 +866,8 @@ def test_ir_select_random_weighted(engine: MlirJitEngine, aliases: AliasMap):
     n = 100
     for i in range(n):
         result = test_select_random_weighted(input_tensor, 1, rng)
-        dense_result = densify_csr(result)
+        assert result.verify()
+        dense_result = result.toarray()
         choice = np.argmax(dense_result[1])
         counts[choice] += 1
 
@@ -863,3 +883,43 @@ def test_ir_select_random_weighted(engine: MlirJitEngine, aliases: AliasMap):
         assert abs(expected_count - actual_count) < (
             2 * stddev
         ), f"key: {key}, expected: {expected_count}, actual: {actual_count}, stdev: {stddev}"
+
+
+def test_ir_transpose(
+    engine: MlirJitEngine,
+    aliases: AliasMap,
+):
+    # Build Functions
+    ir_builder = MLIRFunctionBuilder(
+        "transpose_wrapper",
+        input_types=["tensor<?x?xf64, #CSR64>"],
+        return_types=["tensor<?x?xf64, #CSC64>"],
+        aliases=aliases,
+    )
+    (input_matrix,) = ir_builder.inputs
+
+    output_matrix = ir_builder.graphblas.transpose(
+        input_matrix, "tensor<?x?xf64, #CSC64>"
+    )
+    ir_builder.return_vars(output_matrix)
+    transpose_wrapper = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test Results
+    dense_input_matrix = np.array(
+        [
+            [0, 7, 7, 0, 7],
+            [0, 1, 7, 0, 0],
+        ],
+        dtype=np.float64,
+    )
+    input_matrix = sparsify_array(dense_input_matrix, [False, True])
+    assert input_matrix.verify()
+
+    output_matrix = transpose_wrapper(input_matrix)
+    assert output_matrix.verify()
+
+    output_matrix = output_matrix.toarray()
+
+    expected_output_matrix = dense_input_matrix.T
+
+    assert np.all(expected_output_matrix == output_matrix)

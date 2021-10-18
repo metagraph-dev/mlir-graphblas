@@ -83,6 +83,9 @@ mlir::Value callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
 mlir::Value callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                           mlir::Location loc, mlir::Value tensor);
 
+mlir::CallOp callAssignRev(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                           mlir::Location loc, mlir::Value tensor,
+                           mlir::Value d, mlir::Value newIndexValue);
 mlir::CallOp callResizeDim(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                            mlir::Location loc, mlir::Value tensor,
                            mlir::Value d, mlir::Value size);
