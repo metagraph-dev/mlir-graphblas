@@ -164,8 +164,7 @@
 // CHECK:             }
 // CHECK:             scf.yield %[[VAL_132:.*]] : index
 // CHECK:           }
-// CHECK:           %[[VAL_133:.*]] = call @vector_f64_p64i64_to_ptr8(%[[VAL_10]]) : (tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
-// CHECK:           call @delSparseTensor(%[[VAL_133]]) : (!llvm.ptr<i8>) -> ()
+// CHECK:           sparse_tensor.release %[[VAL_10]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           return %[[VAL_2]] : index
 // CHECK:         }
 

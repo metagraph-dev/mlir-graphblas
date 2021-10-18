@@ -288,16 +288,6 @@ Value castToTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
   return result;
 }
 
-void callDelSparseTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
-                         Value tensor) {
-  Value ptr = castToPtr8(builder, mod, loc, tensor);
-  Type ptr8Type = ptr.getType();
-
-  FlatSymbolRefAttr func = getFunc(mod, loc, "delSparseTensor", {}, ptr8Type);
-  builder.create<mlir::CallOp>(loc, func, TypeRange(), ptr);
-  return;
-}
-
 Value callNewTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
                     ValueRange shape, RankedTensorType tensorType) {
   Type indexType = builder.getIndexType();
@@ -413,7 +403,7 @@ void cleanupIntermediateTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
     }
     if (toDelete) {
       builder.setInsertionPoint(lastStatement);
-      callDelSparseTensor(builder, mod, loc, tensor);
+      builder.create<sparse_tensor::ReleaseOp>(loc, tensor);
     }
   }
 }
