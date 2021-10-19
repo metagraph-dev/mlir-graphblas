@@ -142,7 +142,7 @@ cdef extern from "SparseUtils.cpp" nogil:
 
     void *dup_tensor(void *tensor)
     void *empty_like(void *tensor)
-    void *empty(void *tensor, uint64_t ndims)
+    # void *empty(void *tensor, uint64_t ndims)
 
     # All combinations of types to !llvm.ptr<i8>
     void *matrix_csr_f64_p64i64_to_ptr8(void *tensor)
@@ -694,14 +694,14 @@ cdef class MLIRSparseTensor:
         rv.value_dtype = self.value_dtype
         return rv
 
-    cpdef MLIRSparseTensor empty(self, uint64_t ndims):
-        cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
-        rv._data = empty(self._data, ndims)
-        rv.ndim = self.ndim
-        rv.pointer_dtype = self.pointer_dtype
-        rv.index_dtype = self.index_dtype
-        rv.value_dtype = self.value_dtype
-        return rv
+    # cpdef MLIRSparseTensor empty(self, uint64_t ndims):
+    #     cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
+    #     rv._data = empty(self._data, ndims)
+    #     rv.ndim = self.ndim
+    #     rv.pointer_dtype = self.pointer_dtype
+    #     rv.index_dtype = self.index_dtype
+    #     rv.value_dtype = self.value_dtype
+    #     return rv
 
 
 # Use this to create `vector[vector[uint64_t]*]`, which isn't supported syntax
