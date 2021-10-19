@@ -83,8 +83,7 @@
 // CHECK:           memref.dealloc %[[VAL_26]] : memref<?xf64>
 // CHECK:           memref.dealloc %[[VAL_27]] : memref<?xi1>
 // CHECK:           %[[VAL_58:.*]] = memref.load %[[VAL_23]]{{\[}}%[[VAL_3]]] : memref<?xf64>
-// CHECK:           %[[VAL_59:.*]] = call @vector_f64_p64i64_to_ptr8(%[[VAL_11]]) : (tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
-// CHECK:           call @delSparseTensor(%[[VAL_59]]) : (!llvm.ptr<i8>) -> ()
+// CHECK:           sparse_tensor.release %[[VAL_11]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           return %[[VAL_58]] : f64
 // CHECK:         }
 

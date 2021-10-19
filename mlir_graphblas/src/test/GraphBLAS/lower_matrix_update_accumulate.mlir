@@ -214,8 +214,7 @@
 // CHECK:             }
 // CHECK:             scf.yield
 // CHECK:           }
-// CHECK:           %[[VAL_169:.*]] = call @matrix_csr_f64_p64i64_to_ptr8(%[[VAL_10]]) : (tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
-// CHECK:           call @delSparseTensor(%[[VAL_169]]) : (!llvm.ptr<i8>) -> ()
+// CHECK:           sparse_tensor.release %[[VAL_10]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           return %[[VAL_2]] : index
 // CHECK:         }
 

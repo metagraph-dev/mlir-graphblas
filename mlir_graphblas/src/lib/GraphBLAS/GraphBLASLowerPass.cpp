@@ -2590,7 +2590,7 @@ public:
           Value temp = callDupTensor(rewriter, module, loc, output);
           computeMatrixElementWise(rewriter, loc, module, input, temp, output,
                                    accumulateString, /* intersect */ false);
-          callDelSparseTensor(rewriter, module, loc, temp);
+          rewriter.create<sparse_tensor::ReleaseOp>(loc, temp);
         }
       } else {
         if (mask) {
@@ -2631,7 +2631,7 @@ public:
           Value temp = callDupTensor(rewriter, module, loc, output);
           computeVectorElementWise(rewriter, loc, module, input, temp, output,
                                    accumulateString, /* intersect */ false);
-          callDelSparseTensor(rewriter, module, loc, temp);
+          rewriter.create<sparse_tensor::ReleaseOp>(loc, temp);
         }
       } else {
         if (mask) {
