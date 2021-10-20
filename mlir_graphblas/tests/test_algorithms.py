@@ -304,3 +304,32 @@ def test_graph_search():
     count = mlalgo.graph_search(graph, 3, [0, 1], "argmax")
     assert (count.indices[0] == [2, 3, 4]).all()
     assert (count.values == [2, 1, 3]).all()
+
+
+# DO NOT RUN THIS ALGORITHM WITH OPENMP UNTIL WE HAVE THREAD SAFE RNG
+def test_random_walk():
+    # fmt: off
+    indices = np.array(
+        [[0, 1], [0, 2], [1, 0], [1, 3], [2, 0], [2, 4], [3, 2]],
+        dtype=np.uint64,
+    )
+    values = np.array([100, 200, 300, 400, 175, 222, 333], dtype=np.float64)
+    # fmt: on
+    sizes = np.array([5, 5], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    graph = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert graph.verify()
+
+    paths = mlalgo.random_walk(graph, 20, [0, 1, 2, 3, 4, 4, 3, 2, 1, 0])
+
+    # Perform validation for each row to verify correctness
+    valid_steps = {}
+    for start, end in indices:
+        valid_steps.setdefault(start, set()).add(end)
+    pointers = paths.pointers[-1]
+    nodes = paths.values
+    for irow, (istart, iend) in enumerate(zip(pointers[:-1], pointers[1:])):
+        assert istart != iend, f"Initial node missing for row {irow}"
+        for jstart, jend in zip(nodes[istart:int(iend-1)], nodes[int(istart+1):iend]):
+            assert jstart in valid_steps, f"Row [{irow}] {jstart} is a terminator"
+            assert jend in valid_steps[jstart], f"Row [{irow}] {jstart}->{jend} is not a valid step"
