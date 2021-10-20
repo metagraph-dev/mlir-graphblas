@@ -372,6 +372,20 @@ class LLVMLoadOp(BaseOp):
 ###########################################
 
 
+class SparseTensorConvert(BaseOp):
+    dialect = "sparse_tensor"
+    name = "convert"
+
+    @classmethod
+    def call(cls, irbuilder, input, return_type):
+        cls.ensure_mlirvar(input, SparseTensorType)
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign} = sparse_tensor.convert {input} : "
+            f"{input.type} to {ret_val.type}"
+        )
+
+
 class SparseTensorPointers(BaseOp):
     dialect = "sparse_tensor"
     name = "pointers"
