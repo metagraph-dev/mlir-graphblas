@@ -330,6 +330,10 @@ def test_random_walk():
     nodes = paths.values
     for irow, (istart, iend) in enumerate(zip(pointers[:-1], pointers[1:])):
         assert istart != iend, f"Initial node missing for row {irow}"
-        for jstart, jend in zip(nodes[istart:int(iend-1)], nodes[int(istart+1):iend]):
+        for jstart, jend in zip(
+            nodes[istart : int(iend - 1)], nodes[int(istart + 1) : iend]
+        ):
             assert jstart in valid_steps, f"Row [{irow}] {jstart} is a terminator"
-            assert jend in valid_steps[jstart], f"Row [{irow}] {jstart}->{jend} is not a valid step"
+            assert (
+                jend in valid_steps[jstart]
+            ), f"Row [{irow}] {jstart}->{jend} is not a valid step"

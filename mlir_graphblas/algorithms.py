@@ -650,7 +650,9 @@ class RandomWalk(Algorithm):
         # Size the indices and values for a fully dense matrix. Trim later if early terminations occur.
         nsteps_plus_1 = irb.addi(nsteps, c1)
         nwalkers = irb.tensor.dim(walkers, c0)
-        P = irb.util.new_sparse_tensor("tensor<?x?xi64, #CSC64>", nwalkers, nsteps_plus_1)
+        P = irb.util.new_sparse_tensor(
+            "tensor<?x?xi64, #CSC64>", nwalkers, nsteps_plus_1
+        )
         Pptr8 = irb.util.tensor_to_ptr8(P)
         max_possible_size = irb.muli(nwalkers, nsteps_plus_1)
         irb.util.resize_sparse_index(Pptr8, c1, max_possible_size)
@@ -690,7 +692,9 @@ class RandomWalk(Algorithm):
 
         # Perform graph search nsteps times
         frontier_ptr8 = irb.new_var("!llvm.ptr<i8>")
-        with irb.for_loop(1, nsteps_plus_1, iter_vars=[(frontier_ptr8, Fptr8)]) as for_vars:
+        with irb.for_loop(
+            1, nsteps_plus_1, iter_vars=[(frontier_ptr8, Fptr8)]
+        ) as for_vars:
             step_num = for_vars.iter_var_index
             step_num_plus_1 = irb.addi(step_num, c1)
             frontier = irb.util.ptr8_to_tensor(frontier_ptr8, "tensor<?x?xf64, #CSR64>")
@@ -705,7 +709,9 @@ class RandomWalk(Algorithm):
             )
             chosen_neighbors_ptr8 = irb.util.tensor_to_ptr8(chosen_neighbors)
             # Add new nodes to paths
-            new_indices = irb.graphblas.reduce_to_vector(chosen_neighbors, aggregator="argmin", axis=1)
+            new_indices = irb.graphblas.reduce_to_vector(
+                chosen_neighbors, aggregator="argmin", axis=1
+            )
             NIp = irb.sparse_tensor.pointers(new_indices, c0)
             NIi = irb.sparse_tensor.indices(new_indices, c0)
             NIx = irb.sparse_tensor.values(new_indices)
@@ -750,9 +756,7 @@ class RandomWalk(Algorithm):
         ctx = ChooseUniformContext(rand_seed)
         if not isinstance(initial_walkers, np.ndarray):
             initial_walkers = np.array(initial_walkers, dtype=np.int64)
-        return super().__call__(
-            graph, num_steps, initial_walkers, ctx, **kwargs
-        )
+        return super().__call__(graph, num_steps, initial_walkers, ctx, **kwargs)
 
 
 random_walk = RandomWalk()
