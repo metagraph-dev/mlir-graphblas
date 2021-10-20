@@ -303,22 +303,6 @@ Value callNewTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
   CallOp callOpResult = builder.create<CallOp>(loc, func, tensorType, shape);
   Value result = callOpResult->getResult(0);
 
-  Value c0 = builder.create<ConstantIndexOp>(loc, 0);
-  if (rank == 2) {
-    Value c1 = builder.create<ConstantIndexOp>(loc, 1);
-    bool outputIsCSR = typeIsCSR(tensorType);
-    Value rev0, rev1;
-    if (outputIsCSR) {
-      callAssignRev(builder, mod, loc, result, c0, c0);
-      callAssignRev(builder, mod, loc, result, c1, c1);
-    } else {
-      callAssignRev(builder, mod, loc, result, c0, c1);
-      callAssignRev(builder, mod, loc, result, c1, c0);
-    }
-  } else {
-    callAssignRev(builder, mod, loc, result, c0, c0);
-  }
-
   return result;
 }
 

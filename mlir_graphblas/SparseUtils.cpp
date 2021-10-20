@@ -559,10 +559,10 @@ public:
     return tensor;
   }
   // New tensor of dimensions `ndims` (no shape; must use `resize_dim`)
-  void *empty(uint64_t ndims) override {
+  /*void *empty(uint64_t ndims) override {
     SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(ndims);
     return tensor;
-  }
+  }*/
 
   bool verify() override {
     bool rv = true;
@@ -1160,9 +1160,20 @@ void *ptr8_to_vector_i32_p64i64(void *tensor) { return tensor; }
 // New tensor generic constructors
 void *matrix_prep_size(SparseTensorStorageBase *matrix, uint64_t nrows,
                        uint64_t ncols, bool columnOriented) {
+  if (columnOriented) {
+    matrix->assign_rev(0, 1);
+    matrix->assign_rev(1, 0);
+    // swap nrows and ncols
+    uint64_t tmp = nrows;
+    nrows = ncols;
+    ncols = tmp;
+  } else {
+    // rev starts as [0, 0]; only need to update 2nd entry
+    matrix->assign_rev(1, 1);
+  }
   matrix->resize_dim(0, nrows);
   matrix->resize_dim(1, ncols);
-  matrix->resize_pointers(1, (columnOriented ? ncols : nrows) + 1);
+  matrix->resize_pointers(1, nrows + 1);
   return matrix;
 }
 void *vector_prep_size(SparseTensorStorageBase *vector, uint64_t size) {
