@@ -23,9 +23,9 @@
 
 module {
   func @print_arbitrary_content() -> () {
-      %c99 = constant 99 : index
-      %0 = constant 1.3 : f32
-      %1 = constant 34 : i8
+      %c99 = arith.constant 99 : index
+      %0 = arith.constant 1.3 : f32
+      %1 = arith.constant 34 : i8
       // CHECK: first line : 1.3 1.3 1.3 1.3
       graphblas.print %0, %0, %0, %0 { strings = ["first line : "] } : f32, f32, f32, f32
       // CHECK: second line : 99 string_a  string_b  string_c 
