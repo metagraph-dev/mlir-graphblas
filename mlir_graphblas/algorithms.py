@@ -576,6 +576,8 @@ class GraphSearch(Algorithm):
                     available_neighbors, method, axis=1
                 )
                 chosen_neighbors_idx = irb.sparse_tensor.values(chosen_neighbors)
+            # TODO: update this like RandomWalk, replacing B rather than updating
+            # TODO: this will require converting the "arg" vector results into a matrix
             # Update B inplace with new neighbors
             with irb.for_loop(0, nseeds) as inner_for:
                 inner_seed_num = inner_for.iter_var_index
@@ -622,3 +624,139 @@ class GraphSearch(Algorithm):
 
 
 graph_search = GraphSearch()
+
+
+class RandomWalk(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "graph_search",
+            input_types=[
+                "tensor<?x?xf64, #CSR64>",
+                "index",
+                "tensor<?xi64>",
+                "!llvm.ptr<i8>",
+            ],
+            return_types=["tensor<?x?xi64, #CSR64>"],
+            aliases=_build_common_aliases(),
+        )
+        (A, nsteps, walkers, ctx) = irb.inputs
+
+        c0 = irb.constant(0, "index")
+        c1 = irb.constant(1, "index")
+        ci1 = irb.constant(1, "i64")
+        cf1 = irb.constant(1.0, "f64")
+
+        # Create paths matrix, size (nwalkers x nsteps+1) with nnz=nwalkers
+        # Size the indices and values for a fully dense matrix. Trim later if early terminations occur.
+        nsteps_plus_1 = irb.addi(nsteps, c1)
+        nwalkers = irb.tensor.dim(walkers, c0)
+        P = irb.util.new_sparse_tensor(
+            "tensor<?x?xi64, #CSC64>", nwalkers, nsteps_plus_1
+        )
+        Pptr8 = irb.util.tensor_to_ptr8(P)
+        max_possible_size = irb.muli(nwalkers, nsteps_plus_1)
+        irb.util.resize_sparse_index(Pptr8, c1, max_possible_size)
+        irb.util.resize_sparse_values(Pptr8, max_possible_size)
+
+        Pp = irb.sparse_tensor.pointers(P, c1)
+        Pi = irb.sparse_tensor.indices(P, c1)
+        Px = irb.sparse_tensor.values(P)
+
+        # Create Frontier matrix, sized (nwalkers x ncols) with nnz=nwalkers
+        ncols = irb.graphblas.num_cols(A)
+        F = irb.util.new_sparse_tensor("tensor<?x?xf64, #CSR64>", nwalkers, ncols)
+        Fptr8 = irb.util.tensor_to_ptr8(F)
+        irb.util.resize_sparse_index(Fptr8, c1, nwalkers)
+        irb.util.resize_sparse_values(Fptr8, nwalkers)
+
+        Fp = irb.sparse_tensor.pointers(F, c1)
+        Fi = irb.sparse_tensor.indices(F, c1)
+        Fx = irb.sparse_tensor.values(F)
+
+        # Populate F and P matrices based on initial seed
+        with irb.for_loop(0, nwalkers) as for_vars:
+            seed_num = for_vars.iter_var_index
+            seed_num_64 = irb.index_cast(seed_num, "i64")
+            irb.memref.store(seed_num_64, Fp, seed_num)
+            cur_node = irb.tensor.extract(walkers, seed_num)
+            irb.memref.store(cur_node, Fi, seed_num)
+            irb.memref.store(cf1, Fx, seed_num)
+            irb.memref.store(seed_num_64, Pi, seed_num)
+            irb.memref.store(cur_node, Px, seed_num)
+        nwalkers_64 = irb.index_cast(nwalkers, "i64")
+        irb.memref.store(nwalkers_64, Fp, nwalkers)
+        irb.memref.store(nwalkers_64, Pp, c1)
+
+        # Convert layout of A
+        A_csc = irb.graphblas.convert_layout(A, "tensor<?x?xf64, #CSC64>")
+
+        # Perform graph search nsteps times
+        frontier_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        with irb.for_loop(
+            1, nsteps_plus_1, iter_vars=[(frontier_ptr8, Fptr8)]
+        ) as for_vars:
+            step_num = for_vars.iter_var_index
+            step_num_plus_1 = irb.addi(step_num, c1)
+            frontier = irb.util.ptr8_to_tensor(frontier_ptr8, "tensor<?x?xf64, #CSR64>")
+
+            # Compute neighbors of current nodes
+            available_neighbors = irb.graphblas.matrix_multiply(
+                frontier, A_csc, semiring="min_second"
+            )
+            # Select new neighbors
+            chosen_neighbors = irb.graphblas.matrix_select_random(
+                available_neighbors, ci1, ctx, "choose_uniform"
+            )
+            chosen_neighbors_ptr8 = irb.util.tensor_to_ptr8(chosen_neighbors)
+            # Add new nodes to paths
+            new_indices = irb.graphblas.reduce_to_vector(
+                chosen_neighbors, aggregator="argmin", axis=1
+            )
+            NIp = irb.sparse_tensor.pointers(new_indices, c0)
+            NIi = irb.sparse_tensor.indices(new_indices, c0)
+            NIx = irb.sparse_tensor.values(new_indices)
+            num_new_indices_64 = irb.memref.load(NIp, c1)
+            num_new_indices = irb.index_cast(num_new_indices_64, "index")
+            cur_nnz_64 = irb.memref.load(Pp, step_num)
+            cur_nnz = irb.index_cast(cur_nnz_64, "index")
+            new_nnz = irb.addi(cur_nnz, num_new_indices)
+            with irb.for_loop(0, num_new_indices) as ni_for:
+                ni_pos = ni_for.iter_var_index
+                ni_offset_pos = irb.addi(cur_nnz, ni_pos)
+                ni_index = irb.memref.load(NIi, ni_pos)
+                ni_value = irb.memref.load(NIx, ni_pos)
+                irb.memref.store(ni_index, Pi, ni_offset_pos)
+                irb.memref.store(ni_value, Px, ni_offset_pos)
+            new_nnz_64 = irb.index_cast(new_nnz, "i64")
+            irb.memref.store(new_nnz_64, Pp, step_num_plus_1)
+            for_vars.yield_vars(chosen_neighbors_ptr8)
+
+        # Trim indices and values
+        final_nnz_64 = irb.memref.load(Pp, nsteps_plus_1)
+        final_nnz = irb.index_cast(final_nnz_64, "index")
+        irb.util.resize_sparse_index(Pptr8, c1, final_nnz)
+        irb.util.resize_sparse_values(Pptr8, final_nnz)
+
+        # Convert from CSC to CSR
+        output = irb.sparse_tensor.convert(P, "tensor<?x?xi64, #CSR64>")
+
+        irb.return_vars(output)
+
+        return irb
+
+    def __call__(
+        self,
+        graph: MLIRSparseTensor,
+        num_steps,
+        initial_walkers,
+        *,
+        rand_seed=None,
+        **kwargs,
+    ) -> MLIRSparseTensor:
+        ctx = ChooseUniformContext(rand_seed)
+        if not isinstance(initial_walkers, np.ndarray):
+            initial_walkers = np.array(initial_walkers, dtype=np.int64)
+        return super().__call__(graph, num_steps, initial_walkers, ctx, **kwargs)
+
+
+random_walk = RandomWalk()
