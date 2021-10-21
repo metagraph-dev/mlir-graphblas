@@ -439,7 +439,8 @@ Value computeIndexOverlapSize(PatternRewriter &rewriter, Location loc,
       loc, arith::CmpIPredicate::ult, posA, aPosEnd);
   Value validPosB = rewriter.create<arith::CmpIOp>(
       loc, arith::CmpIPredicate::ult, posB, bPosEnd);
-  Value continueLoop = rewriter.create<arith::AndIOp>(loc, validPosA, validPosB);
+  Value continueLoop =
+      rewriter.create<arith::AndIOp>(loc, validPosA, validPosB);
   rewriter.create<scf::ConditionOp>(loc, continueLoop, before->getArguments());
 
   // "do" portion of while loop
@@ -596,16 +597,15 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
   Value cfalse = rewriter.create<arith::ConstantIntOp>(loc, 0, boolType);
   Value ctrue = rewriter.create<arith::ConstantIntOp>(loc, 1, boolType);
   // TODO: change this out for AGG_IDENTITY
-  Value cf0 =
-      llvm::TypeSwitch<Type, Value>(valueType)
-          .Case<IntegerType>([&](IntegerType type) {
-            return rewriter.create<arith::ConstantIntOp>(loc, 0,
-                                                         type.getWidth());
-          })
-          .Case<FloatType>([&](FloatType type) {
-            return rewriter.create<arith::ConstantFloatOp>(loc, APFloat(0.0),
-                                                           type);
-          });
+  Value cf0 = llvm::TypeSwitch<Type, Value>(valueType)
+                  .Case<IntegerType>([&](IntegerType type) {
+                    return rewriter.create<arith::ConstantIntOp>(
+                        loc, 0, type.getWidth());
+                  })
+                  .Case<FloatType>([&](FloatType type) {
+                    return rewriter.create<arith::ConstantFloatOp>(
+                        loc, APFloat(0.0), type);
+                  });
 
   // While Loop (exit when either array is exhausted)
   scf::WhileOp whileLoop = rewriter.create<scf::WhileOp>(
@@ -630,7 +630,8 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
       loc, arith::CmpIPredicate::ult, posA, aPosEnd);
   Value validPosB = rewriter.create<arith::CmpIOp>(
       loc, arith::CmpIPredicate::ult, posB, bPosEnd);
-  Value continueLoop = rewriter.create<arith::AndIOp>(loc, validPosA, validPosB);
+  Value continueLoop =
+      rewriter.create<arith::AndIOp>(loc, validPosA, validPosB);
   rewriter.create<scf::ConditionOp>(loc, continueLoop, before->getArguments());
 
   // "do" portion of while loop
@@ -745,14 +746,14 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
                    return rewriter.create<arith::MulFOp>(loc, newValA, newValB);
                  });
   } else if (agg == "div") {
-    aggVal = llvm::TypeSwitch<Type, Value>(valueType)
-                 .Case<IntegerType>([&](IntegerType type) {
-                   return rewriter.create<arith::DivSIOp>(loc, newValA,
-                                                               newValB);
-                 })
-                 .Case<FloatType>([&](FloatType type) {
-                   return rewriter.create<arith::DivFOp>(loc, newValA, newValB);
-                 });
+    aggVal =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return rewriter.create<arith::DivSIOp>(loc, newValA, newValB);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return rewriter.create<arith::DivFOp>(loc, newValA, newValB);
+            });
   } else if (agg == "min") {
     Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
                     .Case<IntegerType>([&](IntegerType type) {

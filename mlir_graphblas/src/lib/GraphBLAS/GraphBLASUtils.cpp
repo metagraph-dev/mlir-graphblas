@@ -510,16 +510,15 @@ LogicalResult populateSemiringAdd(OpBuilder &builder, Location loc,
   /*Block *addIdentityBlock = */ builder.createBlock(addIdentityRegion, {}, {});
   if (addName == "plus" || addName == "any") {
     // Add identity
-    addIdentity =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<arith::ConstantIntOp>(loc, 0,
-                                                          type.getWidth());
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return builder.create<arith::ConstantFloatOp>(loc, APFloat(0.0),
-                                                            type);
-            });
+    addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
+                      .Case<IntegerType>([&](IntegerType type) {
+                        return builder.create<arith::ConstantIntOp>(
+                            loc, 0, type.getWidth());
+                      })
+                      .Case<FloatType>([&](FloatType type) {
+                        return builder.create<arith::ConstantFloatOp>(
+                            loc, APFloat(0.0), type);
+                      });
   } else if (addName == "min") {
     addIdentity =
         llvm::TypeSwitch<Type, Value>(valueType)
@@ -550,30 +549,27 @@ LogicalResult populateSemiringAdd(OpBuilder &builder, Location loc,
   Value addResult;
   if (addName == "plus") {
     // Insert add operation
-    addResult =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<arith::AddIOp>(loc, addBlockArg0,
-                                                   addBlockArg1);
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return builder.create<arith::AddFOp>(loc, addBlockArg0,
-                                                   addBlockArg1);
-            });
-  } else if (addName == "min") {
-    Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+    addResult = llvm::TypeSwitch<Type, Value>(valueType)
                     .Case<IntegerType>([&](IntegerType type) {
-                      return builder.create<arith::CmpIOp>(
-                          loc, arith::CmpIPredicate::slt, addBlockArg0,
-                          addBlockArg1);
+                      return builder.create<arith::AddIOp>(loc, addBlockArg0,
+                                                           addBlockArg1);
                     })
                     .Case<FloatType>([&](FloatType type) {
-                      return builder.create<arith::CmpFOp>(
-                          loc, arith::CmpFPredicate::OLT, addBlockArg0,
-                          addBlockArg1);
+                      return builder.create<arith::AddFOp>(loc, addBlockArg0,
+                                                           addBlockArg1);
                     });
-    addResult =
-        builder.create<SelectOp>(loc, cmp, addBlockArg0, addBlockArg1);
+  } else if (addName == "min") {
+    Value cmp =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<arith::CmpIOp>(
+                  loc, arith::CmpIPredicate::slt, addBlockArg0, addBlockArg1);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return builder.create<arith::CmpFOp>(
+                  loc, arith::CmpFPredicate::OLT, addBlockArg0, addBlockArg1);
+            });
+    addResult = builder.create<SelectOp>(loc, cmp, addBlockArg0, addBlockArg1);
   } else if (addName == "any") {
     // Same as "second" for multiplicative op?
     // https://github.com/DrTimothyAldenDavis/SuiteSparse/blob/master/GraphBLAS/Source/Template/GB_binop_factory.c#L243-L244
@@ -602,37 +598,35 @@ LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
   Value multResult;
 
   if (multiplyName == "pair") {
-    multResult =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<arith::ConstantIntOp>(loc, 1, type.getWidth());
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return builder.create<arith::ConstantFloatOp>(loc, APFloat(1.0),
-                                                            type);
-            });
+    multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                     .Case<IntegerType>([&](IntegerType type) {
+                       return builder.create<arith::ConstantIntOp>(
+                           loc, 1, type.getWidth());
+                     })
+                     .Case<FloatType>([&](FloatType type) {
+                       return builder.create<arith::ConstantFloatOp>(
+                           loc, APFloat(1.0), type);
+                     });
   } else if (multiplyName == "times") {
-    multResult =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<arith::MulIOp>(loc, multBlockArg0,
-                                                   multBlockArg1);
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return builder.create<arith::MulFOp>(loc, multBlockArg0,
-                                                   multBlockArg1);
-            });
+    multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                     .Case<IntegerType>([&](IntegerType type) {
+                       return builder.create<arith::MulIOp>(loc, multBlockArg0,
+                                                            multBlockArg1);
+                     })
+                     .Case<FloatType>([&](FloatType type) {
+                       return builder.create<arith::MulFOp>(loc, multBlockArg0,
+                                                            multBlockArg1);
+                     });
   } else if (multiplyName == "plus") {
-    multResult =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<arith::AddIOp>(loc, multBlockArg0,
-                                                   multBlockArg1);
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return builder.create<arith::AddFOp>(loc, multBlockArg0,
-                                                   multBlockArg1);
-            });
+    multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                     .Case<IntegerType>([&](IntegerType type) {
+                       return builder.create<arith::AddIOp>(loc, multBlockArg0,
+                                                            multBlockArg1);
+                     })
+                     .Case<FloatType>([&](FloatType type) {
+                       return builder.create<arith::AddFOp>(loc, multBlockArg0,
+                                                            multBlockArg1);
+                     });
   } else if (multiplyName == "first") {
     multResult = multBlockArg0;
   } else if (multiplyName == "second") {

@@ -450,18 +450,18 @@ struct MatrixSelectOutputWriter {
     Value keep;
     if (selector == "triu") {
       keep = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ugt,
-                                           colWise ? row : col,
-                                           colWise ? col : row);
+                                            colWise ? row : col,
+                                            colWise ? col : row);
     } else if (selector == "tril") {
       keep = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult,
-                                           colWise ? row : col,
-                                           colWise ? col : row);
+                                            colWise ? row : col,
+                                            colWise ? col : row);
     } else if (selector == "gt") {
       keep = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OGT, val,
-                                           thunk.getValue());
+                                            thunk.getValue());
     } else if (selector == "ge") {
       keep = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OGE, val,
-                                           thunk.getValue());
+                                            thunk.getValue());
     } else {
       // this should be impossible because of validation
       assert(0);
@@ -836,10 +836,11 @@ public:
                     .Case<IntegerType>([&](IntegerType type) {
                       Value ans;
                       if (type.getWidth() < 64)
-                        ans = rewriter.create<arith::TruncIOp>(loc, type, ptrDiff);
+                        ans = rewriter.create<arith::TruncIOp>(loc, type,
+                                                               ptrDiff);
                       else
-                        ans = rewriter.create<arith::ExtSIOp>(loc, type,
-                                                                    ptrDiff);
+                        ans =
+                            rewriter.create<arith::ExtSIOp>(loc, type, ptrDiff);
                       return ans;
                     })
                     .Case<FloatType>([&](FloatType type) {
@@ -906,23 +907,22 @@ public:
                   loc, matrixValues, currentPtr);
 
               bool useMinimum = aggregator == "argmin";
-              Value mustUpdate = llvm::TypeSwitch<Type, Value>(elementType)
-                                     .Case<IntegerType>([&](IntegerType type) {
-                                       return rewriter.create<arith::CmpIOp>(
-                                           loc,
-                                           useMinimum
-                                               ? arith::CmpIPredicate::slt
-                                               : arith::CmpIPredicate::sgt,
-                                           rowValue, currentExtremum);
-                                     })
-                                     .Case<FloatType>([&](FloatType type) {
-                                       return rewriter.create<arith::CmpFOp>(
-                                           loc,
-                                           useMinimum
-                                               ? arith::CmpFPredicate::OLT
-                                               : arith::CmpFPredicate::OGT,
-                                           rowValue, currentExtremum);
-                                     });
+              Value mustUpdate =
+                  llvm::TypeSwitch<Type, Value>(elementType)
+                      .Case<IntegerType>([&](IntegerType type) {
+                        return rewriter.create<arith::CmpIOp>(
+                            loc,
+                            useMinimum ? arith::CmpIPredicate::slt
+                                       : arith::CmpIPredicate::sgt,
+                            rowValue, currentExtremum);
+                      })
+                      .Case<FloatType>([&](FloatType type) {
+                        return rewriter.create<arith::CmpFOp>(
+                            loc,
+                            useMinimum ? arith::CmpFPredicate::OLT
+                                       : arith::CmpFPredicate::OGT,
+                            rowValue, currentExtremum);
+                      });
 
               scf::IfOp ifMustUpdateBlock = rewriter.create<scf::IfOp>(
                   loc, TypeRange{elementType, int64Type}, mustUpdate, true);
@@ -1115,22 +1115,21 @@ private:
     Value currentValue =
         rewriter.create<memref::LoadOp>(loc, values, currentValuePosition);
     bool useMinimum = aggregator == "argmin";
-    Value replace =
-        llvm::TypeSwitch<Type, Value>(inputElementType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return rewriter.create<arith::CmpIOp>(
-                  loc,
-                  useMinimum ? arith::CmpIPredicate::slt
-                             : arith::CmpIPredicate::sgt,
-                  currentValue, currentExtremum);
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return rewriter.create<arith::CmpFOp>(
-                  loc,
-                  useMinimum ? arith::CmpFPredicate::OLT
-                             : arith::CmpFPredicate::OGT,
-                  currentValue, currentExtremum);
-            });
+    Value replace = llvm::TypeSwitch<Type, Value>(inputElementType)
+                        .Case<IntegerType>([&](IntegerType type) {
+                          return rewriter.create<arith::CmpIOp>(
+                              loc,
+                              useMinimum ? arith::CmpIPredicate::slt
+                                         : arith::CmpIPredicate::sgt,
+                              currentValue, currentExtremum);
+                        })
+                        .Case<FloatType>([&](FloatType type) {
+                          return rewriter.create<arith::CmpFOp>(
+                              loc,
+                              useMinimum ? arith::CmpFPredicate::OLT
+                                         : arith::CmpFPredicate::OGT,
+                              currentValue, currentExtremum);
+                        });
 
     scf::IfOp ifBlock = rewriter.create<scf::IfOp>(
         loc, TypeRange{inputElementType, indexType}, replace, true);
@@ -1178,16 +1177,15 @@ private:
       /*Block *aggIdentityBlock = */ rewriter.createBlock(&aggIdentityRegion,
                                                           {}, {});
 
-      Value aggIdentity =
-          llvm::TypeSwitch<Type, Value>(valueType)
-              .Case<IntegerType>([&](IntegerType type) {
-                return rewriter.create<arith::ConstantIntOp>(loc, 0,
-                                                             type.getWidth());
-              })
-              .Case<FloatType>([&](FloatType type) {
-                return rewriter.create<arith::ConstantFloatOp>(loc, APFloat(0.0),
-                                                        type);
-              });
+      Value aggIdentity = llvm::TypeSwitch<Type, Value>(valueType)
+                              .Case<IntegerType>([&](IntegerType type) {
+                                return rewriter.create<arith::ConstantIntOp>(
+                                    loc, 0, type.getWidth());
+                              })
+                              .Case<FloatType>([&](FloatType type) {
+                                return rewriter.create<arith::ConstantFloatOp>(
+                                    loc, APFloat(0.0), type);
+                              });
       rewriter.create<graphblas::YieldOp>(
           loc, graphblas::YieldKind::AGG_IDENTITY, aggIdentity);
 
@@ -1390,15 +1388,16 @@ public:
                     loc, rewriter.getIntegerAttr(type, bitWidth - 1));
                 Value mask =
                     rewriter.create<arith::ShRSIOp>(loc, val, shiftAmount);
-                Value maskPlusVal = rewriter.create<arith::AddIOp>(loc, mask, val);
+                Value maskPlusVal =
+                    rewriter.create<arith::AddIOp>(loc, mask, val);
                 Value absVal =
                     rewriter.create<arith::XOrIOp>(loc, mask, maskPlusVal);
                 Value c1_type = rewriter.create<arith::ConstantOp>(
                     loc, rewriter.getIntegerAttr(type, 1));
                 Value absValIsOne_i1 = rewriter.create<arith::CmpIOp>(
                     loc, arith::CmpIPredicate::eq, absVal, c1_type);
-                Value absValIsOne_type = rewriter.create<arith::ExtSIOp>(
-                    loc, type, absValIsOne_i1);
+                Value absValIsOne_type =
+                    rewriter.create<arith::ExtSIOp>(loc, type, absValIsOne_i1);
                 Value multipicativeInverse =
                     rewriter.create<arith::AndIOp>(loc, absValIsOne_type, val);
                 return multipicativeInverse;
@@ -1415,19 +1414,20 @@ public:
 
     } else if (apply_operator == "ainv") {
 
-      transformResult = llvm::TypeSwitch<Type, Value>(valueType)
-                            .Case<IntegerType>([&](IntegerType type) {
-                              Value c0_type = rewriter.create<ConstantOp>(
-                                  loc, rewriter.getIntegerAttr(type, 0));
-                              Value additiveInverse =
-                                  rewriter.create<arith::SubIOp>(loc, c0_type, val);
-                              return additiveInverse;
-                            })
-                            .Case<FloatType>([&](FloatType type) {
-                              Value additiveInverse =
-                                  rewriter.create<arith::NegFOp>(loc, val);
-                              return additiveInverse;
-                            });
+      transformResult =
+          llvm::TypeSwitch<Type, Value>(valueType)
+              .Case<IntegerType>([&](IntegerType type) {
+                Value c0_type = rewriter.create<ConstantOp>(
+                    loc, rewriter.getIntegerAttr(type, 0));
+                Value additiveInverse =
+                    rewriter.create<arith::SubIOp>(loc, c0_type, val);
+                return additiveInverse;
+              })
+              .Case<FloatType>([&](FloatType type) {
+                Value additiveInverse =
+                    rewriter.create<arith::NegFOp>(loc, val);
+                return additiveInverse;
+              });
 
     } else if (apply_operator == "abs") {
 
@@ -1438,11 +1438,12 @@ public:
                 unsigned bitWidth = type.getWidth();
                 Value shiftAmount = rewriter.create<ConstantOp>(
                     loc, rewriter.getIntegerAttr(type, bitWidth - 1));
-                Value mask = rewriter.create<arith::ShRSIOp>(
-                    loc, val, shiftAmount);
+                Value mask =
+                    rewriter.create<arith::ShRSIOp>(loc, val, shiftAmount);
                 Value maskPlusVal =
                     rewriter.create<arith::AddIOp>(loc, mask, val);
-                Value absVal = rewriter.create<arith::XOrIOp>(loc, mask, maskPlusVal);
+                Value absVal =
+                    rewriter.create<arith::XOrIOp>(loc, mask, maskPlusVal);
                 return absVal;
               })
               .Case<FloatType>([&](FloatType type) {
@@ -1691,8 +1692,8 @@ private:
     Value colStart64 = rewriter.create<memref::LoadOp>(loc, Ap, row);
     Value rowPlus1 = rewriter.create<arith::AddIOp>(loc, row, c1);
     Value colEnd64 = rewriter.create<memref::LoadOp>(loc, Ap, rowPlus1);
-    Value cmpColSame = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq,
-                                                      colStart64, colEnd64);
+    Value cmpColSame = rewriter.create<arith::CmpIOp>(
+        loc, arith::CmpIPredicate::eq, colStart64, colEnd64);
 
     scf::IfOp ifBlock_rowTotal =
         rewriter.create<scf::IfOp>(loc, int64Type, cmpColSame, true);
@@ -2271,15 +2272,15 @@ public:
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
     // TODO: make cf0 value dependent on the aggregator
-    Value cf0 =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return rewriter.create<arith::ConstantIntOp>(loc, 0,
-                                                           type.getWidth());
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return rewriter.create<arith::ConstantFloatOp>(loc, APFloat(0.0), type);
-            });
+    Value cf0 = llvm::TypeSwitch<Type, Value>(valueType)
+                    .Case<IntegerType>([&](IntegerType type) {
+                      return rewriter.create<arith::ConstantIntOp>(
+                          loc, 0, type.getWidth());
+                    })
+                    .Case<FloatType>([&](FloatType type) {
+                      return rewriter.create<arith::ConstantFloatOp>(
+                          loc, APFloat(0.0), type);
+                    });
     Value ctrue = rewriter.create<arith::ConstantIntOp>(loc, 1, boolType);
     Value cfalse = rewriter.create<arith::ConstantIntOp>(loc, 0, boolType);
 
@@ -2717,7 +2718,8 @@ public:
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
     Value cfalse = rewriter.create<arith::ConstantIntOp>(loc, 0, boolType);
-    Value c1_reduce = rewriter.create<arith::ConstantIntOp>(loc, 1, intReduceType);
+    Value c1_reduce =
+        rewriter.create<arith::ConstantIntOp>(loc, 1, intReduceType);
 
     unsigned rank = aType.getRank(); // ranks guaranteed to be equal
 
@@ -2730,8 +2732,8 @@ public:
       Value bNrows = rewriter.create<graphblas::NumRowsOp>(loc, B);
       Value aNcols = rewriter.create<graphblas::NumColsOp>(loc, A);
       Value bNcols = rewriter.create<graphblas::NumColsOp>(loc, B);
-      Value cmpNrows = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq,
-                                                      aNrows, bNrows);
+      Value cmpNrows = rewriter.create<arith::CmpIOp>(
+          loc, arith::CmpIPredicate::eq, aNrows, bNrows);
       Value cmpNcols = rewriter.create<arith::CmpIOp>(
           loc, arith::CmpIPredicate::eq, aNcols, bNcols);
       cmpShape = rewriter.create<arith::AndIOp>(loc, cmpNrows, cmpNcols);
@@ -2741,8 +2743,8 @@ public:
       // Check size
       Value aSize = rewriter.create<graphblas::SizeOp>(loc, A);
       Value bSize = rewriter.create<graphblas::SizeOp>(loc, B);
-      cmpShape =
-          rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, aSize, bSize);
+      cmpShape = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq,
+                                                aSize, bSize);
     }
 
     scf::IfOp ifOuter =
@@ -2753,8 +2755,8 @@ public:
     // Check number of non-zeros
     Value aNnz = rewriter.create<graphblas::NumValsOp>(loc, A);
     Value bNnz = rewriter.create<graphblas::NumValsOp>(loc, B);
-    Value cmpNnz =
-        rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, aNnz, bNnz);
+    Value cmpNnz = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq,
+                                                  aNnz, bNnz);
     scf::IfOp ifNnz = rewriter.create<scf::IfOp>(loc, boolType, cmpNnz, true);
     // if cmpNnz
     rewriter.setInsertionPointToStart(ifNnz.thenBlock());
@@ -2804,8 +2806,8 @@ public:
     rewriter.create<scf::ReduceReturnOp>(loc, cmpFinal);
 
     rewriter.setInsertionPointAfter(indexLoop);
-    Value boolResult = rewriter.create<arith::TruncIOp>(
-        loc, indexLoop.getResult(0), boolType);
+    Value boolResult =
+        rewriter.create<arith::TruncIOp>(loc, indexLoop.getResult(0), boolType);
     rewriter.create<scf::YieldOp>(loc, boolResult);
 
     // else cmpNnz
@@ -2941,7 +2943,8 @@ private:
           loc, TypeRange{int64Type, indexType, int64Type}, mustUpdate, true);
       {
         rewriter.setInsertionPointToStart(ifMustUpdateBlock.thenBlock());
-        Value nextPtr_i64 = rewriter.create<arith::AddIOp>(loc, ptr_i64, c1_i64);
+        Value nextPtr_i64 =
+            rewriter.create<arith::AddIOp>(loc, ptr_i64, c1_i64);
         Value nextVectorIndicesPosition =
             rewriter.create<arith::AddIOp>(loc, vectorIndicesPosition, c1);
         Value nextUpdatedVectorIndicesValue = rewriter.create<memref::LoadOp>(
@@ -3088,8 +3091,8 @@ private:
             findDiagonalWhileLoopBefore->getArgument(1);
         Value morePtrs = rewriter.create<arith::CmpIOp>(
             op.getLoc(), arith::CmpIPredicate::ult, ptr, secondPtr);
-        Value continueCondition =
-            rewriter.create<arith::AndIOp>(loc, diagonalPositionNotFound, morePtrs);
+        Value continueCondition = rewriter.create<arith::AndIOp>(
+            loc, diagonalPositionNotFound, morePtrs);
         rewriter.create<scf::ConditionOp>(
             loc, continueCondition, ValueRange{ptr, diagonalPositionNotFound});
       }
@@ -3201,8 +3204,8 @@ private:
             &findDiagonalWhileLoop.before().front());
         Value morePtrs = rewriter.create<arith::CmpIOp>(
             op.getLoc(), arith::CmpIPredicate::ult, ptr, secondPtr);
-        Value continueCondition =
-            rewriter.create<arith::AndIOp>(loc, diagonalPositionNotFound, morePtrs);
+        Value continueCondition = rewriter.create<arith::AndIOp>(
+            loc, diagonalPositionNotFound, morePtrs);
         rewriter.create<scf::ConditionOp>(
             loc, continueCondition,
             ValueRange{ptr, diagonalPositionNotFound, currentDiagonalValue});
@@ -3215,9 +3218,9 @@ private:
             findDiagonalWhileLoopAfter->getArgument(2);
         Value elementColumnIndex_i64 =
             rewriter.create<memref::LoadOp>(loc, matrixIndices, currentPtr);
-        Value isNotDiagonalPosition =
-            rewriter.create<arith::CmpIOp>(op.getLoc(), arith::CmpIPredicate::ne,
-                                    elementColumnIndex_i64, rowIndex_i64);
+        Value isNotDiagonalPosition = rewriter.create<arith::CmpIOp>(
+            op.getLoc(), arith::CmpIPredicate::ne, elementColumnIndex_i64,
+            rowIndex_i64);
 
         scf::IfOp ifDiagonalNotFoundBlock = rewriter.create<scf::IfOp>(
             loc, TypeRange{valueType}, isNotDiagonalPosition, true);
@@ -3416,8 +3419,8 @@ public:
     Aj_size_64 = rewriter.create<arith::IndexCastOp>(loc, Aj_size, int64Type);
     Value Bj_size = rewriter.create<arith::SubIOp>(loc, Bj_end, Bj_start);
     Bj_size_64 = rewriter.create<arith::IndexCastOp>(loc, Bj_size, int64Type);
-    Value copyRow = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq,
-                                                  Aj_size, Bj_size);
+    Value copyRow = rewriter.create<arith::CmpIOp>(
+        loc, arith::CmpIPredicate::eq, Aj_size, Bj_size);
 
     // Create output subviews
     Value Bj_view =
