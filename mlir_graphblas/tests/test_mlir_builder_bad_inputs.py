@@ -12,14 +12,14 @@ def test_ir_builder_bad_input_multi_value_mlir_variable():
     ir_builder = MLIRFunctionBuilder("some_func", input_types=[], return_types=("i8",))
 
     iter_i8_var = ir_builder.new_var("i8")
-    lower_i8_var = ir_builder.constant(1, "i8")
+    lower_i8_var = ir_builder.arith.constant(1, "i8")
     iter_i64_var = ir_builder.new_var("i64")
-    lower_i64_var = ir_builder.constant(1, "i64")
+    lower_i64_var = ir_builder.arith.constant(1, "i64")
     with ir_builder.for_loop(
         0, 1, 1, iter_vars=[(iter_i8_var, lower_i8_var), (iter_i64_var, lower_i64_var)]
     ) as for_vars:
-        constant_i8_var = ir_builder.constant(8, "i8")
-        constant_i64_var = ir_builder.constant(64, "i64")
+        constant_i8_var = ir_builder.arith.constant(8, "i8")
+        constant_i64_var = ir_builder.arith.constant(64, "i64")
 
         # Raise when yielding too few values
         with pytest.raises(ValueError, match="Expected 2 yielded values, but got 1."):
@@ -41,26 +41,26 @@ def test_ir_builder_bad_input_multi_value_mlir_variable():
 
     # Raise when using multiple valued variable as operand
     assigned_to_i8_var = ir_builder.new_var("i8")
-    c1_i8_var = ir_builder.constant(1, "i8")
+    c1_i8_var = ir_builder.arith.constant(1, "i8")
     with pytest.raises(
         TypeError,
         match="Cannot access MLIRTuple .+ directly. Use index notation to access an element.",
     ):
         ir_builder.add_statement(
-            f"{assigned_to_i8_var.assign} = addi {c1_i8_var}, {for_vars.returned_variable} : i8"
+            f"{assigned_to_i8_var.assign} = arith.addi {c1_i8_var}, {for_vars.returned_variable} : i8"
         )
 
     with pytest.raises(
         TypeError,
         match="Cannot access MLIRTuple .+ directly. Use index notation to access an element.",
     ):
-        ir_builder.addi(c1_i8_var, for_vars.returned_variable)
+        ir_builder.arith.addi(c1_i8_var, for_vars.returned_variable)
 
     with pytest.raises(
         TypeError,
         match="Cannot access MLIRTuple .+ directly. Use index notation to access an element.",
     ):
-        ir_builder.addi(for_vars.returned_variable, c1_i8_var)
+        ir_builder.arith.addi(for_vars.returned_variable, c1_i8_var)
 
     # Raise when using multiple valued variable indexed via out-of-bound int index as operand
     with pytest.raises(IndexError):
@@ -77,9 +77,10 @@ def test_ir_builder_bad_input_multi_value_mlir_variable():
         ir_builder.return_vars(10)
 
     # Raise when returning value incompatible with return type.
-    c1_i64_var = ir_builder.constant(1, "i64")
+    c1_i64_var = ir_builder.arith.constant(1, "i64")
     with pytest.raises(
-        TypeError, match="Return type of MLIRVar\(name=.+, type=i64\) does not match i8"
+        TypeError,
+        match=r"Return type of MLIRVar\(name=.+, type=i64\) does not match i8",
     ):
         ir_builder.return_vars(c1_i64_var)
 

@@ -51,6 +51,7 @@ class BaseOp:
 
 
 class ConstantOp(BaseOp):
+    dialect = "arith"
     name = "constant"
 
     @classmethod
@@ -58,10 +59,11 @@ class ConstantOp(BaseOp):
         if str(type) in {"bf16", "f16", "f32", "f64", "f80", "f128"}:
             value = float(value)
         ret_val = irbuilder.new_var(type)
-        return ret_val, (f"{ret_val.assign} = constant {value} : {type}")
+        return ret_val, (f"{ret_val.assign} = arith.constant {value} : {type}")
 
 
 class IndexCastOp(BaseOp):
+    dialect = "arith"
     name = "index_cast"
 
     @classmethod
@@ -69,11 +71,12 @@ class IndexCastOp(BaseOp):
         cls.ensure_mlirvar(value)
         ret_val = irbuilder.new_var(result_type)
         return ret_val, (
-            f"{ret_val.assign} = std.index_cast {value} : {value.type} to {ret_val.type}"
+            f"{ret_val.assign} = arith.index_cast {value} : {value.type} to {ret_val.type}"
         )
 
 
 class SignedIntToFloatOp(BaseOp):
+    dialect = "arith"
     name = "sitofp"
 
     @classmethod
@@ -81,11 +84,12 @@ class SignedIntToFloatOp(BaseOp):
         cls.ensure_mlirvar(value)
         ret_val = irbuilder.new_var(result_type)
         return ret_val, (
-            f"{ret_val.assign} = std.sitofp {value} : {value.type} to {ret_val.type}"
+            f"{ret_val.assign} = arith.sitofp {value} : {value.type} to {ret_val.type}"
         )
 
 
 class AddIOp(BaseOp):
+    dialect = "arith"
     name = "addi"
 
     @classmethod
@@ -95,10 +99,11 @@ class AddIOp(BaseOp):
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
-        return ret_val, (f"{ret_val.assign} = addi {lhs}, {rhs} : {lhs.type}")
+        return ret_val, (f"{ret_val.assign} = arith.addi {lhs}, {rhs} : {lhs.type}")
 
 
 class SubIOp(BaseOp):
+    dialect = "arith"
     name = "subi"
 
     @classmethod
@@ -108,10 +113,11 @@ class SubIOp(BaseOp):
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
-        return ret_val, (f"{ret_val.assign} = subi {lhs}, {rhs} : {lhs.type}")
+        return ret_val, (f"{ret_val.assign} = arith.subi {lhs}, {rhs} : {lhs.type}")
 
 
 class MulIOp(BaseOp):
+    dialect = "arith"
     name = "muli"
 
     @classmethod
@@ -121,10 +127,11 @@ class MulIOp(BaseOp):
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
-        return ret_val, (f"{ret_val.assign} = muli {lhs}, {rhs} : {lhs.type}")
+        return ret_val, (f"{ret_val.assign} = arith.muli {lhs}, {rhs} : {lhs.type}")
 
 
 class AddFOp(BaseOp):
+    dialect = "arith"
     name = "addf"
 
     @classmethod
@@ -134,10 +141,11 @@ class AddFOp(BaseOp):
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
-        return ret_val, (f"{ret_val.assign} = addf {lhs}, {rhs} : {lhs.type}")
+        return ret_val, (f"{ret_val.assign} = arith.addf {lhs}, {rhs} : {lhs.type}")
 
 
 class SubFOp(BaseOp):
+    dialect = "arith"
     name = "subf"
 
     @classmethod
@@ -147,10 +155,11 @@ class SubFOp(BaseOp):
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
-        return ret_val, (f"{ret_val.assign} = subf {lhs}, {rhs} : {lhs.type}")
+        return ret_val, (f"{ret_val.assign} = arith.subf {lhs}, {rhs} : {lhs.type}")
 
 
 class MulFOp(BaseOp):
+    dialect = "arith"
     name = "mulf"
 
     @classmethod
@@ -160,10 +169,11 @@ class MulFOp(BaseOp):
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
-        return ret_val, (f"{ret_val.assign} = mulf {lhs}, {rhs} : {lhs.type}")
+        return ret_val, (f"{ret_val.assign} = arith.mulf {lhs}, {rhs} : {lhs.type}")
 
 
 class DivFOp(BaseOp):
+    dialect = "arith"
     name = "divf"
 
     @classmethod
@@ -173,7 +183,7 @@ class DivFOp(BaseOp):
         if lhs.type != rhs.type:
             raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
         ret_val = irbuilder.new_var(lhs.type)
-        return ret_val, (f"{ret_val.assign} = divf {lhs}, {rhs} : {lhs.type}")
+        return ret_val, (f"{ret_val.assign} = arith.divf {lhs}, {rhs} : {lhs.type}")
 
 
 class SelectOp(BaseOp):
@@ -193,6 +203,7 @@ class SelectOp(BaseOp):
 
 
 class CmpIOp(BaseOp):
+    dialect = "arith"
     name = "cmpi"
     # fmt: off
     allowed_cmpstr = {
@@ -213,11 +224,12 @@ class CmpIOp(BaseOp):
             raise ValueError(f"Unknown cmpstr: {cmpstr}")
         ret_val = irbuilder.new_var("i1")
         return ret_val, (
-            f'{ret_val.assign} = cmpi "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
+            f'{ret_val.assign} = arith.cmpi "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
         )
 
 
 class CmpFOp(BaseOp):
+    dialect = "arith"
     name = "cmpf"
     # fmt: off
     # See https://llvm.org/docs/LangRef.html#fcmp-instruction for explanation
@@ -238,7 +250,7 @@ class CmpFOp(BaseOp):
             raise ValueError(f"Unknown cmpstr: {cmpstr}")
         ret_val = irbuilder.new_var("i1")
         return ret_val, (
-            f'{ret_val.assign} = cmpf "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
+            f'{ret_val.assign} = arith.cmpf "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
         )
 
 
