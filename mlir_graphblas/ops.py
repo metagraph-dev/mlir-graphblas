@@ -579,7 +579,17 @@ class GraphBLAS_Update(BaseOp):
     allowed_accumulators = {"plus", "times", "min", "max"}
 
     @classmethod
-    def call(cls, irbuilder, input, output, accumulate="plus"):
+    def call(
+        cls,
+        irbuilder,
+        input,
+        output,
+        accumulate="plus",
+        *,
+        mask=None,
+        mask_complement=False,
+        replace=False,
+    ):
         cls.ensure_mlirvar(input, SparseTensorType)
         cls.ensure_mlirvar(output, SparseTensorType)
         if accumulate not in cls.allowed_accumulators:
@@ -588,8 +598,9 @@ class GraphBLAS_Update(BaseOp):
             )
         ret_val = irbuilder.new_var("index")
         return ret_val, (
-            f'{ret_val.assign} = graphblas.update {input} -> {output} {{ accumulate_operator = "{accumulate}" }} :'
-            f"{input.type} -> {output.type}"
+            f'{ret_val.assign} = graphblas.update {input} -> {output} {"("+str(mask)+")" if mask is not None else ""} '
+            f'{{ accumulate_operator = "{accumulate}", mask_complement = {"true" if mask_complement else "false"}, '
+            f'replace = {"true" if replace else "false"} }} : {input.type} -> {output.type}'
         )
 
 
@@ -749,7 +760,15 @@ class GraphBLAS_MatrixMultiply(BaseOp):
     name = "matrix_multiply"
 
     allowed_semiring_adds = {"plus", "any", "min"}
-    allowed_semiring_muls = {"pair", "times", "plus", "first", "second"}
+    allowed_semiring_muls = {
+        "pair",
+        "times",
+        "plus",
+        "first",
+        "second",
+        "firsti",
+        "secondi",
+    }
     allowed_semirings = {
         f"{add}_{mul}"
         for add, mul in itertools.product(allowed_semiring_adds, allowed_semiring_muls)

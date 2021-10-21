@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List
+from typing import List, Tuple
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, AffineMap
 from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
@@ -760,3 +760,85 @@ class RandomWalk(Algorithm):
 
 
 random_walk = RandomWalk()
+
+
+class BFS(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "bfs",
+            input_types=["index", "tensor<?x?xf64, #CSR64>"],
+            return_types=["tensor<?xi64, #CV64>", "tensor<?xi64, #CV64>"],
+            aliases=_build_common_aliases(),
+        )
+
+        (source, A) = irb.inputs
+
+        c0 = irb.constant(0, "index")
+        c1 = irb.constant(1, "index")
+        c0_i64 = irb.constant(0, "i64")
+
+        num_rows = irb.graphblas.num_rows(A)
+        source_i64 = irb.index_cast(source, "i64")
+
+        # Initialize the frontier
+        frontier = irb.util.new_sparse_tensor("tensor<?xi64, #CV64>", num_rows)
+        frontier_ptr8 = irb.util.tensor_to_ptr8(frontier)
+        irb.util.resize_sparse_index(frontier_ptr8, c0, c1)
+        irb.util.resize_sparse_values(frontier_ptr8, c1)
+        # i.e. frontier[source] = source
+        frontier_indices = irb.sparse_tensor.indices(frontier, c0)
+        frontier_values = irb.sparse_tensor.values(frontier)
+        irb.memref.store(source_i64, frontier_indices, c0)
+        irb.memref.store(source_i64, frontier_values, c0)
+
+        # Initialize the parents
+        parents = irb.util.new_sparse_tensor("tensor<?xi64, #CV64>", num_rows)
+        parents_ptr8 = irb.util.tensor_to_ptr8(parents)
+        irb.util.resize_sparse_index(parents_ptr8, c0, c1)
+        irb.util.resize_sparse_values(parents_ptr8, c1)
+        # i.e. parents[source] = source
+        parents_indices = irb.sparse_tensor.indices(parents, c0)
+        parents_values = irb.sparse_tensor.values(parents)
+        irb.memref.store(source_i64, parents_indices, c0)
+        irb.memref.store(source_i64, parents_values, c0)
+
+        # Initialize the levels
+        levels = irb.util.new_sparse_tensor("tensor<?xi64, #CV64>", num_rows)
+        levels_ptr8 = irb.util.tensor_to_ptr8(levels)
+        irb.util.resize_sparse_index(levels_ptr8, c0, c1)
+        irb.util.resize_sparse_values(levels_ptr8, c1)
+        # i.e. levels[source] = 0
+        levels_indices = irb.sparse_tensor.indices(levels, c0)
+        levels_values = irb.sparse_tensor.values(levels)
+        irb.memref.store(source_i64, levels_indices, c0)
+        irb.memref.store(c0_i64, levels_values, c0)
+
+        with irb.while_loop(c0) as while_loop:
+            with while_loop.before as before_region:
+                # irb.graphblas.print(before_region.arg_vars[0], "asd") # TODO remove this
+                next_frontier = irb.graphblas.matrix_multiply(
+                    frontier, A, "any_secondi", mask=parents, mask_complement=True
+                )
+                next_frontier_size = irb.graphblas.num_vals(next_frontier)
+                condition = irb.cmpi(next_frontier_size, c0, "eq")
+                level = before_region.arg_vars[0]
+                before_region.condition(condition, level, next_frontier)
+            with while_loop.after as after_region:
+                level = after_region.arg_vars[0]
+                next_frontier = after_region.arg_vars[1]
+                irb.graphblas.update(next_frontier, parents, "plus", mask=next_frontier)
+                irb.graphblas.update(level, parents, "plus", mask=next_frontier)
+                next_level = irb.addi(level, c1)
+                after_region.yield_vars(next_level)
+
+        irb.return_vars(parents, levels)
+
+        return irb
+
+    def __call__(
+        self, source: int, A: MLIRSparseTensor, **kwargs
+    ) -> Tuple[MLIRSparseTensor, MLIRSparseTensor]:
+        return super().__call__(source, A, **kwargs)
+
+
+bfs = BFS()
