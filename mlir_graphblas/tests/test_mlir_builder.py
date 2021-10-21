@@ -186,11 +186,11 @@ def test_ir_builder_for_loop_float_iter(engine: MlirJitEngine, aliases: AliasMap
         "times_three", input_types=["f64"], return_types=["f64"], aliases=aliases
     )
     (input_var,) = ir_builder.inputs
-    zero_f64 = ir_builder.constant(0.0, "f64")
+    zero_f64 = ir_builder.arith.constant(0.0, "f64")
     total = ir_builder.new_var("f64")
 
     with ir_builder.for_loop(0, 3, iter_vars=[(total, zero_f64)]) as for_vars:
-        updated_sum = ir_builder.addf(input_var, total)
+        updated_sum = ir_builder.arith.addf(input_var, total)
         for_vars.yield_vars(updated_sum)
 
     result_var = for_vars.returned_variable[0]
@@ -230,11 +230,11 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
     (input_var,) = ir_builder.inputs
     total = ir_builder.new_var("i64")
 
-    lower_index_var = ir_builder.constant(lower_index, "index")
-    upper_index_var = ir_builder.constant(upper_index, "index")
-    delta_index_var = ir_builder.constant(delta_index, "index")
-    lower_i64_var = ir_builder.constant(lower_i64, "i64")
-    delta_i64_var = ir_builder.constant(delta_i64, "i64")
+    lower_index_var = ir_builder.arith.constant(lower_index, "index")
+    upper_index_var = ir_builder.arith.constant(upper_index, "index")
+    delta_index_var = ir_builder.arith.constant(delta_index, "index")
+    lower_i64_var = ir_builder.arith.constant(lower_i64, "i64")
+    delta_i64_var = ir_builder.arith.constant(delta_i64, "i64")
     iter_i64_var = ir_builder.new_var("i64")
 
     with ir_builder.for_loop(
@@ -247,21 +247,21 @@ def test_ir_builder_for_loop_user_specified_vars(engine: MlirJitEngine):
         assert upper_index_var == for_vars.upper_var_index
         assert delta_index_var == for_vars.step_var_index
         assert [iter_i64_var, total] == for_vars.iter_vars
-        prod_of_index_vars_0 = ir_builder.muli(
+        prod_of_index_vars_0 = ir_builder.arith.muli(
             for_vars.lower_var_index, for_vars.upper_var_index
         )
-        prod_of_index_vars_1 = ir_builder.muli(
+        prod_of_index_vars_1 = ir_builder.arith.muli(
             prod_of_index_vars_0, for_vars.step_var_index
         )
-        prod_of_index_vars = ir_builder.index_cast(prod_of_index_vars_1, "i64")
-        prod_of_i64_vars = ir_builder.muli(lower_i64_var, delta_i64_var)
-        iter_index_i64 = ir_builder.index_cast(for_vars.iter_var_index, "i64")
-        prod_of_iter_vars = ir_builder.muli(iter_index_i64, iter_i64_var)
-        updated_sum_0 = ir_builder.addi(total, prod_of_index_vars)
-        updated_sum_1 = ir_builder.addi(updated_sum_0, prod_of_i64_vars)
-        updated_sum = ir_builder.addi(updated_sum_1, prod_of_iter_vars)
+        prod_of_index_vars = ir_builder.arith.index_cast(prod_of_index_vars_1, "i64")
+        prod_of_i64_vars = ir_builder.arith.muli(lower_i64_var, delta_i64_var)
+        iter_index_i64 = ir_builder.arith.index_cast(for_vars.iter_var_index, "i64")
+        prod_of_iter_vars = ir_builder.arith.muli(iter_index_i64, iter_i64_var)
+        updated_sum_0 = ir_builder.arith.addi(total, prod_of_index_vars)
+        updated_sum_1 = ir_builder.arith.addi(updated_sum_0, prod_of_i64_vars)
+        updated_sum = ir_builder.arith.addi(updated_sum_1, prod_of_iter_vars)
 
-        incremented_iter_i64_var = ir_builder.addi(iter_i64_var, delta_i64_var)
+        incremented_iter_i64_var = ir_builder.arith.addi(iter_i64_var, delta_i64_var)
         for_vars.yield_vars(incremented_iter_i64_var, updated_sum)
 
     result_var = for_vars.returned_variable[1]
@@ -431,8 +431,8 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
         aliases=aliases,
     )
     M, threshold = ir_builder.inputs
-    twelve_scalar = ir_builder.constant(12, "f64")
-    thirty_four_scalar = ir_builder.constant(34, "f64")
+    twelve_scalar = ir_builder.arith.constant(12, "f64")
+    thirty_four_scalar = ir_builder.arith.constant(34, "f64")
     M2 = ir_builder.graphblas.apply(M, "div", left=twelve_scalar)
     M3 = ir_builder.graphblas.apply(M2, "div", right=thirty_four_scalar)
     filtered = ir_builder.graphblas.select(M3, [threshold], ["gt"])
@@ -537,7 +537,7 @@ def test_ir_reduce_to_vector(
     reduced_rows = ir_builder.graphblas.reduce_to_vector(matrix, "plus", 1)
     reduced_columns = ir_builder.graphblas.reduce_to_vector(matrix, "count", 0)
 
-    zero_scalar = ir_builder.constant(0, mlir_type)
+    zero_scalar = ir_builder.arith.constant(0, mlir_type)
     reduced_rows_clamped = ir_builder.graphblas.apply(
         reduced_rows, "min", right=zero_scalar
     )

@@ -83,7 +83,7 @@ class DenseNeuralNetwork(Algorithm):
             aliases=aliases,
         )
         weights, biases, Y, threshold = irb_inner.inputs
-        zero_f64 = irb_inner.constant(0.0, "f64")
+        zero_f64 = irb_inner.arith.constant(0.0, "f64")
         # Perform inference
         W_csc = irb_inner.graphblas.convert_layout(weights, "tensor<?x?xf64, #CSC64>")
         matmul_result = irb_inner.graphblas.matrix_multiply(Y, W_csc, "plus_times")
@@ -113,8 +113,8 @@ class DenseNeuralNetwork(Algorithm):
             aliases=aliases,
         )
         weight_list, bias_list, num_layers, Y_init, clamp_threshold = irb.inputs
-        c0 = irb.constant(0, "i64")
-        c1 = irb.constant(1, "i64")
+        c0 = irb.arith.constant(0, "i64")
+        c1 = irb.arith.constant(1, "i64")
 
         # Make a copy of Y_init for consistency of memory cleanup in the loop
         Y_init_dup = irb.graphblas.dup(Y_init)
@@ -152,7 +152,7 @@ class DenseNeuralNetwork(Algorithm):
             result_ptr8 = irb.util.tensor_to_ptr8(loop_result)
 
             # increment iterator vars
-            incremented_layer_index_i64 = irb.addi(layer_idx, c1)
+            incremented_layer_index_i64 = irb.arith.addi(layer_idx, c1)
             for_vars.yield_vars(result_ptr8, incremented_layer_index_i64)
 
         # One final cast from ptr8 to tensor
@@ -191,8 +191,8 @@ class SSSP(Algorithm):
             aliases=_build_common_aliases(),
         )
         (m, v) = irb.inputs
-        ctrue = irb.constant(1, "i1")
-        cfalse = irb.constant(0, "i1")
+        ctrue = irb.arith.constant(1, "i1")
+        cfalse = irb.arith.constant(0, "i1")
         m2 = irb.graphblas.convert_layout(m, "tensor<?x?xf64, #CSC64>")
         w = irb.graphblas.dup(v)
 
@@ -231,8 +231,8 @@ class MSSP(Algorithm):
             aliases=_build_common_aliases(),
         )
         (m, v) = irb.inputs
-        ctrue = irb.constant(1, "i1")
-        cfalse = irb.constant(0, "i1")
+        ctrue = irb.arith.constant(1, "i1")
+        cfalse = irb.arith.constant(0, "i1")
         m2 = irb.graphblas.convert_layout(m, "tensor<?x?xf64, #CSC64>")
         w = irb.graphblas.dup(v)
 
@@ -325,7 +325,7 @@ class VertexNomination(Algorithm):
             mT, v, semiring="min_first", mask=v, mask_complement=True
         )
         result_64 = irb.graphblas.reduce_to_scalar(v2, "argmin")
-        result = irb.index_cast(result_64, "index")
+        result = irb.arith.index_cast(result_64, "index")
 
         irb.return_vars(result)
 
@@ -354,7 +354,7 @@ class ScanStatistics(Algorithm):
         A_triangles = ir_builder.graphblas.matrix_multiply(A, L_T, "plus_pair", mask=A)
         tri = ir_builder.graphblas.reduce_to_vector(A_triangles, "plus", 1)
         answer_64 = ir_builder.graphblas.reduce_to_scalar(tri, "argmax")
-        answer = ir_builder.index_cast(answer_64, "index")
+        answer = ir_builder.arith.index_cast(answer_64, "index")
         ir_builder.return_vars(answer)
         return ir_builder
 
@@ -376,14 +376,14 @@ class Pagerank(Algorithm):
         (A, var_damping, var_tol, var_maxiter) = irb.inputs
 
         nrows = irb.graphblas.num_rows(A)
-        nrows_i64 = irb.index_cast(nrows, "i64")
-        nrows_f64 = irb.sitofp(nrows_i64, "f64")
+        nrows_i64 = irb.arith.index_cast(nrows, "i64")
+        nrows_f64 = irb.arith.sitofp(nrows_i64, "f64")
 
-        c0 = irb.constant(0, "index")
-        c1 = irb.constant(1, "index")
-        cf1 = irb.constant(1.0, "f64")
-        teleport = irb.subf(cf1, var_damping)
-        teleport = irb.divf(teleport, nrows_f64)
+        c0 = irb.arith.constant(0, "index")
+        c1 = irb.arith.constant(1, "index")
+        cf1 = irb.arith.constant(1.0, "f64")
+        teleport = irb.arith.subf(cf1, var_damping)
+        teleport = irb.arith.divf(teleport, nrows_f64)
 
         row_degree = irb.graphblas.reduce_to_vector(A, "count", axis=1)
         # prescale row_degree with damping factor, so it isn't done each iteration
@@ -393,7 +393,7 @@ class Pagerank(Algorithm):
         r = irb.graphblas.dup(row_degree)
 
         # r = 1/nrows
-        nrows_inv = irb.divf(cf1, nrows_f64)
+        nrows_inv = irb.arith.divf(cf1, nrows_f64)
         starting = irb.graphblas.apply(r, "fill", right=nrows_inv)
         starting_ptr8 = irb.util.tensor_to_ptr8(starting)
 
@@ -410,7 +410,7 @@ class Pagerank(Algorithm):
                 (iter_count, c0),
             ],
         ) as for_vars:
-            converged = irb.cmpf(rdiff, var_tol, "olt")
+            converged = irb.arith.cmpf(rdiff, var_tol, "olt")
 
             if_block = irb.new_tuple(
                 f"{rdiff.type}", f"{prev_score_ptr8.type}", f"{iter_count.type}"
@@ -463,7 +463,7 @@ class Pagerank(Algorithm):
             # irb.util.del_sparse_tensor(prev_score)
 
             # Increment iteration count
-            new_iter_count = irb.addi(iter_count, c1)
+            new_iter_count = irb.arith.addi(iter_count, c1)
 
             # Yield
             new_score_ptr8 = irb.util.tensor_to_ptr8(new_score)
@@ -520,10 +520,10 @@ class GraphSearch(Algorithm):
         else:
             (A, nsteps, seeds) = irb.inputs
 
-        c0 = irb.constant(0, "index")
-        c1 = irb.constant(1, "index")
-        ci1 = irb.constant(1, "i64")
-        cf1 = irb.constant(1.0, "f64")
+        c0 = irb.arith.constant(0, "index")
+        c1 = irb.arith.constant(1, "index")
+        ci1 = irb.arith.constant(1, "i64")
+        cf1 = irb.arith.constant(1.0, "f64")
 
         # Create count vector
         ncols = irb.graphblas.num_cols(A)
@@ -531,7 +531,7 @@ class GraphSearch(Algorithm):
 
         # Create B matrix, sized (nseeds x ncols) with nnz=nseeds
         nseeds = irb.tensor.dim(seeds, c0)
-        nseeds_64 = irb.index_cast(nseeds, "i64")
+        nseeds_64 = irb.arith.index_cast(nseeds, "i64")
         B = irb.util.new_sparse_tensor("tensor<?x?xf64, #CSR64>", nseeds, ncols)
         Bptr8 = irb.util.tensor_to_ptr8(B)
         irb.util.resize_sparse_index(Bptr8, c1, nseeds)
@@ -544,7 +544,7 @@ class GraphSearch(Algorithm):
         # Populate B matrix based on initial seed
         with irb.for_loop(0, nseeds) as for_vars:
             seed_num = for_vars.iter_var_index
-            seed_num_64 = irb.index_cast(seed_num, "i64")
+            seed_num_64 = irb.arith.index_cast(seed_num, "i64")
             irb.memref.store(seed_num_64, Bp, seed_num)
             cur_node = irb.tensor.extract(seeds, seed_num)
             irb.memref.store(cur_node, Bi, seed_num)
