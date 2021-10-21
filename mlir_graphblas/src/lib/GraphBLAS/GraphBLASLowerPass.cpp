@@ -667,41 +667,6 @@ public:
       return success();
     }
 
-    // TODO: why is this code here? We need a higher level strategy to either
-    // reject sparse tensors
-    // TODO:   with hardcoded shape or to automatically convert them to "?" for
-    // every graphblas op
-    // TODO:   as part of the structuralize passes
-    /*if (matrixShape[0] != -1 || matrixShape[1] != -1) {
-      // TODO consider moving this out to its own rewrite pattern
-
-      // TODO this casting doesn't actually safely lower down to the LLVM
-      // dialect since it doesn't survive the --sparse-tensor-conversion pass
-
-      static const ArrayRef<int64_t> newMatrixShape = {-1, -1};
-      RankedTensorType newMatrixType =
-          matrixTypeIsCSR
-              ? getCSRTensorType(context, newMatrixShape, elementType)
-              : getCSCTensorType(context, newMatrixShape, elementType);
-
-      Value castMatrix =
-          rewriter.create<tensor::CastOp>(loc, newMatrixType, matrix);
-
-      static const ArrayRef<int64_t> newVectorShape = {-1};
-      Type resultVectorType =
-          getCompressedVectorType(context, newVectorShape, elementType);
-      Value resultVector = rewriter.create<graphblas::ReduceToVectorOp>(
-          loc, resultVectorType, castMatrix, aggregator, axis);
-
-      Type originalVectorType = op->getResultTypes().front();
-      Value castVector = rewriter.create<tensor::CastOp>(
-          loc, originalVectorType, resultVector);
-
-      rewriter.replaceOp(op, castVector);
-
-      return success();
-    }*/
-
     Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
 
@@ -1723,8 +1688,6 @@ private:
     // 2nd pass
     //   Compute the cumsum of values in Cp to build the final Cp
     //   Then resize C's indices and values
-    //   The rows in A are the fixed elements, while the columns of B are the
-    //   iteration element
     scf::ForOp rowLoop2 = rewriter.create<scf::ForOp>(loc, c0, nrow, c1);
     Value cs_i = rowLoop2.getInductionVar();
     rewriter.setInsertionPointToStart(rowLoop2.getBody());
@@ -1750,6 +1713,8 @@ private:
     //   In parallel over the rows,
     //   compute the nonzero columns and associated values.
     //   Store in Cj and Cx
+    //   The rows in A are the fixed elements, while the columns of B are the
+    //   iteration element
     scf::ParallelOp rowLoop3 =
         rewriter.create<scf::ParallelOp>(loc, c0, nrow, c1);
     row = rowLoop3.getInductionVars().front();
@@ -2565,7 +2530,7 @@ public:
       accumulateString = accumulateOperator->str();
     }
     Value mask = op.mask();
-    // bool maskComplement = op.mask_complement();
+    bool maskComplement = op.mask_complement();
     bool replace = op.replace();
 
     // Types
@@ -2574,14 +2539,21 @@ public:
     unsigned rank = outputType.getRank(); // ranks guaranteed to be equal
 
     if (rank == 2) {
+      ///////////////////
+      // Matrix
+      ///////////////////
       if (accumulateOperator) {
         if (mask) {
           if (replace) {
             // input -> output(mask) { accumulate, replace }
+            // TODO: apply mask to output
+            // TODO: apply mask to input
+            // TODO: union masked_output & masked_input using accumulator
             return op.emitError(
                 "Update with mask+accumulate+replace is not supported yet");
           } else {
             // input -> output(mask) { accumulate }
+            // TODO: same as above, but don't intersect the output & mask
             return op.emitError(
                 "Update with mask+accumulate is not supported yet");
           }
@@ -2601,7 +2573,10 @@ public:
                 "Update with mask+replace is not supported yet");
           } else {
             // input -> output(mask)
-            // Merges input into output
+            // Merges input into output, propagating missing values
+            // TODO: apply complement of mask to output, removing items under the mask
+            // TODO: apply mask to input
+            // TODO: union the results
             return op.emitError(
                 "Update with mask and no accumulator is not supported yet");
           }
@@ -2614,15 +2589,27 @@ public:
         }
       }
     } else {
-      // Vector past this point
+      ///////////////////
+      // Vector
+      ///////////////////
       if (accumulateOperator) {
         if (mask) {
           if (replace) {
             // input -> output(mask) { accumulate, replace }
-            return op.emitError(
-                "Update with mask+accumulate+replace is not supported yet");
+            auto maskString = (maskComplement ? "mask_complement" : "mask");
+            // Step 1: apply the mask to the output
+            Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
+            computeVectorElementWise(rewriter, loc, module, output, mask, maskedOutput, maskString, true);
+            // Step 2: apply the mask to the input
+            Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+            computeVectorElementWise(rewriter, loc, module, input, mask, maskedInput, maskString, true);
+            // Step 3: union the two masked results
+            computeVectorElementWise(rewriter, loc, module, maskedInput, maskedOutput, output, accumulateString, /* intersect */ false);
+            rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
+            rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
           } else {
             // input -> output(mask) { accumulate }
+            // TODO: same as above, but don't intersect the output & mask
             return op.emitError(
                 "Update with mask+accumulate is not supported yet");
           }
@@ -2643,6 +2630,9 @@ public:
           } else {
             // input -> output(mask)
             // Merges input into output
+            // TODO: apply complement of mask to output, removing items under the mask
+            // TODO: apply mask to input
+            // TODO: union the results
             return op.emitError(
                 "Update with mask and no accumulator is not supported yet");
           }

@@ -18,6 +18,8 @@ using namespace ::mlir;
 ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
                                Value fullSize, Value maskIndices,
                                Value maskStart, Value maskEnd) {
+  // Operates on a vector or on a single row/column of a matrix
+  //
   // Returns:
   // 1. a memref containing the indices of the mask complement
   // 2. the size of the memref
@@ -642,7 +644,7 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
   Value needsUpdateA = after->getArgument(7);
   Value needsUpdateB = after->getArgument(8);
 
-  // Update input index based on flag
+  // Update A's index and value based on flag
   scf::IfOp if_updateA = rewriter.create<scf::IfOp>(
       loc, TypeRange{int64Type, valueType}, needsUpdateA, true);
   // if updateA
@@ -655,7 +657,7 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
   rewriter.create<scf::YieldOp>(loc, ValueRange{idxA, valA});
   rewriter.setInsertionPointAfter(if_updateA);
 
-  // Update output index based on flag
+  // Update B's index and value based on flag
   scf::IfOp if_updateB = rewriter.create<scf::IfOp>(
       loc, TypeRange{int64Type, valueType}, needsUpdateB, true);
   // if updateB
@@ -917,9 +919,155 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
   return finalPosO;
 }
 
+// Updates Oi and Ox with indices and values
+// Value in A which not not overlap the mask M are not included in O
+// Returns the final position in Oi (one more than the last value inserted)
+Value applyMask(PatternRewriter &rewriter, Location loc,
+                Type valueType, Value aPosStart, Value aPosEnd,
+                Value Ai, Value Ax, Value mPosStart, Value mPosEnd,
+                Value Mi, Value oPosStart, Value Oi, Value Ox) {
+  // Types used in this function
+  Type boolType = rewriter.getI1Type();
+  Type int64Type = rewriter.getI64Type();
+  Type indexType = rewriter.getIndexType();
+
+  // Initial constants
+  Value c1 = rewriter.create<ConstantIndexOp>(loc, 1);
+  Value ci0 = rewriter.create<ConstantIntOp>(loc, 0, int64Type);
+  Value cfalse = rewriter.create<ConstantIntOp>(loc, 0, boolType);
+  Value ctrue = rewriter.create<ConstantIntOp>(loc, 1, boolType);
+  Value cf0 =
+      llvm::TypeSwitch<Type, Value>(valueType)
+          .Case<IntegerType>([&](IntegerType type) {
+            return rewriter.create<ConstantIntOp>(loc, 0, type.getWidth());
+          })
+          .Case<FloatType>([&](FloatType type) {
+            return rewriter.create<ConstantFloatOp>(loc, APFloat(0.0), type);
+          });
+
+  // While Loop (exit when either array is exhausted)
+  scf::WhileOp whileLoop = rewriter.create<scf::WhileOp>(
+      loc,
+      TypeRange{indexType, indexType, indexType, int64Type, int64Type,
+                valueType, boolType, boolType},
+      ValueRange{aPosStart, mPosStart, oPosStart, ci0, ci0, cf0, ctrue, ctrue});
+  Block *before = rewriter.createBlock(
+      &whileLoop.before(), {},
+      TypeRange{indexType, indexType, indexType, int64Type, int64Type,
+                valueType, boolType, boolType});
+  Block *after = rewriter.createBlock(&whileLoop.after(), {},
+                                      TypeRange{indexType, indexType, indexType,
+                                                int64Type, int64Type, valueType,
+                                                boolType, boolType});
+  // "while" portion of the loop
+  rewriter.setInsertionPointToStart(&whileLoop.before().front());
+  Value posA = before->getArgument(0);
+  Value posM = before->getArgument(1);
+  Value validPosA =
+      rewriter.create<CmpIOp>(loc, CmpIPredicate::ult, posA, aPosEnd);
+  Value validPosM =
+      rewriter.create<CmpIOp>(loc, CmpIPredicate::ult, posM, mPosEnd);
+  Value continueLoop = rewriter.create<AndOp>(loc, validPosA, validPosM);
+  rewriter.create<scf::ConditionOp>(loc, continueLoop, before->getArguments());
+
+  // "do" portion of while loop
+  rewriter.setInsertionPointToStart(&whileLoop.after().front());
+  posA = after->getArgument(0);
+  posM = after->getArgument(1);
+  Value posO = after->getArgument(2);
+  Value idxA = after->getArgument(3);
+  Value idxM = after->getArgument(4);
+  Value valA = after->getArgument(5);
+  Value needsUpdateA = after->getArgument(6);
+  Value needsUpdateM = after->getArgument(7);
+
+  // Update A's index and value based on flag
+  scf::IfOp if_updateA = rewriter.create<scf::IfOp>(
+      loc, TypeRange{int64Type, valueType}, needsUpdateA, true);
+  // if updateA
+  rewriter.setInsertionPointToStart(if_updateA.thenBlock());
+  Value updatedIdxA = rewriter.create<memref::LoadOp>(loc, Ai, posA);
+  Value updatedValA = rewriter.create<memref::LoadOp>(loc, Ax, posA);
+  rewriter.create<scf::YieldOp>(loc, ValueRange{updatedIdxA, updatedValA});
+  // else
+  rewriter.setInsertionPointToStart(if_updateA.elseBlock());
+  rewriter.create<scf::YieldOp>(loc, ValueRange{idxA, valA});
+  rewriter.setInsertionPointAfter(if_updateA);
+
+  // Update M's index based on flag
+  scf::IfOp if_updateM = rewriter.create<scf::IfOp>(
+      loc, int64Type, needsUpdateM, true);
+  // if updateM
+  rewriter.setInsertionPointToStart(if_updateM.thenBlock());
+  Value updatedIdxM = rewriter.create<memref::LoadOp>(loc, Mi, posM);
+  rewriter.create<scf::YieldOp>(loc, updatedIdxM);
+  // else
+  rewriter.setInsertionPointToStart(if_updateM.elseBlock());
+  rewriter.create<scf::YieldOp>(loc, idxM);
+  rewriter.setInsertionPointAfter(if_updateM);
+
+  Value newIdxA = if_updateA.getResult(0);
+  Value newValA = if_updateA.getResult(1);
+  Value newIdxM = if_updateM.getResult(0);
+  Value idxA_lt_idxM =
+      rewriter.create<CmpIOp>(loc, CmpIPredicate::ult, newIdxA, newIdxM);
+  Value idxA_gt_idxM =
+      rewriter.create<CmpIOp>(loc, CmpIPredicate::ugt, newIdxA, newIdxM);
+  Value posAplus1 = rewriter.create<AddIOp>(loc, posA, c1);
+  Value posMplus1 = rewriter.create<AddIOp>(loc, posM, c1);
+
+  Value posOplus1 = rewriter.create<AddIOp>(loc, posO, c1);
+
+  scf::IfOp if_onlyA = rewriter.create<scf::IfOp>(
+      loc, TypeRange{indexType, indexType, indexType, boolType, boolType},
+      idxA_lt_idxM, true);
+  // if onlyA
+  rewriter.setInsertionPointToStart(if_onlyA.thenBlock());
+  rewriter.create<scf::YieldOp>(
+      loc, ValueRange{posAplus1, posM, posO, ctrue, cfalse});
+  // else
+  rewriter.setInsertionPointToStart(if_onlyA.elseBlock());
+  scf::IfOp if_onlyM = rewriter.create<scf::IfOp>(
+      loc, TypeRange{indexType, indexType, indexType, boolType, boolType},
+      idxA_gt_idxM, true);
+  // if onlyM
+  rewriter.setInsertionPointToStart(if_onlyM.thenBlock());
+  rewriter.create<scf::YieldOp>(
+      loc, ValueRange{posA, posMplus1, posO, cfalse, ctrue});
+  // else
+  rewriter.setInsertionPointToStart(if_onlyM.elseBlock());
+  // At this point, we know newIdxA == newIdxM
+  rewriter.create<memref::StoreOp>(loc, newIdxA, Oi, posO);
+  rewriter.create<memref::StoreOp>(loc, newValA, Ox, posO);
+  rewriter.create<scf::YieldOp>(
+      loc, ValueRange{posAplus1, posMplus1, posOplus1, ctrue, ctrue});
+  // end onlyM
+  rewriter.setInsertionPointAfter(if_onlyM);
+  rewriter.create<scf::YieldOp>(loc, if_onlyM.getResults());
+  // end onlyA
+  rewriter.setInsertionPointAfter(if_onlyA);
+  Value newPosA = if_onlyA.getResult(0);
+  Value newPosM = if_onlyA.getResult(1);
+  Value newPosO = if_onlyA.getResult(2);
+  needsUpdateA = if_onlyA.getResult(3);
+  needsUpdateM = if_onlyA.getResult(4);
+
+  rewriter.create<scf::YieldOp>(
+      loc, ValueRange{newPosA, newPosM, newPosO, newIdxA, newIdxM, newValA,
+                      needsUpdateA, needsUpdateM});
+  rewriter.setInsertionPointAfter(whileLoop);
+
+  Value finalPosO = whileLoop.getResult(2);
+
+  return finalPosO;
+}
+
 void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
                               ModuleOp module, Value lhs, Value rhs,
                               Value output, std::string op, bool intersect) {
+  // Passing op == "mask" or "mask_complement" will trigger special behavior
+  //   with rhs assumed to be the mask and intersect is ignored
+
   // Types
   RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
   Type int64Type = rewriter.getIntegerType(64);
@@ -943,8 +1091,20 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
   Value Rx =
       rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, rhs);
 
-  Value ewiseSize = computeIndexOverlapSize(rewriter, loc, intersect, c0,
-                                            lhsNnz, Li, c0, rhsNnz, Ri);
+  // Special handling for complemented mask
+  Value ewiseSize, maskComplement, maskComplementSize;
+  if (op == "mask_complement") {
+    Value maskFullSize = rewriter.create<graphblas::SizeOp>(loc, rhs);
+    ValueRange results = buildMaskComplement(rewriter, loc, maskFullSize, Ri, c0, rhsNnz);
+    maskComplement = results[0];
+    maskComplementSize = results[1];
+    ewiseSize = computeIndexOverlapSize(rewriter, loc, true, c0, lhsNnz, Li,
+                                        c0, maskComplementSize, maskComplement);
+  } else {
+    ewiseSize = computeIndexOverlapSize(rewriter, loc, intersect, c0,
+                                        lhsNnz, Li, c0, rhsNnz, Ri);
+  }
+
   Value ewiseSize64 = rewriter.create<IndexCastOp>(loc, ewiseSize, int64Type);
 
   callResizeIndex(rewriter, module, loc, output, c0, ewiseSize);
@@ -958,8 +1118,14 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
   Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType,
                                                         output);
 
-  computeUnionAggregation(rewriter, loc, intersect, op, valueType, c0, lhsNnz,
-                          Li, Lx, c0, rhsNnz, Ri, Rx, c0, Oi, Ox);
+  if (op == "mask") {
+    applyMask(rewriter, loc, valueType, c0, lhsNnz, Li, Lx, c0, rhsNnz, Ri, c0, Oi, Ox);
+  } else if (op == "mask_complement") {
+    applyMask(rewriter, loc, valueType, c0, lhsNnz, Li, Lx, c0, maskComplementSize, maskComplement, c0, Oi, Ox);
+  } else {
+    computeUnionAggregation(rewriter, loc, intersect, op, valueType, c0, lhsNnz,
+                            Li, Lx, c0, rhsNnz, Ri, Rx, c0, Oi, Ox);
+  }
 }
 
 void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
