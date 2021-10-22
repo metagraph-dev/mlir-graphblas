@@ -19,7 +19,7 @@ func @scale_func(%input: tensor<?xf32>, %scale: f32) -> tensor<?xf32> {
      ins(%input: tensor<?xf32>)
      outs(%input: tensor<?xf32>) {
       ^bb(%a: f32, %s: f32):
-        %0 = mulf %a, %scale  : f32
+        %0 = arith.mulf %a, %scale  : f32
         linalg.yield %0 : f32
   } -> tensor<?xf32>
   return %0 : tensor<?xf32>
@@ -43,21 +43,21 @@ def test_apply_passes(cli_input):
         == """\
 module  {
   func @scale_func(%arg0: memref<?xf32>, %arg1: f32) -> memref<?xf32> {
-    %c0 = constant 0 : index
+    %c0 = arith.constant 0 : index
     %0 = memref.dim %arg0, %c0 : memref<?xf32>
     %1 = memref.alloc(%0) : memref<?xf32>
     %2 = memref.dim %arg0, %c0 : memref<?xf32>
-    %c0_0 = constant 0 : index
-    %c1 = constant 1 : index
+    %c0_0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
     br ^bb1(%c0_0 : index)
   ^bb1(%3: index):  // 2 preds: ^bb0, ^bb2
-    %4 = cmpi slt, %3, %2 : index
+    %4 = arith.cmpi slt, %3, %2 : index
     cond_br %4, ^bb2, ^bb3
   ^bb2:  // pred: ^bb1
     %5 = memref.load %arg0[%3] : memref<?xf32>
-    %6 = mulf %5, %arg1 : f32
+    %6 = arith.mulf %5, %arg1 : f32
     memref.store %6, %1[%3] : memref<?xf32>
-    %7 = addi %3, %c1 : index
+    %7 = arith.addi %3, %c1 : index
     br ^bb1(%7 : index)
   ^bb3:  // pred: ^bb1
     return %1 : memref<?xf32>

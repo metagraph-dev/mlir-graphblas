@@ -9,16 +9,16 @@
 module {
 
 // CHECK:         func @vector_argmin(%[[VAL_0:.*]]: tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> i64 {
-// CHECK:           %[[VAL_1:.*]] = constant 0 : index
-// CHECK:           %[[VAL_2:.*]] = constant 1 : index
+// CHECK:           %[[VAL_1:.*]] = arith.constant 0 : index
+// CHECK:           %[[VAL_2:.*]] = arith.constant 1 : index
 // CHECK:           %[[VAL_3:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_1]] : tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:           %[[VAL_4:.*]] = memref.load %[[VAL_3]]{{\[}}%[[VAL_2]]] : memref<?xi64>
-// CHECK:           %[[VAL_5:.*]] = index_cast %[[VAL_4]] : i64 to index
+// CHECK:           %[[VAL_5:.*]] = arith.index_cast %[[VAL_4]] : i64 to index
 // CHECK:           %[[VAL_6:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<3xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:           %[[VAL_7:.*]] = memref.load %[[VAL_6]]{{\[}}%[[VAL_1]]] : memref<?xi64>
 // CHECK:           %[[VAL_8:.*]]:2 = scf.for %[[VAL_9:.*]] = %[[VAL_2]] to %[[VAL_5]] step %[[VAL_2]] iter_args(%[[VAL_10:.*]] = %[[VAL_7]], %[[VAL_11:.*]] = %[[VAL_1]]) -> (i64, index) {
 // CHECK:             %[[VAL_12:.*]] = memref.load %[[VAL_6]]{{\[}}%[[VAL_9]]] : memref<?xi64>
-// CHECK:             %[[VAL_13:.*]] = cmpi slt, %[[VAL_12]], %[[VAL_10]] : i64
+// CHECK:             %[[VAL_13:.*]] = arith.cmpi slt, %[[VAL_12]], %[[VAL_10]] : i64
 // CHECK:             %[[VAL_14:.*]]:2 = scf.if %[[VAL_13]] -> (i64, index) {
 // CHECK:               scf.yield %[[VAL_12]], %[[VAL_9]] : i64, index
 // CHECK:             } else {
@@ -37,16 +37,16 @@ module {
    }
    
 // CHECK:         func @vector_argmax(%[[VAL_0:.*]]: tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> i64 {
-// CHECK:           %[[VAL_1:.*]] = constant 0 : index
-// CHECK:           %[[VAL_2:.*]] = constant 1 : index
+// CHECK:           %[[VAL_1:.*]] = arith.constant 0 : index
+// CHECK:           %[[VAL_2:.*]] = arith.constant 1 : index
 // CHECK:           %[[VAL_3:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_1]] : tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:           %[[VAL_4:.*]] = memref.load %[[VAL_3]]{{\[}}%[[VAL_2]]] : memref<?xi64>
-// CHECK:           %[[VAL_5:.*]] = index_cast %[[VAL_4]] : i64 to index
+// CHECK:           %[[VAL_5:.*]] = arith.index_cast %[[VAL_4]] : i64 to index
 // CHECK:           %[[VAL_6:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:           %[[VAL_7:.*]] = memref.load %[[VAL_6]]{{\[}}%[[VAL_1]]] : memref<?xi64>
 // CHECK:           %[[VAL_8:.*]]:2 = scf.for %[[VAL_9:.*]] = %[[VAL_2]] to %[[VAL_5]] step %[[VAL_2]] iter_args(%[[VAL_10:.*]] = %[[VAL_7]], %[[VAL_11:.*]] = %[[VAL_1]]) -> (i64, index) {
 // CHECK:             %[[VAL_12:.*]] = memref.load %[[VAL_6]]{{\[}}%[[VAL_9]]] : memref<?xi64>
-// CHECK:             %[[VAL_13:.*]] = cmpi sgt, %[[VAL_12]], %[[VAL_10]] : i64
+// CHECK:             %[[VAL_13:.*]] = arith.cmpi sgt, %[[VAL_12]], %[[VAL_10]] : i64
 // CHECK:             %[[VAL_14:.*]]:2 = scf.if %[[VAL_13]] -> (i64, index) {
 // CHECK:               scf.yield %[[VAL_12]], %[[VAL_9]] : i64, index
 // CHECK:             } else {

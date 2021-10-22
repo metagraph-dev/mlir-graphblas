@@ -22,6 +22,8 @@ def GraphBLASLowering : Pass<"graphblas-lower", "ModuleOp"> {
     "AffineDialect",
     "memref::MemRefDialect",
     "tensor::TensorDialect",
+    "math::MathDialect",
+    "arith::ArithmeticDialect",
     "scf::SCFDialect"
   ];
 }
@@ -45,6 +47,9 @@ def GraphBLASStructuralize : Pass<"graphblas-structuralize", "ModuleOp"> {
   let summary = "TODO add documentation";
   let constructor = "mlir::createGraphBLASStructuralizePass()";
   let dependentDialects = [
+    "math::MathDialect",
+    "arith::ArithmeticDialect",
+    "scf::SCFDialect"
   ];
 }
 
