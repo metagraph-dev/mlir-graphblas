@@ -2575,11 +2575,21 @@ public:
         if (mask) {
           if (replace) {
             // input -> output(mask) { accumulate, replace }
-            // TODO: apply mask to output
-            // TODO: apply mask to input
-            // TODO: union masked_output & masked_input using accumulator
-            return op.emitError(
-                "Update with mask+accumulate+replace is not supported yet");
+            auto maskString = (maskComplement ? "mask_complement" : "mask");
+            // Step 1: apply the mask to the output
+            Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
+            computeMatrixElementWise(rewriter, loc, module, output, mask,
+                                     maskedOutput, maskString, true);
+            // Step 2: apply the mask to the input
+            Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+            computeMatrixElementWise(rewriter, loc, module, input, mask,
+                                     maskedInput, maskString, true);
+            // Step 3: union the two masked results
+            computeMatrixElementWise(rewriter, loc, module, maskedInput,
+                                     maskedOutput, output, accumulateString,
+                                     /* intersect */ false);
+            rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
+            rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
           } else {
             // input -> output(mask) { accumulate }
             // TODO: same as above, but don't intersect the output & mask

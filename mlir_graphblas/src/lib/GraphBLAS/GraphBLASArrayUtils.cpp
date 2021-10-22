@@ -42,7 +42,8 @@ ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
   Value compIndices =
       rewriter.create<memref::AllocOp>(loc, memref1DI64Type, compSize);
 
-  // Handle case of empty row
+  // Force firstMaskIndex to be unreachable for the case of empty row
+  // This will cause every idx in the loop to be included in the output
   Value rowIsEmpty = rewriter.create<arith::CmpIOp>(
       loc, arith::CmpIPredicate::eq, maskStart, maskEnd);
   scf::IfOp if_empty_row =
@@ -53,18 +54,18 @@ ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
   }
   {
     rewriter.setInsertionPointToStart(if_empty_row.elseBlock());
-    rewriter.create<scf::YieldOp>(loc, maskStart);
+    Value startIndex64 =
+      rewriter.create<memref::LoadOp>(loc, maskIndices, maskStart);
+    Value startIndex =
+      rewriter.create<arith::IndexCastOp>(loc, startIndex64, indexType);
+    rewriter.create<scf::YieldOp>(loc, startIndex);
     rewriter.setInsertionPointAfter(if_empty_row);
   }
-  Value startPos = if_empty_row.getResult(0);
+  Value firstMaskIndex = if_empty_row.getResult(0);
 
   // Populate memref
-  Value firstMaskIndex64 =
-      rewriter.create<memref::LoadOp>(loc, maskIndices, startPos);
-  Value firstMaskIndex =
-      rewriter.create<arith::IndexCastOp>(loc, firstMaskIndex64, indexType);
   scf::ForOp loop = rewriter.create<scf::ForOp>(
-      loc, c0, fullSize, c1, ValueRange{c0, startPos, firstMaskIndex});
+      loc, c0, fullSize, c1, ValueRange{c0, maskStart, firstMaskIndex});
   Value idx = loop.getInductionVar();
   Value compPos = loop.getLoopBody().getArgument(1);
   Value maskPos = loop.getLoopBody().getArgument(2);
@@ -1074,6 +1075,9 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
                               Value output, std::string op, bool intersect) {
   // Passing op == "mask" or "mask_complement" will trigger special behavior
   //   with rhs assumed to be the mask and intersect is ignored
+  bool isMaskComplement = (op == "mask_complement");
+  if (isMaskComplement or op == "mask")
+    intersect = true;
 
   // Types
   RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
@@ -1087,6 +1091,7 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
   Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
 
   // Get sparse tensor info
+  Value size = rewriter.create<graphblas::SizeOp>(loc, output);
   Value lhsNnz = rewriter.create<graphblas::NumValsOp>(loc, lhs);
   Value rhsNnz = rewriter.create<graphblas::NumValsOp>(loc, rhs);
   Value Li = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
@@ -1100,10 +1105,9 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
 
   // Special handling for complemented mask
   Value ewiseSize, maskComplement, maskComplementSize;
-  if (op == "mask_complement") {
-    Value maskFullSize = rewriter.create<graphblas::SizeOp>(loc, rhs);
+  if (isMaskComplement) {
     ValueRange results =
-        buildMaskComplement(rewriter, loc, maskFullSize, Ri, c0, rhsNnz);
+        buildMaskComplement(rewriter, loc, size, Ri, c0, rhsNnz);
     maskComplement = results[0];
     maskComplementSize = results[1];
     ewiseSize = computeIndexOverlapSize(rewriter, loc, true, c0, lhsNnz, Li, c0,
@@ -1130,7 +1134,7 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
   if (op == "mask") {
     applyMask(rewriter, loc, valueType, c0, lhsNnz, Li, Lx, c0, rhsNnz, Ri, c0,
               Oi, Ox);
-  } else if (op == "mask_complement") {
+  } else if (isMaskComplement) {
     applyMask(rewriter, loc, valueType, c0, lhsNnz, Li, Lx, c0,
               maskComplementSize, maskComplement, c0, Oi, Ox);
   } else {
@@ -1142,20 +1146,29 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
 void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
                               ModuleOp module, Value lhs, Value rhs,
                               Value output, std::string op, bool intersect) {
+  // Passing op == "mask" or "mask_complement" will trigger special behavior
+  //   with rhs assumed to be the mask and intersect is ignored
+  bool isMaskComplement = (op == "mask_complement");
+  if (isMaskComplement or op == "mask")
+    intersect = true;
+
   // Types
   RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
   Type indexType = rewriter.getIndexType();
+  Type boolType = rewriter.getI1Type();
   Type int64Type = rewriter.getIntegerType(64);
   Type valueType = outputType.getElementType();
   MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
   MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
 
   // Initial constants
+  Value cfalse = rewriter.create<arith::ConstantIntOp>(loc, 0, boolType);
   Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
   Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
   Value ci0 = rewriter.create<arith::ConstantIntOp>(loc, 0, int64Type);
 
   Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, output);
+  Value ncols = rewriter.create<graphblas::NumColsOp>(loc, output);
 
   // Get sparse tensor info
   Value Lp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type,
@@ -1191,7 +1204,9 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
   Value RcmpColSame = rewriter.create<arith::CmpIOp>(
       loc, arith::CmpIPredicate::eq, rhsColStart64, rhsColEnd64);
   Value emptyRow;
-  if (intersect) {
+  if (isMaskComplement){
+    emptyRow = cfalse;
+  } else if (intersect) {
     emptyRow = rewriter.create<arith::OrIOp>(loc, LcmpColSame, RcmpColSame);
   } else {
     emptyRow = rewriter.create<arith::AndIOp>(loc, LcmpColSame, RcmpColSame);
@@ -1213,9 +1228,21 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
       rewriter.create<arith::IndexCastOp>(loc, rhsColStart64, indexType);
   Value rhsColEnd =
       rewriter.create<arith::IndexCastOp>(loc, rhsColEnd64, indexType);
-  Value unionSize =
-      computeIndexOverlapSize(rewriter, loc, intersect, lhsColStart, lhsColEnd,
-                              Li, rhsColStart, rhsColEnd, Ri);
+
+  // Special handling for complemented mask
+  Value unionSize;
+  if (isMaskComplement) {
+    ValueRange results =
+        buildMaskComplement(rewriter, loc, ncols, Ri, rhsColStart, rhsColEnd);
+    Value maskComplement = results[0];
+    Value maskComplementSize = results[1];
+    unionSize = computeIndexOverlapSize(rewriter, loc, true, lhsColStart, lhsColEnd, Li, c0,
+                                        maskComplementSize, maskComplement);
+  } else {
+    unionSize = computeIndexOverlapSize(rewriter, loc, intersect, lhsColStart, lhsColEnd,
+                                        Li, rhsColStart, rhsColEnd, Ri);
+  }
+
   Value unionSize64 =
       rewriter.create<arith::IndexCastOp>(loc, unionSize, int64Type);
   rewriter.create<scf::YieldOp>(loc, unionSize64);
@@ -1285,9 +1312,21 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
       rewriter.create<arith::IndexCastOp>(loc, rhsColStart64, indexType);
   rhsColEnd = rewriter.create<arith::IndexCastOp>(loc, rhsColEnd64, indexType);
 
-  computeUnionAggregation(rewriter, loc, intersect, op, valueType, lhsColStart,
-                          lhsColEnd, Li, Lx, rhsColStart, rhsColEnd, Ri, Rx,
-                          OcolStart, Oi, Ox);
+  if (op == "mask") {
+    applyMask(rewriter, loc, valueType, lhsColStart, lhsColEnd, Li, Lx, rhsColStart, rhsColEnd,
+              Ri, OcolStart, Oi, Ox);
+  } else if (isMaskComplement) {
+    // Need to recompute maskComplement because previous use was inside a different loop
+    ValueRange results =
+        buildMaskComplement(rewriter, loc, ncols, Ri, rhsColStart, rhsColEnd);
+    Value maskComplement = results[0];
+    Value maskComplementSize = results[1];
+    applyMask(rewriter, loc, valueType, lhsColStart, lhsColEnd, Li, Lx, c0,
+              maskComplementSize, maskComplement, OcolStart, Oi, Ox);
+  } else {
+    computeUnionAggregation(rewriter, loc, intersect, op, valueType, lhsColStart, lhsColEnd,
+                            Li, Lx, rhsColStart, rhsColEnd, Ri, Rx, OcolStart, Oi, Ox);
+  }
 
   // end if cmpDiff
   rewriter.setInsertionPointAfter(ifBlock_cmpDiff);
