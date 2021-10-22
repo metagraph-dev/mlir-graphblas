@@ -29,7 +29,7 @@ func @many_inputs_constant_output(
    %arg_f32: f32,
    %arg_pointer: !llvm.ptr<i64>
 ) -> i32 {
- %c1234 = constant 1234 : i32
+ %c1234 = arith.constant 1234 : i32
  return %c1234 : i32
 }
 """

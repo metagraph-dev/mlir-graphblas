@@ -19,7 +19,7 @@
 func @noop_semiring(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSR64> {
     %answer = graphblas.matrix_multiply_generic %a, %b {mask_complement = false} : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
         ^bb0:
-            %identity = constant 0.0 : f64
+            %identity = arith.constant 0.0 : f64
             graphblas.yield add_identity %identity : f64
     },{
         ^bb0(%add_a: f64, %add_b: f64):
