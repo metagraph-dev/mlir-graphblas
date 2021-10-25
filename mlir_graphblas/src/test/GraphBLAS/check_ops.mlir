@@ -64,8 +64,8 @@ module {
 
     // CHECK: func @matrix_select_gt_thunk(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[CSR_TYPE]] {
     func @matrix_select_gt_thunk(%sparse_tensor: tensor<100x100xf64, #CSR64>) -> tensor<100x100xf64, #CSR64> {
-        // CHECK-NEXT: %[[THUNK:.*]] = constant 0.000000e+00 : [[THUNK_TYPE:.*]]
-        %thunk = constant 0.0 : f64
+        // CHECK-NEXT: %[[THUNK:.*]] = arith.constant 0.000000e+00 : [[THUNK_TYPE:.*]]
+        %thunk = arith.constant 0.0 : f64
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.select %[[ARG0]], %[[THUNK]] {selectors = ["gt"]} : [[CSR_TYPE]], [[THUNK_TYPE]] to [[CSR_TYPE]]
         %answer = graphblas.select %sparse_tensor, %thunk { selectors = ["gt"] } : tensor<100x100xf64, #CSR64>, f64 to tensor<100x100xf64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[CSR_TYPE]]
@@ -114,8 +114,8 @@ module {
 
     // CHECK: func @apply_matrix_min(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
     func @apply_matrix_min(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
-        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
-        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[THUNK:.*]] = arith.constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = arith.constant 100 : i64
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]], %[[THUNK]] {apply_operator = "min"} : ([[CSR_TYPE]], [[THUNK_TYPE]]) to [[CSR_TYPE]]
         %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<2x3xi64, #CSR64>, i64) to tensor<2x3xi64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
@@ -124,8 +124,8 @@ module {
    
     // CHECK: func @apply_vector_min(%[[ARG0:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
     func @apply_vector_min(%sparse_tensor: tensor<3xi64, #CV64>) -> tensor<3xi64, #CV64> {
-        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
-        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[THUNK:.*]] = arith.constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = arith.constant 100 : i64
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]], %[[THUNK]] {apply_operator = "min"} : ([[VECTOR_TYPE]], [[THUNK_TYPE]]) to [[VECTOR_TYPE]]
         %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<3xi64, #CV64>, i64) to tensor<3xi64, #CV64>
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
@@ -198,8 +198,8 @@ module {
 
     // CHECK: func @apply_matrix_left_div(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
     func @apply_matrix_left_div(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
-        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
-        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[THUNK:.*]] = arith.constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = arith.constant 100 : i64
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[THUNK]], %[[ARG0]] {apply_operator = "div"} : ([[THUNK_TYPE]], [[CSR_TYPE]]) to [[CSR_TYPE]]
         %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "div" } : (i64, tensor<2x3xi64, #CSR64>) to tensor<2x3xi64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
@@ -208,8 +208,8 @@ module {
    
     // CHECK: func @apply_vector_left_div(%[[ARG0:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
     func @apply_vector_left_div(%sparse_tensor: tensor<3xi64, #CV64>) -> tensor<3xi64, #CV64> {
-        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
-        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[THUNK:.*]] = arith.constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = arith.constant 100 : i64
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[THUNK]], %[[ARG0]] {apply_operator = "div"} : ([[THUNK_TYPE]], [[VECTOR_TYPE]]) to [[VECTOR_TYPE]]
         %answer = graphblas.apply %thunk, %sparse_tensor { apply_operator = "div" } : (i64, tensor<3xi64, #CV64>) to tensor<3xi64, #CV64>
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
@@ -218,8 +218,8 @@ module {
 
     // CHECK: func @apply_matrix_right_div(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[RETURN_TYPE:.*]] {
     func @apply_matrix_right_div(%sparse_tensor: tensor<2x3xi64, #CSR64>) -> tensor<2x3xi64, #CSR64> {
-        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
-        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[THUNK:.*]] = arith.constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = arith.constant 100 : i64
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]], %[[THUNK]] {apply_operator = "div"} : ([[CSR_TYPE]], [[THUNK_TYPE]]) to [[CSR_TYPE]]
         %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "div" } : (tensor<2x3xi64, #CSR64>, i64) to tensor<2x3xi64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
@@ -228,8 +228,8 @@ module {
    
     // CHECK: func @apply_vector_right_div(%[[ARG0:.*]]: [[VECTOR_TYPE:tensor<.*>]]) -> [[RETURN_TYPE:.*]] {
     func @apply_vector_right_div(%sparse_tensor: tensor<3xi64, #CV64>) -> tensor<3xi64, #CV64> {
-        // CHECK-NEXT: %[[THUNK:.*]] = constant 100 : [[THUNK_TYPE:.*]]
-        %thunk = constant 100 : i64
+        // CHECK-NEXT: %[[THUNK:.*]] = arith.constant 100 : [[THUNK_TYPE:.*]]
+        %thunk = arith.constant 100 : i64
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.apply %[[ARG0]], %[[THUNK]] {apply_operator = "div"} : ([[VECTOR_TYPE]], [[THUNK_TYPE]]) to [[VECTOR_TYPE]]
         %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "div" } : (tensor<3xi64, #CV64>, i64) to tensor<3xi64, #CV64>
         // CHECK-NEXT: return %[[ANSWER]] : [[RETURN_TYPE]]
@@ -382,8 +382,8 @@ module {
 
     // CHECK: func @print_wrapper() {
     func @print_wrapper() -> () {
-    	// CHECK-NEXT: %[[VAL_0:.*]] = constant 0.000000e+00 : f32
-        %0 = constant 0.0 : f32
+    	// CHECK-NEXT: %[[VAL_0:.*]] = arith.constant 0.000000e+00 : f32
+        %0 = arith.constant 0.0 : f32
 	// CHECK-NEXT: graphblas.print %[[VAL_0]], %[[VAL_0]] {strings = ["start ", " middle ", " end"]} : f32, f32
 	graphblas.print %0, %0 { strings = ["start ", " middle ", " end"] } : f32, f32
         // CHECK-NEXT: return

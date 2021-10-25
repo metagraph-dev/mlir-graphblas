@@ -141,3 +141,17 @@ module {
    }
 
 }
+
+// -----
+ 
+#CV64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+func @matrix_multiply_plus_times(%vecA: tensor<?xf64, #CV64>, %vecB: tensor<?xf64, #CV64>, %mask: tensor<?xf64, #CV64>) -> tensor<?xf64, #CV64> {
+    %answer = graphblas.matrix_multiply %vecA, %vecB, %mask { semiring = "any_pair" } : (tensor<?xf64, #CV64>, tensor<?xf64, #CV64>, tensor<?xf64, #CV64>) to tensor<?xf64, #CV64> // expected-error {{Vector-vector multiplication must result in a scalar result-type.}}
+    return %answer : tensor<?xf64, #CV64>
+}
+ 

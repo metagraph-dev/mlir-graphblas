@@ -4,7 +4,7 @@
 [![Conda Version](https://img.shields.io/conda/v/metagraph/mlir-graphblas.svg)](https://anaconda.org/metagraph/mlir-graphblas)
 [![Build Status](https://github.com/metagraph-dev/mlir-graphblas/actions/workflows/test_and_deploy.yml/badge.svg?branch=main)](https://github.com/metagraph-dev/mlir-graphblas/actions/workflows/test_and_deploy.yml?query=branch%3Amain)
 
-*Note that this code currently requires [llvm-project@3a2ff98](https://github.com/llvm/llvm-project/commit/3a2ff98).*
+*Note that this code currently requires [llvm-project@bd0cae6](https://github.com/llvm/llvm-project/commit/bd0cae6).*
 
 ## graphblas-opt
 

@@ -1,7 +1,7 @@
-Supported GraphBLAS Operations
-==============================
+Supported GraphBLAS Spec Operations
+===================================
 
-.. csv-table:: Supported GraphBLAS operations
+.. csv-table:: Supported GraphBLAS Spec operations
     :header: Operation, Matrix, Vector, accum, mask, compl. mask, mlir name, comment
     :widths: 20, 10, 10, 10, 10, 10, 20, 20
 

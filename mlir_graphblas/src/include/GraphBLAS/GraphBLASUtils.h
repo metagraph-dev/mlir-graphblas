@@ -82,9 +82,10 @@ mlir::Value callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                           mlir::Location loc, mlir::Value tensor);
 mlir::Value callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                           mlir::Location loc, mlir::Value tensor);
-void callDelSparseTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
-                         mlir::Location loc, mlir::Value tensor);
 
+mlir::CallOp callAssignRev(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                           mlir::Location loc, mlir::Value tensor,
+                           mlir::Value d, mlir::Value newIndexValue);
 mlir::CallOp callResizeDim(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                            mlir::Location loc, mlir::Value tensor,
                            mlir::Value d, mlir::Value size);
@@ -97,6 +98,15 @@ mlir::CallOp callResizeIndex(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
 mlir::CallOp callResizeValues(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                               mlir::Location loc, mlir::Value tensor,
                               mlir::Value size);
+mlir::CallOp callSwapPointers(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                              mlir::Location loc, mlir::Value tensor,
+                              mlir::Value other);
+mlir::CallOp callSwapIndices(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                             mlir::Location loc, mlir::Value tensor,
+                             mlir::Value other);
+mlir::CallOp callSwapValues(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                            mlir::Location loc, mlir::Value tensor,
+                            mlir::Value other);
 
 void cleanupIntermediateTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                                mlir::Location loc, mlir::Value tensor);

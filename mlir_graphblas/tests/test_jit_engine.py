@@ -3,7 +3,6 @@ from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
 import itertools
 import mlir_graphblas
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
-from mlir_graphblas.tools.utils import densify_csr
 import pytest
 import numpy as np
 
@@ -25,7 +24,7 @@ SIMPLE_TEST_CASES = [  # elements are ( mlir_template, args, expected_result )
     #     ins(%arga, %argb: tensor<?x?x{mlir_type}>, tensor<?x?x{mlir_type}>)
     #    outs(%arga: tensor<?x?x{mlir_type}>) {{
     #      ^bb(%a: {mlir_type}, %b: {mlir_type}, %s: {mlir_type}):
-    #        %sum = {std_add} %a, %b : {mlir_type}
+    #        %sum = {arith_add} %a, %b : {mlir_type}
     #        linalg.yield %sum : {mlir_type}
     #  }} -> tensor<?x?x{mlir_type}>
     #  return %answer : tensor<?x?x{mlir_type}>
@@ -51,7 +50,7 @@ func @{func_name}(%arga: tensor<2x4x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
     ins(%arga, %argb: tensor<2x4x{mlir_type}>, tensor<2x4x{mlir_type}>)
    outs(%arga: tensor<2x4x{mlir_type}>) {{
      ^bb(%a: {mlir_type}, %b: {mlir_type}, %s: {mlir_type}):
-       %sum = {std_add} %a, %b : {mlir_type}
+       %sum = {arith_add} %a, %b : {mlir_type}
        linalg.yield %sum : {mlir_type}
  }} -> tensor<2x4x{mlir_type}>
  return %answer : tensor<2x4x{mlir_type}>
@@ -78,7 +77,7 @@ func @{func_name}(%arga: tensor<2x4x{mlir_type}>, %argb: tensor<2x4x{mlir_type}>
     #     ins(%arga, %argb: tensor<?x?x{mlir_type}>, tensor<2x4x{mlir_type}>)
     #    outs(%arga: tensor<?x?x{mlir_type}>) {{
     #      ^bb(%a: {mlir_type}, %b: {mlir_type}, %s: {mlir_type}):
-    #        %sum = {std_add} %a, %b : {mlir_type}
+    #        %sum = {arith_add} %a, %b : {mlir_type}
     #        linalg.yield %sum : {mlir_type}
     #  }} -> tensor<?x?x{mlir_type}>
     #  return %answer : tensor<?x?x{mlir_type}>
@@ -103,7 +102,7 @@ func @{func_name}(%arg_tensor: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}
     ins(%arg_tensor: tensor<2x4x{mlir_type}>)
    outs(%arg_tensor: tensor<2x4x{mlir_type}>) {{
      ^bb(%a: {mlir_type}, %s: {mlir_type}):
-       %sum = {std_add} %a, %arg_scalar : {mlir_type}
+       %sum = {arith_add} %a, %arg_scalar : {mlir_type}
        linalg.yield %sum : {mlir_type}
  }} -> tensor<2x4x{mlir_type}>
  return %answer : tensor<2x4x{mlir_type}>
@@ -129,8 +128,8 @@ func @{func_name}(%tensor_a: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}, 
     ins(%tensor_a, %tensor_b: tensor<2x4x{mlir_type}>, tensor<?x?x{mlir_type}>)
    outs(%tensor_a: tensor<2x4x{mlir_type}>) {{
      ^bb(%a: {mlir_type}, %b: {mlir_type}, %s: {mlir_type}):
-       %ab = {std_add} %a, %b : {mlir_type}
-       %sum = {std_add} %ab, %arg_scalar : {mlir_type}
+       %ab = {arith_add} %a, %b : {mlir_type}
+       %sum = {arith_add} %ab, %arg_scalar : {mlir_type}
        linalg.yield %sum : {mlir_type}
  }} -> tensor<2x4x{mlir_type}>
  return %answer : tensor<2x4x{mlir_type}>
@@ -143,7 +142,7 @@ func @{func_name}(%tensor_a: tensor<2x4x{mlir_type}>, %arg_scalar: {mlir_type}, 
     pytest.param(  # arbitrary size 1D tensor -> scalar
         """
 func @{func_name}(%arg0: tensor<?x{mlir_type}>) -> {mlir_type} {{
-  %c3 = constant 3 : index
+  %c3 = arith.constant 3 : index
   %ans = tensor.extract %arg0[%c3] : tensor<?x{mlir_type}>
   return %ans : {mlir_type}
 }}
@@ -155,9 +154,9 @@ func @{func_name}(%arg0: tensor<?x{mlir_type}>) -> {mlir_type} {{
     pytest.param(  # arbitrary size 1D tensor, scalar -> scalar
         """
 func @{func_name}(%tensor_arg: tensor<?x{mlir_type}>, %scalar_arg: {mlir_type}) -> {mlir_type} {{
-  %c3 = constant 3 : index
+  %c3 = arith.constant 3 : index
   %element_3 = tensor.extract %tensor_arg[%c3] : tensor<?x{mlir_type}>
-  %ans = {std_add} %element_3, %scalar_arg : {mlir_type}
+  %ans = {arith_add} %element_3, %scalar_arg : {mlir_type}
   return %ans : {mlir_type}
 }}
 """,
@@ -168,11 +167,11 @@ func @{func_name}(%tensor_arg: tensor<?x{mlir_type}>, %scalar_arg: {mlir_type}) 
     pytest.param(  # arbitrary size 1D tensor, arbitrary size 1D tensor -> scalar
         """
 func @{func_name}(%arg0: tensor<?x{mlir_type}>, %arg1: tensor<?x{mlir_type}>) -> {mlir_type} {{
-  %c3 = constant 3 : index
-  %c4 = constant 4 : index
+  %c3 = arith.constant 3 : index
+  %c4 = arith.constant 4 : index
   %arg0_3 = tensor.extract %arg0[%c3] : tensor<?x{mlir_type}>
   %arg1_4 = tensor.extract %arg1[%c4] : tensor<?x{mlir_type}>
-  %ans = {std_add} %arg0_3, %arg1_4 : {mlir_type}
+  %ans = {arith_add} %arg0_3, %arg1_4 : {mlir_type}
   return %ans : {mlir_type}
 }}
 """,
@@ -183,12 +182,12 @@ func @{func_name}(%arg0: tensor<?x{mlir_type}>, %arg1: tensor<?x{mlir_type}>) ->
     pytest.param(  # scalar, arbitrary size 1D tensor, arbitrary size 1D tensor -> scalar
         """
 func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x{mlir_type}>, %arg1: tensor<?x{mlir_type}>) -> {mlir_type} {{
-  %c3 = constant 3 : index
-  %c4 = constant 4 : index
+  %c3 = arith.constant 3 : index
+  %c4 = arith.constant 4 : index
   %arg0_3 = tensor.extract %arg0[%c3] : tensor<?x{mlir_type}>
   %arg1_4 = tensor.extract %arg1[%c4] : tensor<?x{mlir_type}>
-  %tensor_element_result = {std_add} %arg0_3, %arg1_4 : {mlir_type}
-  %ans = {std_add} %tensor_element_result, %scalar : {mlir_type}
+  %tensor_element_result = {arith_add} %arg0_3, %arg1_4 : {mlir_type}
+  %ans = {arith_add} %tensor_element_result, %scalar : {mlir_type}
   return %ans : {mlir_type}
 }}
 """,
@@ -202,12 +201,12 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x{mlir_type}>, %arg1: ten
 !mlir_tensor_type_alias = type tensor<?x!mlir_type_alias>
 
 func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x!mlir_type_alias>, %arg1: !mlir_tensor_type_alias) -> {mlir_type} {{
-  %c3 = constant 3 : index
-  %c4 = constant 4 : index
+  %c3 = arith.constant 3 : index
+  %c4 = arith.constant 4 : index
   %arg0_3 = tensor.extract %arg0[%c3] : tensor<?x{mlir_type}>
   %arg1_4 = tensor.extract %arg1[%c4] : tensor<?x{mlir_type}>
-  %tensor_element_result = {std_add} %arg0_3, %arg1_4 : {mlir_type}
-  %ans = {std_add} %tensor_element_result, %scalar : {mlir_type}
+  %tensor_element_result = {arith_add} %arg0_3, %arg1_4 : {mlir_type}
+  %ans = {arith_add} %tensor_element_result, %scalar : {mlir_type}
   return %ans : !mlir_type_alias
 }}
 """,
@@ -218,7 +217,7 @@ func @{func_name}(%scalar: {mlir_type}, %arg0: tensor<?x!mlir_type_alias>, %arg1
     pytest.param(  # partially fixed size tensor -> scalar
         """
 func @{func_name}(%arg_tensor: tensor<?x4x{mlir_type}>) -> {mlir_type} {{
-  %c0 = constant 0 : index
+  %c0 = arith.constant 0 : index
   %ans = tensor.extract %arg_tensor[%c0, %c0] : tensor<?x4x{mlir_type}>
   return %ans : {mlir_type}
 }}
@@ -240,9 +239,13 @@ def test_jit_engine_simple(engine, mlir_template, args, expected_result, mlir_ty
 
     std_operations_prefixes = ("add", "sub", "mul")
     if issubclass(np_type, np.integer):
-        std_operations = {f"std_{op}": f"{op}i" for op in std_operations_prefixes}
+        std_operations = {
+            f"arith_{op}": f"arith.{op}i" for op in std_operations_prefixes
+        }
     elif issubclass(np_type, np.floating):
-        std_operations = {f"std_{op}": f"{op}f" for op in std_operations_prefixes}
+        std_operations = {
+            f"arith_{op}": f"arith.{op}f" for op in std_operations_prefixes
+        }
     else:
         raise ValueError(f"No MLIR type for {np_type}.")
 
@@ -293,12 +296,12 @@ def test_jit_engine_sparse_tensor(engine, mlir_type):
 }}>
 
 func @{func_name}(%argA: tensor<10x20x30x{mlir_type}, #sparseTensor>) -> {mlir_type} {{
-  %out_tensor = constant dense<0.0> : tensor<{mlir_type}>
+  %out_tensor = arith.constant dense<0.0> : tensor<{mlir_type}>
   %reduction = linalg.generic #trait_sum_reduction
      ins(%argA: tensor<10x20x30x{mlir_type}, #sparseTensor>)
     outs(%out_tensor: tensor<{mlir_type}>) {{
       ^bb(%a: {mlir_type}, %x: {mlir_type}):
-        %0 = addf %x, %a : {mlir_type}
+        %0 = arith.addf %x, %a : {mlir_type}
         linalg.yield %0 : {mlir_type}
   }} -> tensor<{mlir_type}>
   %answer = tensor.extract %reduction[] : tensor<{mlir_type}>
@@ -319,6 +322,7 @@ func @{func_name}(%argA: tensor<10x20x30x{mlir_type}, #sparseTensor>) -> {mlir_t
     sparsity = np.array([True, True, True], dtype=np.bool8)
 
     a = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert a.verify()
 
     assert engine.add(mlir_text, STANDARD_PASSES) == [func_name]
 
@@ -340,7 +344,7 @@ Expected Result: {expected_result}
 def test_jit_engine_singleton_tuple_return_value(engine, mlir_type):
     mlir_text = f"""
 func @func_singleton_tuple_return_value_{mlir_type}() -> ({mlir_type}) {{
-    %result_0 = constant 12.34 : {mlir_type}
+    %result_0 = arith.constant 12.34 : {mlir_type}
     return %result_0 : {mlir_type}
 }}
 """
@@ -363,12 +367,12 @@ func @func_singleton_tuple_return_value_{mlir_type}() -> ({mlir_type}) {{
 def test_jit_engine_multiple_scalar_return_values(engine):
     mlir_text = """
 func @func_multiple_scalar_return_values() -> (i8, i16, i32, i64, f32, f64) {
-    %result_0 = constant 8 : i8
-    %result_1 = constant 16 : i16
-    %result_2 = constant 32 : i32
-    %result_3 = constant 64 : i64
-    %result_4 = constant 12.34 : f32
-    %result_5 = constant 5.6e200 : f64
+    %result_0 = arith.constant 8 : i8
+    %result_1 = arith.constant 16 : i16
+    %result_2 = arith.constant 32 : i32
+    %result_3 = arith.constant 64 : i64
+    %result_4 = arith.constant 12.34 : f32
+    %result_5 = arith.constant 5.6e200 : f64
     return %result_0, %result_1, %result_2, %result_3, %result_4, %result_5 : i8, i16, i32, i64, f32, f64
 }
 """
@@ -389,9 +393,9 @@ func @func_multiple_scalar_return_values() -> (i8, i16, i32, i64, f32, f64) {
 def test_jit_engine_multiple_dense_tensor_return_values(engine):
     mlir_text = """
 func @func_multiple_dense_tensor_return_values(%dummy_input_a: tensor<1xi8>, %dummy_input_b: i64) -> (f32, tensor<2x2xf32>, tensor<3x3xi8>) {
-    %result_0 = constant 12.34 : f32
-    %result_1 = constant dense<[[1.0, 2.0], [3.0, 4.0]]> : tensor<2x2xf32>
-    %result_2 = constant dense<[[1, 2, 3], [4, 5, 6], [7, 8, 9]]> : tensor<3x3xi8>
+    %result_0 = arith.constant 12.34 : f32
+    %result_1 = arith.constant dense<[[1.0, 2.0], [3.0, 4.0]]> : tensor<2x2xf32>
+    %result_2 = arith.constant dense<[[1, 2, 3], [4, 5, 6], [7, 8, 9]]> : tensor<3x3xi8>
     return %result_0, %result_1, %result_2 : f32, tensor<2x2xf32>, tensor<3x3xi8>
 }
 """
@@ -425,18 +429,18 @@ def test_jit_engine_sequence_of_scalars_input(engine, mlir_type):
     mlir_template, args, expected_result = (  # sequence of scalars -> scalar
         """
 func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
-  %czero = constant {zero_str} : {mlir_type}
+  %czero = arith.constant {zero_str} : {mlir_type}
 
   %sum_memref = memref.alloc() : memref<{mlir_type}>
   memref.store %czero, %sum_memref[] : memref<{mlir_type}>
   
-  %c0 = constant 0 : index
-  %c1 = constant 1 : index
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
 
-  %sequence_length = constant 5 : index // hard-coded length
+  %sequence_length = arith.constant 5 : index // hard-coded length
 
-  %ci0 = constant 0 : i64
-  %ci1 = constant 1 : i64
+  %ci0 = arith.constant 0 : i64
+  %ci1 = arith.constant 1 : i64
 
   scf.for %i = %c0 to %sequence_length step %c1 iter_args(%iter=%ci0) -> (i64) {{
   
@@ -447,10 +451,10 @@ func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
     %element = llvm.load %element_ptr : !llvm.ptr<{mlir_type}>
     
     %current_sum = memref.load %sum_memref[] : memref<{mlir_type}>
-    %updated_sum = {std_add} %current_sum, %element : {mlir_type}
+    %updated_sum = {arith_add} %current_sum, %element : {mlir_type}
     memref.store %updated_sum, %sum_memref[] : memref<{mlir_type}>
   
-    %plus_one = addi %iter, %ci1 : i64
+    %plus_one = arith.addi %iter, %ci1 : i64
     scf.yield %plus_one : i64
   }}
   
@@ -470,9 +474,13 @@ func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
 
     std_operations_prefixes = ("add", "sub", "mul")
     if issubclass(np_type, np.integer):
-        std_operations = {f"std_{op}": f"{op}i" for op in std_operations_prefixes}
+        std_operations = {
+            f"arith_{op}": f"arith.{op}i" for op in std_operations_prefixes
+        }
     elif issubclass(np_type, np.floating):
-        std_operations = {f"std_{op}": f"{op}f" for op in std_operations_prefixes}
+        std_operations = {
+            f"arith_{op}": f"arith.{op}f" for op in std_operations_prefixes
+        }
     else:
         raise ValueError(f"No MLIR type for {np_type}.")
 
@@ -527,14 +535,13 @@ func private @ptr8_to_matrix_csr_f64_p64i64(!llvm.ptr<i8>) -> tensor<2x3xf64, #s
 func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_length: index) -> f64 {
   // Take an array of sparse 2x3 matrices
 
+  %output_storage = arith.constant dense<0.0> : tensor<f64>
 
-  %output_storage = constant dense<0.0> : tensor<f64>
-
-  %c0 = constant 0 : index
-  %c1 = constant 1 : index
-  %ci0 = constant 0 : i64
-  %ci1 = constant 1 : i64
-  %cf0 = constant 0.0 : f64
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %ci0 = arith.constant 0 : i64
+  %ci1 = arith.constant 1 : i64
+  %cf0 = arith.constant 0.0 : f64
 
   %sum_memref = memref.alloc() : memref<f64>
   memref.store %cf0, %sum_memref[] : memref<f64>
@@ -553,16 +560,16 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
         ins(%sparse_tensor: tensor<2x3xf64, #sparseTensor>)
         outs(%output_storage: tensor<f64>) {
           ^bb(%a: f64, %x: f64):
-            %0 = addf %x, %a : f64
+            %0 = arith.addf %x, %a : f64
             linalg.yield %0 : f64
       } -> tensor<f64>
     %reduction_value = tensor.extract %reduction[] : tensor<f64>
 
     %current_sum = memref.load %sum_memref[] : memref<f64>
-    %updated_sum = addf %reduction_value, %current_sum : f64
+    %updated_sum = arith.addf %reduction_value, %current_sum : f64
     memref.store %updated_sum, %sum_memref[] : memref<f64>
 
-    %plus_one = addi %iter, %ci1 : i64
+    %plus_one = arith.addi %iter, %ci1 : i64
     scf.yield %plus_one : i64
   }
 
@@ -584,10 +591,16 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
     )
 
     # generate coordinates
-    coordinate_iter = itertools.cycle(range(2 * 3))
+    coordinate_iter = itertools.count()
     next_indices = lambda: np.array(
-        [next(coordinate_iter) for _ in range(4)], dtype=np.uint64
-    ).reshape([2, 2])
+        sorted(
+            [
+                (next(coordinate_iter) % 2, next(coordinate_iter) % 3),
+                (next(coordinate_iter) % 2, next(coordinate_iter) % 3),
+            ]
+        ),
+        dtype=np.uint64,
+    )
 
     sparse_tensors = []
     for _ in range(num_sparse_tensors):
@@ -596,6 +609,7 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
         sizes = np.array([2, 3], dtype=np.uint64)
         sparsity = np.array([True, True], dtype=np.bool8)
         sparse_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
+        assert sparse_tensor.verify()
         sparse_tensors.append(sparse_tensor)
 
     expected_sum = sqrt_values.sum()
@@ -617,8 +631,8 @@ def test_jit_engine_zero_values(engine):
       func private @sparseDimSize(!llvm.ptr<i8>, index) -> index
 
       func @transpose(%output: !llvm.ptr<i8>, %input: !llvm.ptr<i8>) {
-        %c0 = constant 0 : index
-        %c1 = constant 1 : index
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
 
 
         %n_row = call @sparseDimSize(%input, %c0) : (!llvm.ptr<i8>, index) -> index
@@ -639,7 +653,7 @@ def test_jit_engine_zero_values(engine):
         scf.for %n = %c0 to %nnz step %c1 {
           %colA = memref.load %Aj[%n] : memref<?xindex>
           %colB = memref.load %Bp[%colA] : memref<?xindex>
-          %colB1 = addi %colB, %c1 : index
+          %colB1 = arith.addi %colB, %c1 : index
           memref.store %colB1, %Bp[%colA] : memref<?xindex>
         }
 
@@ -649,13 +663,13 @@ def test_jit_engine_zero_values(engine):
           %temp = memref.load %Bp[%col] : memref<?xindex>
           %cumsum = memref.load %Bp[%n_col] : memref<?xindex>
           memref.store %cumsum, %Bp[%col] : memref<?xindex>
-          %cumsum2 = addi %cumsum, %temp : index
+          %cumsum2 = arith.addi %cumsum, %temp : index
           memref.store %cumsum2, %Bp[%n_col] : memref<?xindex>
         }
 
         scf.for %row = %c0 to %n_row step %c1 {
           %j_start = memref.load %Ap[%row] : memref<?xindex>
-          %row_plus1 = addi %row, %c1 : index
+          %row_plus1 = arith.addi %row, %c1 : index
           %j_end = memref.load %Ap[%row_plus1] : memref<?xindex>
           scf.for %jj = %j_start to %j_end step %c1 {
             %col = memref.load %Aj[%jj] : memref<?xindex>
@@ -667,7 +681,7 @@ def test_jit_engine_zero_values(engine):
 
             // Bp[col]++
             %bp_inc = memref.load %Bp[%col] : memref<?xindex>
-            %bp_inc1 = addi %bp_inc, %c1 : index
+            %bp_inc1 = arith.addi %bp_inc, %c1 : index
             memref.store %bp_inc1, %Bp[%col]: memref<?xindex>
           }
         }
@@ -701,10 +715,14 @@ def test_jit_engine_zero_values(engine):
     input_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
     output_tensor = MLIRSparseTensor(indices, values, sizes, sparsity)
 
+    assert input_tensor.verify()
+    assert output_tensor.verify()
     assert engine.add(mlir_text, STANDARD_PASSES) == ["transpose"]
     assert engine.transpose(output_tensor, input_tensor) is None
-    assert np.isclose(densify_csr(input_tensor), np.array([[8, 0], [9, 0]])).all()
-    assert np.isclose(densify_csr(output_tensor), np.array([[8, 9], [0, 0]])).all()
+    assert input_tensor.verify()
+    assert np.isclose(input_tensor.toarray(), np.array([[8, 0], [9, 0]])).all()
+    assert output_tensor.verify()
+    assert np.isclose(output_tensor.toarray(), np.array([[8, 9], [0, 0]])).all()
 
     return
 
@@ -713,8 +731,8 @@ def test_jit_engine_skip(engine):
     # scf.if cannot be parsed by pymlir currently
     mlir_code = r"""
 func private @relu_scalar(%arg0: f32) -> f32 {
-  %cst = constant 0.000000e+00 : f32
-  %0 = cmpf uge, %arg0, %cst : f32
+  %cst = arith.constant 0.000000e+00 : f32
+  %0 = arith.cmpf uge, %arg0, %cst : f32
   %1 = scf.if %0 -> (f32) {
     scf.yield %arg0 : f32
   } else {

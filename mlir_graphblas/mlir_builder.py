@@ -28,24 +28,35 @@ class MLIRCompileError(Exception):
 
 
 DEFAULT_ENGINE = MlirJitEngine()
-GRAPHBLAS_PASSES = (
+
+GRAPHBLAS_TO_SCF_PASSES = (
     "--graphblas-structuralize",
     "--graphblas-optimize",
     "--graphblas-lower",
     "--sparsification",
     "--sparse-tensor-conversion",
     "--linalg-bufferize",
-    "--convert-scf-to-std",
     "--func-bufferize",
     "--tensor-constant-bufferize",
     "--tensor-bufferize",
     "--finalizing-bufferize",
     "--convert-linalg-to-loops",
+)
+
+SCF_TO_LLVM_PASSES = (
     "--convert-scf-to-std",
     "--convert-vector-to-llvm",
     "--convert-memref-to-llvm",
+    "--convert-math-to-llvm",
+    "--convert-openmp-to-llvm",
+    "--convert-arith-to-llvm",
     "--convert-std-to-llvm",
     "--reconcile-unrealized-casts",
+)
+
+GRAPHBLAS_PASSES = GRAPHBLAS_TO_SCF_PASSES + SCF_TO_LLVM_PASSES
+GRAPHBLAS_OPENMP_PASSES = (
+    GRAPHBLAS_TO_SCF_PASSES + ("--convert-scf-to-openmp",) + SCF_TO_LLVM_PASSES
 )
 
 
@@ -55,9 +66,9 @@ class MLIRVar:
     Upon initialization, must be assigned to exactly once, and can then be accessed many times.
 
     foo = MLIRVar('foo', 'f64')
-    add_statement(f"{foo.assign} = constant 1.0 : {foo.type}")
+    add_statement(f"{foo.assign} = arith.constant 1.0 : {foo.type}")
     bar = MLIRVar('bar', 'f64')
-    add_statement(f"{bar.assign} = addf {foo}, {baz} : {bar.type}")
+    add_statement(f"{bar.assign} = arith.addf {foo}, {baz} : {bar.type}")
     """
 
     def __init__(self, name: str, type_: Type):
@@ -386,13 +397,13 @@ class MLIRFunctionBuilder:
     ) -> Generator[ForLoopVars, None, None]:
         iter_var_index = self.new_var("index")
         lower_var_index = (
-            lower if isinstance(lower, MLIRVar) else self.constant(lower, "index")
+            lower if isinstance(lower, MLIRVar) else self.arith.constant(lower, "index")
         )
         upper_var_index = (
-            upper if isinstance(upper, MLIRVar) else self.constant(upper, "index")
+            upper if isinstance(upper, MLIRVar) else self.arith.constant(upper, "index")
         )
         step_var_index = (
-            step if isinstance(step, MLIRVar) else self.constant(step, "index")
+            step if isinstance(step, MLIRVar) else self.arith.constant(step, "index")
         )
         for_loop_open_statment = (
             f"scf.for {iter_var_index.assign} = {lower_var_index} "

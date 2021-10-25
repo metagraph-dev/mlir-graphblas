@@ -59,6 +59,14 @@ llvm.initialize()
 llvm.initialize_native_target()
 llvm.initialize_native_asmprinter()
 
+# try to load libomp on Linux
+SO_FILE_PATTERN = os.path.join(sys.prefix, "lib", "libomp.so")
+SO_FILES = glob.glob(SO_FILE_PATTERN)
+if len(SO_FILES) > 0:
+    print(f"Loading {SO_FILES[0]}", file=sys.stderr)
+    llvm.load_library_permanently(SO_FILES[0])
+
+
 MLIR_FLOAT_ENUM_TO_NP_TYPE = {
     mlir.astnodes.FloatTypeEnum.f16: np.float16,
     mlir.astnodes.FloatTypeEnum.f32: np.float32,
@@ -776,8 +784,12 @@ class MlirJitEngine:
 
         llvm_ir_text = mlir_translate_run.stdout.decode()
 
+        # Remove optional align clause from atomicrmw instructions which is
+        # only present in LLVM >= 13, which is newer than llvmlite
+        llvm11_ir_text = re.sub(r"align \d+, ", "", llvm_ir_text)
+
         # Create a LLVM module object from the IR
-        mod = llvm.parse_assembly(llvm_ir_text)
+        mod = llvm.parse_assembly(llvm11_ir_text)
         mod.verify()
 
         # Now add the module and make sure it is ready for execution

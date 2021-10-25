@@ -1,3 +1,4 @@
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
@@ -237,7 +238,7 @@ void callPrintString(OpBuilder &builder, ModuleOp &mod, Location loc,
   for (char character : string) {
     int64_t character_int = (int64_t)character;
     Value character_int_i64 =
-        builder.create<ConstantIntOp>(loc, character_int, int64Type);
+        builder.create<arith::ConstantIntOp>(loc, character_int, int64Type);
     builder.create<CallOp>(loc, funcSymbol, TypeRange(),
                            llvm::ArrayRef<Value>({character_int_i64}));
   }
@@ -288,16 +289,6 @@ Value castToTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
   return result;
 }
 
-void callDelSparseTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
-                         Value tensor) {
-  Value ptr = castToPtr8(builder, mod, loc, tensor);
-  Type ptr8Type = ptr.getType();
-
-  FlatSymbolRefAttr func = getFunc(mod, loc, "delSparseTensor", {}, ptr8Type);
-  builder.create<mlir::CallOp>(loc, func, TypeRange(), ptr);
-  return;
-}
-
 Value callNewTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
                     ValueRange shape, RankedTensorType tensorType) {
   Type indexType = builder.getIndexType();
@@ -312,6 +303,7 @@ Value callNewTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
     func = getFunc(mod, loc, funcName, tensorType, TypeRange{indexType});
   CallOp callOpResult = builder.create<CallOp>(loc, func, tensorType, shape);
   Value result = callOpResult->getResult(0);
+
   return result;
 }
 
@@ -339,6 +331,20 @@ Value callDupTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
   Value result = callOpResult->getResult(0);
   tensor = castToTensor(builder, mod, loc, result, tensorType);
   return tensor;
+}
+
+CallOp callAssignRev(OpBuilder &builder, ModuleOp &mod, Location loc,
+                     Value tensor, Value d, Value newIndexValue) {
+  Value ptr = castToPtr8(builder, mod, loc, tensor);
+  Type ptr8Type = ptr.getType();
+
+  Type indexType = builder.getIndexType();
+  FlatSymbolRefAttr func = getFunc(mod, loc, "assign_rev", TypeRange(),
+                                   {ptr8Type, indexType, indexType});
+  CallOp result = builder.create<mlir::CallOp>(
+      loc, func, TypeRange(), ArrayRef<Value>({ptr, d, newIndexValue}));
+
+  return result;
 }
 
 CallOp callResizeDim(OpBuilder &builder, ModuleOp &mod, Location loc,
@@ -397,6 +403,60 @@ CallOp callResizeValues(OpBuilder &builder, ModuleOp &mod, Location loc,
   return result;
 }
 
+CallOp callSwapPointers(OpBuilder &builder, ModuleOp &mod, Location loc,
+                        Value tensor, Value other) {
+  Value tPtr = castToPtr8(builder, mod, loc, tensor);
+  Value oPtr = castToPtr8(builder, mod, loc, other);
+  Type ptr8Type = oPtr.getType();
+
+  FlatSymbolRefAttr ptrFunc =
+      getFunc(mod, loc, "get_pointers_ptr", ptr8Type, ptr8Type);
+  FlatSymbolRefAttr swapFunc =
+      getFunc(mod, loc, "swap_pointers", TypeRange(), {ptr8Type, ptr8Type});
+  CallOp oPointers = builder.create<mlir::CallOp>(loc, ptrFunc, ptr8Type, oPtr);
+  CallOp result = builder.create<mlir::CallOp>(
+      loc, swapFunc, TypeRange(),
+      ArrayRef<Value>({tPtr, oPointers.getResult(0)}));
+
+  return result;
+}
+
+CallOp callSwapIndices(OpBuilder &builder, ModuleOp &mod, Location loc,
+                       Value tensor, Value other) {
+  Value tPtr = castToPtr8(builder, mod, loc, tensor);
+  Value oPtr = castToPtr8(builder, mod, loc, other);
+  Type ptr8Type = oPtr.getType();
+
+  FlatSymbolRefAttr ptrFunc =
+      getFunc(mod, loc, "get_indices_ptr", ptr8Type, ptr8Type);
+  FlatSymbolRefAttr swapFunc =
+      getFunc(mod, loc, "swap_indices", TypeRange(), {ptr8Type, ptr8Type});
+  CallOp oIndices = builder.create<mlir::CallOp>(loc, ptrFunc, ptr8Type, oPtr);
+  CallOp result = builder.create<mlir::CallOp>(
+      loc, swapFunc, TypeRange(),
+      ArrayRef<Value>({tPtr, oIndices.getResult(0)}));
+
+  return result;
+}
+
+CallOp callSwapValues(OpBuilder &builder, ModuleOp &mod, Location loc,
+                      Value tensor, Value other) {
+  Value tPtr = castToPtr8(builder, mod, loc, tensor);
+  Value oPtr = castToPtr8(builder, mod, loc, other);
+  Type ptr8Type = oPtr.getType();
+
+  FlatSymbolRefAttr ptrFunc =
+      getFunc(mod, loc, "get_values_ptr", ptr8Type, ptr8Type);
+  FlatSymbolRefAttr swapFunc =
+      getFunc(mod, loc, "swap_values", TypeRange(), {ptr8Type, ptr8Type});
+  CallOp oValues = builder.create<mlir::CallOp>(loc, ptrFunc, ptr8Type, oPtr);
+  CallOp result = builder.create<mlir::CallOp>(
+      loc, swapFunc, TypeRange(),
+      ArrayRef<Value>({tPtr, oValues.getResult(0)}));
+
+  return result;
+}
+
 void cleanupIntermediateTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
                                Value tensor) {
   // Clean up sparse tensor unless it is returned by the function
@@ -413,7 +473,7 @@ void cleanupIntermediateTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
     }
     if (toDelete) {
       builder.setInsertionPoint(lastStatement);
-      callDelSparseTensor(builder, mod, loc, tensor);
+      builder.create<sparse_tensor::ReleaseOp>(loc, tensor);
     }
   }
 }
@@ -504,14 +564,15 @@ LogicalResult populateSemiringAdd(OpBuilder &builder, Location loc,
   /*Block *addIdentityBlock = */ builder.createBlock(addIdentityRegion, {}, {});
   if (addName == "plus" || addName == "any") {
     // Add identity
-    addIdentity =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<ConstantIntOp>(loc, 0, type.getWidth());
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return builder.create<ConstantFloatOp>(loc, APFloat(0.0), type);
-            });
+    addIdentity = llvm::TypeSwitch<Type, Value>(valueType)
+                      .Case<IntegerType>([&](IntegerType type) {
+                        return builder.create<arith::ConstantIntOp>(
+                            loc, 0, type.getWidth());
+                      })
+                      .Case<FloatType>([&](FloatType type) {
+                        return builder.create<arith::ConstantFloatOp>(
+                            loc, APFloat(0.0), type);
+                      });
   } else if (addName == "min") {
     addIdentity =
         llvm::TypeSwitch<Type, Value>(valueType)
@@ -542,24 +603,26 @@ LogicalResult populateSemiringAdd(OpBuilder &builder, Location loc,
   Value addResult;
   if (addName == "plus") {
     // Insert add operation
-    addResult =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<AddIOp>(loc, addBlockArg0, addBlockArg1);
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return builder.create<AddFOp>(loc, addBlockArg0, addBlockArg1);
-            });
-  } else if (addName == "min") {
-    Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+    addResult = llvm::TypeSwitch<Type, Value>(valueType)
                     .Case<IntegerType>([&](IntegerType type) {
-                      return builder.create<CmpIOp>(loc, CmpIPredicate::slt,
-                                                    addBlockArg0, addBlockArg1);
+                      return builder.create<arith::AddIOp>(loc, addBlockArg0,
+                                                           addBlockArg1);
                     })
                     .Case<FloatType>([&](FloatType type) {
-                      return builder.create<CmpFOp>(loc, CmpFPredicate::OLT,
-                                                    addBlockArg0, addBlockArg1);
+                      return builder.create<arith::AddFOp>(loc, addBlockArg0,
+                                                           addBlockArg1);
                     });
+  } else if (addName == "min") {
+    Value cmp =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<arith::CmpIOp>(
+                  loc, arith::CmpIPredicate::slt, addBlockArg0, addBlockArg1);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return builder.create<arith::CmpFOp>(
+                  loc, arith::CmpFPredicate::OLT, addBlockArg0, addBlockArg1);
+            });
     addResult = builder.create<SelectOp>(loc, cmp, addBlockArg0, addBlockArg1);
   } else if (addName == "any") {
     // Same as "second" for multiplicative op?
@@ -589,32 +652,35 @@ LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
   Value multResult;
 
   if (multiplyName == "pair") {
-    multResult =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<ConstantIntOp>(loc, 1, type.getWidth());
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return builder.create<ConstantFloatOp>(loc, APFloat(1.0), type);
-            });
+    multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                     .Case<IntegerType>([&](IntegerType type) {
+                       return builder.create<arith::ConstantIntOp>(
+                           loc, 1, type.getWidth());
+                     })
+                     .Case<FloatType>([&](FloatType type) {
+                       return builder.create<arith::ConstantFloatOp>(
+                           loc, APFloat(1.0), type);
+                     });
   } else if (multiplyName == "times") {
-    multResult =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<MulIOp>(loc, multBlockArg0, multBlockArg1);
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return builder.create<MulFOp>(loc, multBlockArg0, multBlockArg1);
-            });
+    multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                     .Case<IntegerType>([&](IntegerType type) {
+                       return builder.create<arith::MulIOp>(loc, multBlockArg0,
+                                                            multBlockArg1);
+                     })
+                     .Case<FloatType>([&](FloatType type) {
+                       return builder.create<arith::MulFOp>(loc, multBlockArg0,
+                                                            multBlockArg1);
+                     });
   } else if (multiplyName == "plus") {
-    multResult =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<AddIOp>(loc, multBlockArg0, multBlockArg1);
-            })
-            .Case<FloatType>([&](FloatType type) {
-              return builder.create<AddFOp>(loc, multBlockArg0, multBlockArg1);
-            });
+    multResult = llvm::TypeSwitch<Type, Value>(valueType)
+                     .Case<IntegerType>([&](IntegerType type) {
+                       return builder.create<arith::AddIOp>(loc, multBlockArg0,
+                                                            multBlockArg1);
+                     })
+                     .Case<FloatType>([&](FloatType type) {
+                       return builder.create<arith::AddFOp>(loc, multBlockArg0,
+                                                            multBlockArg1);
+                     });
   } else if (multiplyName == "first") {
     multResult = multBlockArg0;
   } else if (multiplyName == "second") {

@@ -15,9 +15,15 @@ class Algorithm:
         raise NotImplementedError("must override _build")
 
     def __call__(self, *args, **kwargs):
-        if self._cached is None:
-            self._cached = self.builder.compile()
-        return self._cached(*args, **kwargs)
+        compile_with_passes = kwargs.pop("compile_with_passes", None)
+        if compile_with_passes is None:
+            if self._cached is None:
+                self._cached = self.builder.compile()
+            return self._cached(*args, **kwargs)
+        else:
+            # custom build for testing, is not cached
+            func = self.builder.compile(passes=compile_with_passes)
+            return func(*args, **kwargs)
 
 
 def _build_common_aliases():
@@ -51,8 +57,8 @@ class TriangleCount(Algorithm):
 
         return irb
 
-    def __call__(self, A: MLIRSparseTensor) -> int:
-        return int(super().__call__(A))
+    def __call__(self, A: MLIRSparseTensor, **kwargs) -> int:
+        return int(super().__call__(A, **kwargs))
 
 
 triangle_count = TriangleCount()
@@ -77,7 +83,7 @@ class DenseNeuralNetwork(Algorithm):
             aliases=aliases,
         )
         weights, biases, Y, threshold = irb_inner.inputs
-        zero_f64 = irb_inner.constant(0.0, "f64")
+        zero_f64 = irb_inner.arith.constant(0.0, "f64")
         # Perform inference
         W_csc = irb_inner.graphblas.convert_layout(weights, "tensor<?x?xf64, #CSC64>")
         matmul_result = irb_inner.graphblas.matrix_multiply(Y, W_csc, "plus_times")
@@ -107,8 +113,8 @@ class DenseNeuralNetwork(Algorithm):
             aliases=aliases,
         )
         weight_list, bias_list, num_layers, Y_init, clamp_threshold = irb.inputs
-        c0 = irb.constant(0, "i64")
-        c1 = irb.constant(1, "i64")
+        c0 = irb.arith.constant(0, "i64")
+        c1 = irb.arith.constant(1, "i64")
 
         # Make a copy of Y_init for consistency of memory cleanup in the loop
         Y_init_dup = irb.graphblas.dup(Y_init)
@@ -146,7 +152,7 @@ class DenseNeuralNetwork(Algorithm):
             result_ptr8 = irb.util.tensor_to_ptr8(loop_result)
 
             # increment iterator vars
-            incremented_layer_index_i64 = irb.addi(layer_idx, c1)
+            incremented_layer_index_i64 = irb.arith.addi(layer_idx, c1)
             for_vars.yield_vars(result_ptr8, incremented_layer_index_i64)
 
         # One final cast from ptr8 to tensor
@@ -164,12 +170,13 @@ class DenseNeuralNetwork(Algorithm):
         Bias: List[MLIRSparseTensor],
         Y0: MLIRSparseTensor,
         ymax=32.0,
+        **kwargs,
     ) -> MLIRSparseTensor:
 
         if len(W) != len(Bias):
             raise TypeError(f"num_layers mismatch: {len(W)} != {len(Bias)}")
 
-        return super().__call__(W, Bias, len(W), Y0, ymax)
+        return super().__call__(W, Bias, len(W), Y0, ymax, **kwargs)
 
 
 dense_neural_network = DenseNeuralNetwork()
@@ -184,8 +191,8 @@ class SSSP(Algorithm):
             aliases=_build_common_aliases(),
         )
         (m, v) = irb.inputs
-        ctrue = irb.constant(1, "i1")
-        cfalse = irb.constant(0, "i1")
+        ctrue = irb.arith.constant(1, "i1")
+        cfalse = irb.arith.constant(0, "i1")
         m2 = irb.graphblas.convert_layout(m, "tensor<?x?xf64, #CSC64>")
         w = irb.graphblas.dup(v)
 
@@ -207,9 +214,9 @@ class SSSP(Algorithm):
         return irb
 
     def __call__(
-        self, graph: MLIRSparseTensor, vector: MLIRSparseTensor
+        self, graph: MLIRSparseTensor, vector: MLIRSparseTensor, **kwargs
     ) -> MLIRSparseTensor:
-        return super().__call__(graph, vector)
+        return super().__call__(graph, vector, **kwargs)
 
 
 sssp = SSSP()
@@ -224,8 +231,8 @@ class MSSP(Algorithm):
             aliases=_build_common_aliases(),
         )
         (m, v) = irb.inputs
-        ctrue = irb.constant(1, "i1")
-        cfalse = irb.constant(0, "i1")
+        ctrue = irb.arith.constant(1, "i1")
+        cfalse = irb.arith.constant(0, "i1")
         m2 = irb.graphblas.convert_layout(m, "tensor<?x?xf64, #CSC64>")
         w = irb.graphblas.dup(v)
 
@@ -247,9 +254,9 @@ class MSSP(Algorithm):
         return irb
 
     def __call__(
-        self, graph: MLIRSparseTensor, matrix: MLIRSparseTensor
+        self, graph: MLIRSparseTensor, matrix: MLIRSparseTensor, **kwargs
     ) -> MLIRSparseTensor:
-        return super().__call__(graph, matrix)
+        return super().__call__(graph, matrix, **kwargs)
 
 
 mssp = MSSP()
@@ -283,17 +290,22 @@ class BipartiteProjectAndFilter(Algorithm):
         return ir_builder
 
     def __call__(
-        self, graph: MLIRSparseTensor, keep_nodes: str = "row", cutoff=0.0
+        self, graph: MLIRSparseTensor, keep_nodes: str = "row", cutoff=0.0, **kwargs
     ) -> MLIRSparseTensor:
         if keep_nodes not in self.allowable_keep_nodes:
             raise ValueError(
                 f"Invalid keep_nodes argument: {keep_nodes}, must be one of {self.allowable_keep_nodes}"
             )
 
-        if keep_nodes not in self._cached:
-            self._cached[keep_nodes] = self.builder[keep_nodes].compile()
+        compile_with_passes = kwargs.pop("compile_with_passes", None)
+        if compile_with_passes is None:
+            if keep_nodes not in self._cached:
+                self._cached[keep_nodes] = self.builder[keep_nodes].compile()
 
-        return self._cached[keep_nodes](graph, cutoff)
+            return self._cached[keep_nodes](graph, cutoff)
+        else:
+            func = self.builder[keep_nodes].compile(passes=compile_with_passes)
+            return func(graph, cutoff, **kwargs)
 
 
 bipartite_project_and_filter = BipartiteProjectAndFilter()
@@ -313,16 +325,16 @@ class VertexNomination(Algorithm):
             mT, v, semiring="min_first", mask=v, mask_complement=True
         )
         result_64 = irb.graphblas.reduce_to_scalar(v2, "argmin")
-        result = irb.index_cast(result_64, "index")
+        result = irb.arith.index_cast(result_64, "index")
 
         irb.return_vars(result)
 
         return irb
 
     def __call__(
-        self, graph: MLIRSparseTensor, nodes_of_interest: MLIRSparseTensor
+        self, graph: MLIRSparseTensor, nodes_of_interest: MLIRSparseTensor, **kwargs
     ) -> int:
-        return super().__call__(graph, nodes_of_interest)
+        return super().__call__(graph, nodes_of_interest, **kwargs)
 
 
 vertex_nomination = VertexNomination()
@@ -342,12 +354,12 @@ class ScanStatistics(Algorithm):
         A_triangles = ir_builder.graphblas.matrix_multiply(A, L_T, "plus_pair", mask=A)
         tri = ir_builder.graphblas.reduce_to_vector(A_triangles, "plus", 1)
         answer_64 = ir_builder.graphblas.reduce_to_scalar(tri, "argmax")
-        answer = ir_builder.index_cast(answer_64, "index")
+        answer = ir_builder.arith.index_cast(answer_64, "index")
         ir_builder.return_vars(answer)
         return ir_builder
 
-    def __call__(self, graph: MLIRSparseTensor) -> int:
-        return super().__call__(graph)
+    def __call__(self, graph: MLIRSparseTensor, **kwargs) -> int:
+        return super().__call__(graph, **kwargs)
 
 
 scan_statistics = ScanStatistics()
@@ -364,14 +376,14 @@ class Pagerank(Algorithm):
         (A, var_damping, var_tol, var_maxiter) = irb.inputs
 
         nrows = irb.graphblas.num_rows(A)
-        nrows_i64 = irb.index_cast(nrows, "i64")
-        nrows_f64 = irb.sitofp(nrows_i64, "f64")
+        nrows_i64 = irb.arith.index_cast(nrows, "i64")
+        nrows_f64 = irb.arith.sitofp(nrows_i64, "f64")
 
-        c0 = irb.constant(0, "index")
-        c1 = irb.constant(1, "index")
-        cf1 = irb.constant(1.0, "f64")
-        teleport = irb.subf(cf1, var_damping)
-        teleport = irb.divf(teleport, nrows_f64)
+        c0 = irb.arith.constant(0, "index")
+        c1 = irb.arith.constant(1, "index")
+        cf1 = irb.arith.constant(1.0, "f64")
+        teleport = irb.arith.subf(cf1, var_damping)
+        teleport = irb.arith.divf(teleport, nrows_f64)
 
         row_degree = irb.graphblas.reduce_to_vector(A, "count", axis=1)
         # prescale row_degree with damping factor, so it isn't done each iteration
@@ -381,7 +393,7 @@ class Pagerank(Algorithm):
         r = irb.graphblas.dup(row_degree)
 
         # r = 1/nrows
-        nrows_inv = irb.divf(cf1, nrows_f64)
+        nrows_inv = irb.arith.divf(cf1, nrows_f64)
         starting = irb.graphblas.apply(r, "fill", right=nrows_inv)
         starting_ptr8 = irb.util.tensor_to_ptr8(starting)
 
@@ -398,7 +410,7 @@ class Pagerank(Algorithm):
                 (iter_count, c0),
             ],
         ) as for_vars:
-            converged = irb.cmpf(rdiff, var_tol, "olt")
+            converged = irb.arith.cmpf(rdiff, var_tol, "olt")
 
             if_block = irb.new_tuple(
                 f"{rdiff.type}", f"{prev_score_ptr8.type}", f"{iter_count.type}"
@@ -451,7 +463,7 @@ class Pagerank(Algorithm):
             # irb.util.del_sparse_tensor(prev_score)
 
             # Increment iteration count
-            new_iter_count = irb.addi(iter_count, c1)
+            new_iter_count = irb.arith.addi(iter_count, c1)
 
             # Yield
             new_score_ptr8 = irb.util.tensor_to_ptr8(new_score)
@@ -472,9 +484,9 @@ class Pagerank(Algorithm):
         return irb
 
     def __call__(
-        self, graph: MLIRSparseTensor, damping=0.85, tol=1e-6, *, maxiter=100
+        self, graph: MLIRSparseTensor, damping=0.85, tol=1e-6, *, maxiter=100, **kwargs
     ) -> MLIRSparseTensor:
-        return super().__call__(graph, damping, tol, maxiter)
+        return super().__call__(graph, damping, tol, maxiter, **kwargs)
 
 
 pagerank = Pagerank()
@@ -508,10 +520,10 @@ class GraphSearch(Algorithm):
         else:
             (A, nsteps, seeds) = irb.inputs
 
-        c0 = irb.constant(0, "index")
-        c1 = irb.constant(1, "index")
-        ci1 = irb.constant(1, "i64")
-        cf1 = irb.constant(1.0, "f64")
+        c0 = irb.arith.constant(0, "index")
+        c1 = irb.arith.constant(1, "index")
+        ci1 = irb.arith.constant(1, "i64")
+        cf1 = irb.arith.constant(1.0, "f64")
 
         # Create count vector
         ncols = irb.graphblas.num_cols(A)
@@ -519,7 +531,7 @@ class GraphSearch(Algorithm):
 
         # Create B matrix, sized (nseeds x ncols) with nnz=nseeds
         nseeds = irb.tensor.dim(seeds, c0)
-        nseeds_64 = irb.index_cast(nseeds, "i64")
+        nseeds_64 = irb.arith.index_cast(nseeds, "i64")
         B = irb.util.new_sparse_tensor("tensor<?x?xf64, #CSR64>", nseeds, ncols)
         Bptr8 = irb.util.tensor_to_ptr8(B)
         irb.util.resize_sparse_index(Bptr8, c1, nseeds)
@@ -532,7 +544,7 @@ class GraphSearch(Algorithm):
         # Populate B matrix based on initial seed
         with irb.for_loop(0, nseeds) as for_vars:
             seed_num = for_vars.iter_var_index
-            seed_num_64 = irb.index_cast(seed_num, "i64")
+            seed_num_64 = irb.arith.index_cast(seed_num, "i64")
             irb.memref.store(seed_num_64, Bp, seed_num)
             cur_node = irb.tensor.extract(seeds, seed_num)
             irb.memref.store(cur_node, Bi, seed_num)
@@ -564,6 +576,8 @@ class GraphSearch(Algorithm):
                     available_neighbors, method, axis=1
                 )
                 chosen_neighbors_idx = irb.sparse_tensor.values(chosen_neighbors)
+            # TODO: update this like RandomWalk, replacing B rather than updating
+            # TODO: this will require converting the "arg" vector results into a matrix
             # Update B inplace with new neighbors
             with irb.for_loop(0, nseeds) as inner_for:
                 inner_seed_num = inner_for.iter_var_index
@@ -585,6 +599,7 @@ class GraphSearch(Algorithm):
         method="random",
         *,
         rand_seed=None,
+        **kwargs,
     ) -> MLIRSparseTensor:
         if method not in self.allowable_methods:
             raise ValueError(
@@ -603,7 +618,145 @@ class GraphSearch(Algorithm):
         elif method == "random_weighted":
             extra.append(ChooseWeightedContext(rand_seed))
 
-        return self._cached[method](graph, num_steps, initial_seed_array, *extra)
+        return self._cached[method](
+            graph, num_steps, initial_seed_array, *extra, **kwargs
+        )
 
 
 graph_search = GraphSearch()
+
+
+class RandomWalk(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "graph_search",
+            input_types=[
+                "tensor<?x?xf64, #CSR64>",
+                "index",
+                "tensor<?xi64>",
+                "!llvm.ptr<i8>",
+            ],
+            return_types=["tensor<?x?xi64, #CSR64>"],
+            aliases=_build_common_aliases(),
+        )
+        (A, nsteps, walkers, ctx) = irb.inputs
+
+        c0 = irb.arith.constant(0, "index")
+        c1 = irb.arith.constant(1, "index")
+        ci1 = irb.arith.constant(1, "i64")
+        cf1 = irb.arith.constant(1.0, "f64")
+
+        # Create paths matrix, size (nwalkers x nsteps+1) with nnz=nwalkers
+        # Size the indices and values for a fully dense matrix. Trim later if early terminations occur.
+        nsteps_plus_1 = irb.arith.addi(nsteps, c1)
+        nwalkers = irb.tensor.dim(walkers, c0)
+        P = irb.util.new_sparse_tensor(
+            "tensor<?x?xi64, #CSC64>", nwalkers, nsteps_plus_1
+        )
+        Pptr8 = irb.util.tensor_to_ptr8(P)
+        max_possible_size = irb.arith.muli(nwalkers, nsteps_plus_1)
+        irb.util.resize_sparse_index(Pptr8, c1, max_possible_size)
+        irb.util.resize_sparse_values(Pptr8, max_possible_size)
+
+        Pp = irb.sparse_tensor.pointers(P, c1)
+        Pi = irb.sparse_tensor.indices(P, c1)
+        Px = irb.sparse_tensor.values(P)
+
+        # Create Frontier matrix, sized (nwalkers x ncols) with nnz=nwalkers
+        ncols = irb.graphblas.num_cols(A)
+        F = irb.util.new_sparse_tensor("tensor<?x?xf64, #CSR64>", nwalkers, ncols)
+        Fptr8 = irb.util.tensor_to_ptr8(F)
+        irb.util.resize_sparse_index(Fptr8, c1, nwalkers)
+        irb.util.resize_sparse_values(Fptr8, nwalkers)
+
+        Fp = irb.sparse_tensor.pointers(F, c1)
+        Fi = irb.sparse_tensor.indices(F, c1)
+        Fx = irb.sparse_tensor.values(F)
+
+        # Populate F and P matrices based on initial seed
+        with irb.for_loop(0, nwalkers) as for_vars:
+            seed_num = for_vars.iter_var_index
+            seed_num_64 = irb.arith.index_cast(seed_num, "i64")
+            irb.memref.store(seed_num_64, Fp, seed_num)
+            cur_node = irb.tensor.extract(walkers, seed_num)
+            irb.memref.store(cur_node, Fi, seed_num)
+            irb.memref.store(cf1, Fx, seed_num)
+            irb.memref.store(seed_num_64, Pi, seed_num)
+            irb.memref.store(cur_node, Px, seed_num)
+        nwalkers_64 = irb.arith.index_cast(nwalkers, "i64")
+        irb.memref.store(nwalkers_64, Fp, nwalkers)
+        irb.memref.store(nwalkers_64, Pp, c1)
+
+        # Convert layout of A
+        A_csc = irb.graphblas.convert_layout(A, "tensor<?x?xf64, #CSC64>")
+
+        # Perform graph search nsteps times
+        frontier_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        with irb.for_loop(
+            1, nsteps_plus_1, iter_vars=[(frontier_ptr8, Fptr8)]
+        ) as for_vars:
+            step_num = for_vars.iter_var_index
+            step_num_plus_1 = irb.arith.addi(step_num, c1)
+            frontier = irb.util.ptr8_to_tensor(frontier_ptr8, "tensor<?x?xf64, #CSR64>")
+
+            # Compute neighbors of current nodes
+            available_neighbors = irb.graphblas.matrix_multiply(
+                frontier, A_csc, semiring="min_second"
+            )
+            # Select new neighbors
+            chosen_neighbors = irb.graphblas.matrix_select_random(
+                available_neighbors, ci1, ctx, "choose_uniform"
+            )
+            chosen_neighbors_ptr8 = irb.util.tensor_to_ptr8(chosen_neighbors)
+            # Add new nodes to paths
+            new_indices = irb.graphblas.reduce_to_vector(
+                chosen_neighbors, aggregator="argmin", axis=1
+            )
+            NIp = irb.sparse_tensor.pointers(new_indices, c0)
+            NIi = irb.sparse_tensor.indices(new_indices, c0)
+            NIx = irb.sparse_tensor.values(new_indices)
+            num_new_indices_64 = irb.memref.load(NIp, c1)
+            num_new_indices = irb.arith.index_cast(num_new_indices_64, "index")
+            cur_nnz_64 = irb.memref.load(Pp, step_num)
+            cur_nnz = irb.arith.index_cast(cur_nnz_64, "index")
+            new_nnz = irb.arith.addi(cur_nnz, num_new_indices)
+            with irb.for_loop(0, num_new_indices) as ni_for:
+                ni_pos = ni_for.iter_var_index
+                ni_offset_pos = irb.arith.addi(cur_nnz, ni_pos)
+                ni_index = irb.memref.load(NIi, ni_pos)
+                ni_value = irb.memref.load(NIx, ni_pos)
+                irb.memref.store(ni_index, Pi, ni_offset_pos)
+                irb.memref.store(ni_value, Px, ni_offset_pos)
+            new_nnz_64 = irb.arith.index_cast(new_nnz, "i64")
+            irb.memref.store(new_nnz_64, Pp, step_num_plus_1)
+            for_vars.yield_vars(chosen_neighbors_ptr8)
+
+        # Trim indices and values
+        final_nnz_64 = irb.memref.load(Pp, nsteps_plus_1)
+        final_nnz = irb.arith.index_cast(final_nnz_64, "index")
+        irb.util.resize_sparse_index(Pptr8, c1, final_nnz)
+        irb.util.resize_sparse_values(Pptr8, final_nnz)
+
+        # Convert from CSC to CSR
+        output = irb.sparse_tensor.convert(P, "tensor<?x?xi64, #CSR64>")
+
+        irb.return_vars(output)
+
+        return irb
+
+    def __call__(
+        self,
+        graph: MLIRSparseTensor,
+        num_steps,
+        initial_walkers,
+        *,
+        rand_seed=None,
+        **kwargs,
+    ) -> MLIRSparseTensor:
+        ctx = ChooseUniformContext(rand_seed)
+        if not isinstance(initial_walkers, np.ndarray):
+            initial_walkers = np.array(initial_walkers, dtype=np.int64)
+        return super().__call__(graph, num_steps, initial_walkers, ctx, **kwargs)
+
+
+random_walk = RandomWalk()

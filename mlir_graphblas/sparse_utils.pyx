@@ -2,6 +2,7 @@
 
 cimport cython
 import numpy as np
+import scipy.sparse as ss
 cimport numpy as np
 from libc.stdint cimport int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t, uintptr_t
 from libc.stdlib cimport malloc, free
@@ -80,7 +81,7 @@ cdef extern from "SparseUtils.cpp" nogil:
         # SparseTensorStorage(SparseTensorStorage[P, I, V]&) except +  # HACKED IN
         # SparseTensorStorage(vector[uint64_t]&, vector[P]&, vector[I]&, vector[V]&) except +  # HACKED IN
 
-        SparseTensorStorage(SparseTensorCOO *, uint8_t *, uint64_t *) except +
+        SparseTensorStorage(const vector[uint64_t], const uint64_t *, const uint8_t *, SparseTensorCOO[V] *) except +
         uint64_t getRank() const
         uint64_t getDimSize(uint64_t d)
         void getPointers(vector[P] **, uint64_t)
@@ -119,6 +120,7 @@ cdef extern from "SparseUtils.cpp" nogil:
 
     # HACKED IN
     uint64_t get_rank(void *tensor)
+    bool verify(void *tensor)
 
     # These return pointers to the vectors
     void *get_rev_ptr(void *)
@@ -140,7 +142,7 @@ cdef extern from "SparseUtils.cpp" nogil:
 
     void *dup_tensor(void *tensor)
     void *empty_like(void *tensor)
-    void *empty(void *tensor, uint64_t ndims)
+    # void *empty(void *tensor, uint64_t ndims)
 
     # All combinations of types to !llvm.ptr<i8>
     void *matrix_csr_f64_p64i64_to_ptr8(void *tensor)
@@ -362,15 +364,15 @@ cpdef empty_mlir_sparse_tensor_safe(uint64_t[:] sizes, uint8_t[:] sparsity, uint
         if pointer_type_num == np.NPY_UINT8:
             if index_type_num == np.NPY_UINT8:
                 if value_type_num == np.NPY_FLOAT32:
-                    data = (new SparseTensorStorage[uint8_t, uint8_t, float32_t](tensor_float32, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint8_t, uint8_t, float32_t](sizes_vector, perm_ptr, sparsity_array, tensor_float32))
                 elif value_type_num == np.NPY_FLOAT64:
-                    data = (new SparseTensorStorage[uint8_t, uint8_t, float64_t](tensor_float64, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint8_t, uint8_t, float64_t](sizes_vector, perm_ptr, sparsity_array, tensor_float64))
                 elif value_type_num == np.NPY_INT8:
-                    data = (new SparseTensorStorage[uint8_t, uint8_t, int8_t](tensor_int8, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint8_t, uint8_t, int8_t](sizes_vector, perm_ptr, sparsity_array, tensor_int8))
                 elif value_type_num == np.NPY_INT16:
-                    data = (new SparseTensorStorage[uint8_t, uint8_t, int16_t](tensor_int16, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint8_t, uint8_t, int16_t](sizes_vector, perm_ptr, sparsity_array, tensor_int16))
                 elif value_type_num == np.NPY_INT32:
-                    data = (new SparseTensorStorage[uint8_t, uint8_t, int32_t](tensor_int32, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint8_t, uint8_t, int32_t](sizes_vector, perm_ptr, sparsity_array, tensor_int32))
                 else:
                     raise TypeError(f"Invalid type combo for pointers, indices, and values: {pointer_dtype}, {index_dtype}, {value_dtype}")
             else:
@@ -378,15 +380,15 @@ cpdef empty_mlir_sparse_tensor_safe(uint64_t[:] sizes, uint8_t[:] sparsity, uint
         elif pointer_type_num == np.NPY_UINT16:
             if index_type_num == np.NPY_UINT16:
                 if value_type_num == np.NPY_FLOAT32:
-                    data = (new SparseTensorStorage[uint16_t, uint16_t, float32_t](tensor_float32, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint16_t, uint16_t, float32_t](sizes_vector, perm_ptr, sparsity_array, tensor_float32))
                 elif value_type_num == np.NPY_FLOAT64:
-                    data = (new SparseTensorStorage[uint16_t, uint16_t, float64_t](tensor_float64, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint16_t, uint16_t, float64_t](sizes_vector, perm_ptr, sparsity_array, tensor_float64))
                 elif value_type_num == np.NPY_INT8:
-                    data = (new SparseTensorStorage[uint16_t, uint16_t, int8_t](tensor_int8, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint16_t, uint16_t, int8_t](sizes_vector, perm_ptr, sparsity_array, tensor_int8))
                 elif value_type_num == np.NPY_INT16:
-                    data = (new SparseTensorStorage[uint16_t, uint16_t, int16_t](tensor_int16, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint16_t, uint16_t, int16_t](sizes_vector, perm_ptr, sparsity_array, tensor_int16))
                 elif value_type_num == np.NPY_INT32:
-                    data = (new SparseTensorStorage[uint16_t, uint16_t, int32_t](tensor_int32, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint16_t, uint16_t, int32_t](sizes_vector, perm_ptr, sparsity_array, tensor_int32))
                 else:
                     raise TypeError(f"Invalid type combo for pointers, indices, and values: {pointer_dtype}, {index_dtype}, {value_dtype}")
             else:
@@ -394,22 +396,22 @@ cpdef empty_mlir_sparse_tensor_safe(uint64_t[:] sizes, uint8_t[:] sparsity, uint
         elif pointer_type_num == np.NPY_UINT32:
             if index_type_num == np.NPY_UINT32:
                 if value_type_num == np.NPY_FLOAT32:
-                    data = (new SparseTensorStorage[uint32_t, uint32_t, float32_t](tensor_float32, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint32_t, uint32_t, float32_t](sizes_vector, perm_ptr, sparsity_array, tensor_float32))
                 elif value_type_num == np.NPY_FLOAT64:
-                    data = (new SparseTensorStorage[uint32_t, uint32_t, float64_t](tensor_float64, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint32_t, uint32_t, float64_t](sizes_vector, perm_ptr, sparsity_array, tensor_float64))
                 elif value_type_num == np.NPY_INT8:
-                    data = (new SparseTensorStorage[uint32_t, uint32_t, int8_t](tensor_int8, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint32_t, uint32_t, int8_t](sizes_vector, perm_ptr, sparsity_array, tensor_int8))
                 elif value_type_num == np.NPY_INT16:
-                    data = (new SparseTensorStorage[uint32_t, uint32_t, int16_t](tensor_int16, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint32_t, uint32_t, int16_t](sizes_vector, perm_ptr, sparsity_array, tensor_int16))
                 elif value_type_num == np.NPY_INT32:
-                    data = (new SparseTensorStorage[uint32_t, uint32_t, int32_t](tensor_int32, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint32_t, uint32_t, int32_t](sizes_vector, perm_ptr, sparsity_array, tensor_int32))
                 else:
                     raise TypeError(f"Invalid type combo for pointers, indices, and values: {pointer_dtype}, {index_dtype}, {value_dtype}")
             elif index_type_num == np.NPY_UINT64:
                 if value_type_num == np.NPY_FLOAT32:
-                    data = (new SparseTensorStorage[uint32_t, uint64_t, float32_t](tensor_float32, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint32_t, uint64_t, float32_t](sizes_vector, perm_ptr, sparsity_array, tensor_float32))
                 elif value_type_num == np.NPY_FLOAT64:
-                    data = (new SparseTensorStorage[uint32_t, uint64_t, float64_t](tensor_float64, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint32_t, uint64_t, float64_t](sizes_vector, perm_ptr, sparsity_array, tensor_float64))
                 else:
                     raise TypeError(f"Invalid type combo for pointers, indices, and values: {pointer_dtype}, {index_dtype}, {value_dtype}")
             else:
@@ -417,16 +419,16 @@ cpdef empty_mlir_sparse_tensor_safe(uint64_t[:] sizes, uint8_t[:] sparsity, uint
         elif pointer_type_num == np.NPY_UINT64:
             if index_type_num == np.NPY_UINT32:
                 if value_type_num == np.NPY_FLOAT32:
-                    data = (new SparseTensorStorage[uint64_t, uint32_t, float32_t](tensor_float32, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint64_t, uint32_t, float32_t](sizes_vector, perm_ptr, sparsity_array, tensor_float32))
                 elif value_type_num == np.NPY_FLOAT64:
-                    data = (new SparseTensorStorage[uint64_t, uint32_t, float64_t](tensor_float64, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint64_t, uint32_t, float64_t](sizes_vector, perm_ptr, sparsity_array, tensor_float64))
                 else:
                     raise TypeError(f"Invalid type combo for pointers, indices, and values: {pointer_dtype}, {index_dtype}, {value_dtype}")
             elif index_type_num == np.NPY_UINT64:
                 if value_type_num == np.NPY_FLOAT32:
-                    data = (new SparseTensorStorage[uint64_t, uint64_t, float32_t](tensor_float32, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint64_t, uint64_t, float32_t](sizes_vector, perm_ptr, sparsity_array, tensor_float32))
                 elif value_type_num == np.NPY_FLOAT64:
-                    data = (new SparseTensorStorage[uint64_t, uint64_t, float64_t](tensor_float64, sparsity_array, perm_ptr))
+                    data = (new SparseTensorStorage[uint64_t, uint64_t, float64_t](sizes_vector, perm_ptr, sparsity_array, tensor_float64))
                 else:
                     raise TypeError(f"Invalid type combo for pointers, indices, and values: {pointer_dtype}, {index_dtype}, {value_dtype}")
             else:
@@ -478,6 +480,9 @@ cdef class MLIRSparseTensor:
                 if values.dtype.type not in {np.int8, np.int16, np.int32, np.int64, np.float32, np.float64}:
                     raise TypeError("Bad dtype for values: %s.  int{8,16,32,64} or float{32,64} expected." % values.dtype)
             raise
+
+    def verify(self):
+        return verify(self._data)
 
     def __dealloc__(self):
         delSparseTensor(self._data)
@@ -549,6 +554,32 @@ cdef class MLIRSparseTensor:
             rv[i] = pointer.size != 0
         return rv
 
+    def toarray(self):
+        """Assumes missing values are zero."""
+        dense_array = None
+        if np.all(self.sparsity == np.array([1])):  # sparse vector
+            (vec_length,) = self.shape
+            dense_array = np.zeros(vec_length, dtype=self.values.dtype)
+            dense_array[self.indices] = self.values
+        elif np.all(self.sparsity == np.array([0, 1])):  # sparse matrix
+            if np.all(self.rev == np.array([0, 1])):  # CSR matrix
+                dense_array = ss.csr_matrix(
+                    (self.values, self.indices[1], self.pointers[1]),
+                    shape=self.shape,
+                ).toarray()
+            elif np.all(self.rev == np.array([1, 0])):  # CSC matrix
+                dense_array = ss.csc_matrix(
+                    (self.values, self.indices[1], self.pointers[1]),
+                    shape=self.shape,
+                ).toarray()
+
+        if dense_array is None:
+            raise NotImplementedError(
+                "Conversion to dense array for given sparsity, index map, and rank not yet supported"
+            )
+
+        return dense_array
+    
     cpdef ndarray get_indices(self, uint64_t d):
         cdef StridedMemRefType[uint8_t, one] ref8
         cdef StridedMemRefType[uint16_t, one] ref16
@@ -663,14 +694,14 @@ cdef class MLIRSparseTensor:
         rv.value_dtype = self.value_dtype
         return rv
 
-    cpdef MLIRSparseTensor empty(self, uint64_t ndims):
-        cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
-        rv._data = empty(self._data, ndims)
-        rv.ndim = self.ndim
-        rv.pointer_dtype = self.pointer_dtype
-        rv.index_dtype = self.index_dtype
-        rv.value_dtype = self.value_dtype
-        return rv
+    # cpdef MLIRSparseTensor empty(self, uint64_t ndims):
+    #     cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
+    #     rv._data = empty(self._data, ndims)
+    #     rv.ndim = self.ndim
+    #     rv.pointer_dtype = self.pointer_dtype
+    #     rv.index_dtype = self.index_dtype
+    #     rv.value_dtype = self.value_dtype
+    #     return rv
 
 
 # Use this to create `vector[vector[uint64_t]*]`, which isn't supported syntax
@@ -738,13 +769,13 @@ def _build_sparse_tensor(
         perm = np.arange(D, dtype=np.uint64)
     cdef uint64_t *perm_ptr = &perm[0]
     if pointer_type_num == np.NPY_UINT8:
-        self._data = (new SparseTensorStorage[uint8_t, st_index_t, st_value_t](tensor, sparsity_array, perm_ptr))
+        self._data = (new SparseTensorStorage[uint8_t, st_index_t, st_value_t](sizes_vector, perm_ptr, sparsity_array, tensor))
     elif pointer_type_num == np.NPY_UINT16:
-        self._data = (new SparseTensorStorage[uint16_t, st_index_t, st_value_t](tensor, sparsity_array, perm_ptr))
+        self._data = (new SparseTensorStorage[uint16_t, st_index_t, st_value_t](sizes_vector, perm_ptr, sparsity_array, tensor))
     elif pointer_type_num == np.NPY_UINT32:
-        self._data = (new SparseTensorStorage[uint32_t, st_index_t, st_value_t](tensor, sparsity_array, perm_ptr))
+        self._data = (new SparseTensorStorage[uint32_t, st_index_t, st_value_t](sizes_vector, perm_ptr, sparsity_array, tensor))
     else:
-        self._data = (new SparseTensorStorage[uint64_t, st_index_t, st_value_t](tensor, sparsity_array, perm_ptr))
+        self._data = (new SparseTensorStorage[uint64_t, st_index_t, st_value_t](sizes_vector, perm_ptr, sparsity_array, tensor))
 
     free(sparsity_array)
     del tensor
