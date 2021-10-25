@@ -1153,7 +1153,7 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
     intersect = true;
 
   // Types
-  RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
+  RankedTensorType outputType = output.getType().cast<RankedTensorType>();
   Type indexType = rewriter.getIndexType();
   Type boolType = rewriter.getI1Type();
   Type int64Type = rewriter.getIntegerType(64);
@@ -1167,8 +1167,15 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
   Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
   Value ci0 = rewriter.create<arith::ConstantIntOp>(loc, 0, int64Type);
 
-  Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, output);
-  Value ncols = rewriter.create<graphblas::NumColsOp>(loc, output);
+  Value nrows, ncols;
+  if (hasRowOrdering(outputType)) {
+    nrows = rewriter.create<graphblas::NumRowsOp>(loc, output);
+    ncols = rewriter.create<graphblas::NumColsOp>(loc, output);
+  } else {
+    // Swap nrows and ncols so logic works
+    ncols = rewriter.create<graphblas::NumRowsOp>(loc, output);
+    nrows = rewriter.create<graphblas::NumColsOp>(loc, output);
+  }
 
   // Get sparse tensor info
   Value Lp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type,

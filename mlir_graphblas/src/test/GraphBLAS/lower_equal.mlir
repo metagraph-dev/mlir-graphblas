@@ -22,14 +22,14 @@
 
 module {
   func @entry() {
-    %c2 = constant 2 : index
-    %cf22 = constant 22.0 : f64
+    %c2 = arith.constant 2 : index
+    %cf22 = arith.constant 22.0 : f64
 
     ///////////////
     // Test Matrix
     ///////////////
 
-    %m = constant dense<[
+    %m = arith.constant dense<[
       [ 1.0,  0.0,  2.0,  0.0,  0.0,  0.0,  0.0,  3.0],
       [ 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0],
       [ 0.0,  0.0,  4.0,  0.0,  0.0,  0.0,  0.0,  0.0],
@@ -84,13 +84,13 @@ module {
     // Test Vector
     ///////////////
 
-    %v = constant dense<
+    %v = arith.constant dense<
       [ 1.0,  2.0,  0.0, 0.0, -4.0, 0.0, 0.0, 0.0 ]
     > : tensor<8xf64>
     %v_fixed_cv = sparse_tensor.convert %v : tensor<8xf64> to tensor<8xf64, #CV64>
     %v_cv = sparse_tensor.convert %v : tensor<8xf64> to tensor<?xf64, #CV64>
 
-    %v2 = constant dense<
+    %v2 = arith.constant dense<
       [ 1.0, 2.0, 0.0, 3.0]
     > : tensor<4xf64>
     %v2_cv = sparse_tensor.convert %v2 : tensor<4xf64> to tensor<?xf64, #CV64>
