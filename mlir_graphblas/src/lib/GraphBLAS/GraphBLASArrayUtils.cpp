@@ -55,9 +55,9 @@ ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
   {
     rewriter.setInsertionPointToStart(if_empty_row.elseBlock());
     Value startIndex64 =
-      rewriter.create<memref::LoadOp>(loc, maskIndices, maskStart);
+        rewriter.create<memref::LoadOp>(loc, maskIndices, maskStart);
     Value startIndex =
-      rewriter.create<arith::IndexCastOp>(loc, startIndex64, indexType);
+        rewriter.create<arith::IndexCastOp>(loc, startIndex64, indexType);
     rewriter.create<scf::YieldOp>(loc, startIndex);
     rewriter.setInsertionPointAfter(if_empty_row);
   }
@@ -1204,7 +1204,7 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
   Value RcmpColSame = rewriter.create<arith::CmpIOp>(
       loc, arith::CmpIPredicate::eq, rhsColStart64, rhsColEnd64);
   Value emptyRow;
-  if (isMaskComplement){
+  if (isMaskComplement) {
     emptyRow = cfalse;
   } else if (intersect) {
     emptyRow = rewriter.create<arith::OrIOp>(loc, LcmpColSame, RcmpColSame);
@@ -1236,11 +1236,13 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
         buildMaskComplement(rewriter, loc, ncols, Ri, rhsColStart, rhsColEnd);
     Value maskComplement = results[0];
     Value maskComplementSize = results[1];
-    unionSize = computeIndexOverlapSize(rewriter, loc, true, lhsColStart, lhsColEnd, Li, c0,
-                                        maskComplementSize, maskComplement);
+    unionSize =
+        computeIndexOverlapSize(rewriter, loc, true, lhsColStart, lhsColEnd, Li,
+                                c0, maskComplementSize, maskComplement);
   } else {
-    unionSize = computeIndexOverlapSize(rewriter, loc, intersect, lhsColStart, lhsColEnd,
-                                        Li, rhsColStart, rhsColEnd, Ri);
+    unionSize =
+        computeIndexOverlapSize(rewriter, loc, intersect, lhsColStart,
+                                lhsColEnd, Li, rhsColStart, rhsColEnd, Ri);
   }
 
   Value unionSize64 =
@@ -1313,10 +1315,11 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
   rhsColEnd = rewriter.create<arith::IndexCastOp>(loc, rhsColEnd64, indexType);
 
   if (op == "mask") {
-    applyMask(rewriter, loc, valueType, lhsColStart, lhsColEnd, Li, Lx, rhsColStart, rhsColEnd,
-              Ri, OcolStart, Oi, Ox);
+    applyMask(rewriter, loc, valueType, lhsColStart, lhsColEnd, Li, Lx,
+              rhsColStart, rhsColEnd, Ri, OcolStart, Oi, Ox);
   } else if (isMaskComplement) {
-    // Need to recompute maskComplement because previous use was inside a different loop
+    // Need to recompute maskComplement because previous use was inside a
+    // different loop
     ValueRange results =
         buildMaskComplement(rewriter, loc, ncols, Ri, rhsColStart, rhsColEnd);
     Value maskComplement = results[0];
@@ -1324,8 +1327,9 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
     applyMask(rewriter, loc, valueType, lhsColStart, lhsColEnd, Li, Lx, c0,
               maskComplementSize, maskComplement, OcolStart, Oi, Ox);
   } else {
-    computeUnionAggregation(rewriter, loc, intersect, op, valueType, lhsColStart, lhsColEnd,
-                            Li, Lx, rhsColStart, rhsColEnd, Ri, Rx, OcolStart, Oi, Ox);
+    computeUnionAggregation(rewriter, loc, intersect, op, valueType,
+                            lhsColStart, lhsColEnd, Li, Lx, rhsColStart,
+                            rhsColEnd, Ri, Rx, OcolStart, Oi, Ox);
   }
 
   // end if cmpDiff
