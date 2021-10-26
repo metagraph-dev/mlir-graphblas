@@ -17,21 +17,40 @@ from lit.llvm.subst import FindTool
 
 def _build_graphblas_exec():
     from mlir_graphblas.engine import EXTERNAL_LIBS
-    ex = ["graphblas-opt", "--graphblas-structuralize", "--graphblas-optimize", "--graphblas-lower",
-          "--sparsification", "--sparse-tensor-conversion", "--linalg-bufferize", "--convert-scf-to-std",
-          "--func-bufferize", "--tensor-constant-bufferize", "--tensor-bufferize",
-          "--finalizing-bufferize", "--convert-linalg-to-loops", "--convert-scf-to-std",
-          "--convert-vector-to-llvm", "--convert-memref-to-llvm", "--convert-std-to-llvm",
-          "--reconcile-unrealized-casts",
-          "|", "mlir-cpu-runner"]
+
+    ex = [
+        "graphblas-opt",
+        "--graphblas-structuralize",
+        "--graphblas-optimize",
+        "--graphblas-lower",
+        "--sparsification",
+        "--sparse-tensor-conversion",
+        "--linalg-bufferize",
+        "--convert-scf-to-std",
+        "--func-bufferize",
+        "--tensor-constant-bufferize",
+        "--tensor-bufferize",
+        "--finalizing-bufferize",
+        "--convert-linalg-to-loops",
+        "--convert-scf-to-std",
+        "--convert-vector-to-llvm",
+        "--convert-memref-to-llvm",
+        "--convert-std-to-llvm",
+        "--reconcile-unrealized-casts",
+        "|",
+        "mlir-cpu-runner",
+    ]
     for ext_lib in EXTERNAL_LIBS:
         ex.append(f"-shared-libs={ext_lib}")
     conda_dir = os.environ["CONDA_PREFIX"]
-    ex.append(f"-shared-libs={conda_dir}/lib/libmlir_c_runner_utils{config.llvm_shlib_ext}")
+    ex.append(
+        f"-shared-libs={conda_dir}/lib/libmlir_c_runner_utils{config.llvm_shlib_ext}"
+    )
     ex.append("-entry-point-result=void")
     # This comes last because the name of the function to run comes after `graphblas-exec`
     ex.append("-e")
     return " ".join(ex)
+
 
 # Configuration file for the 'lit' test runner.
 
