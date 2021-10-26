@@ -166,18 +166,6 @@ cdef extern from "SparseUtils.cpp" nogil:
     void *ptr8_to_vector_i64_p64i64(void *tensor)
     void *ptr8_to_vector_i32_p64i64(void *tensor)
 
-    # Typed constructors
-    void *new_matrix_csr_f64_p64i64(uint64_t nrows, uint64_t ncols)
-    void *new_matrix_csr_f32_p64i64(uint64_t nrows, uint64_t ncols)
-    void *new_matrix_csr_i64_p64i64(uint64_t nrows, uint64_t ncols)
-    void *new_matrix_csc_f64_p64i64(uint64_t nrows, uint64_t ncols)
-    void *new_matrix_csc_f32_p64i64(uint64_t nrows, uint64_t ncols)
-    void *new_matrix_csc_i64_p64i64(uint64_t nrows, uint64_t ncols)
-    void *new_vector_f64_p64i64(uint64_t size)
-    void *new_vector_f32_p64i64(uint64_t size)
-    void *new_vector_i64_p64i64(uint64_t size)
-    void *new_vector_i32_p64i64(uint64_t size)
-
 
 # st for "sparse tensor"
 ctypedef fused st_index_t:
