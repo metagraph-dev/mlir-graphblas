@@ -668,41 +668,6 @@ public:
       return success();
     }
 
-    // TODO: why is this code here? We need a higher level strategy to either
-    // reject sparse tensors
-    // TODO:   with hardcoded shape or to automatically convert them to "?" for
-    // every graphblas op
-    // TODO:   as part of the structuralize passes
-    /*if (matrixShape[0] != -1 || matrixShape[1] != -1) {
-      // TODO consider moving this out to its own rewrite pattern
-
-      // TODO this casting doesn't actually safely lower down to the LLVM
-      // dialect since it doesn't survive the --sparse-tensor-conversion pass
-
-      static const ArrayRef<int64_t> newMatrixShape = {-1, -1};
-      RankedTensorType newMatrixType =
-          matrixTypeIsCSR
-              ? getCSRTensorType(context, newMatrixShape, elementType)
-              : getCSCTensorType(context, newMatrixShape, elementType);
-
-      Value castMatrix =
-          rewriter.create<tensor::CastOp>(loc, newMatrixType, matrix);
-
-      static const ArrayRef<int64_t> newVectorShape = {-1};
-      Type resultVectorType =
-          getCompressedVectorType(context, newVectorShape, elementType);
-      Value resultVector = rewriter.create<graphblas::ReduceToVectorOp>(
-          loc, resultVectorType, castMatrix, aggregator, axis);
-
-      Type originalVectorType = op->getResultTypes().front();
-      Value castVector = rewriter.create<tensor::CastOp>(
-          loc, originalVectorType, resultVector);
-
-      rewriter.replaceOp(op, castVector);
-
-      return success();
-    }*/
-
     Type indexType = rewriter.getIndexType();
     Type int64Type = rewriter.getIntegerType(64);
 
@@ -1744,8 +1709,6 @@ private:
     // 2nd pass
     //   Compute the cumsum of values in Cp to build the final Cp
     //   Then resize C's indices and values
-    //   The rows in A are the fixed elements, while the columns of B are the
-    //   iteration element
     scf::ForOp rowLoop2 = rewriter.create<scf::ForOp>(loc, c0, nrow, c1);
     Value cs_i = rowLoop2.getInductionVar();
     rewriter.setInsertionPointToStart(rowLoop2.getBody());
@@ -1771,6 +1734,8 @@ private:
     //   In parallel over the rows,
     //   compute the nonzero columns and associated values.
     //   Store in Cj and Cx
+    //   The rows in A are the fixed elements, while the columns of B are the
+    //   iteration element
     scf::ParallelOp rowLoop3 =
         rewriter.create<scf::ParallelOp>(loc, c0, nrow, c1);
     row = rowLoop3.getInductionVars().front();
@@ -2594,94 +2559,103 @@ public:
       accumulateString = accumulateOperator->str();
     }
     Value mask = op.mask();
-    // bool maskComplement = op.mask_complement();
+    bool maskComplement = op.mask_complement();
     bool replace = op.replace();
 
     // Types
     RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
 
     unsigned rank = outputType.getRank(); // ranks guaranteed to be equal
+    auto computeEwise =
+        rank == 2 ? computeMatrixElementWise : computeVectorElementWise;
 
-    if (rank == 2) {
-      if (accumulateOperator) {
-        if (mask) {
-          if (replace) {
-            // input -> output(mask) { accumulate, replace }
-            return op.emitError(
-                "Update with mask+accumulate+replace is not supported yet");
-          } else {
-            // input -> output(mask) { accumulate }
-            return op.emitError(
-                "Update with mask+accumulate is not supported yet");
-          }
+    if (accumulateOperator) {
+      if (mask) {
+        auto maskString = (maskComplement ? "mask_complement" : "mask");
+        if (replace) {
+          // input -> output(mask) { accumulate, replace }
+
+          // Step 1: apply the mask to the output
+          Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
+          computeEwise(rewriter, loc, module, output, mask, maskedOutput,
+                       maskString, true);
+          // Step 2: apply the mask to the input
+          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+          computeEwise(rewriter, loc, module, input, mask, maskedInput,
+                       maskString, true);
+          // Step 3: union the two masked results
+          computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
+                       accumulateString,
+                       /* intersect */ false);
+          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
+          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
         } else {
-          // input -> output { accumulate, replace? }
-          Value temp = callDupTensor(rewriter, module, loc, output);
-          computeMatrixElementWise(rewriter, loc, module, input, temp, output,
-                                   accumulateString, /* intersect */ false);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, temp);
+          // input -> output(mask) { accumulate }
+
+          // Step 1: apply the mask to the input
+          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+          computeEwise(rewriter, loc, module, input, mask, maskedInput,
+                       maskString, true);
+          // Step 2: union the two masked results
+          Value outputCopy = callDupTensor(rewriter, module, loc, output);
+          computeEwise(rewriter, loc, module, maskedInput, outputCopy, output,
+                       accumulateString,
+                       /* intersect */ false);
+          rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
+          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
         }
       } else {
-        if (mask) {
-          if (replace) {
-            // input -> output(mask) { replace }
-            // Inefficient; caller should apply mask when input is created
-            return op.emitError(
-                "Update with mask+replace is not supported yet");
-          } else {
-            // input -> output(mask)
-            // Merges input into output
-            return op.emitError(
-                "Update with mask and no accumulator is not supported yet");
-          }
-        } else {
-          // input -> output { replace? }
-          // Sort of pointless; caller should simply use input or call
-          // graphblas.dup if they want a copy
-          return op.emitError(
-              "Update with no accumulator or mask is not supported yet");
-        }
+        // input -> output { accumulate, replace? }
+
+        Value outputCopy = callDupTensor(rewriter, module, loc, output);
+        computeEwise(rewriter, loc, module, input, outputCopy, output,
+                     accumulateString, /* intersect */ false);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
       }
     } else {
-      // Vector past this point
-      if (accumulateOperator) {
-        if (mask) {
-          if (replace) {
-            // input -> output(mask) { accumulate, replace }
-            return op.emitError(
-                "Update with mask+accumulate+replace is not supported yet");
-          } else {
-            // input -> output(mask) { accumulate }
-            return op.emitError(
-                "Update with mask+accumulate is not supported yet");
-          }
+      if (mask) {
+        auto maskString = (maskComplement ? "mask_complement" : "mask");
+        if (replace) {
+          // input -> output(mask) { replace }
+
+          // Step 1: apply the mask to the input
+          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+          computeEwise(rewriter, loc, module, input, mask, maskedInput,
+                       maskString, true);
+          // Step 2: swap masked input with output
+          callSwapPointers(rewriter, module, loc, maskedInput, output);
+          callSwapIndices(rewriter, module, loc, maskedInput, output);
+          callSwapValues(rewriter, module, loc, maskedInput, output);
+          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
         } else {
-          // input -> output { accumulate, replace? }
-          Value temp = callDupTensor(rewriter, module, loc, output);
-          computeVectorElementWise(rewriter, loc, module, input, temp, output,
-                                   accumulateString, /* intersect */ false);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, temp);
+          // input -> output(mask)
+
+          // Step 1: apply the mask inverse to the output
+          auto maskInverseString =
+              (maskComplement ? "mask" : "mask_complement");
+          Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
+          computeEwise(rewriter, loc, module, output, mask, maskedOutput,
+                       maskInverseString, true);
+          // Step 2: apply the mask to the input
+          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+          computeEwise(rewriter, loc, module, input, mask, maskedInput,
+                       maskString, true);
+          // Step 3: union the two masked results
+          computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
+                       "plus", // Overlaps should never occur, so this choice
+                               // doesn't matter
+                       /* intersect */ false);
+          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
+          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
         }
       } else {
-        if (mask) {
-          if (replace) {
-            // input -> output(mask) { replace }
-            // Inefficient; caller should apply mask when input is created
-            return op.emitError(
-                "Update with mask+replace is not supported yet");
-          } else {
-            // input -> output(mask)
-            // Merges input into output
-            return op.emitError(
-                "Update with mask and no accumulator is not supported yet");
-          }
-        } else {
-          // input -> output { replace? }
-          // Sort of pointless; caller should simply use input or call
-          // graphblas.dup if they want a copy
-          return op.emitError(
-              "Update with no accumulator or mask is not supported yet");
-        }
+        // input -> output { replace? }
+
+        Value inputCopy = callDupTensor(rewriter, module, loc, input);
+        callSwapPointers(rewriter, module, loc, inputCopy, output);
+        callSwapIndices(rewriter, module, loc, inputCopy, output);
+        callSwapValues(rewriter, module, loc, inputCopy, output);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, inputCopy);
       }
     }
 

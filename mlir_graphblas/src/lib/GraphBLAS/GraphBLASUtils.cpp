@@ -403,6 +403,60 @@ CallOp callResizeValues(OpBuilder &builder, ModuleOp &mod, Location loc,
   return result;
 }
 
+CallOp callSwapPointers(OpBuilder &builder, ModuleOp &mod, Location loc,
+                        Value tensor, Value other) {
+  Value tPtr = castToPtr8(builder, mod, loc, tensor);
+  Value oPtr = castToPtr8(builder, mod, loc, other);
+  Type ptr8Type = oPtr.getType();
+
+  FlatSymbolRefAttr ptrFunc =
+      getFunc(mod, loc, "get_pointers_ptr", ptr8Type, ptr8Type);
+  FlatSymbolRefAttr swapFunc =
+      getFunc(mod, loc, "swap_pointers", TypeRange(), {ptr8Type, ptr8Type});
+  CallOp oPointers = builder.create<mlir::CallOp>(loc, ptrFunc, ptr8Type, oPtr);
+  CallOp result = builder.create<mlir::CallOp>(
+      loc, swapFunc, TypeRange(),
+      ArrayRef<Value>({tPtr, oPointers.getResult(0)}));
+
+  return result;
+}
+
+CallOp callSwapIndices(OpBuilder &builder, ModuleOp &mod, Location loc,
+                       Value tensor, Value other) {
+  Value tPtr = castToPtr8(builder, mod, loc, tensor);
+  Value oPtr = castToPtr8(builder, mod, loc, other);
+  Type ptr8Type = oPtr.getType();
+
+  FlatSymbolRefAttr ptrFunc =
+      getFunc(mod, loc, "get_indices_ptr", ptr8Type, ptr8Type);
+  FlatSymbolRefAttr swapFunc =
+      getFunc(mod, loc, "swap_indices", TypeRange(), {ptr8Type, ptr8Type});
+  CallOp oIndices = builder.create<mlir::CallOp>(loc, ptrFunc, ptr8Type, oPtr);
+  CallOp result = builder.create<mlir::CallOp>(
+      loc, swapFunc, TypeRange(),
+      ArrayRef<Value>({tPtr, oIndices.getResult(0)}));
+
+  return result;
+}
+
+CallOp callSwapValues(OpBuilder &builder, ModuleOp &mod, Location loc,
+                      Value tensor, Value other) {
+  Value tPtr = castToPtr8(builder, mod, loc, tensor);
+  Value oPtr = castToPtr8(builder, mod, loc, other);
+  Type ptr8Type = oPtr.getType();
+
+  FlatSymbolRefAttr ptrFunc =
+      getFunc(mod, loc, "get_values_ptr", ptr8Type, ptr8Type);
+  FlatSymbolRefAttr swapFunc =
+      getFunc(mod, loc, "swap_values", TypeRange(), {ptr8Type, ptr8Type});
+  CallOp oValues = builder.create<mlir::CallOp>(loc, ptrFunc, ptr8Type, oPtr);
+  CallOp result = builder.create<mlir::CallOp>(
+      loc, swapFunc, TypeRange(),
+      ArrayRef<Value>({tPtr, oValues.getResult(0)}));
+
+  return result;
+}
+
 void cleanupIntermediateTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
                                Value tensor) {
   // Clean up sparse tensor unless it is returned by the function
