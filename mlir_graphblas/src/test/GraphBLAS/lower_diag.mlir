@@ -22,16 +22,6 @@
 
 module {
 
-// CHECK:           func private @matrix_csr_f64_p64i64_to_ptr8(tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
-// CHECK:           func private @new_matrix_csr_f64_p64i64(index, index) -> tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           func private @matrix_csc_f64_p64i64_to_ptr8(tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
-// CHECK:           func private @new_matrix_csc_f64_p64i64(index, index) -> tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           func private @resize_values(!llvm.ptr<i8>, index)
-// CHECK:           func private @resize_index(!llvm.ptr<i8>, index, index)
-// CHECK:           func private @resize_pointers(!llvm.ptr<i8>, index, index)
-// CHECK:           func private @resize_dim(!llvm.ptr<i8>, index, index)
-// CHECK:           func private @vector_i64_p64i64_to_ptr8(tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
-// CHECK:           func private @new_vector_i64_p64i64(index) -> tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           func @vec_to_mat_fixed_csr(%[[VAL_0:.*]]: tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_1:.*]] = arith.constant 0 : i64
 // CHECK:             %[[VAL_2:.*]] = arith.constant 1 : i64
@@ -41,7 +31,7 @@ module {
 // CHECK:             %[[VAL_6:.*]] = arith.constant 7 : index
 // CHECK:             %[[VAL_7:.*]] = sparse_tensor.indices %[[VAL_0]], %[[VAL_3]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_8:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:             %[[VAL_9:.*]] = call @new_matrix_csr_f64_p64i64(%[[VAL_6]], %[[VAL_6]]) : (index, index) -> tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_9:.*]] = sparse_tensor.init{{\[}}%[[VAL_6]], %[[VAL_6]]] : tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:             %[[VAL_10:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_3]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_11:.*]] = memref.load %[[VAL_10]]{{\[}}%[[VAL_4]]] : memref<?xi64>
 // CHECK:             %[[VAL_12:.*]] = arith.index_cast %[[VAL_11]] : i64 to index
@@ -94,7 +84,7 @@ module {
 // CHECK:             %[[VAL_43:.*]] = arith.constant 7 : index
 // CHECK:             %[[VAL_44:.*]] = sparse_tensor.indices %[[VAL_37]], %[[VAL_40]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_45:.*]] = sparse_tensor.values %[[VAL_37]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:             %[[VAL_46:.*]] = call @new_matrix_csc_f64_p64i64(%[[VAL_43]], %[[VAL_43]]) : (index, index) -> tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_46:.*]] = sparse_tensor.init{{\[}}%[[VAL_43]], %[[VAL_43]]] : tensor<7x7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:             %[[VAL_47:.*]] = sparse_tensor.pointers %[[VAL_37]], %[[VAL_40]] : tensor<7xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_48:.*]] = memref.load %[[VAL_47]]{{\[}}%[[VAL_41]]] : memref<?xi64>
 // CHECK:             %[[VAL_49:.*]] = arith.index_cast %[[VAL_48]] : i64 to index
@@ -148,7 +138,8 @@ module {
 // CHECK:             %[[VAL_83:.*]] = sparse_tensor.pointers %[[VAL_76]], %[[VAL_80]] : tensor<7x7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_84:.*]] = sparse_tensor.indices %[[VAL_76]], %[[VAL_80]] : tensor<7x7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_85:.*]] = sparse_tensor.values %[[VAL_76]] : tensor<7x7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:             %[[VAL_86:.*]] = call @new_vector_i64_p64i64(%[[VAL_82]]) : (index) -> tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_86:.*]] = sparse_tensor.init{{\[}}%[[VAL_82]]] : tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_880:.*]] = call @vector_i64_p64i64_to_ptr8(%[[VAL_86]]) : (tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
 // CHECK:             %[[VAL_88:.*]] = call @vector_i64_p64i64_to_ptr8(%[[VAL_86]]) : (tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
 // CHECK:             call @resize_dim(%[[VAL_88]], %[[VAL_79]], %[[VAL_82]]) : (!llvm.ptr<i8>, index, index) -> ()
 // CHECK:             %[[VAL_89:.*]] = scf.for %[[VAL_90:.*]] = %[[VAL_79]] to %[[VAL_82]] step %[[VAL_80]] iter_args(%[[VAL_91:.*]] = %[[VAL_79]]) -> (index) {
@@ -239,7 +230,8 @@ module {
 // CHECK:             %[[VAL_156:.*]] = sparse_tensor.pointers %[[VAL_149]], %[[VAL_153]] : tensor<7x7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_157:.*]] = sparse_tensor.indices %[[VAL_149]], %[[VAL_153]] : tensor<7x7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_158:.*]] = sparse_tensor.values %[[VAL_149]] : tensor<7x7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:             %[[VAL_159:.*]] = call @new_vector_i64_p64i64(%[[VAL_155]]) : (index) -> tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_159:.*]] = sparse_tensor.init{{\[}}%[[VAL_155]]] : tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_561:.*]] = call @vector_i64_p64i64_to_ptr8(%[[VAL_159]]) : (tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
 // CHECK:             %[[VAL_161:.*]] = call @vector_i64_p64i64_to_ptr8(%[[VAL_159]]) : (tensor<7xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
 // CHECK:             call @resize_dim(%[[VAL_161]], %[[VAL_152]], %[[VAL_155]]) : (!llvm.ptr<i8>, index, index) -> ()
 // CHECK:             %[[VAL_162:.*]] = scf.for %[[VAL_163:.*]] = %[[VAL_152]] to %[[VAL_155]] step %[[VAL_153]] iter_args(%[[VAL_164:.*]] = %[[VAL_152]]) -> (index) {
@@ -324,16 +316,6 @@ module {
 
 module {
 
-// CHECK:           func private @matrix_csr_f64_p64i64_to_ptr8(tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
-// CHECK:           func private @new_matrix_csr_f64_p64i64(index, index) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           func private @matrix_csc_f64_p64i64_to_ptr8(tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
-// CHECK:           func private @new_matrix_csc_f64_p64i64(index, index) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           func private @resize_values(!llvm.ptr<i8>, index)
-// CHECK:           func private @resize_index(!llvm.ptr<i8>, index, index)
-// CHECK:           func private @resize_pointers(!llvm.ptr<i8>, index, index)
-// CHECK:           func private @resize_dim(!llvm.ptr<i8>, index, index)
-// CHECK:           func private @vector_i64_p64i64_to_ptr8(tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
-// CHECK:           func private @new_vector_i64_p64i64(index) -> tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           func @vec_to_mat_arbitrary_csr(%[[VAL_0:.*]]: tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_1:.*]] = arith.constant 0 : i64
 // CHECK:             %[[VAL_2:.*]] = arith.constant 1 : i64
@@ -342,7 +324,7 @@ module {
 // CHECK:             %[[VAL_5:.*]] = tensor.dim %[[VAL_0]], %[[VAL_3]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:             %[[VAL_6:.*]] = sparse_tensor.indices %[[VAL_0]], %[[VAL_3]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_7:.*]] = sparse_tensor.values %[[VAL_0]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:             %[[VAL_8:.*]] = call @new_matrix_csr_f64_p64i64(%[[VAL_5]], %[[VAL_5]]) : (index, index) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_8:.*]] = sparse_tensor.init{{\[}}%[[VAL_5]], %[[VAL_5]]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:             %[[VAL_9:.*]] = sparse_tensor.pointers %[[VAL_0]], %[[VAL_3]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_10:.*]] = memref.load %[[VAL_9]]{{\[}}%[[VAL_4]]] : memref<?xi64>
 // CHECK:             %[[VAL_11:.*]] = arith.index_cast %[[VAL_10]] : i64 to index
@@ -394,7 +376,7 @@ module {
 // CHECK:             %[[VAL_42:.*]] = tensor.dim %[[VAL_37]], %[[VAL_40]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:             %[[VAL_43:.*]] = sparse_tensor.indices %[[VAL_37]], %[[VAL_40]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_44:.*]] = sparse_tensor.values %[[VAL_37]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xf64>
-// CHECK:             %[[VAL_45:.*]] = call @new_matrix_csc_f64_p64i64(%[[VAL_42]], %[[VAL_42]]) : (index, index) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_45:.*]] = sparse_tensor.init{{\[}}%[[VAL_42]], %[[VAL_42]]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:             %[[VAL_46:.*]] = sparse_tensor.pointers %[[VAL_37]], %[[VAL_40]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_47:.*]] = memref.load %[[VAL_46]]{{\[}}%[[VAL_41]]] : memref<?xi64>
 // CHECK:             %[[VAL_48:.*]] = arith.index_cast %[[VAL_47]] : i64 to index
@@ -448,7 +430,8 @@ module {
 // CHECK:             %[[VAL_83:.*]] = sparse_tensor.pointers %[[VAL_76]], %[[VAL_80]] : tensor<?x?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_84:.*]] = sparse_tensor.indices %[[VAL_76]], %[[VAL_80]] : tensor<?x?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_85:.*]] = sparse_tensor.values %[[VAL_76]] : tensor<?x?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:             %[[VAL_86:.*]] = call @new_vector_i64_p64i64(%[[VAL_82]]) : (index) -> tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_86:.*]] = sparse_tensor.init{{\[}}%[[VAL_82]]] : tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_880:.*]] = call @vector_i64_p64i64_to_ptr8(%[[VAL_86]]) : (tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
 // CHECK:             %[[VAL_88:.*]] = call @vector_i64_p64i64_to_ptr8(%[[VAL_86]]) : (tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
 // CHECK:             call @resize_dim(%[[VAL_88]], %[[VAL_79]], %[[VAL_82]]) : (!llvm.ptr<i8>, index, index) -> ()
 // CHECK:             %[[VAL_89:.*]] = scf.for %[[VAL_90:.*]] = %[[VAL_79]] to %[[VAL_82]] step %[[VAL_80]] iter_args(%[[VAL_91:.*]] = %[[VAL_79]]) -> (index) {
@@ -539,7 +522,8 @@ module {
 // CHECK:             %[[VAL_156:.*]] = sparse_tensor.pointers %[[VAL_149]], %[[VAL_153]] : tensor<?x?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_157:.*]] = sparse_tensor.indices %[[VAL_149]], %[[VAL_153]] : tensor<?x?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
 // CHECK:             %[[VAL_158:.*]] = sparse_tensor.values %[[VAL_149]] : tensor<?x?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d1, d0)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to memref<?xi64>
-// CHECK:             %[[VAL_159:.*]] = call @new_vector_i64_p64i64(%[[VAL_155]]) : (index) -> tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_159:.*]] = sparse_tensor.init{{\[}}%[[VAL_155]]] : tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
+// CHECK:             %[[VAL_561:.*]] = call @vector_i64_p64i64_to_ptr8(%[[VAL_159]]) : (tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
 // CHECK:             %[[VAL_161:.*]] = call @vector_i64_p64i64_to_ptr8(%[[VAL_159]]) : (tensor<?xi64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
 // CHECK:             call @resize_dim(%[[VAL_161]], %[[VAL_152]], %[[VAL_155]]) : (!llvm.ptr<i8>, index, index) -> ()
 // CHECK:             %[[VAL_162:.*]] = scf.for %[[VAL_163:.*]] = %[[VAL_152]] to %[[VAL_155]] step %[[VAL_153]] iter_args(%[[VAL_164:.*]] = %[[VAL_152]]) -> (index) {
