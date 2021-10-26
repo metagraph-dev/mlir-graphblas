@@ -2,7 +2,6 @@
 
 cimport cython
 import numpy as np
-import scipy.sparse as ss
 cimport numpy as np
 from libc.stdint cimport int8_t, int16_t, int32_t, int64_t, uint8_t, uint16_t, uint32_t, uint64_t, uintptr_t
 from libc.stdlib cimport malloc, free
@@ -555,6 +554,10 @@ cdef class MLIRSparseTensor:
         return rv
 
     def toarray(self):
+        try:
+            import scipy.sparse as ss
+        except ImportError:
+            raise ImportError("scipy is required for `toarray`")
         """Assumes missing values are zero."""
         dense_array = None
         if np.all(self.sparsity == np.array([1])):  # sparse vector

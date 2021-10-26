@@ -2,6 +2,7 @@
 
 import glob
 import os
+import sys
 import platform
 import re
 import subprocess
@@ -42,10 +43,9 @@ def _build_graphblas_exec():
     ]
     for ext_lib in EXTERNAL_LIBS:
         ex.append(f"-shared-libs={ext_lib}")
-    conda_dir = os.environ["CONDA_PREFIX"]
-    ex.append(
-        f"-shared-libs={conda_dir}/lib/libmlir_c_runner_utils{config.llvm_shlib_ext}"
-    )
+    bin_dir = os.path.dirname(sys.executable)
+    lib_dir = os.path.join(os.path.dirname(bin_dir), "lib")
+    ex.append(f"-shared-libs={lib_dir}/libmlir_c_runner_utils{config.llvm_shlib_ext}")
     ex.append("-entry-point-result=void")
     # This comes last because the name of the function to run comes after `graphblas-exec`
     ex.append("-e")
