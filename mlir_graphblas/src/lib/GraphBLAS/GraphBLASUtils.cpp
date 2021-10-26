@@ -448,6 +448,7 @@ ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions,
                            " not allowed for this op");
     }
 
+    // TODO should we do some sanity checking (e.g. arg count or type) on these blocks?
     switch (kind) {
     case graphblas::YieldKind::TRANSFORM_IN_A:
       this->transformInA = &block;
@@ -589,12 +590,16 @@ LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
   // This function must match the options supported by
   // GraphBLASOps.cpp::checkSemiringMultiply()
 
+  Type indexType = builder.getIndexType();
+  
   // Insert multiplicative operation
   Region *multRegion = regions[0];
   Block *multBlock =
-      builder.createBlock(multRegion, {}, {valueType, valueType});
-  Value multBlockArg0 = multBlock->getArgument(0);
-  Value multBlockArg1 = multBlock->getArgument(1);
+    builder.createBlock(multRegion, {}, {valueType, valueType, indexType, indexType});
+  Value aVal = multBlock->getArgument(0);
+  Value bVal = multBlock->getArgument(1);
+  Value aRow = multBlock->getArgument(2);
+  Value bCol = multBlock->getArgument(3);
   Value multResult;
 
   if (multiplyName == "pair") {
@@ -610,27 +615,31 @@ LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
   } else if (multiplyName == "times") {
     multResult = llvm::TypeSwitch<Type, Value>(valueType)
                      .Case<IntegerType>([&](IntegerType type) {
-                       return builder.create<arith::MulIOp>(loc, multBlockArg0,
-                                                            multBlockArg1);
+                       return builder.create<arith::MulIOp>(loc, aVal,
+                                                            bVal);
                      })
                      .Case<FloatType>([&](FloatType type) {
-                       return builder.create<arith::MulFOp>(loc, multBlockArg0,
-                                                            multBlockArg1);
+                       return builder.create<arith::MulFOp>(loc, aVal,
+                                                            bVal);
                      });
   } else if (multiplyName == "plus") {
     multResult = llvm::TypeSwitch<Type, Value>(valueType)
                      .Case<IntegerType>([&](IntegerType type) {
-                       return builder.create<arith::AddIOp>(loc, multBlockArg0,
-                                                            multBlockArg1);
+                       return builder.create<arith::AddIOp>(loc, aVal,
+                                                            bVal);
                      })
                      .Case<FloatType>([&](FloatType type) {
-                       return builder.create<arith::AddFOp>(loc, multBlockArg0,
-                                                            multBlockArg1);
+                       return builder.create<arith::AddFOp>(loc, aVal,
+                                                            bVal);
                      });
+  } else if (multiplyName == "firsti") {
+    multResult = builder.create<arith::IndexCastOp>(loc, aRow, valueType);
+  } else if (multiplyName == "secondi") {
+    multResult = builder.create<arith::IndexCastOp>(loc, bCol, valueType);
   } else if (multiplyName == "first") {
-    multResult = multBlockArg0;
+    multResult = aVal;
   } else if (multiplyName == "second") {
-    multResult = multBlockArg1;
+    multResult = bVal;
   } else {
     return multRegion->getParentOp()->emitError(
         "\"" + multiplyName + "\" is not a supported semiring multiply.");

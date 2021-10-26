@@ -773,12 +773,12 @@ class BFS(Algorithm):
 
         (source, A) = irb.inputs
 
-        c0 = irb.constant(0, "index")
-        c1 = irb.constant(1, "index")
-        c0_i64 = irb.constant(0, "i64")
+        c0 = irb.arith.constant(0, "index")
+        c1 = irb.arith.constant(1, "index")
+        c0_i64 = irb.arith.constant(0, "i64")
 
         num_rows = irb.graphblas.num_rows(A)
-        source_i64 = irb.index_cast(source, "i64")
+        source_i64 = irb.arith.index_cast(source, "i64")
 
         # Initialize the frontier
         frontier = irb.util.new_sparse_tensor("tensor<?xi64, #CV64>", num_rows)
@@ -820,7 +820,7 @@ class BFS(Algorithm):
                     frontier, A, "any_secondi", mask=parents, mask_complement=True
                 )
                 next_frontier_size = irb.graphblas.num_vals(next_frontier)
-                condition = irb.cmpi(next_frontier_size, c0, "eq")
+                condition = irb.arith.cmpi(next_frontier_size, c0, "eq")
                 level = before_region.arg_vars[0]
                 before_region.condition(condition, level, next_frontier)
             with while_loop.after as after_region:
