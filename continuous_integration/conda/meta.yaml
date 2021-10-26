@@ -20,6 +20,7 @@ requirements:
     - cmake >=3.13.4
     - ninja
     - lit
+    - donfig
 
   run:
     - python
