@@ -163,6 +163,28 @@ def GraphBLAS_ConvertLayoutOp : GraphBLAS_Op<"convert_layout", [NoSideEffect]> {
     let verifier = [{ return ::verify(*this); }];
 }
 
+def GraphBLAS_CastOp : GraphBLAS_Op<"cast", [NoSideEffect]> {
+    let summary = "Changes graph storage parameters: dtype and bitwidths.";
+    let description = [{
+        Rewrite the contents of a sparse tensor to use a new dtype or a new pointer or index bitwidth.
+        Layout changes (ex. CSR->CSC) are not supported by this operation. Use `convert_layout` instead.
+
+        Example:
+        ```mlir
+          %a_int = graphblas.cast %a : tensor<?x?xf64, #CSR64> to tensor<?x?xi32, #CSR64>
+        ```
+    }];
+
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($output)
+    }];
+
+    let verifier = [{ return ::verify(*this); }];
+}
+
 def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
     let summary = "Transpose operation.";
     let description = [{

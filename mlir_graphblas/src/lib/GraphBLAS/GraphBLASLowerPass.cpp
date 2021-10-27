@@ -335,6 +335,143 @@ public:
   };
 };
 
+class LowerCastRewrite : public OpRewritePattern<graphblas::CastOp> {
+public:
+  using OpRewritePattern<graphblas::CastOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::CastOp op,
+                                PatternRewriter &rewriter) const override {
+    MLIRContext *context = op.getContext();
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Value input = op.input();
+    Type inputType = input.getType();
+    Type outputType = op->getResultTypes().front();
+
+    // Shortcut operation if no change
+    if (inputType == outputType) {
+      rewriter.replaceOp(op, input);
+      return success();
+    }
+
+    RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
+    sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
+        sparse_tensor::getSparseTensorEncoding(inputTensorType);
+    unsigned inputPtrBitWidth = inputSparseEncoding.getPointerBitWidth();
+    unsigned inputIdxBitWidth = inputSparseEncoding.getIndexBitWidth();
+    Type inputValueType = inputTensorType.getElementType();
+
+    RankedTensorType outputTensorType = outputType.cast<RankedTensorType>();
+    sparse_tensor::SparseTensorEncodingAttr outputSparseEncoding =
+        sparse_tensor::getSparseTensorEncoding(outputTensorType);
+    unsigned outputPtrBitWidth = outputSparseEncoding.getPointerBitWidth();
+    unsigned outputIdxBitWidth = outputSparseEncoding.getIndexBitWidth();
+    Type outputValueType = outputTensorType.getElementType();
+
+    unsigned rank = inputTensorType.getRank();
+    Type memref1DIValueType = MemRefType::get({-1}, inputValueType);
+    Type memref1DOValueType = MemRefType::get({-1}, outputValueType);
+    Type int64Type = rewriter.getIntegerType(64);
+    Type indexType = rewriter.getIndexType();
+
+    // Initial constants
+    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+    Value c0_64 = rewriter.create<arith::ConstantIntOp>(loc, 0, int64Type);
+    Value c1_64 = rewriter.create<arith::ConstantIntOp>(loc, 1, int64Type);
+
+    // Get the shape as a ValueRange
+    ValueRange shape;
+    if (rank == 1) {
+      Value size = rewriter.create<graphblas::SizeOp>(loc, input);
+      shape = ValueRange{size};
+    } else {
+      Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, input);
+      Value ncols = rewriter.create<graphblas::NumColsOp>(loc, input);
+      shape = ValueRange{nrows, ncols};
+    }
+
+    // Create a new tensor with the correct output value type
+    Value output =
+        rewriter.create<sparse_tensor::InitOp>(loc, outputType, shape);
+
+    // Make a copy of the input so we can swap the pointers and indices
+    Value duplicate = callDupTensor(rewriter, module, loc, input);
+    callSwapPointers(rewriter, module, loc, duplicate, output);
+    callSwapIndices(rewriter, module, loc, duplicate, output);
+    rewriter.create<sparse_tensor::ReleaseOp>(loc, duplicate);
+
+    // Cast values to new dtype
+    Value nnz = rewriter.create<graphblas::NumValsOp>(loc, input);
+    callResizeValues(rewriter, module, loc, output, nnz);
+    Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DIValueType, input);
+    Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DOValueType, output);
+    scf::ParallelOp loop = rewriter.create<scf::ParallelOp>(loc, c0, nnz, c1);
+    Value loopIdx = loop.getInductionVars().front();
+    {
+      rewriter.setInsertionPointToStart(loop.getBody());
+      Value val = rewriter.create<memref::LoadOp>(loc, inputValues, loopIdx);
+      Value newVal;
+      if (auto itype = inputValueType.dyn_cast<IntegerType>()) {
+        newVal = llvm::TypeSwitch<Type, Value>(outputValueType)
+                     .Case<IntegerType>([&](IntegerType otype) {
+                       // int -> int
+                       unsigned iBitWidth = itype.getWidth();
+                       unsigned oBitWidth = otype.getWidth();
+                       if (iBitWidth < oBitWidth)
+                         return rewriter
+                             .create<arith::ExtSIOp>(loc, outputValueType, val)
+                             .getResult();
+                       else if (iBitWidth > oBitWidth)
+                         return rewriter
+                             .create<arith::TruncIOp>(loc, outputValueType, val)
+                             .getResult();
+                       else
+                         return val;
+                     })
+                     .Case<FloatType>([&](FloatType otype) {
+                       // int -> float
+                       return rewriter.create<arith::SIToFPOp>(
+                           loc, outputValueType, val);
+                     });
+      } else {
+        newVal = llvm::TypeSwitch<Type, Value>(outputValueType)
+                     .Case<IntegerType>([&](IntegerType otype) {
+                       // float -> int
+                       return rewriter.create<arith::FPToSIOp>(
+                           loc, outputValueType, val);
+                     })
+                     .Case<FloatType>([&](FloatType otype) {
+                       // float -> float
+                       unsigned iBitWidth =
+                           inputValueType.dyn_cast<FloatType>().getWidth();
+                       unsigned oBitWidth = otype.getWidth();
+                       if (iBitWidth < oBitWidth)
+                         return rewriter
+                             .create<arith::ExtFOp>(loc, outputValueType, val)
+                             .getResult();
+                       else if (iBitWidth > oBitWidth)
+                         return rewriter
+                             .create<arith::TruncFOp>(loc, outputValueType, val)
+                             .getResult();
+                       else
+                         return val;
+                     });
+      }
+      rewriter.create<memref::StoreOp>(loc, newVal, outputValues, loopIdx);
+      rewriter.setInsertionPointAfter(loop);
+    }
+
+    rewriter.replaceOp(op, output);
+
+    cleanupIntermediateTensor(rewriter, module, loc, output);
+
+    return success();
+  };
+};
+
 class LowerTransposeRewrite : public OpRewritePattern<graphblas::TransposeOp> {
 public:
   using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
@@ -3470,17 +3607,18 @@ public:
 };
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
-  patterns.add<LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
-               LowerReduceToVectorRewrite, LowerReduceToScalarRewrite,
-               LowerReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
-               LowerConvertLayoutRewrite, LowerTransposeRewrite,
-               LowerApplyRewrite, LowerApplyGenericRewrite,
-               LowerMatrixMultiplyReduceToScalarGenericRewrite,
-               LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
-               LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
-               LowerDiagOpRewrite, LowerCommentRewrite, LowerPrintRewrite,
-               LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
-               LowerNumValsRewrite, LowerDupRewrite>(patterns.getContext());
+  patterns
+      .add<LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
+           LowerReduceToVectorRewrite, LowerReduceToScalarRewrite,
+           LowerReduceToScalarGenericRewrite, LowerMatrixMultiplyRewrite,
+           LowerConvertLayoutRewrite, LowerCastRewrite, LowerTransposeRewrite,
+           LowerApplyRewrite, LowerApplyGenericRewrite,
+           LowerMatrixMultiplyReduceToScalarGenericRewrite,
+           LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
+           LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
+           LowerDiagOpRewrite, LowerCommentRewrite, LowerPrintRewrite,
+           LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
+           LowerNumValsRewrite, LowerDupRewrite>(patterns.getContext());
 }
 
 struct GraphBLASLoweringPass
