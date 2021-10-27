@@ -982,18 +982,35 @@ class NewSparseTensor(BaseOp):
             )
         for ds in dim_sizes:
             cls.ensure_mlirvar(ds, IndexType)
-        funcname = f"new_{ret_val.type.to_short_string()}"
-        input_types = ["index"] * rank
-        irbuilder.needed_function_table[funcname] = (
-            f"func private @{funcname}({', '.join(input_types)}) -> {ret_val.type}",
-            input_types,
-            tensor_type,
-        )
 
-        return ret_val, (
-            f"{ret_val.assign} = call @{funcname}({', '.join(str(ds) for ds in dim_sizes)}) :"
-            f"({', '.join(input_types)}) -> {ret_val.type}"
+        statements = [
+            f"{ret_val.assign} = sparse_tensor.init [{', '.join(str(ds) for ds in dim_sizes)}] :"
+            f"{ret_val.type}"
+        ]
+        c1_var, stmt = ConstantOp.call(irbuilder, 1, "index")
+        statements.append(stmt)
+        # Resize pointers to make this a valid sparse tensor structure
+        if rank == 1:
+            dim_var, stmt = ConstantOp.call(irbuilder, 0, "index")
+            statements.append(stmt)
+            npointers_var = c1_var
+        else:
+            dim_var = c1_var
+            if ret_val.type.encoding.ordering == [1, 0]:
+                npointers_var, stmt = GraphBLAS_NumCols.call(irbuilder, ret_val)
+            else:
+                npointers_var, stmt = GraphBLAS_NumRows.call(irbuilder, ret_val)
+            statements.append(stmt)
+        npointers_plus_1_var, stmt = AddIOp.call(irbuilder, npointers_var, c1_var)
+        statements.append(stmt)
+        ret_val_ptr, stmt = TensorToPtrOp.call(irbuilder, ret_val)
+        statements.append(stmt)
+        _, stmt = ResizeSparsePointers.call(
+            irbuilder, ret_val_ptr, dim_var, npointers_plus_1_var
         )
+        statements.append(stmt)
+
+        return ret_val, "\n".join(statements)
 
 
 class DelSparseTensor(BaseOp):

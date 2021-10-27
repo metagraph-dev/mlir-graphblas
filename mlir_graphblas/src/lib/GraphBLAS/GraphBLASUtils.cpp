@@ -291,18 +291,22 @@ Value castToTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
 
 Value callNewTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
                     ValueRange shape, RankedTensorType tensorType) {
-  Type indexType = builder.getIndexType();
-  int64_t rank = tensorType.getRank();
-
-  std::string funcName = "new_" + buildSparseTypeString(tensorType);
-  FlatSymbolRefAttr func;
-  if (rank == 2)
-    func = getFunc(mod, loc, funcName, tensorType,
-                   TypeRange{indexType, indexType});
-  else
-    func = getFunc(mod, loc, funcName, tensorType, TypeRange{indexType});
-  CallOp callOpResult = builder.create<CallOp>(loc, func, tensorType, shape);
-  Value result = callOpResult->getResult(0);
+  Value result = builder.create<sparse_tensor::InitOp>(loc, tensorType, shape);
+  unsigned rank = tensorType.getRank();
+  Value c1 = builder.create<arith::ConstantIndexOp>(loc, 1);
+  Value dim, npointers;
+  if (rank == 1) {
+    dim = builder.create<arith::ConstantIndexOp>(loc, 0);
+    npointers = c1;
+  } else {
+    dim = c1;
+    if (hasRowOrdering(tensorType))
+      npointers = builder.create<graphblas::NumRowsOp>(loc, result);
+    else
+      npointers = builder.create<graphblas::NumColsOp>(loc, result);
+  }
+  Value npointers_plus_1 = builder.create<arith::AddIOp>(loc, npointers, c1);
+  callResizePointers(builder, mod, loc, result, dim, npointers_plus_1);
 
   return result;
 }
