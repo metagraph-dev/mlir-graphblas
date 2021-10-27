@@ -2,6 +2,7 @@
 
 import glob
 import os
+import sys
 import platform
 import re
 import subprocess
@@ -13,6 +14,43 @@ import lit.util
 from lit.llvm import llvm_config
 from lit.llvm.subst import ToolSubst
 from lit.llvm.subst import FindTool
+
+
+def _build_graphblas_exec():
+    from mlir_graphblas.engine import EXTERNAL_LIBS
+
+    ex = [
+        "graphblas-opt",
+        "--graphblas-structuralize",
+        "--graphblas-optimize",
+        "--graphblas-lower",
+        "--sparsification",
+        "--sparse-tensor-conversion",
+        "--linalg-bufferize",
+        "--convert-scf-to-std",
+        "--func-bufferize",
+        "--tensor-constant-bufferize",
+        "--tensor-bufferize",
+        "--finalizing-bufferize",
+        "--convert-linalg-to-loops",
+        "--convert-scf-to-std",
+        "--convert-vector-to-llvm",
+        "--convert-memref-to-llvm",
+        "--convert-std-to-llvm",
+        "--reconcile-unrealized-casts",
+        "|",
+        "mlir-cpu-runner",
+    ]
+    for ext_lib in EXTERNAL_LIBS:
+        ex.append(f"-shared-libs={ext_lib}")
+    bin_dir = os.path.dirname(sys.executable)
+    lib_dir = os.path.join(os.path.dirname(bin_dir), "lib")
+    ex.append(f"-shared-libs={lib_dir}/libmlir_c_runner_utils{config.llvm_shlib_ext}")
+    ex.append("-entry-point-result=void")
+    # This comes last because the name of the function to run comes after `graphblas-exec`
+    ex.append("-e")
+    return " ".join(ex)
+
 
 # Configuration file for the 'lit' test runner.
 
@@ -32,6 +70,7 @@ config.test_exec_root = os.path.join(config.graphblas_obj_root, "test")
 
 config.substitutions.append(("%PATH%", config.environment["PATH"]))
 config.substitutions.append(("%shlibext", config.llvm_shlib_ext))
+config.substitutions.append(("graphblas-exec", _build_graphblas_exec()))
 
 
 _SCRIPT_DIR = os.path.dirname(__file__)
