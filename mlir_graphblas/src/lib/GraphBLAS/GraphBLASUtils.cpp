@@ -654,11 +654,12 @@ LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
   // Insert multiplicative operation
   Region *multRegion = regions[0];
   Block *multBlock = builder.createBlock(
-      multRegion, {}, {valueType, valueType, indexType, indexType});
+      multRegion, {}, {valueType, valueType, indexType, indexType, indexType});
   Value aVal = multBlock->getArgument(0);
   Value bVal = multBlock->getArgument(1);
   Value aRow = multBlock->getArgument(2);
   Value bCol = multBlock->getArgument(3);
+  Value overlapPosition = multBlock->getArgument(4);
   Value multResult;
 
   if (multiplyName == "pair") {
@@ -713,6 +714,22 @@ LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
               Type integerType = builder.getIntegerType(bitWidth);
               Value integerValue =
                   builder.create<arith::IndexCastOp>(loc, bCol, integerType);
+              Value floatingPointValue =
+                  builder.create<arith::SIToFPOp>(loc, type, integerValue);
+              return floatingPointValue;
+            });
+  } else if (multiplyName == "overlapi") {
+    multResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<arith::IndexCastOp>(loc, overlapPosition,
+                                                        valueType);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              unsigned bitWidth = type.getWidth();
+              Type integerType = builder.getIntegerType(bitWidth);
+              Value integerValue = builder.create<arith::IndexCastOp>(
+                  loc, overlapPosition, integerType);
               Value floatingPointValue =
                   builder.create<arith::SIToFPOp>(loc, type, integerValue);
               return floatingPointValue;

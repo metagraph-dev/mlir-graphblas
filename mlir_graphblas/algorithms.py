@@ -780,7 +780,6 @@ class BFS(Algorithm):
         c1 = irb.arith.constant(1, "index")
         c1_i64 = irb.arith.constant(1, "i64")
         c0_f64 = irb.arith.constant(0, "f64")
-        c_negative_one_f64 = irb.arith.constant(-1, "f64")
 
         num_rows = irb.graphblas.num_rows(A)
         source_i64 = irb.arith.index_cast(source, "i64")
@@ -823,7 +822,7 @@ class BFS(Algorithm):
         levels_values = irb.sparse_tensor.values(levels)
         irb.memref.store(c1_i64, levels_pointers, c1)
         irb.memref.store(source_i64, levels_indices, c0)
-        irb.memref.store(c_negative_one_f64, levels_values, c0)
+        irb.memref.store(c0_f64, levels_values, c0)
 
         with irb.while_loop(c0, frontier_ptr8) as while_loop:
             with while_loop.before as before_region:
@@ -835,7 +834,7 @@ class BFS(Algorithm):
                 next_frontier = irb.graphblas.matrix_multiply(
                     A,
                     current_frontier,
-                    "any_firsti",
+                    "any_overlapi",
                     mask=parents,
                     mask_complement=True,
                 )
@@ -843,21 +842,6 @@ class BFS(Algorithm):
                 next_frontier_ptr8 = irb.util.tensor_to_ptr8(next_frontier)
                 next_frontier_size = irb.graphblas.num_vals(next_frontier)
                 condition = irb.arith.cmpi(next_frontier_size, c0, "ne")
-
-                # current_frontier_size = irb.graphblas.num_vals(current_frontier)
-                # irb.graphblas.print('current_frontier_size ', current_frontier_size)
-                # irb.graphblas.print('next_frontier_size ', next_frontier_size)
-                # irb.graphblas.print('level ', level)
-
-                # next_frontier_values = irb.sparse_tensor.values(next_frontier)
-                # next_frontier_indices = irb.sparse_tensor.indices(next_frontier, c0)
-                # with irb.for_loop(0, next_frontier_size) as for_vars:
-                #     i = for_vars.iter_var_index
-                #     value = irb.memref.load(next_frontier_values, i)
-                #     irb.graphblas.print('value ', value)
-                #     index = irb.memref.load(next_frontier_indices, i)
-                #     irb.graphblas.print('index ', index)
-
                 before_region.condition(condition, level, next_frontier_ptr8)
             with while_loop.after as after_region:
                 level = after_region.arg_vars[0]

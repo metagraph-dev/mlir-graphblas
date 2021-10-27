@@ -789,10 +789,11 @@ class GraphBLAS_MatrixMultiply(BaseOp):
         "pair",
         "times",
         "plus",
-        "first",
-        "second",
         "firsti",
         "secondi",
+        "overlapi",
+        "first",
+        "second",
     }
     allowed_semirings = {
         f"{add}_{mul}"

@@ -431,7 +431,7 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
 
         The semiring must be a string of the form "<ADD_NAME>_<MUL_NAME>", e.g. "plus_times".
         The options for "<ADD_NAME>" are "plus", "any", and "min". The options for "<MUL_NAME>"
-        are "pair", "times", "plus", "first", and "second".
+        are "pair", "times", "plus", "firsti", "secondi", "overlapi", "first", and "second".
 
         If the first input is a matrix, it must be CSR format. If the second input is a matrix,
         it must be CSC format. Matrix times vector will return a vector. Vector times matrix

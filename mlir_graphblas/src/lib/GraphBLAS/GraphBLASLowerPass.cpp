@@ -2376,7 +2376,7 @@ public:
 
     // insert multiply operation block
     rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(),
-                         {aVal, bVal, row, col});
+                         {aVal, bVal, row, col, kk});
     graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
         rewriter.getBlock()->getTerminator());
     Value multResult = multYield.values().front();
