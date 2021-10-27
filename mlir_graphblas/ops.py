@@ -75,6 +75,19 @@ class IndexCastOp(BaseOp):
         )
 
 
+class BitCastOp(BaseOp):
+    dialect = "arith"
+    name = "bitcast"
+
+    @classmethod
+    def call(cls, irbuilder, value: MLIRVar, result_type):
+        cls.ensure_mlirvar(value)
+        ret_val = irbuilder.new_var(result_type)
+        return ret_val, (
+            f"{ret_val.assign} = arith.bitcast {value} : {value.type} to {ret_val.type}"
+        )
+
+
 class SignedIntToFloatOp(BaseOp):
     dialect = "arith"
     name = "sitofp"

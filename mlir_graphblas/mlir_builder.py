@@ -544,9 +544,9 @@ class MLIRFunctionBuilder:
             )
             with self.builder.temporary_statement_list() as temp_statements:
                 with self.builder.more_indentation():
+                    after_region.write_preamble()
                     yield after_region
             with self.builder.more_indentation():
-                after_region.write_preamble()
                 with self.builder.more_indentation():
                     for s in temp_statements:
                         self.builder.add_statement(s)

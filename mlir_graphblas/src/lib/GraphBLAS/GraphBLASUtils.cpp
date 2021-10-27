@@ -502,7 +502,8 @@ ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions,
                            " not allowed for this op");
     }
 
-    // TODO should we do some sanity checking (e.g. arg count or type) on these blocks?
+    // TODO should we do some sanity checking (e.g. arg count or type) on these
+    // blocks?
     switch (kind) {
     case graphblas::YieldKind::TRANSFORM_IN_A:
       this->transformInA = &block;
@@ -645,11 +646,11 @@ LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
   // GraphBLASOps.cpp::checkSemiringMultiply()
 
   Type indexType = builder.getIndexType();
-  
+
   // Insert multiplicative operation
   Region *multRegion = regions[0];
-  Block *multBlock =
-    builder.createBlock(multRegion, {}, {valueType, valueType, indexType, indexType});
+  Block *multBlock = builder.createBlock(
+      multRegion, {}, {valueType, valueType, indexType, indexType});
   Value aVal = multBlock->getArgument(0);
   Value bVal = multBlock->getArgument(1);
   Value aRow = multBlock->getArgument(2);
@@ -669,27 +670,49 @@ LogicalResult populateSemiringMultiply(OpBuilder &builder, Location loc,
   } else if (multiplyName == "times") {
     multResult = llvm::TypeSwitch<Type, Value>(valueType)
                      .Case<IntegerType>([&](IntegerType type) {
-                       return builder.create<arith::MulIOp>(loc, aVal,
-                                                            bVal);
+                       return builder.create<arith::MulIOp>(loc, aVal, bVal);
                      })
                      .Case<FloatType>([&](FloatType type) {
-                       return builder.create<arith::MulFOp>(loc, aVal,
-                                                            bVal);
+                       return builder.create<arith::MulFOp>(loc, aVal, bVal);
                      });
   } else if (multiplyName == "plus") {
     multResult = llvm::TypeSwitch<Type, Value>(valueType)
                      .Case<IntegerType>([&](IntegerType type) {
-                       return builder.create<arith::AddIOp>(loc, aVal,
-                                                            bVal);
+                       return builder.create<arith::AddIOp>(loc, aVal, bVal);
                      })
                      .Case<FloatType>([&](FloatType type) {
-                       return builder.create<arith::AddFOp>(loc, aVal,
-                                                            bVal);
+                       return builder.create<arith::AddFOp>(loc, aVal, bVal);
                      });
   } else if (multiplyName == "firsti") {
-    multResult = builder.create<arith::IndexCastOp>(loc, aRow, valueType);
+    multResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<arith::IndexCastOp>(loc, aRow, valueType);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              unsigned bitWidth = type.getWidth();
+              Type integerType = builder.getIntegerType(bitWidth);
+              Value integerValue =
+                  builder.create<arith::IndexCastOp>(loc, aRow, integerType);
+              Value floatingPointValue =
+                  builder.create<arith::SIToFPOp>(loc, type, integerValue);
+              return floatingPointValue;
+            });
   } else if (multiplyName == "secondi") {
-    multResult = builder.create<arith::IndexCastOp>(loc, bCol, valueType);
+    multResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<arith::IndexCastOp>(loc, bCol, valueType);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              unsigned bitWidth = type.getWidth();
+              Type integerType = builder.getIntegerType(bitWidth);
+              Value integerValue =
+                  builder.create<arith::IndexCastOp>(loc, bCol, integerType);
+              Value floatingPointValue =
+                  builder.create<arith::SIToFPOp>(loc, type, integerValue);
+              return floatingPointValue;
+            });
   } else if (multiplyName == "first") {
     multResult = aVal;
   } else if (multiplyName == "second") {
