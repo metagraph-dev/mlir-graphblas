@@ -629,15 +629,23 @@ static LogicalResult verify(UpdateOp op) {
 }
 
 template <class T>
-static LogicalResult verifyEwise(T op) {
+static LogicalResult verifyEwise(T op, bool verifyResult) {
   Type aOrigType = op.a().getType();
   Type bOrigType = op.b().getType();
+  Type oOrigType;
+  if (verifyResult)
+    oOrigType = op.getResult().getType();
 
   RankedTensorType aType = aOrigType.cast<RankedTensorType>();
   RankedTensorType bType = bOrigType.cast<RankedTensorType>();
+  RankedTensorType oType;
+  if (verifyResult)
+    oType = oOrigType.cast<RankedTensorType>();
 
   if (failed(verifySameShape(aType, bType)))
     return op.emitError("Inputs must have identical shapes.");
+  if (verifyResult && failed(verifySameShape(aType, oType)))
+    return op.emitError("Output must have same shape as inputs.");
 
   int64_t aRank = aType.getRank();
 
@@ -653,6 +661,8 @@ static LogicalResult verifyEwise(T op) {
   }
   if (aType != bType)
     return op.emitError("operands must have identical types.");
+  if (verifyResult && aType != oType)
+    return op.emitError("output type must match input types.");
 
   return success();
 }
@@ -665,7 +675,7 @@ static LogicalResult verify(UnionOp op) {
                           "\" is not a supported union operator.");
   }
 
-  return verifyEwise(op);
+  return verifyEwise(op, /* verifyResult */ true);
 }
 
 static LogicalResult verify(IntersectOp op) {
@@ -676,13 +686,13 @@ static LogicalResult verify(IntersectOp op) {
                           "\" is not a supported intersect operator.");
   }
 
-  return verifyEwise(op);
+  return verifyEwise(op, /* verifyResult */ true);
 }
 
 static LogicalResult verify(EqualOp op) {
   // TODO: this might need to be separate once masks are available for union and
   // intersect
-  return verifyEwise(op);
+  return verifyEwise(op, /* verifyResult */ false);
 }
 
 static LogicalResult verify(ReduceToVectorOp op) {
