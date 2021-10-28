@@ -22,11 +22,11 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
                          Value maskEnd, Type valueType);
 
 void computeInnerProduct(PatternRewriter &rewriter, Location loc, Value nk,
-                         Value fixedIndices, Value fixedValues,
-                         Value fixedIndexStart, Value fixedIndexEnd,
-                         Value iterPointers, Value iterIndices,
-                         Value iterValues, Value maskIndices, Value maskStart,
-                         Value maskEnd, Type valueType,
+                         Value fixedRowIndex, Value fixedIndices,
+                         Value fixedValues, Value fixedIndexStart,
+                         Value fixedIndexEnd, Value iterPointers,
+                         Value iterIndices, Value iterValues, Value maskIndices,
+                         Value maskStart, Value maskEnd, Type valueType,
                          ExtensionBlocks extBlocks, Value outputIndices,
                          Value outputValues, Value indexOffset,
                          bool swapMultOps);
