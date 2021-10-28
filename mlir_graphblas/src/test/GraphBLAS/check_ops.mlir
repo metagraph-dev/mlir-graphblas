@@ -34,6 +34,18 @@ module {
 
 module {
 
+    // CHECK: func @cast_wrapper(%[[ARG0:.*]]: [[CSR_F_TYPE:tensor<.*->.*>]]) -> [[CSR_I_TYPE:tensor<.*->.*>]] {
+    func @cast_wrapper(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xi64, #CSR64> {
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.cast %[[ARG0]] : [[CSR_F_TYPE]] to [[CSR_I_TYPE]]
+        %answer = graphblas.cast %sparse_tensor : tensor<?x?xf64, #CSR64> to tensor<?x?xi64, #CSR64>
+        // CHECK-NEXT: return %[[ANSWER]] : [[CSR_I_TYPE]]
+        return %answer : tensor<?x?xi64, #CSR64>
+    }
+
+}
+
+module {
+
     // CHECK: func @transpose_wrapper(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[CSC_TYPE:tensor<.*->.*>]] {
     func @transpose_wrapper(%sparse_tensor: tensor<2x3xf64, #CSR64>) -> tensor<3x2xf64, #CSC64> {
         // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.transpose %[[ARG0]] : [[CSR_TYPE]] to [[CSC_TYPE]]

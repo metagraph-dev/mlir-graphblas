@@ -912,9 +912,6 @@ static LogicalResult verify(ConvertLayoutOp op) {
   if (errMsg)
     return op.emitError("result " + errMsg.getValue());
 
-  // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
-  // shapes using "?"
-
   if (inputType.getElementType() != resultType.getElementType())
     return op.emitError(
         "Input and output tensors must have same element type.");
@@ -928,6 +925,50 @@ static LogicalResult verify(ConvertLayoutOp op) {
   errMsg = checkBitWidthMatch(inputType, resultType);
   if (errMsg)
     return op.emitError("Input and output " + errMsg.getValue());
+
+  return success();
+}
+
+static LogicalResult verify(CastOp op) {
+  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+  RankedTensorType resultType =
+      op.getResult().getType().cast<RankedTensorType>();
+
+  unsigned rank = inputType.getRank();
+  if (resultType.getRank() != rank)
+    return op.emitError("Input and output ranks must match.");
+
+  ArrayRef<int64_t> shape = inputType.getShape();
+  if (resultType.getShape() != shape)
+    return op.emitError("Input and output shapes must match.");
+
+  llvm::Optional<std::string> errMsg;
+  if (rank == 2) {
+    errMsg = checkMatrixEncoding(inputType, EITHER);
+    if (errMsg)
+      return op.emitError("operand " + errMsg.getValue());
+
+    // Result must be ordered the same as input
+    errMsg =
+        checkMatrixEncoding(resultType, hasRowOrdering(inputType) ? CSR : CSC);
+    if (errMsg)
+      return op.emitError("result " + errMsg.getValue());
+  } else {
+    errMsg = checkVectorEncoding(inputType);
+    if (errMsg)
+      return op.emitError("operand " + errMsg.getValue());
+
+    errMsg = checkVectorEncoding(resultType);
+    if (errMsg)
+      return op.emitError("operand " + errMsg.getValue());
+  }
+
+  // TODO: remove this check once we support bit width changes
+  errMsg = checkBitWidthMatch(inputType, resultType);
+  if (errMsg)
+    return op.emitError(
+        "Changing bit width is not yet supported. Input and output " +
+        errMsg.getValue());
 
   return success();
 }
