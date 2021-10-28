@@ -25,7 +25,7 @@ func @noop_semiring(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CSC64>) ->
         ^bb0(%add_a: f64, %add_b: f64):
             graphblas.yield add %add_a : f64
     },{
-        ^bb0(%mult_a: f64, %mult_b: f64):
+        ^bb0(%mult_a: f64, %mult_b: f64, %a_row: index, %b_col: index, %overlap_index: index):
             graphblas.yield mult %mult_b : f64
     }
     return %answer : tensor<?x?xf64, #CSR64>

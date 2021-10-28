@@ -28,6 +28,7 @@ dependencies:
   - metagraph/label/dev::mlir # temp restriction to use metagraph dev label
   - metagraph::pymlir
   - scipy
+  - conda-forge::grblas
   - llvmlite
   - donfig
   - pygments

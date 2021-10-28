@@ -1,4 +1,3 @@
-#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
@@ -46,6 +45,7 @@ ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
   // This will cause every idx in the loop to be included in the output
   Value rowIsEmpty = rewriter.create<arith::CmpIOp>(
       loc, arith::CmpIPredicate::eq, maskStart, maskEnd);
+
   scf::IfOp if_empty_row =
       rewriter.create<scf::IfOp>(loc, indexType, rowIsEmpty, true);
   {
@@ -233,10 +233,10 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
 }
 
 void computeInnerProduct(PatternRewriter &rewriter, Location loc, Value nk,
-                         Value fixedIndices, Value fixedValues,
-                         Value fixedIndexStart, Value fixedIndexEnd,
-                         Value iterPointers, Value iterIndices,
-                         Value iterValues,
+                         Value fixedRowIndex, Value fixedIndices,
+                         Value fixedValues, Value fixedIndexStart,
+                         Value fixedIndexEnd, Value iterPointers,
+                         Value iterIndices, Value iterValues,
                          // If no mask is used, set maskIndices to nullptr, and
                          // provide maskStart=c0 and maskEnd=len(iterPointers)-1
                          Value maskIndices, Value maskStart, Value maskEnd,
@@ -323,9 +323,11 @@ void computeInnerProduct(PatternRewriter &rewriter, Location loc, Value nk,
 
   // insert multiply operation block
   if (swapMultOps)
-    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {bVal, aVal});
+    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(),
+                         {bVal, aVal, col, fixedRowIndex, kk});
   else
-    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
+    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(),
+                         {aVal, bVal, fixedRowIndex, col, kk});
   // NOTE: Need to do this after merge, in case the yield is one of the block
   // arguments, as is the case with "first" and "second" binops
   graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(

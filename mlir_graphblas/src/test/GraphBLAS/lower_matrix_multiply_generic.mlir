@@ -36,7 +36,7 @@ func @matrix_multiply_plus_times(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64
             %add_result = arith.addf %add_a, %add_b : f64
             graphblas.yield add %add_result : f64
     },{
-        ^bb0(%mult_a: f64, %mult_b: f64):
+        ^bb0(%mult_a: f64, %mult_b: f64, %a_row: index, %b_col: index, %overlap_index: index):
             %mult_result = arith.mulf %mult_a, %mult_b : f64
             graphblas.yield mult %mult_result : f64
     },{

@@ -520,6 +520,8 @@ static LogicalResult verify(MatrixMultiplyGenericOp op) {
     return op.emitError(
         "Must have at least 3 regions: add_identity, add, mult.");
   }
+  // TODO add more verification of the blocks (possibly use
+  // ExtensionBlocks::extractBlocks)
 
   return success();
 }

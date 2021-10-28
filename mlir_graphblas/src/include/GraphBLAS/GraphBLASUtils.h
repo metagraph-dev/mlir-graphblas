@@ -28,7 +28,8 @@ static const llvm::StringSet<> supportedSemiringAddNames{"plus", "any", "min"};
 // These must match the options supported by
 // GraphBLASUtils.cpp::populateSemiringMultiply()
 static const llvm::StringSet<> supportedSemiringMultiplyNames{
-    "pair", "times", "plus", "first", "second"};
+    "pair",    "times",    "plus",  "firsti",
+    "secondi", "overlapi", "first", "second"};
 
 static const llvm::StringSet<> supportedReduceAggregators{"plus", "count",
                                                           "argmin", "argmax"};

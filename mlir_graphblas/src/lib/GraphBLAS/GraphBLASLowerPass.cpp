@@ -1771,19 +1771,19 @@ private:
             buildMaskComplement(rewriter, loc, ncol, Mj, mcolStart, mcolEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
-        computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi,
-                            Bx, maskComplement, c0, mcSize, valueType,
+        computeInnerProduct(rewriter, loc, nk, row, Aj, Ax, colStart, colEnd,
+                            Bp, Bi, Bx, maskComplement, c0, mcSize, valueType,
                             extBlocks, Cj, Cx, baseIndex, false);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
-        computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi,
-                            Bx, Mj, mcolStart, mcolEnd, valueType, extBlocks,
-                            Cj, Cx, baseIndex, false);
+        computeInnerProduct(rewriter, loc, nk, row, Aj, Ax, colStart, colEnd,
+                            Bp, Bi, Bx, Mj, mcolStart, mcolEnd, valueType,
+                            extBlocks, Cj, Cx, baseIndex, false);
       }
     } else {
-      computeInnerProduct(rewriter, loc, nk, Aj, Ax, colStart, colEnd, Bp, Bi,
-                          Bx, nullptr, c0, ncol, valueType, extBlocks, Cj, Cx,
-                          baseIndex, false);
+      computeInnerProduct(rewriter, loc, nk, row, Aj, Ax, colStart, colEnd, Bp,
+                          Bi, Bx, nullptr, c0, ncol, valueType, extBlocks, Cj,
+                          Cx, baseIndex, false);
     }
 
     // end if cmpDiff
@@ -1932,19 +1932,19 @@ private:
             buildMaskComplement(rewriter, loc, size, Mi, maskStart, maskEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
-        computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap,
-                            Aj, Ax, maskComplement, c0, mcSize, valueType,
+        computeInnerProduct(rewriter, loc, nk, c0, Bi, Bx, c0, fixedIndexEnd,
+                            Ap, Aj, Ax, maskComplement, c0, mcSize, valueType,
                             extBlocks, Ci, Cx, c0, true);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
-        computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap,
-                            Aj, Ax, Mi, maskStart, maskEnd, valueType,
+        computeInnerProduct(rewriter, loc, nk, c0, Bi, Bx, c0, fixedIndexEnd,
+                            Ap, Aj, Ax, Mi, maskStart, maskEnd, valueType,
                             extBlocks, Ci, Cx, c0, true);
       }
     } else {
-      computeInnerProduct(rewriter, loc, nk, Bi, Bx, c0, fixedIndexEnd, Ap, Aj,
-                          Ax, nullptr, c0, size, valueType, extBlocks, Ci, Cx,
-                          c0, true);
+      computeInnerProduct(rewriter, loc, nk, c0, Bi, Bx, c0, fixedIndexEnd, Ap,
+                          Aj, Ax, nullptr, c0, size, valueType, extBlocks, Ci,
+                          Cx, c0, true);
     }
 
     // end if cmpDiff
@@ -2089,19 +2089,19 @@ private:
             buildMaskComplement(rewriter, loc, size, Mi, maskStart, maskEnd);
         Value maskComplement = mcResult[0];
         Value mcSize = mcResult[1];
-        computeInnerProduct(rewriter, loc, nk, Ai, Ax, c0, fixedIndexEnd, Bp,
-                            Bi, Bx, maskComplement, c0, mcSize, valueType,
+        computeInnerProduct(rewriter, loc, nk, c0, Ai, Ax, c0, fixedIndexEnd,
+                            Bp, Bi, Bx, maskComplement, c0, mcSize, valueType,
                             extBlocks, Ci, Cx, c0, false);
         rewriter.create<memref::DeallocOp>(loc, maskComplement);
       } else {
-        computeInnerProduct(rewriter, loc, nk, Ai, Ax, c0, fixedIndexEnd, Bp,
-                            Bi, Bx, Mi, maskStart, maskEnd, valueType,
+        computeInnerProduct(rewriter, loc, nk, c0, Ai, Ax, c0, fixedIndexEnd,
+                            Bp, Bi, Bx, Mi, maskStart, maskEnd, valueType,
                             extBlocks, Ci, Cx, c0, false);
       }
     } else {
-      computeInnerProduct(rewriter, loc, nk, Ai, Ax, c0, fixedIndexEnd, Bp, Bi,
-                          Bx, nullptr, c0, size, valueType, extBlocks, Ci, Cx,
-                          c0, false);
+      computeInnerProduct(rewriter, loc, nk, c0, Ai, Ax, c0, fixedIndexEnd, Bp,
+                          Bi, Bx, nullptr, c0, size, valueType, extBlocks, Ci,
+                          Cx, c0, false);
     }
 
     // end if cmpDiff
@@ -2174,9 +2174,9 @@ private:
     Value fixedIndexEnd =
         rewriter.create<arith::IndexCastOp>(loc, fixedIndexEnd64, indexType);
 
-    computeInnerProduct(rewriter, loc, size, Ai, Ax, c0, fixedIndexEnd, Bp, Bi,
-                        Bx, nullptr, c0, c1, valueType, extBlocks, Ci, Cx, c0,
-                        false);
+    computeInnerProduct(rewriter, loc, size, c0, Ai, Ax, c0, fixedIndexEnd, Bp,
+                        Bi, Bx, nullptr, c0, c1, valueType, extBlocks, Ci, Cx,
+                        c0, false);
 
     // extract scalar from C
     Value cScalar = rewriter.create<memref::LoadOp>(loc, Cx, c0);
@@ -2375,7 +2375,8 @@ public:
     Value bVal = rewriter.create<memref::LoadOp>(loc, Bx, ii);
 
     // insert multiply operation block
-    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(), {aVal, bVal});
+    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(),
+                         {aVal, bVal, row, col, kk});
     graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
         rewriter.getBlock()->getTerminator());
     Value multResult = multYield.values().front();

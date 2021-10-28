@@ -204,6 +204,7 @@ class MLIRFunctionBuilder:
 
         self.var_name_counter = itertools.count()
         self.function_body_statements: List[str] = []
+        self.temporary_statement_lists: List[List[str]] = []
 
         # function_name -> (function_mlir_definition, input_mlir_types, return_mlir_type)
         self.needed_function_table: Dict[
@@ -266,6 +267,10 @@ class MLIRFunctionBuilder:
         else:
             needed_function_definitions = ""
 
+        if len(self.temporary_statement_lists) > 0:
+            raise RuntimeError(
+                "Cannot get MLIR code while using temporary statement storage."
+            )
         joined_statements = "\n".join(self.function_body_statements)
 
         return_type = ", ".join(str(rt) for rt in self.return_types)
@@ -315,10 +320,26 @@ class MLIRFunctionBuilder:
         yield
         self.indentation_level -= num_levels
 
+    @property
+    def current_statement_list(self) -> List[str]:
+        return (
+            self.temporary_statement_lists[-1]
+            if len(self.temporary_statement_lists) > 0
+            else self.function_body_statements
+        )
+
+    @contextmanager
+    def temporary_statement_list(self) -> Generator[None, None, None]:
+        temp_list = []
+        self.temporary_statement_lists.append(temp_list)
+        assert self.current_statement_list is temp_list
+        yield temp_list
+        self.temporary_statement_lists.pop()
+
     def add_statement(self, statement: str) -> None:
         """In an ideal world, no human would ever call this method."""
         for line in map(str.strip, statement.split("\n")):
-            self.function_body_statements.append(
+            self.current_statement_list.append(
                 " " * self.default_indentation_size
                 + " " * self.indentation_delta_size * self.indentation_level
                 + line
@@ -354,6 +375,205 @@ class MLIRFunctionBuilder:
             statement = f"return"
         self.add_statement(statement)
 
+    ################################
+    # SCF While Loop Functionality #
+    ################################
+
+    class WhileLoopBeforeRegion:
+        def __init__(
+            self,
+            input_initial_values: Sequence[MLIRVar],
+            builder: "MLIRFunctionBuilder",
+        ):
+            self.input_initial_values = input_initial_values
+            self.builder = builder
+            self.arg_vars = [builder.new_var(var.type) for var in input_initial_values]
+            self.forwarded_vars: Optional[Sequence[MLIRVar]] = None
+            self.returned_var: Optional[MLIRTuple] = None
+            self.preamble_template: Optional[jinja2.Template] = None
+
+        def start_preamble(self):
+            if self.returned_var is not None or self.preamble_template is not None:
+                raise RuntimeError("scf.while preamble template already generated.")
+            self.preamble_template = jinja2.Template(
+                "{{ returned_var }} = scf.while ("
+                + ", ".join(
+                    f"{arg_var.assign} = {init_val}"
+                    for arg_var, init_val in zip(
+                        self.arg_vars, self.input_initial_values
+                    )
+                )
+                + ") : ("
+                + ", ".join(str(var.type) for var in self.arg_vars)
+                + ") -> ({{ after_region_arg_types }}) {",
+                undefined=jinja2.StrictUndefined,
+            )
+
+        def finish_preamble(self):
+            if not self.condition_has_been_built():
+                raise RuntimeError(
+                    'Cannot write preamble of the "before" region of an scf.while '
+                    "loop before an scf.condition statement is built."
+                )
+            if self.preamble_template is None:
+                raise RuntimeError("scf.while preamble template not yet generated.")
+            assert self.returned_var is None
+            self.returned_var = self.builder.new_tuple(
+                *(var.type for var in self.forwarded_vars)
+            )
+            after_region_arg_types = ", ".join(str(t) for t in self.returned_var.types)
+            preamble = self.preamble_template.render(
+                returned_var=self.returned_var.assign,
+                after_region_arg_types=after_region_arg_types,
+            )
+            self.builder.add_statement(preamble)
+            return
+
+        def write_postamble(self):
+            if not self.condition_has_been_built():
+                raise RuntimeError(
+                    'Cannot write postamble of the "before" region of an scf.while '
+                    "loop before an scf.condition statement is built."
+                )
+            self.builder.add_statement("} do {")
+
+        def condition_has_been_built(self) -> bool:
+            return self.forwarded_vars is not None
+
+        def condition(self, condition_var: MLIRVar, *after_region_args: MLIRVar):
+            self.builder.add_statement(
+                f"scf.condition({condition_var}) "
+                + ", ".join(map(str, after_region_args))
+                + " : "
+                + ", ".join(str(arg.type) for arg in after_region_args)
+            )
+            self.forwarded_vars = after_region_args
+            assert self.condition_has_been_built()
+            return
+
+    class WhileLoopAfterRegion:
+        def __init__(
+            self, before_region: "WhileLoopBeforeRegion", builder: "MLIRFunctionBuilder"
+        ):
+            self.before_region = before_region
+            self.builder = builder
+            self.arg_vars = [
+                builder.new_var(var.type) for var in before_region.forwarded_vars
+            ]
+
+        def write_preamble(self):
+            self.builder.add_statement(
+                "^bb0("
+                + ", ".join(f"{var.assign}: {var.type}" for var in self.arg_vars)
+                + "):"
+            )
+
+        def write_postamble(self):
+            self.builder.add_statement("}")
+
+        def yield_vars(self, *yielded_vars: MLIRVar):
+            if len(yielded_vars) != len(self.before_region.arg_vars):
+                raise ValueError(
+                    f"Expected {len(self.before_region.arg_vars)} yielded values, "
+                    f"but got {len(yielded_vars)}."
+                )
+            for yielded_var, before_region_arg_var in zip(
+                yielded_vars, self.before_region.arg_vars
+            ):
+                if yielded_var.type != before_region_arg_var.type:
+                    raise TypeError(
+                        f"{yielded_vars!r} and {before_region_arg_var!r} have different types."
+                    )
+            yield_vals = ", ".join(str(var) for var in yielded_vars)
+            yield_types = ", ".join(str(var.type) for var in yielded_vars)
+            self.builder.add_statement(f"scf.yield {yield_vals} : {yield_types}")
+
+    class WhileLoopRegions:
+        def __init__(
+            self,
+            before_region_inputs: Sequence[MLIRVar],
+            builder: "MLIRFunctionBuilder",
+        ):
+            self.before_region_inputs = before_region_inputs
+            self.before_region: Optional["WhileLoopBeforeRegion"] = None
+            self.after_region: Optional["WhileLoopAfterRegion"] = None
+            self.builder = builder
+
+        @property
+        def returned_variable(self) -> MLIRTuple:
+            if self.before_region is None:
+                raise RuntimeError(
+                    'Cannot access result of scf.while loop unti the "before" region has been built.'
+                )
+            return self.before_region.returned_var
+
+        @property
+        @contextmanager
+        def before(self) -> Generator["WhileLoopBeforeRegion", None, None]:
+            if self.before_region is not None:
+                raise RuntimeError(
+                    'Cannot create a new "before" region as one already exists.'
+                )
+            before_region = self.builder.WhileLoopBeforeRegion(
+                self.before_region_inputs, self.builder
+            )
+            before_region.start_preamble()
+            with self.builder.temporary_statement_list() as temp_statements:
+                with self.builder.more_indentation():
+                    yield before_region
+            before_region.finish_preamble()
+            with self.builder.more_indentation():
+                for s in temp_statements:
+                    self.builder.add_statement(s)
+            before_region.write_postamble()
+            self.before_region = before_region
+
+        @property
+        @contextmanager
+        def after(self) -> Generator["WhileLoopAfterRegion", None, None]:
+            if self.after_region is not None:
+                raise RuntimeError(
+                    'Cannot create a new "after" region as one already exists.'
+                )
+            if self.before_region is None:
+                raise RuntimeError(
+                    'Cannot build "after" region of a while loop before building the "before" region.'
+                )
+            after_region = self.builder.WhileLoopAfterRegion(
+                self.before_region, self.builder
+            )
+            with self.builder.temporary_statement_list() as temp_statements:
+                with self.builder.more_indentation():
+                    after_region.write_preamble()
+                    yield after_region
+            with self.builder.more_indentation():
+                with self.builder.more_indentation():
+                    for s in temp_statements:
+                        self.builder.add_statement(s)
+            after_region.write_postamble()
+            self.after_region = after_region
+
+    @contextmanager
+    def while_loop(
+        self,
+        *before_region_inputs: MLIRVar,
+    ) -> Generator[WhileLoopRegions, None, None]:
+        regions = self.WhileLoopRegions(before_region_inputs, self)
+        yield regions
+        if regions.before_region is None:
+            raise RuntimeError(
+                'Cannot build scf.while loop without completing "before" region.'
+            )
+        if regions.after_region is None:
+            raise RuntimeError(
+                'Cannot build scf.while loop without completing "after" region.'
+            )
+        return
+
+    ##############################
+    # SCF For Loop Functionality #
+    ##############################
+
     class ForLoopVars:
         def __init__(
             self,
@@ -362,7 +582,7 @@ class MLIRFunctionBuilder:
             upper_var_index: MLIRVar,
             step_var_index: MLIRVar,
             iter_vars: Sequence[MLIRVar],
-            returned_variable: Optional[MLIRVar],
+            returned_variable: Optional[MLIRTuple],
             builder: "MLIRFunctionBuilder",
         ):
             self.iter_var_index = iter_var_index
