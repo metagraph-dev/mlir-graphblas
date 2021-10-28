@@ -1,5 +1,7 @@
 #include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
@@ -228,6 +230,236 @@ std::string buildSparseTypeString(RankedTensorType tensorType) {
     return "vector_" + dtype + "_" + piString;
   } else
     assert(false && "Unexpected tensor type.");
+}
+
+void callPrintTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
+                     Value input) {
+  callPrintString(builder, mod, loc, "[");
+
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(input.getType());
+  bool inputIsDense = !sparseEncoding;
+  StringRef missingValueString = inputIsDense ? "0" : "_";
+
+  RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
+  Type inputValueType = inputType.getElementType();
+
+  Value c0 = builder.create<arith::ConstantIndexOp>(loc, 0);
+  Value c1 = builder.create<arith::ConstantIndexOp>(loc, 1);
+  Type indexType = builder.getIndexType();
+  Type int64Type = builder.getIntegerType(64);
+  Type boolType = builder.getIntegerType(1);
+  Type memref1DI64Type = MemRefType::get({-1}, int64Type);
+  Type memref1DValueType = MemRefType::get({-1}, inputValueType);
+
+  if (inputType.getRank() == 1) {
+    if (inputIsDense) {
+      MLIRContext *context = mod.getContext();
+      inputType = getCompressedVectorType(context, inputValueType);
+      // TODO: this is a hack and is very slow ; convert to an MLIR vector and
+      // use vector.print
+      input = builder.create<sparse_tensor::ConvertOp>(loc, inputType, input);
+    }
+
+    Value inputIndices = builder.create<sparse_tensor::ToIndicesOp>(
+        loc, memref1DI64Type, input, c0);
+    Value inputValues = builder.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DValueType, input);
+    Value vectorLength = builder.create<graphblas::SizeOp>(loc, input);
+    Value vectorLengthMinusOne =
+        builder.create<arith::SubIOp>(loc, vectorLength, c1);
+
+    Value firstValuesValue =
+        builder.create<memref::LoadOp>(loc, inputValues, c0);
+    Value firstIndicesValue_i64 =
+        builder.create<memref::LoadOp>(loc, inputIndices, c0);
+    Value firstIndicesValue = builder.create<arith::IndexCastOp>(
+        loc, firstIndicesValue_i64, indexType);
+
+    scf::ForOp forEachLoop = builder.create<scf::ForOp>(
+        loc, c0, vectorLength, c1,
+        ValueRange{c0, firstIndicesValue, firstValuesValue});
+    {
+      builder.setInsertionPointToStart(forEachLoop.getBody());
+      Value toPrintPosition = forEachLoop.getInductionVar();
+      Value inputValuesAndIndicesPosition =
+          forEachLoop.getLoopBody().getArgument(1);
+      Value inputIndicesValue = forEachLoop.getLoopBody().getArgument(2);
+      Value inputValuesValue = forEachLoop.getLoopBody().getArgument(3);
+
+      Value printPresentValue = builder.create<arith::CmpIOp>(
+          loc, arith::CmpIPredicate::eq, inputIndicesValue, toPrintPosition);
+      scf::IfOp ifPrintPresentValue = builder.create<scf::IfOp>(
+          loc, TypeRange{indexType, indexType, inputValueType},
+          printPresentValue, true);
+      {
+        builder.setInsertionPointToStart(ifPrintPresentValue.thenBlock());
+        {
+          callPrintValue(builder, mod, loc, inputValuesValue);
+          Value updatedInputValuesAndIndicesPosition =
+              builder.create<arith::AddIOp>(loc, inputValuesAndIndicesPosition,
+                                            c1);
+          Value updatedInputIndicesValue_i64 = builder.create<memref::LoadOp>(
+              loc, inputIndices, updatedInputValuesAndIndicesPosition);
+          Value updatedInputIndicesValue = builder.create<arith::IndexCastOp>(
+              loc, updatedInputIndicesValue_i64, indexType);
+          Value updatedInputValuesValue = builder.create<memref::LoadOp>(
+              loc, inputValues, updatedInputValuesAndIndicesPosition);
+          builder.create<scf::YieldOp>(
+              loc,
+              ValueRange{updatedInputValuesAndIndicesPosition,
+                         updatedInputIndicesValue, updatedInputValuesValue});
+        }
+        builder.setInsertionPointToStart(ifPrintPresentValue.elseBlock());
+        {
+          callPrintString(builder, mod, loc, missingValueString);
+          builder.create<scf::YieldOp>(
+              loc, ValueRange{inputValuesAndIndicesPosition, inputIndicesValue,
+                              inputValuesValue});
+        }
+        builder.setInsertionPointAfter(ifPrintPresentValue);
+      }
+
+      Value notLastPosition = builder.create<arith::CmpIOp>(
+          loc, arith::CmpIPredicate::ne, vectorLengthMinusOne, toPrintPosition);
+      scf::IfOp ifNotLastPosition =
+          builder.create<scf::IfOp>(loc, TypeRange{}, notLastPosition, false);
+      {
+        builder.setInsertionPointToStart(ifNotLastPosition.thenBlock());
+        callPrintString(builder, mod, loc, ", ");
+        builder.setInsertionPointAfter(ifNotLastPosition);
+      }
+
+      Value nextInputValuesAndIndicesPosition =
+          ifPrintPresentValue.getResult(0);
+      Value nextInputIndicesValue = ifPrintPresentValue.getResult(1);
+      Value nextInputValuesValue = ifPrintPresentValue.getResult(2);
+      builder.create<scf::YieldOp>(
+          loc, ValueRange{nextInputValuesAndIndicesPosition,
+                          nextInputIndicesValue, nextInputValuesValue});
+      builder.setInsertionPointAfter(forEachLoop);
+    }
+  } else {
+    if (inputIsDense) {
+      MLIRContext *context = mod.getContext();
+      inputType = getCSRType(context, inputValueType);
+      // TODO: this is a hack and is very slow ; convert to an MLIR vector and
+      // use vector.print
+      input = builder.create<sparse_tensor::ConvertOp>(loc, inputType, input);
+    } else if (!hasRowOrdering(inputType)) {
+      MLIRContext *context = mod.getContext();
+      inputType = getCSRType(context, inputValueType);
+      input = builder.create<graphblas::ConvertLayoutOp>(loc, inputType, input);
+    }
+    Value nrows = builder.create<graphblas::NumRowsOp>(loc, input);
+    Value ncols = builder.create<graphblas::NumColsOp>(loc, input);
+    Value ncolsMinusOne = builder.create<arith::SubIOp>(loc, ncols, c1);
+
+    sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+        sparse_tensor::getSparseTensorEncoding(inputType);
+    unsigned pointerBitWidth = sparseEncoding.getPointerBitWidth();
+    Type pointerType = builder.getIntegerType(pointerBitWidth);
+    Type memref1DPointerType = MemRefType::get({-1}, pointerType);
+
+    Value matrixPointers = builder.create<sparse_tensor::ToPointersOp>(
+        loc, memref1DPointerType, input, c1);
+    Value matrixIndices = builder.create<sparse_tensor::ToIndicesOp>(
+        loc, memref1DI64Type, input, c1);
+    Value matrixValues = builder.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DValueType, input);
+    scf::ForOp forRowLoop = builder.create<scf::ForOp>(loc, c0, nrows, c1);
+    {
+      builder.setInsertionPointToStart(forRowLoop.getBody());
+
+      Value matrixRowIndex = forRowLoop.getInductionVar();
+      Value nextMatrixRowIndex =
+          builder.create<arith::AddIOp>(loc, matrixRowIndex, c1).getResult();
+      Value firstPtr64 =
+          builder.create<memref::LoadOp>(loc, matrixPointers, matrixRowIndex);
+      Value firstPtr =
+          builder.create<arith::IndexCastOp>(loc, firstPtr64, indexType);
+      Value secondPtr64 = builder.create<memref::LoadOp>(loc, matrixPointers,
+                                                         nextMatrixRowIndex);
+      Value secondPtr =
+          builder.create<arith::IndexCastOp>(loc, secondPtr64, indexType);
+
+      callPrintString(builder, mod, loc, "\n  [");
+      scf::ForOp forColLoop =
+          builder.create<scf::ForOp>(loc, c0, ncols, c1, ValueRange{firstPtr});
+      {
+        builder.setInsertionPointToStart(forColLoop.getBody());
+        Value toPrintPosition = forColLoop.getInductionVar();
+        Value ptr = forColLoop.getLoopBody().getArgument(1);
+
+        Value ptrIsValid = builder.create<arith::CmpIOp>(
+            loc, arith::CmpIPredicate::ult, ptr, secondPtr);
+        scf::IfOp ifPtrIsValid = builder.create<scf::IfOp>(
+            loc, TypeRange{boolType}, ptrIsValid, true);
+        {
+          builder.setInsertionPointToStart(ifPtrIsValid.thenBlock());
+          {
+            Value col_i64 =
+                builder.create<memref::LoadOp>(loc, matrixIndices, ptr);
+            Value col =
+                builder.create<arith::IndexCastOp>(loc, col_i64, indexType);
+            Value colEqualsToPrintPosition = builder.create<arith::CmpIOp>(
+                loc, arith::CmpIPredicate::eq, col, toPrintPosition);
+            builder.create<scf::YieldOp>(loc,
+                                         ValueRange{colEqualsToPrintPosition});
+          }
+          builder.setInsertionPointToStart(ifPtrIsValid.elseBlock());
+          {
+            Value false_i1 =
+                builder.create<arith::ConstantIntOp>(loc, 0, boolType);
+            builder.create<scf::YieldOp>(loc, ValueRange{false_i1});
+          }
+          builder.setInsertionPointAfter(ifPtrIsValid);
+        }
+        Value printPresentValue = ifPtrIsValid.getResult(0);
+
+        scf::IfOp ifPrintPresentValue = builder.create<scf::IfOp>(
+            loc, TypeRange{indexType}, printPresentValue, true);
+        {
+          builder.setInsertionPointToStart(ifPrintPresentValue.thenBlock());
+          {
+            Value matrixValue =
+                builder.create<memref::LoadOp>(loc, matrixValues, ptr);
+            callPrintValue(builder, mod, loc, matrixValue);
+            Value updatedPtr = builder.create<arith::AddIOp>(loc, ptr, c1);
+            builder.create<scf::YieldOp>(loc, ValueRange{updatedPtr});
+          }
+          builder.setInsertionPointToStart(ifPrintPresentValue.elseBlock());
+          {
+            callPrintString(builder, mod, loc, missingValueString);
+            builder.create<scf::YieldOp>(loc, ValueRange{ptr});
+          }
+          builder.setInsertionPointAfter(ifPrintPresentValue);
+        }
+
+        Value notLastCol = builder.create<arith::CmpIOp>(
+            loc, arith::CmpIPredicate::ne, ncolsMinusOne, toPrintPosition);
+        scf::IfOp ifNotLastCol =
+            builder.create<scf::IfOp>(loc, TypeRange{}, notLastCol, true);
+        {
+          builder.setInsertionPointToStart(ifNotLastCol.thenBlock());
+          callPrintString(builder, mod, loc, ", ");
+          builder.setInsertionPointToStart(ifNotLastCol.elseBlock());
+          callPrintString(builder, mod, loc, "],");
+          builder.setInsertionPointAfter(ifNotLastCol);
+        }
+
+        Value nextPtr = ifPrintPresentValue.getResult(0);
+        builder.create<scf::YieldOp>(loc, ValueRange{nextPtr});
+        builder.setInsertionPointAfter(forColLoop);
+      }
+
+      builder.setInsertionPointAfter(forRowLoop);
+    }
+    callPrintString(builder, mod, loc, "\n");
+  }
+  callPrintString(builder, mod, loc, "]");
+
+  return;
 }
 
 void callPrintString(OpBuilder &builder, ModuleOp &mod, Location loc,

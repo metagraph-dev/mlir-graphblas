@@ -907,7 +907,10 @@ class GraphBLAS_Print(BaseOp):
             "graphblas.print "
             + ", ".join(str(v) for v in values)
             + " { strings = ["
-            + ", ".join('"' + s.replace('"', '\\"') + '"' for s in string_attributes)
+            + ", ".join(
+                '"' + s.replace("\n", "\\n").replace('"', '\\"') + '"'
+                for s in string_attributes
+            )
             + "] } : "
             + ", ".join(str(v.type) for v in values)
         )

@@ -217,20 +217,20 @@ def GraphBLAS_SelectOp : GraphBLAS_Op<"select", [NoSideEffect]> {
     let summary = "Select operation.";
     let description = [{
         Returns new sparse tensors, each with a subset of elements from the given tensor.
-        
+
         The elements included in the resulting sparse tensor vary depending on the selectors given
         (one of "triu", "tril", "ge", or "gt").
         Multiple selectors may be given, in which case multiple results will be returned.
-        
+
         Some selectors, e.g. "gt", require a thunk. The thunks should be passed as extra operands to the op.
-        
+
         The number of given thunks must match the number of thunk-requiring selectors.
-        
+
         The ordering of the thunks/selectors determines which thunk is used for which selector, i.e.
         the nth thunk is used for the nth thunk-requiring selector.
-        
+
         The given tensor must be a sparse vector or a matrix with CSR or CSC sparsity.
-        
+
         The resulting sparse tensors will have the same encoding as the input tensor.
 
         Single Selector Example:
@@ -277,7 +277,7 @@ def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]
 
         If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
         vector's size must be the number of rows in the input tensor.
-    
+
         Example:
         ```mlir
         %vec1 = graphblas.reduce_to_vector %matrix_1 { aggregator = "plus", axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #CV64>
@@ -304,7 +304,7 @@ def GraphBLAS_ReduceToScalarOp : GraphBLAS_Op<"reduce_to_scalar", [NoSideEffect]
         sparsity.
 
         The resulting scalar's type will depend on the type of the input tensor.
-        
+
         The supported aggregators are "plus", "count", "argmin", and "argmax".
 
         When using the aggregators "argmin" and "argmax", the output must be a 64-bit integer,
@@ -365,36 +365,36 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
         "div", and "fill". Unary operators cannot take a thunk. Unary operators cannot
         take a thunk. The supported unary operators are "abs", "minv" (i.e. multiplicative
         inverse or *1/x*), "ainv" (i.e. additive inverse or *-x*), and "identity".
-        
+
         The given sparse tensor must either be a CSR matrix, CSC matrix, or a sparse vector.
-        
+
         Using "minv" with integer types uses signed integer division and rounds towards
         zero. For example, *minv(-2) == 1 / -2 == 0*.
-        
+
         Some binary operators, e.g. "div", are not symmetric. The sparse tensor and thunk
         should be given in the order they should be given to the binary operator. For
         example, to divide every element of a matrix by 2, use the following:
-        
+
         ```mlir
         %thunk = constant 2 : i64
         %matrix_answer = graphblas.apply %sparse_matrix, %thunk { apply_operator = "div" } : (tensor<?x?xi64, #CSR64>, i64) to tensor<?x?xi64, #CSR64>
         ```
-        
+
         As another example, to divide 10 by each element of a sparse vector, use the
         following:
-        
+
 
         ```mlir
         %thunk = constant 10 : i64
         %vector_answer = graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } : (i64, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
         ```
-        
+
         Note that the application only takes place for elements that are present in the
         matrix. Thus, the operation will not apply when the values are missing in the
         tensor. For example, *1.0 / [ _ , 2.0,  _ ] == [ _ , 0.5,  _ ]*.
-        
+
         Note that using the "identity" operator does not create a copy of the input tensor.
-        
+
         The shape of the output tensor will match that of the input tensor.
 
 
@@ -854,11 +854,11 @@ def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Termina
         `graphblas.yield` is a special terminator operation for blocks inside regions in
         several `graphblas` operations.  It returns a value to the enclosing op, with
         a meaning that depends on the op.
-        
+
         Special terminator operation for blocks inside regions in several GraphBLAS dialect operations,
         e.g. `graphblas.matrix_multiply_generic`. It returns a value to the enclosing op,
         with a meaning that depends on the required "kind" attribute. It must be one of the following:
-        
+
         - transform_in_a
         - transform_in_b
         - transform_out
@@ -926,14 +926,63 @@ def GraphBLAS_PrintOp : GraphBLAS_Op<"print", []> {
         ```mlir
         %c9_9_f32 = constant 9.9 : f32
         %c1_i32 = constant 1 : i32
+
         // prints "start 9.9 middle 1 end ".
         graphblas.print %c9_9_f32, %c1_i32 { strings = ["start ", " middle ", " end"] } : f32, i32
+
         // prints "start 9.9 middle   end  z y x ".
         graphblas.print %c9_9_f32 { strings = ["start ", " middle ", " end", " z", "y", "x"] } : f32
+
         // prints "start 9.9 1 1 1 1".
         graphblas.print %c9_9_f32, %c1_i32, %c1_i32, %c1_i32, %c1_i32 { strings = ["start "] } : f32, i32, i32, i32, i32
+
         // prints "9.9".
         graphblas.print %c9_9_f32 { strings = [] } : f32
+
+        %dense_vec_fixed = arith.constant dense<[0.0, 10.0, 20.0, 0.0]> : tensor<4xf64>
+        %dense_vec = tensor.cast %dense_vec_fixed : tensor<4xf64> to tensor<?xf64>
+        %vec = sparse_tensor.convert %dense_vec : tensor<?xf64> to tensor<?xf64, #CV64>
+        
+        // prints "vec [0, 10, 20, 0]".
+        graphblas.print %dense_vec_fixed { strings = ["vec "] } : tensor<4xf64>
+
+        // prints "vec [0, 10, 20, 0]".
+        graphblas.print %dense_vec { strings = ["vec "] } : tensor<?xf64>
+      
+        // prints "vec [_, 10, 20, _]".
+        graphblas.print %vec { strings = ["vec "] } : tensor<?xf64, #CV64>
+
+        %dense_mat_fixed = arith.constant dense<[
+            [0.0, 1.0, 2.0, 0.0],
+            [0.0, 0.0, 0.0, 3.0]
+          ]> : tensor<2x4xf64>
+        %dense_mat = tensor.cast %dense_mat_fixed : tensor<2x4xf64> to tensor<?x?xf64>
+        %mat = sparse_tensor.convert %dense_mat : tensor<?x?xf64> to tensor<?x?xf64, #CSR64>
+        %mat_csc = graphblas.convert_layout %mat : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSC64>
+
+        // prints "mat [
+        //   [0, 1, 2, 0],
+        //   [0, 0, 0, 3],
+        // ]".
+        graphblas.print %dense_mat_fixed { strings = ["mat "] } : tensor<2x4xf64>
+  
+        // prints "mat [
+        //   [0, 1, 2, 0],
+        //   [0, 0, 0, 3],
+        // ]".
+        graphblas.print %dense_mat { strings = ["mat "] } : tensor<?x?xf64>
+        
+        // prints "mat [
+        //   [_, 1, 2, _],
+        //   [_, _, _, 3],
+        // ]".
+        graphblas.print %mat { strings = ["mat "] } : tensor<?x?xf64, #CSR64>
+
+        // prints "mat_csc [
+        //   [_, 1, 2, _],
+        //   [_, _, _, 3],
+        // ]".
+        graphblas.print %mat_csc { strings = ["mat_csc "] } : tensor<?x?xf64, #CSC64>
         ```
     }];
 
