@@ -340,7 +340,6 @@ public:
   using OpRewritePattern<graphblas::CastOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::CastOp op,
                                 PatternRewriter &rewriter) const override {
-    MLIRContext *context = op.getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -355,30 +354,18 @@ public:
     }
 
     RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
-    sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
-        sparse_tensor::getSparseTensorEncoding(inputTensorType);
-    unsigned inputPtrBitWidth = inputSparseEncoding.getPointerBitWidth();
-    unsigned inputIdxBitWidth = inputSparseEncoding.getIndexBitWidth();
     Type inputValueType = inputTensorType.getElementType();
 
     RankedTensorType outputTensorType = outputType.cast<RankedTensorType>();
-    sparse_tensor::SparseTensorEncodingAttr outputSparseEncoding =
-        sparse_tensor::getSparseTensorEncoding(outputTensorType);
-    unsigned outputPtrBitWidth = outputSparseEncoding.getPointerBitWidth();
-    unsigned outputIdxBitWidth = outputSparseEncoding.getIndexBitWidth();
     Type outputValueType = outputTensorType.getElementType();
 
     unsigned rank = inputTensorType.getRank();
     Type memref1DIValueType = MemRefType::get({-1}, inputValueType);
     Type memref1DOValueType = MemRefType::get({-1}, outputValueType);
-    Type int64Type = rewriter.getIntegerType(64);
-    Type indexType = rewriter.getIndexType();
 
     // Initial constants
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    Value c0_64 = rewriter.create<arith::ConstantIntOp>(loc, 0, int64Type);
-    Value c1_64 = rewriter.create<arith::ConstantIntOp>(loc, 1, int64Type);
 
     // Get the shape as a ValueRange
     ValueRange shape;
@@ -3424,10 +3411,12 @@ public:
       } else if (enumerated_pair.index() != 0)
         callPrintString(rewriter, module, loc, " ");
 
-      if (val)
-        callPrintValue(rewriter, module, loc, val.getValue());
-      else
+      if (!val)
         callPrintString(rewriter, module, loc, " ");
+      else if (val.getValue().getType().dyn_cast_or_null<RankedTensorType>())
+        callPrintTensor(rewriter, module, loc, val.getValue());
+      else
+        callPrintValue(rewriter, module, loc, val.getValue());
     }
     callPrintString(rewriter, module, loc, "\n");
 
