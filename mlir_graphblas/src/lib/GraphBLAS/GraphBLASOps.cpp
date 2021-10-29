@@ -550,6 +550,9 @@ static LogicalResult verify(DiagOp op) {
   ArrayRef<int64_t> inputShape = inputType.getShape();
   ArrayRef<int64_t> resultShape = resultType.getShape();
 
+  if (inputType.getElementType() != resultType.getElementType())
+    return op.emitError("input and output types must match.");
+
   // TODO intelligently handle arbitrarily shaped tensors, i.e. tensors with
   // shapes using "?"
   llvm::Optional<std::string> errMsg;
@@ -859,13 +862,27 @@ static LogicalResult verify(graphblas::SelectOp op) {
 
     Value thunk = thunks[0];
     Type thunkType = thunk.getType();
-    if (thunkType != inputType.getElementType())
-      return op.emitError("Thunk type must match operand type.");
 
-    // Extra thunk must be the rng_context for probability
-    if (thunks.size() > 1 and selector != "probability")
-      return op.emitError("Too many thunks provided for selector '" + selector +
-                          "'");
+    if (selector == "probability") {
+      // Ensure thunk type is f64
+      bool thunkTypeIsF64 = llvm::TypeSwitch<Type, bool>(thunkType)
+                                .Case<FloatType>([&](FloatType type) {
+                                  unsigned bitWidth = type.getWidth();
+                                  return bitWidth == 64;
+                                })
+                                .Default([&](Type type) { return false; });
+      if (!thunkTypeIsF64)
+        return op.emitError("Select 'probability' requires f64 thunk.");
+      if (thunks.size() != 2)
+        return op.emitError("Selector 'probability' requires a RNG context");
+    } else {
+      // All other selectors
+      if (thunkType != inputType.getElementType())
+        return op.emitError("Thunk type must match operand type.");
+      if (thunks.size() > 1)
+        return op.emitError("Too many thunks provided for selector '" +
+                            selector + "'");
+    }
   }
 
   return success();

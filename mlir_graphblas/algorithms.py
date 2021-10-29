@@ -872,3 +872,55 @@ class BFS(Algorithm):
 
 
 bfs = BFS()
+
+
+class TotallyInducedEdgeSampling(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "totally_induced_edge_sampling",
+            input_types=[
+                "tensor<?x?xf64, #CSR64>",
+                "f64",
+                "!llvm.ptr<i8>",
+            ],
+            return_types=["tensor<?x?xf64, #CSR64>"],
+            aliases=_build_common_aliases(),
+        )
+        (A, percentile, ctx) = irb.inputs
+
+        # TODO: figure out a reasonable way to raise an error if nrows != ncols
+
+        selected_edges = irb.graphblas.select(
+            A, "probability", percentile, rng_context=ctx
+        )
+        row_counts = irb.graphblas.reduce_to_vector(selected_edges, "count", axis=1)
+        col_counts = irb.graphblas.reduce_to_vector(selected_edges, "count", axis=0)
+        selected_nodes = irb.graphblas.union(
+            row_counts, col_counts, "plus", "tensor<?xf64, #CV64>"
+        )
+        # TODO: these next lines should be replaced with `extract` when available
+        D_csr = irb.graphblas.diag(selected_nodes, "tensor<?x?xf64, #CSR64>")
+        D_csc = irb.graphblas.diag(selected_nodes, "tensor<?x?xf64, #CSC64>")
+        tmp_csr = irb.graphblas.matrix_multiply(A, D_csc, "any_first")
+        tmp_csc = irb.graphblas.convert_layout(tmp_csr, "tensor<?x?xf64, #CSC64>")
+        output = irb.graphblas.matrix_multiply(D_csr, tmp_csc, "any_second")
+
+        irb.return_vars(output)
+
+        return irb
+
+    def __call__(
+        self,
+        graph: MLIRSparseTensor,
+        sampling_percentage: float,
+        *,
+        rand_seed=None,
+        **kwargs,
+    ) -> MLIRSparseTensor:
+        ctx = ChooseUniformContext(rand_seed)
+        if not 0 <= sampling_percentage <= 1:
+            raise ValueError("sampling_percentage must be between 0 and 1")
+        return super().__call__(graph, sampling_percentage, ctx, **kwargs)
+
+
+ties = totally_induced_edge_sampling = TotallyInducedEdgeSampling()
