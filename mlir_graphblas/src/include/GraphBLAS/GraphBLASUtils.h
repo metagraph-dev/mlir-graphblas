@@ -34,9 +34,9 @@ static const llvm::StringSet<> supportedSemiringMultiplyNames{
 static const llvm::StringSet<> supportedReduceAggregators{"plus", "count",
                                                           "argmin", "argmax"};
 
-static const llvm::StringSet<> supportedSelectors{"triu", "tril", "gt", "ge"};
-static const llvm::StringSet<> supportedSelectorsNeedingThunk{"gt", "ge"};
-static const llvm::StringSet<> supportedSelectorsComparingValues{"gt", "ge"};
+static const llvm::StringSet<> supportedSelectors{"triu", "tril", "gt", "ge", "probability"};
+static const llvm::StringSet<> supportedSelectorsNeedingThunk{"gt", "ge", "probability"};
+static const llvm::StringSet<> supportedSelectorsComparingValues{"gt", "ge", "probability"};
 
 static const llvm::StringSet<> supportedBinaryApplyOperators{"min", "div",
                                                              "fill"};

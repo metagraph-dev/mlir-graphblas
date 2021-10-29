@@ -60,16 +60,16 @@ module {
 
     // CHECK: func @matrix_select_triu(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[CSR_TYPE]] {
     func @matrix_select_triu(%sparse_tensor: tensor<100x100xf64, #CSR64>) -> tensor<100x100xf64, #CSR64> {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.select %[[ARG0]] {selectors = ["triu"]} : [[CSR_TYPE]] to [[CSR_TYPE]]
-        %answer = graphblas.select %sparse_tensor { selectors = ["triu"] } : tensor<100x100xf64, #CSR64> to tensor<100x100xf64, #CSR64>
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.select %[[ARG0]] {selector = "triu"} : [[CSR_TYPE]] to [[CSR_TYPE]]
+        %answer = graphblas.select %sparse_tensor { selector = "triu" } : tensor<100x100xf64, #CSR64> to tensor<100x100xf64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[CSR_TYPE]]
         return %answer : tensor<100x100xf64, #CSR64>
     }
 
     // CHECK: func @matrix_select_tril(%[[ARG0:.*]]: [[CSR_TYPE:tensor<.*->.*>]]) -> [[CSR_TYPE]] {
     func @matrix_select_tril(%sparse_tensor: tensor<100x100xf64, #CSR64>) -> tensor<100x100xf64, #CSR64> {
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.select %[[ARG0]] {selectors = ["tril"]} : [[CSR_TYPE]] to [[CSR_TYPE]]
-        %answer = graphblas.select %sparse_tensor { selectors = ["tril"] } : tensor<100x100xf64, #CSR64> to tensor<100x100xf64, #CSR64>
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.select %[[ARG0]] {selector = "tril"} : [[CSR_TYPE]] to [[CSR_TYPE]]
+        %answer = graphblas.select %sparse_tensor { selector = "tril" } : tensor<100x100xf64, #CSR64> to tensor<100x100xf64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[CSR_TYPE]]
         return %answer : tensor<100x100xf64, #CSR64>
     }
@@ -78,8 +78,8 @@ module {
     func @matrix_select_gt_thunk(%sparse_tensor: tensor<100x100xf64, #CSR64>) -> tensor<100x100xf64, #CSR64> {
         // CHECK-NEXT: %[[THUNK:.*]] = arith.constant 0.000000e+00 : [[THUNK_TYPE:.*]]
         %thunk = arith.constant 0.0 : f64
-        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.select %[[ARG0]], %[[THUNK]] {selectors = ["gt"]} : [[CSR_TYPE]], [[THUNK_TYPE]] to [[CSR_TYPE]]
-        %answer = graphblas.select %sparse_tensor, %thunk { selectors = ["gt"] } : tensor<100x100xf64, #CSR64>, f64 to tensor<100x100xf64, #CSR64>
+        // CHECK-NEXT: %[[ANSWER:.*]] = graphblas.select %[[ARG0]], %[[THUNK]] {selector = "gt"} : [[CSR_TYPE]], [[THUNK_TYPE]] to [[CSR_TYPE]]
+        %answer = graphblas.select %sparse_tensor, %thunk { selector = "gt" } : tensor<100x100xf64, #CSR64>, f64 to tensor<100x100xf64, #CSR64>
         // CHECK-NEXT: return %[[ANSWER]] : [[CSR_TYPE]]
         return %answer : tensor<100x100xf64, #CSR64>
     }

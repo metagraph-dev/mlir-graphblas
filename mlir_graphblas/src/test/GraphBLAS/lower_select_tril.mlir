@@ -57,6 +57,6 @@
 // CHECK:         }
 
 func @select_tril(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
-    %answer = graphblas.select %sparse_tensor { selectors = ["tril"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+    %answer = graphblas.select %sparse_tensor { selector = "tril" } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
     return %answer : tensor<?x?xf64, #CSR64>
 }

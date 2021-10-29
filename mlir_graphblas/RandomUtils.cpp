@@ -112,4 +112,11 @@ void destroy_choose_weighted_context(void *rngContext) {
   delete generator;
 }
 
+std::uniform_real_distribution<> doubleDistribution(0.0, 1.0);
+
+double random_double(void *rngContext) {
+  auto generator = (std::mt19937_64 *)rngContext;
+  return doubleDistribution(*generator);
+}
+
 } // extern "C"

@@ -47,8 +47,8 @@ class TriangleCount(Algorithm):
             aliases=_build_common_aliases(),
         )
         (inp,) = irb.inputs
-        U = irb.graphblas.select(inp, [], "triu")
-        L = irb.graphblas.select(inp, [], "tril")
+        U = irb.graphblas.select(inp, "triu")
+        L = irb.graphblas.select(inp, "tril")
         U_csc = irb.graphblas.convert_layout(U, "tensor<?x?xf64, #CSC64>")
         C = irb.graphblas.matrix_multiply(L, U_csc, "plus_pair", mask=L)
 
@@ -91,7 +91,7 @@ class DenseNeuralNetwork(Algorithm):
             matmul_result, biases, "plus_plus"
         )
         clamp_result = irb_inner.graphblas.apply(add_bias_result, "min", left=threshold)
-        relu_result = irb_inner.graphblas.select(clamp_result, [zero_f64], ["gt"])
+        relu_result = irb_inner.graphblas.select(clamp_result, "gt", zero_f64)
 
         irb_inner.util.del_sparse_tensor(Y)
 
@@ -285,7 +285,7 @@ class BipartiteProjectAndFilter(Algorithm):
             M_T = ir_builder.graphblas.transpose(M, "tensor<?x?xf64, #CSR64>")
             M_csc = ir_builder.graphblas.convert_layout(M, "tensor<?x?xf64, #CSC64>")
             projection = ir_builder.graphblas.matrix_multiply(M_T, M_csc, "plus_times")
-        filtered = ir_builder.graphblas.select(projection, [limit], ["ge"])
+        filtered = ir_builder.graphblas.select(projection, "ge", limit)
         ir_builder.return_vars(filtered)
         return ir_builder
 
@@ -349,7 +349,7 @@ class ScanStatistics(Algorithm):
             aliases=_build_common_aliases(),
         )
         (A,) = ir_builder.inputs
-        L = ir_builder.graphblas.select(A, [], ["tril"])
+        L = ir_builder.graphblas.select(A, "tril")
         L_T = ir_builder.graphblas.transpose(L, "tensor<?x?xf64, #CSC64>")
         A_triangles = ir_builder.graphblas.matrix_multiply(A, L_T, "plus_pair", mask=A)
         tri = ir_builder.graphblas.reduce_to_vector(A_triangles, "plus", 1)

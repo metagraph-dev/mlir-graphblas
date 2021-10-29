@@ -33,63 +33,6 @@ namespace {
 // Passes implementation.
 //===----------------------------------------------------------------------===//
 
-class FuseMatrixSelectRewrite : public OpRewritePattern<graphblas::SelectOp> {
-public:
-  using OpRewritePattern<graphblas::SelectOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::SelectOp op,
-                                PatternRewriter &rewriter) const override {
-    Value input = op.input();
-    Location loc = op.getLoc();
-
-    SmallVector<graphblas::SelectOp, 3> selectOps;
-
-    for (OpOperand &inputUse : input.getUses()) {
-      graphblas::SelectOp user =
-          llvm::dyn_cast_or_null<graphblas::SelectOp>(inputUse.getOwner());
-      if (user != nullptr) {
-        selectOps.push_back(user);
-      }
-    }
-
-    if (selectOps.size() > 1) {
-      SmallVector<StringRef, 3> selectors;
-      SmallVector<Value, 3> fusedOpInputs{input};
-      SmallVector<Type, 3> resultTypes;
-
-      for (graphblas::SelectOp selectOp : selectOps) {
-        for (Attribute selectorStr : selectOp.selectors()) {
-          selectors.push_back(selectorStr.dyn_cast<StringAttr>().getValue());
-        }
-        for (Value thunk : selectOp.thunks()) {
-          fusedOpInputs.push_back(thunk);
-        }
-
-        ValueTypeRange<ResultRange> opResultTypes = selectOp.getResultTypes();
-        resultTypes.insert(resultTypes.end(), opResultTypes.begin(),
-                           opResultTypes.end());
-      }
-
-      NamedAttrList attrs;
-      attrs.set("selectors", rewriter.getStrArrayAttr(selectors));
-      graphblas::SelectOp fusedOp = rewriter.create<graphblas::SelectOp>(
-          loc, resultTypes, fusedOpInputs, attrs);
-      ValueRange fusedResults = fusedOp.getResults();
-
-      unsigned i = 0;
-      for (graphblas::SelectOp selectOp : selectOps) {
-        SmallVector<Value, 3> results;
-        for (unsigned j = 0; j < selectOp.getNumResults(); j++) {
-          results.push_back(fusedResults[i]);
-          i++;
-        }
-        rewriter.replaceOp(selectOp, results);
-      }
-    }
-
-    return failure();
-  };
-};
-
 class FuseMatrixMultiplyReduceRewrite
     : public OpRewritePattern<graphblas::ReduceToScalarGenericOp> {
 public:
@@ -214,7 +157,7 @@ public:
 };
 
 void populateGraphBLASOptimizePatterns(RewritePatternSet &patterns) {
-  patterns.add<FuseMatrixSelectRewrite, FuseMatrixMultiplyApplyRewrite,
+  patterns.add<FuseMatrixMultiplyApplyRewrite,
                FuseMatrixMultiplyReduceRewrite>(patterns.getContext());
 }
 

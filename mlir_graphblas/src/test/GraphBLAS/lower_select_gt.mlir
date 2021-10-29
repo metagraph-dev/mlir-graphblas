@@ -58,6 +58,6 @@
 
 func @select_gt(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
     %c0_f64 = arith.constant 0.0 : f64
-    %answer = graphblas.select %sparse_tensor, %c0_f64 { selectors = ["gt"] } : tensor<?x?xf64, #CSR64>, f64 to tensor<?x?xf64, #CSR64>
+    %answer = graphblas.select %sparse_tensor, %c0_f64 { selector = "gt" } : tensor<?x?xf64, #CSR64>, f64 to tensor<?x?xf64, #CSR64>
     return %answer : tensor<?x?xf64, #CSR64>
 }

@@ -833,66 +833,37 @@ static LogicalResult verify(graphblas::SelectOp op) {
   if (errMsg)
     return op.emitError("input " + errMsg.getValue());
 
-  for (OpResult result : op.getResults()) {
-    RankedTensorType resultType = result.getType().cast<RankedTensorType>();
+  RankedTensorType resultType = op.getResult().getType().cast<RankedTensorType>();
 
-    if (inputType != resultType)
-      return op.emitError(
-          "At least 1 result type does not match that of the input matrix.");
-  }
+  if (inputType != resultType)
+    return op.emitError("result type must match input type.");
 
+  std::string selector = op.selector().str();
   std::vector<std::string> selectorsNeedingThunk;
-  ArrayAttr selectors = op.selectors();
+  ValueRange thunks = op.thunks();
 
-  for (Attribute selectorAttr : selectors) {
-    std::string selector =
-        selectorAttr.dyn_cast_or_null<StringAttr>().getValue().str();
-    if (!supportedSelectors.contains(selector))
-      return op.emitError("\"" + selector + "\" is not a supported selector.");
-    if (rank == 1 && !supportedSelectorsComparingValues.contains(selector))
-      return op.emitError("Selector '" + selector +
-                          "' not allowed for vectors.");
+  if (!supportedSelectors.contains(selector))
+    return op.emitError("\"" + selector + "\" is not a supported selector.");
+  if (rank == 1 && !supportedSelectorsComparingValues.contains(selector))
+    return op.emitError("Selector '" + selector + "' not allowed for vectors.");
 
+  if (thunks.size() <= 0) {
     if (supportedSelectorsNeedingThunk.contains(selector))
-      selectorsNeedingThunk.push_back(selector);
-  }
+      return op.emitError("Selector '" + selector + "' requires a thunk.");
+  } else if (thunks.size() > 2) {
+    return op.emitError("Too many thunk values provided.");
+  } else {
+    if (!supportedSelectorsNeedingThunk.contains(selector))
+      return op.emitError("Selector '" + selector + "' cannot take a thunk.");
 
-  OperandRange thunks = op.thunks();
+    Value thunk = thunks[0];
+    Type thunkType = thunk.getType();
+    if (thunkType != inputType.getElementType())
+      return op.emitError("Thunk type must match operand type.");
 
-  if (thunks.size() != selectorsNeedingThunk.size()) {
-    if (selectorsNeedingThunk.size() == 0) {
-      return op.emitError()
-             << "No selectors need thunks, but "
-             << std::to_string(thunks.size()) << " thunks were given.";
-    } else {
-      return op.emitError()
-             << "Some selectors ("
-             << std::accumulate(++selectorsNeedingThunk.begin(),
-                                selectorsNeedingThunk.end(),
-                                "\"" + selectorsNeedingThunk[0] + "\"",
-                                [](const std::string &a, std::string b) {
-                                  return a + ", \"" + b + "\"";
-                                })
-             << ") need thunks, but " << std::to_string(thunks.size())
-             << " thunks were given.";
-    }
-  }
-
-  for (auto indexed_pair :
-       llvm::enumerate(llvm::zip(selectorsNeedingThunk, thunks))) {
-    std::tuple<std::string, Value> pair = indexed_pair.value();
-    std::string selector = std::get<0>(pair);
-    if (supportedSelectorsComparingValues.contains(selector)) {
-      Value thunk = std::get<1>(pair);
-      Type thunkType = thunk.getType();
-      if (thunkType != inputType.getElementType()) {
-        return op.emitError() << "Operand #" << indexed_pair.index() + 1
-                              << " is associated with the selector "
-                              << "\"" << selector << "\""
-                              << ", but has a different type than the input "
-                                 "tensor's element type.";
-      }
-    }
+    // Extra thunk must be the rng_context for probability
+    if (thunks.size() > 1 and selector != "probability")
+      return op.emitError("Too many thunks provided for selector '" + selector + "'");
   }
 
   return success();

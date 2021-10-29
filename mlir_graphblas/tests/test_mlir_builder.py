@@ -435,7 +435,7 @@ def test_ir_gt_thunk(engine: MlirJitEngine, aliases: AliasMap):
     thirty_four_scalar = ir_builder.arith.constant(34, "f64")
     M2 = ir_builder.graphblas.apply(M, "div", left=twelve_scalar)
     M3 = ir_builder.graphblas.apply(M2, "div", right=thirty_four_scalar)
-    filtered = ir_builder.graphblas.select(M3, [threshold], ["gt"])
+    filtered = ir_builder.graphblas.select(M3, "gt", threshold)
     ir_builder.return_vars(filtered)
     gt_thunk = ir_builder.compile(engine=engine, passes=GRAPHBLAS_PASSES)
 
