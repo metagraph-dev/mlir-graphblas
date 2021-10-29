@@ -650,7 +650,13 @@ class GraphBLAS_Select(BaseOp):
 
     @classmethod
     def call(
-        cls, irbuilder, input, selector: str, thunk: MLIRVar = None, *, rng_context: MLIRVar = None
+        cls,
+        irbuilder,
+        input,
+        selector: str,
+        thunk: MLIRVar = None,
+        *,
+        rng_context: MLIRVar = None,
     ):
         cls.ensure_mlirvar(input, SparseTensorType)
         if thunk is not None:
@@ -666,7 +672,7 @@ class GraphBLAS_Select(BaseOp):
             f"{ret_val.assign} = graphblas.select {input}",
             f' {{ selector = "{selector}" }}',
             f" : {input.type}",
-            f" to {ret_val.type}"
+            f" to {ret_val.type}",
         ]
         if thunk is not None:
             text.insert(1, f", {thunk}")
@@ -907,7 +913,10 @@ class GraphBLAS_Print(BaseOp):
             "graphblas.print "
             + ", ".join(str(v) for v in values)
             + " { strings = ["
-            + ", ".join('"' + s.replace('"', '\\"') + '"' for s in string_attributes)
+            + ", ".join(
+                '"' + s.replace("\n", "\\n").replace('"', '\\"') + '"'
+                for s in string_attributes
+            )
             + "] } : "
             + ", ".join(str(v.type) for v in values)
         )

@@ -157,8 +157,8 @@ public:
 };
 
 void populateGraphBLASOptimizePatterns(RewritePatternSet &patterns) {
-  patterns.add<FuseMatrixMultiplyApplyRewrite,
-               FuseMatrixMultiplyReduceRewrite>(patterns.getContext());
+  patterns.add<FuseMatrixMultiplyApplyRewrite, FuseMatrixMultiplyReduceRewrite>(
+      patterns.getContext());
 }
 
 struct GraphBLASOptimizePass

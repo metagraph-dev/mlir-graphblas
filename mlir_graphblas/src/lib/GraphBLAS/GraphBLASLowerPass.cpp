@@ -340,7 +340,7 @@ public:
   using OpRewritePattern<graphblas::CastOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::CastOp op,
                                 PatternRewriter &rewriter) const override {
-    //MLIRContext *context = op.getContext();
+    // MLIRContext *context = op.getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -355,17 +355,17 @@ public:
     }
 
     RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
-    //sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
+    // sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
     //    sparse_tensor::getSparseTensorEncoding(inputTensorType);
-    //unsigned inputPtrBitWidth = inputSparseEncoding.getPointerBitWidth();
-    //unsigned inputIdxBitWidth = inputSparseEncoding.getIndexBitWidth();
+    // unsigned inputPtrBitWidth = inputSparseEncoding.getPointerBitWidth();
+    // unsigned inputIdxBitWidth = inputSparseEncoding.getIndexBitWidth();
     Type inputValueType = inputTensorType.getElementType();
 
     RankedTensorType outputTensorType = outputType.cast<RankedTensorType>();
-    //sparse_tensor::SparseTensorEncodingAttr outputSparseEncoding =
+    // sparse_tensor::SparseTensorEncodingAttr outputSparseEncoding =
     //    sparse_tensor::getSparseTensorEncoding(outputTensorType);
-    //unsigned outputPtrBitWidth = outputSparseEncoding.getPointerBitWidth();
-    //unsigned outputIdxBitWidth = outputSparseEncoding.getIndexBitWidth();
+    // unsigned outputPtrBitWidth = outputSparseEncoding.getPointerBitWidth();
+    // unsigned outputIdxBitWidth = outputSparseEncoding.getIndexBitWidth();
     Type outputValueType = outputTensorType.getElementType();
 
     unsigned rank = inputTensorType.getRank();
@@ -535,7 +535,8 @@ public:
 };
 
 struct MatrixSelectOutputWriter {
-  MatrixSelectOutputWriter(StringRef _selector, llvm::Optional<Value> _thunk, llvm::Optional<Value> _rngContext)
+  MatrixSelectOutputWriter(StringRef _selector, llvm::Optional<Value> _thunk,
+                           llvm::Optional<Value> _rngContext)
       : selector(_selector), thunk(_thunk), rngContext(_rngContext){};
 
   void createConstants(PatternRewriter &rewriter, Location loc) {
@@ -597,13 +598,15 @@ struct MatrixSelectOutputWriter {
                                             thunk.getValue());
     } else if (selector == "probability") {
       Type f64Type = rewriter.getF64Type();
-      SymbolRefAttr random_double = SymbolRefAttr::get(rewriter.getContext(), "random_double");
+      SymbolRefAttr random_double =
+          SymbolRefAttr::get(rewriter.getContext(), "random_double");
       // Get a random double between [0, 1)
       CallOp randCall = rewriter.create<mlir::CallOp>(
-        loc, random_double, TypeRange{f64Type}, ArrayRef<Value>({rngContext.getValue()})
-      );
+          loc, random_double, TypeRange{f64Type},
+          ArrayRef<Value>({rngContext.getValue()}));
       Value rand = randCall.getResult(0);
-      keep = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OLT, rand, thunk.getValue());
+      keep = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OLT,
+                                            rand, thunk.getValue());
     } else {
       // this should be impossible because of validation
       assert(0);
@@ -712,29 +715,32 @@ public:
     scf::ForOp outerLoop = rewriter.create<scf::ForOp>(loc, c0, nrow, c1);
     Value row = outerLoop.getInductionVar();
     {
-        rewriter.setInsertionPointToStart(outerLoop.getBody());
-        Value row_plus1 = rewriter.create<arith::AddIOp>(loc, row, c1);
+      rewriter.setInsertionPointToStart(outerLoop.getBody());
+      Value row_plus1 = rewriter.create<arith::AddIOp>(loc, row, c1);
 
-        output->createUpdateCurrCount(rewriter, loc, row, row_plus1);
+      output->createUpdateCurrCount(rewriter, loc, row, row_plus1);
 
-        Value j_start_64 = rewriter.create<memref::LoadOp>(loc, Ap, row);
-        Value j_end_64 = rewriter.create<memref::LoadOp>(loc, Ap, row_plus1);
-        Value j_start =
-            rewriter.create<arith::IndexCastOp>(loc, j_start_64, indexType);
-        Value j_end = rewriter.create<arith::IndexCastOp>(loc, j_end_64, indexType);
+      Value j_start_64 = rewriter.create<memref::LoadOp>(loc, Ap, row);
+      Value j_end_64 = rewriter.create<memref::LoadOp>(loc, Ap, row_plus1);
+      Value j_start =
+          rewriter.create<arith::IndexCastOp>(loc, j_start_64, indexType);
+      Value j_end =
+          rewriter.create<arith::IndexCastOp>(loc, j_end_64, indexType);
 
-        scf::ForOp innerLoop = rewriter.create<scf::ForOp>(loc, j_start, j_end, c1);
-        Value jj = innerLoop.getInductionVar();
-        {
-            rewriter.setInsertionPointToStart(innerLoop.getBody());
-            Value col_64 = rewriter.create<memref::LoadOp>(loc, Aj, jj);
-            Value col = rewriter.create<arith::IndexCastOp>(loc, col_64, indexType);
-            Value val = rewriter.create<memref::LoadOp>(loc, Ax, jj);
-            output->createTestAndStore(rewriter, loc, row, col, val, row_plus1, col_64);
-            // rewriter.setInsertionPointAfter(innerLoop);
-        }
+      scf::ForOp innerLoop =
+          rewriter.create<scf::ForOp>(loc, j_start, j_end, c1);
+      Value jj = innerLoop.getInductionVar();
+      {
+        rewriter.setInsertionPointToStart(innerLoop.getBody());
+        Value col_64 = rewriter.create<memref::LoadOp>(loc, Aj, jj);
+        Value col = rewriter.create<arith::IndexCastOp>(loc, col_64, indexType);
+        Value val = rewriter.create<memref::LoadOp>(loc, Ax, jj);
+        output->createTestAndStore(rewriter, loc, row, col, val, row_plus1,
+                                   col_64);
+        // rewriter.setInsertionPointAfter(innerLoop);
+      }
 
-        rewriter.setInsertionPointAfter(outerLoop);
+      rewriter.setInsertionPointAfter(outerLoop);
     }
 
     // trim excess values
@@ -3411,10 +3417,12 @@ public:
       } else if (enumerated_pair.index() != 0)
         callPrintString(rewriter, module, loc, " ");
 
-      if (val)
-        callPrintValue(rewriter, module, loc, val.getValue());
-      else
+      if (!val)
         callPrintString(rewriter, module, loc, " ");
+      else if (val.getValue().getType().dyn_cast_or_null<RankedTensorType>())
+        callPrintTensor(rewriter, module, loc, val.getValue());
+      else
+        callPrintValue(rewriter, module, loc, val.getValue());
     }
     callPrintString(rewriter, module, loc, "\n");
 

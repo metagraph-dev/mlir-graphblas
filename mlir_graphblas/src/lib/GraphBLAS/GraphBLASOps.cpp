@@ -833,7 +833,8 @@ static LogicalResult verify(graphblas::SelectOp op) {
   if (errMsg)
     return op.emitError("input " + errMsg.getValue());
 
-  RankedTensorType resultType = op.getResult().getType().cast<RankedTensorType>();
+  RankedTensorType resultType =
+      op.getResult().getType().cast<RankedTensorType>();
 
   if (inputType != resultType)
     return op.emitError("result type must match input type.");
@@ -863,7 +864,8 @@ static LogicalResult verify(graphblas::SelectOp op) {
 
     // Extra thunk must be the rng_context for probability
     if (thunks.size() > 1 and selector != "probability")
-      return op.emitError("Too many thunks provided for selector '" + selector + "'");
+      return op.emitError("Too many thunks provided for selector '" + selector +
+                          "'");
   }
 
   return success();
@@ -1036,6 +1038,30 @@ static LogicalResult verify(PrintOp op) {
               }
               return llvm::None;
             })
+            .Case<RankedTensorType>(
+                [&](RankedTensorType type) -> llvm::Optional<std::string> {
+                  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+                      sparse_tensor::getSparseTensorEncoding(type);
+                  bool inputIsDense = !sparseEncoding;
+                  if (inputIsDense)
+                    return llvm::None;
+
+                  unsigned rank = type.getRank();
+                  if (rank == 1) {
+                    llvm::ArrayRef<
+                        sparse_tensor::SparseTensorEncodingAttr::DimLevelType>
+                        dlt = sparseEncoding.getDimLevelType();
+                    if (dlt[0] != sparse_tensor::SparseTensorEncodingAttr::
+                                      DimLevelType::Compressed)
+                      return std::string("Vectors must be dense or sparse.");
+                    return llvm::None;
+                  } else if (rank == 2) {
+                    return checkMatrixEncoding(type, EITHER);
+                  } else {
+                    return std::string(
+                        "Can only print sparse tensors with rank 1 or 2.");
+                  }
+                })
             .Default([&](Type type) -> llvm::Optional<std::string> {
               std::string errorMessageString = "Printing for the type ";
               llvm::raw_string_ostream stream(errorMessageString);

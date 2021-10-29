@@ -34,9 +34,12 @@ static const llvm::StringSet<> supportedSemiringMultiplyNames{
 static const llvm::StringSet<> supportedReduceAggregators{"plus", "count",
                                                           "argmin", "argmax"};
 
-static const llvm::StringSet<> supportedSelectors{"triu", "tril", "gt", "ge", "probability"};
-static const llvm::StringSet<> supportedSelectorsNeedingThunk{"gt", "ge", "probability"};
-static const llvm::StringSet<> supportedSelectorsComparingValues{"gt", "ge", "probability"};
+static const llvm::StringSet<> supportedSelectors{"triu", "tril", "gt", "ge",
+                                                  "probability"};
+static const llvm::StringSet<> supportedSelectorsNeedingThunk{"gt", "ge",
+                                                              "probability"};
+static const llvm::StringSet<> supportedSelectorsComparingValues{"gt", "ge",
+                                                                 "probability"};
 
 static const llvm::StringSet<> supportedBinaryApplyOperators{"min", "div",
                                                              "fill"};
@@ -67,6 +70,8 @@ mlir::RankedTensorType getCSCType(mlir::MLIRContext *context,
 int64_t getRank(mlir::Type inputType);
 int64_t getRank(mlir::Value inputValue);
 
+void callPrintTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                     mlir::Location loc, mlir::Value input);
 void callPrintString(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                      mlir::Location loc, mlir::StringRef string);
 void callPrintValue(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
