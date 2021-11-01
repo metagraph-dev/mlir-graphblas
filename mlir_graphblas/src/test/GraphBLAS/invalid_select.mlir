@@ -94,3 +94,20 @@ module {
         return %answer_0 : tensor<2xf64, #CV64>
     }
 }
+
+// -----
+
+#CV64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "compressed" ],
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @vector_select_wrapper(%sparse_tensor: tensor<2xf64, #CV64>, %rng_context: !llvm.ptr<i8>) -> tensor<2xf64, #CV64> {
+        %thunk = arith.constant 0.65 : f64
+        %thunk2 = arith.constant 0.75 : f64
+        %answer_0 = graphblas.select %sparse_tensor, %thunk, %rng_context, %thunk2 { selector = "probability" } : tensor<2xf64, #CV64>, f64, !llvm.ptr<i8>, f64 to tensor<2xf64, #CV64> // expected-error {{Too many thunk values provided.}}
+        return %answer_0 : tensor<2xf64, #CV64>
+    }
+}

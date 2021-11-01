@@ -677,11 +677,13 @@ public:
     std::string selector = op.selector().str();
     OperandRange thunks = op.thunks();
     llvm::Optional<Value> thunk = llvm::None;
-    if (thunks.size() > 0)
-      thunk = thunks[0];
     llvm::Optional<Value> rngContext = llvm::None;
-    if (thunks.size() > 1)
+    if (thunks.size() == 2) { // Thunk & rng_context
+      thunk = thunks[0];
       rngContext = thunks[1];
+    } else if (thunks.size() == 1) { // Thunk only
+      thunk = thunks[0];
+    }
 
     // Initial constants
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
