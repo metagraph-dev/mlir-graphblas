@@ -678,7 +678,7 @@ class GraphBLAS_Select(BaseOp):
         if rng_context is not None:
             cls.ensure_mlirvar(rng_context)
         if selector not in cls.allowed_selectors:
-            raise TypeError(
+            raise ValueError(
                 f"Illegal selector: {selector}, must be one of {cls.allowed_selectors}"
             )
         if selector == "probability":
@@ -699,6 +699,8 @@ class GraphBLAS_Select(BaseOp):
             text.insert(1, f", {thunk}")
             text.insert(-1, f", {thunk.type}")
         if rng_context is not None:
+            if thunk is None:
+                raise ValueError("Thunk must be provided when rng_context is provided")
             text.insert(2, f", {rng_context}")
             text.insert(-1, f", {rng_context.type}")
 
