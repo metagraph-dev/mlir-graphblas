@@ -9,7 +9,7 @@
 
 #map = affine_map<(d0)[s0, s1] -> (d0 * s1 + s0)>
 
-func private @uniform_choose_n(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map>, memref<?xf64, #map>)
+func private @choose_uniform(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map>, memref<?xf64, #map>)
 
 // CHECK-LABEL:   func @select_random_uniform(
 // CHECK-SAME:                                %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
@@ -63,7 +63,7 @@ func private @uniform_choose_n(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map>, mem
 // CHECK:               memref.copy %[[VAL_42]], %[[VAL_40]] : memref<?xi64, #map> to memref<?xi64, #map>
 // CHECK:               memref.copy %[[VAL_43]], %[[VAL_41]] : memref<?xf64, #map> to memref<?xf64, #map>
 // CHECK:             } else {
-// CHECK:               call @uniform_choose_n(%[[VAL_2]], %[[VAL_38]], %[[VAL_36]], %[[VAL_40]], %[[VAL_43]]) : (!llvm.ptr<i8>, i64, i64, memref<?xi64, #map>, memref<?xf64, #map>) -> ()
+// CHECK:               call @choose_uniform(%[[VAL_2]], %[[VAL_38]], %[[VAL_36]], %[[VAL_40]], %[[VAL_43]]) : (!llvm.ptr<i8>, i64, i64, memref<?xi64, #map>, memref<?xf64, #map>) -> ()
 // CHECK:               scf.parallel (%[[VAL_44:.*]]) = (%[[VAL_5]]) to (%[[VAL_37]]) step (%[[VAL_4]]) {
 // CHECK:                 %[[VAL_45:.*]] = memref.load %[[VAL_40]]{{\[}}%[[VAL_44]]] : memref<?xi64, #map>
 // CHECK:                 %[[VAL_46:.*]] = arith.index_cast %[[VAL_45]] : i64 to index
@@ -79,6 +79,6 @@ func private @uniform_choose_n(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map>, mem
 // CHECK:           return %[[VAL_12]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:         }
 func @select_random_uniform(%sparse_tensor: tensor<?x?xf64, #CSR64>, %n: i64, %ctx: !llvm.ptr<i8>) -> tensor<?x?xf64, #CSR64> {
-    %answer = graphblas.matrix_select_random %sparse_tensor, %n, %ctx { choose_n = @uniform_choose_n } : (tensor<?x?xf64, #CSR64>, i64, !llvm.ptr<i8>) to tensor<?x?xf64, #CSR64>
+    %answer = graphblas.matrix_select_random %sparse_tensor, %n, %ctx { choose_n = @choose_uniform } : (tensor<?x?xf64, #CSR64>, i64, !llvm.ptr<i8>) to tensor<?x?xf64, #CSR64>
     return %answer : tensor<?x?xf64, #CSR64>
 }

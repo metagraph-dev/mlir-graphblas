@@ -21,6 +21,8 @@ cdef extern from "RandomUtils.cpp" nogil:
                     int64_t valStride)
     void destroy_choose_weighted_context(void *rngContext)
 
+    double random_double(void *rngContext);
+
 
 cdef class ChooseUniformContext:
     cdef void *_data

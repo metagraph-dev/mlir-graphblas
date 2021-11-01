@@ -646,36 +646,44 @@ class GraphBLAS_Equal(BaseOp):
 class GraphBLAS_Select(BaseOp):
     dialect = "graphblas"
     name = "select"
-    allowed_selectors = {"triu", "tril", "gt", "ge"}
+    allowed_selectors = {"triu", "tril", "gt", "ge", "probability"}
 
     @classmethod
     def call(
-        cls, irbuilder, input, thunks: Sequence[MLIRVar], selectors: Sequence[str]
+        cls,
+        irbuilder,
+        input,
+        selector: str,
+        thunk: MLIRVar = None,
+        *,
+        rng_context: MLIRVar = None,
     ):
         cls.ensure_mlirvar(input, SparseTensorType)
-        # Be forgiving if a single thunk or single selector is provided
-        if not hasattr(thunks, "__len__"):
-            thunks = [thunks]
-        if isinstance(selectors, str):
-            selectors = [selectors]
-
-        for thunk in thunks:
+        if thunk is not None:
             cls.ensure_mlirvar(thunk)
-        for selector in selectors:
-            if selector not in cls.allowed_selectors:
-                raise TypeError(
-                    f"Illegal selector: {selector}, must be one of {cls.allowed_selectors}"
-                )
+        if rng_context is not None:
+            cls.ensure_mlirvar(rng_context)
+        if selector not in cls.allowed_selectors:
+            raise ValueError(
+                f"Illegal selector: {selector}, must be one of {cls.allowed_selectors}"
+            )
         ret_val = irbuilder.new_var(input.type)
-        return ret_val, (
-            f"{ret_val.assign} = graphblas.select {input} "
-            + "".join(f", {thunk}" for thunk in thunks)
-            + f"{{ selectors = ["
-            + ", ".join(f'"{selector}"' for selector in selectors)
-            + f"] }} : {input.type}"
-            + "".join(f", {thunk.type}" for thunk in thunks)
-            + f" to {input.type}"
-        )
+        text = [
+            f"{ret_val.assign} = graphblas.select {input}",
+            f' {{ selector = "{selector}" }}',
+            f" : {input.type}",
+            f" to {ret_val.type}",
+        ]
+        if thunk is not None:
+            text.insert(1, f", {thunk}")
+            text.insert(-1, f", {thunk.type}")
+        if rng_context is not None:
+            if thunk is None:
+                raise ValueError("Thunk must be provided when rng_context is provided")
+            text.insert(2, f", {rng_context}")
+            text.insert(-1, f", {rng_context.type}")
+
+        return ret_val, "".join(text)
 
 
 class GraphBLAS_ReduceToVector(BaseOp):

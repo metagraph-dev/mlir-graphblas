@@ -216,46 +216,43 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
 def GraphBLAS_SelectOp : GraphBLAS_Op<"select", [NoSideEffect]> {
     let summary = "Select operation.";
     let description = [{
-        Returns new sparse tensors, each with a subset of elements from the given tensor.
+        Returns a new sparse tensor with a subset of elements from the given tensor.
 
         The elements included in the resulting sparse tensor vary depending on the selectors given
-        (one of "triu", "tril", "ge", or "gt").
-        Multiple selectors may be given, in which case multiple results will be returned.
+        (one of "triu", "tril", "ge", "gt", or "probability").
 
-        Some selectors, e.g. "gt", require a thunk. The thunks should be passed as extra operands to the op.
-
-        The number of given thunks must match the number of thunk-requiring selectors.
-
-        The ordering of the thunks/selectors determines which thunk is used for which selector, i.e.
-        the nth thunk is used for the nth thunk-requiring selector.
+        Some selectors, e.g. "gt", require a thunk.
+        Some selectors, e.g. "probability" require a thunk and random number generator context.
 
         The given tensor must be a sparse vector or a matrix with CSR or CSC sparsity.
-
         The resulting sparse tensors will have the same encoding as the input tensor.
 
-        Single Selector Example:
+        Selector Example:
         ```mlir
-        %answer = graphblas.select %sparse_tensor { selectors = ["triu"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+        %result = graphblas.select %sparse_tensor { selector = "triu" } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
         ```
 
-        Multiple Selector Example:
+        Selector with Thunk Example:
         ```mlir
-        %answers = graphblas.select %sparse_tensor { selectors = ["triu", "tril"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>
+        %thunk = constant 0.0 : f64
+        %result = graphblas.select %sparse_tensor, %thunk { selector = "gt" } : tensor<?x?xf64, #CSR64>, f64 to tensor<?x?xf64, #CSR64>
         ```
 
-        Thunk-Requiring Selector Example:
+        Random Selector Example:
         ```mlir
-        %thunk_a = constant 0.0 : f64 // used for the first "gt"
-        %thunk_b = constant 9.9 : f64 // used for the second "gt"
-        %answers = graphblas.select %sparse_tensor, %thunk_a, %thunk_b { selectors = ["triu", "gt", "tril", "gt"] } : tensor<?x?xf64, #CSR64>, f64, f64 to tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>
+        %percentage = constant 0.5 : f64
+        %result = graphblas.select %sparse_tensor, %percentage, %rng_context { selector = "probability" } : tensor<?x?xf64, #CSR64>, f64, !llvm.ptr<i8> to tensor<?x?xf64, #CSR64>
         ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, Variadic<AnyType>:$thunks, StrArrayAttr:$selectors);
-    let results = (outs Variadic<GraphBlasMatrixOrVectorOperand>:$outputs);
+    let arguments = (ins
+      GraphBlasMatrixOrVectorOperand:$input,
+      Variadic<AnyType>:$thunks,
+      StrAttr:$selector);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
 
     let assemblyFormat = [{
-           $input (`,` $thunks^)? attr-dict `:` type($input) (`,` type($thunks)^)? `to` type($outputs)
+           $input (`,` $thunks^)? attr-dict `:` type($input) (`,` type($thunks)^)? `to` type($output)
     }];
 
     let verifier = [{ return ::verify(*this); }];

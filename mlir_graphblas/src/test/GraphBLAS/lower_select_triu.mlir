@@ -57,7 +57,7 @@
 // CHECK:         }
 
 func @select_triu(%sparse_tensor: tensor<?x?xf64, #CSR64>) -> tensor<?x?xf64, #CSR64> {
-    %answer = graphblas.select %sparse_tensor { selectors = ["triu"] } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+    %answer = graphblas.select %sparse_tensor { selector = "triu" } : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
     return %answer : tensor<?x?xf64, #CSR64>
 }
 

@@ -8,7 +8,7 @@
 
 module {
     func @printer_func(%tensor: tensor<?xi64, #BadSparseEncoding>) {
-        graphblas.print %tensor { strings = ["printed : "] } : tensor<?xi64, #BadSparseEncoding> // expected-error {{Vectors mmust be dense or sparse.}}
+        graphblas.print %tensor { strings = ["printed : "] } : tensor<?xi64, #BadSparseEncoding> // expected-error {{Vectors must be dense or sparse.}}
         return
     }
 }
@@ -23,7 +23,7 @@ module {
 
 module {
     func @printer_func(%tensor: tensor<?xi64, #BadSparseEncoding>) {
-        graphblas.print %tensor { strings = ["printed : "] } : tensor<?xi64, #BadSparseEncoding> // expected-error {{Vectors mmust be dense or sparse.}}
+        graphblas.print %tensor { strings = ["printed : "] } : tensor<?xi64, #BadSparseEncoding> // expected-error {{Vectors must be dense or sparse.}}
         return
     }
 }

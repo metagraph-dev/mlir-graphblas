@@ -340,6 +340,7 @@ public:
   using OpRewritePattern<graphblas::CastOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::CastOp op,
                                 PatternRewriter &rewriter) const override {
+    // MLIRContext *context = op.getContext();
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
@@ -354,9 +355,17 @@ public:
     }
 
     RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
+    // sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
+    //    sparse_tensor::getSparseTensorEncoding(inputTensorType);
+    // unsigned inputPtrBitWidth = inputSparseEncoding.getPointerBitWidth();
+    // unsigned inputIdxBitWidth = inputSparseEncoding.getIndexBitWidth();
     Type inputValueType = inputTensorType.getElementType();
 
     RankedTensorType outputTensorType = outputType.cast<RankedTensorType>();
+    // sparse_tensor::SparseTensorEncodingAttr outputSparseEncoding =
+    //    sparse_tensor::getSparseTensorEncoding(outputTensorType);
+    // unsigned outputPtrBitWidth = outputSparseEncoding.getPointerBitWidth();
+    // unsigned outputIdxBitWidth = outputSparseEncoding.getIndexBitWidth();
     Type outputValueType = outputTensorType.getElementType();
 
     unsigned rank = inputTensorType.getRank();
@@ -526,8 +535,9 @@ public:
 };
 
 struct MatrixSelectOutputWriter {
-  MatrixSelectOutputWriter(StringRef _selector, llvm::Optional<Value> _thunk)
-      : selector(_selector), thunk(_thunk){};
+  MatrixSelectOutputWriter(StringRef _selector, llvm::Optional<Value> _thunk,
+                           llvm::Optional<Value> _rngContext)
+      : selector(_selector), thunk(_thunk), rngContext(_rngContext){};
 
   void createConstants(PatternRewriter &rewriter, Location loc) {
     Type int64Type = rewriter.getIntegerType(64);
@@ -586,6 +596,17 @@ struct MatrixSelectOutputWriter {
     } else if (selector == "ge") {
       keep = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OGE, val,
                                             thunk.getValue());
+    } else if (selector == "probability") {
+      Type f64Type = rewriter.getF64Type();
+      SymbolRefAttr random_double =
+          SymbolRefAttr::get(rewriter.getContext(), "random_double");
+      // Get a random double between [0, 1)
+      CallOp randCall = rewriter.create<mlir::CallOp>(
+          loc, random_double, TypeRange{f64Type},
+          ArrayRef<Value>({rngContext.getValue()}));
+      Value rand = randCall.getResult(0);
+      keep = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OLT,
+                                            rand, thunk.getValue());
     } else {
       // this should be impossible because of validation
       assert(0);
@@ -620,6 +641,7 @@ struct MatrixSelectOutputWriter {
 
   StringRef selector;
   llvm::Optional<Value> thunk;
+  llvm::Optional<Value> rngContext;
 
   // frequently used values
   Value tensor;
@@ -652,8 +674,16 @@ public:
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
+    std::string selector = op.selector().str();
     OperandRange thunks = op.thunks();
-    ArrayAttr selectors = op.selectors();
+    llvm::Optional<Value> thunk = llvm::None;
+    llvm::Optional<Value> rngContext = llvm::None;
+    if (thunks.size() == 2) { // Thunk & rng_context
+      thunk = thunks[0];
+      rngContext = thunks[1];
+    } else if (thunks.size() == 1) { // Thunk only
+      thunk = thunks[0];
+    }
 
     // Initial constants
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
@@ -677,72 +707,50 @@ public:
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(
         loc, memref1DValueType, input);
 
-    int thunkIndex = 0;
+    MatrixSelectOutputWriter *output =
+        new MatrixSelectOutputWriter(selector, thunk, rngContext);
 
-    SmallVector<MatrixSelectOutputWriter *, 3> outputs;
-    for (Attribute selectorAttr : selectors) {
-      StringRef selector =
-          selectorAttr.dyn_cast_or_null<StringAttr>().getValue();
-
-      llvm::Optional<Value> thunk;
-      if (supportedSelectorsNeedingThunk.contains(selector)) {
-        thunk = thunks[thunkIndex++];
-      } else {
-        thunk = llvm::None;
-      }
-
-      MatrixSelectOutputWriter *output =
-          new MatrixSelectOutputWriter(selector, thunk);
-      outputs.push_back(output);
-
-      output->createConstants(rewriter, loc);
-      output->createTensor(rewriter, loc, module, input);
-    }
+    output->createConstants(rewriter, loc);
+    output->createTensor(rewriter, loc, module, input);
 
     // Loop
     scf::ForOp outerLoop = rewriter.create<scf::ForOp>(loc, c0, nrow, c1);
     Value row = outerLoop.getInductionVar();
+    {
+      rewriter.setInsertionPointToStart(outerLoop.getBody());
+      Value row_plus1 = rewriter.create<arith::AddIOp>(loc, row, c1);
 
-    rewriter.setInsertionPointToStart(outerLoop.getBody());
-    Value row_plus1 = rewriter.create<arith::AddIOp>(loc, row, c1);
-
-    for (MatrixSelectOutputWriter *output : outputs) {
       output->createUpdateCurrCount(rewriter, loc, row, row_plus1);
+
+      Value j_start_64 = rewriter.create<memref::LoadOp>(loc, Ap, row);
+      Value j_end_64 = rewriter.create<memref::LoadOp>(loc, Ap, row_plus1);
+      Value j_start =
+          rewriter.create<arith::IndexCastOp>(loc, j_start_64, indexType);
+      Value j_end =
+          rewriter.create<arith::IndexCastOp>(loc, j_end_64, indexType);
+
+      scf::ForOp innerLoop =
+          rewriter.create<scf::ForOp>(loc, j_start, j_end, c1);
+      Value jj = innerLoop.getInductionVar();
+      {
+        rewriter.setInsertionPointToStart(innerLoop.getBody());
+        Value col_64 = rewriter.create<memref::LoadOp>(loc, Aj, jj);
+        Value col = rewriter.create<arith::IndexCastOp>(loc, col_64, indexType);
+        Value val = rewriter.create<memref::LoadOp>(loc, Ax, jj);
+        output->createTestAndStore(rewriter, loc, row, col, val, row_plus1,
+                                   col_64);
+        // rewriter.setInsertionPointAfter(innerLoop);
+      }
+
+      rewriter.setInsertionPointAfter(outerLoop);
     }
-
-    Value j_start_64 = rewriter.create<memref::LoadOp>(loc, Ap, row);
-    Value j_end_64 = rewriter.create<memref::LoadOp>(loc, Ap, row_plus1);
-    Value j_start =
-        rewriter.create<arith::IndexCastOp>(loc, j_start_64, indexType);
-    Value j_end = rewriter.create<arith::IndexCastOp>(loc, j_end_64, indexType);
-
-    scf::ForOp innerLoop = rewriter.create<scf::ForOp>(loc, j_start, j_end, c1);
-
-    Value jj = innerLoop.getInductionVar();
-
-    rewriter.setInsertionPointToStart(innerLoop.getBody());
-    Value col_64 = rewriter.create<memref::LoadOp>(loc, Aj, jj);
-    Value col = rewriter.create<arith::IndexCastOp>(loc, col_64, indexType);
-    Value val = rewriter.create<memref::LoadOp>(loc, Ax, jj);
-
-    for (MatrixSelectOutputWriter *output : outputs) {
-      output->createTestAndStore(rewriter, loc, row, col, val, row_plus1,
-                                 col_64);
-    }
-
-    rewriter.setInsertionPointAfter(outerLoop);
 
     // trim excess values
-    SmallVector<Value, 3> outputTensors;
-    for (MatrixSelectOutputWriter *output : outputs) {
-      output->createTrimValues(rewriter, loc, module);
-      outputTensors.push_back(output->tensor);
-    }
-    rewriter.replaceOp(op, outputTensors);
+    output->createTrimValues(rewriter, loc, module);
 
-    for (Value output : outputTensors) {
-      cleanupIntermediateTensor(rewriter, module, loc, output);
-    }
+    rewriter.replaceOp(op, output->tensor);
+
+    cleanupIntermediateTensor(rewriter, module, loc, output->tensor);
 
     return success();
   };
