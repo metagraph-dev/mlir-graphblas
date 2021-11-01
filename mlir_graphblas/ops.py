@@ -535,6 +535,20 @@ class GraphBLAS_ConvertLayout(BaseOp):
         )
 
 
+class GraphBLAS_Cast(BaseOp):
+    dialect = "graphblas"
+    name = "cast"
+
+    @classmethod
+    def call(cls, irbuilder, input, return_type: str):
+        cls.ensure_mlirvar(input, SparseTensorType)
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.cast {input} : "
+            f"{input.type} to {ret_val.type}"
+        )
+
+
 class GraphBLAS_Transpose(BaseOp):
     dialect = "graphblas"
     name = "transpose"
@@ -667,6 +681,13 @@ class GraphBLAS_Select(BaseOp):
             raise ValueError(
                 f"Illegal selector: {selector}, must be one of {cls.allowed_selectors}"
             )
+        if selector == "probability":
+            irbuilder.needed_function_table["random_double"] = (
+                f"func private @random_double(!llvm.ptr<i8>) -> (f64)",
+                ["!llvm.ptr<i8>"],
+                "",
+            )
+
         ret_val = irbuilder.new_var(input.type)
         text = [
             f"{ret_val.assign} = graphblas.select {input}",
@@ -846,7 +867,7 @@ class GraphBLAS_Diag(BaseOp):
         cls.ensure_mlirvar(input, SparseTensorType)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{ret_val.assign} = graphblas.diag {input} : {input.type} to {return_type}"
+            f"{ret_val.assign} = graphblas.diag {input} : {input.type} to {ret_val.type}"
         )
 
 

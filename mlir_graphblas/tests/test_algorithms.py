@@ -373,3 +373,29 @@ def test_bfs(special_passes):
 
     assert np.all(parents.toarray() == expected_parents)
     assert np.all(levels.toarray() == expected_levels)
+
+
+# DO NOT RUN THIS ALGORITHM WITH OPENMP UNTIL WE HAVE THREAD SAFE RNG
+def test_ties():
+    # fmt: off
+    indices = np.array(
+        [[0, 1], [0, 2],
+         [1, 0], [1, 3],
+         [2, 0], [2, 4],
+         [3, 2],
+         [4, 4]],
+         dtype=np.uint64,
+    )
+    values = np.array(
+        [100, 200, 300, 400, 175, 222, 333, 200],
+        dtype=np.float64
+    )
+    # fmt: on
+    sizes = np.array([5, 5], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    graph = MLIRSparseTensor(indices, values, sizes, sparsity)
+    assert graph.verify()
+
+    subgraph = mlalgo.totally_induced_edge_sampling(graph, 0.25, rand_seed=2021)
+    assert np.all(subgraph.pointers[1] == [0, 1, 1, 3, 4, 5])
+    assert np.all(subgraph.indices[1] == [2, 0, 4, 2, 4])
