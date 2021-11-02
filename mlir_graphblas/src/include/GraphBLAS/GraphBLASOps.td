@@ -829,18 +829,17 @@ def YIELD_SELECT_IN_B    : I64EnumAttrCase<"SELECT_IN_B", 4, "select_in_b">;
 def YIELD_SELECT_OUT     : I64EnumAttrCase<"SELECT_OUT", 5, "select_out">;
 def YIELD_ADD_IDENTITY   : I64EnumAttrCase<"ADD_IDENTITY", 6, "add_identity">;
 def YIELD_ADD            : I64EnumAttrCase<"ADD", 7, "add">;
-def YIELD_MULT_IDENTITY  : I64EnumAttrCase<"MULT_IDENTITY", 8, "mult_identity">;
-def YIELD_MULT           : I64EnumAttrCase<"MULT", 9, "mult">;
-def YIELD_AGG_IDENTITY   : I64EnumAttrCase<"AGG_IDENTITY", 10, "agg_identity">;
-def YIELD_AGG            : I64EnumAttrCase<"AGG", 11, "agg">;
+def YIELD_MULT           : I64EnumAttrCase<"MULT", 8, "mult">;
+def YIELD_AGG_IDENTITY   : I64EnumAttrCase<"AGG_IDENTITY", 9, "agg_identity">;
+def YIELD_AGG            : I64EnumAttrCase<"AGG", 10, "agg">;
+def YIELD_ACCUMULATE     : I64EnumAttrCase<"ACCUMULATE", 11, "accumulate">;
 
 def YieldKindAttr : I64EnumAttr<
     "YieldKind", "",
     [YIELD_TRANSFORM_IN_A, YIELD_TRANSFORM_IN_B, YIELD_TRANSFORM_OUT,
      YIELD_SELECT_IN_A,    YIELD_SELECT_IN_B,    YIELD_SELECT_OUT,
-     YIELD_ADD_IDENTITY,   YIELD_ADD,
-     YIELD_MULT_IDENTITY,  YIELD_MULT,
-     YIELD_AGG_IDENTITY,   YIELD_AGG]
+     YIELD_ADD_IDENTITY,   YIELD_ADD, YIELD_MULT,
+     YIELD_AGG_IDENTITY,   YIELD_AGG, YIELD_ACCUMULATE]
     > {
   let cppNamespace = "::mlir::graphblas";
 }
@@ -864,8 +863,8 @@ def GraphBLAS_YieldOp : GraphBLAS_Op<"yield", [NoSideEffect, ReturnLike, Termina
         - select_out
         - add_identity
         - add
-        - mult_identity
         - mult
+        - accumulate
 
         Example:
         ```mlir

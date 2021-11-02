@@ -150,31 +150,37 @@ static llvm::Optional<std::string> checkBitWidthMatch(RankedTensorType a,
   return llvm::None;
 }
 
-static llvm::Optional<std::string> checkSemiringAdd(StringRef addName) {
-  if (!supportedSemiringAddNames.contains(addName))
-    return "\"" + addName.str() + "\" is not a supported semiring add.";
+static llvm::Optional<std::string> checkUnaryOp(StringRef unaryOp) {
+  if (!unary1.contains(unaryOp) && !unary3.contains(unaryOp))
+    return "\"" + unaryOp.str() + "\" is not a supported unary operator.";
   else
     return llvm::None;
 }
 
-static llvm::Optional<std::string>
-checkSemiringMultiply(StringRef multiplyName) {
-  if (!supportedSemiringMultiplyNames.contains(multiplyName))
-    return "\"" + multiplyName.str() +
-           "\" is not a supported semiring multiply.";
+static llvm::Optional<std::string> checkBinaryOp(StringRef binaryOp) {
+  if (!binary2.contains(binaryOp) && !binary4.contains(binaryOp) &&
+      !binary5.contains(binaryOp))
+    return "\"" + binaryOp.str() + "\" is not a supported binary operator.";
   else
     return llvm::None;
 }
 
-static llvm::Optional<std::string> checkSemiring(StringRef semiring) {
-  auto semiringParts = semiring.split('_');
-  auto addCheck = checkSemiringAdd(semiringParts.first);
-  if (addCheck != llvm::None)
-    return addCheck;
+static llvm::Optional<std::string> checkMonoidOp(StringRef monoidOp) {
+  if (!monoid2.contains(monoidOp))
+    return "\"" + monoidOp.str() + "\" is not a supported monoid.";
+  else
+    return llvm::None;
+}
 
-  auto multiplyCheck = checkSemiringMultiply(semiringParts.second);
-  if (multiplyCheck != llvm::None)
-    return multiplyCheck;
+static llvm::Optional<std::string> checkSemiringOp(StringRef semiringOp) {
+  auto semiringParts = semiringOp.split('_');
+  auto monoidCheck = checkMonoidOp(semiringParts.first);
+  if (monoidCheck != llvm::None)
+    return monoidCheck;
+
+  auto binaryCheck = checkBinaryOp(semiringParts.second);
+  if (binaryCheck != llvm::None)
+    return binaryCheck;
 
   return llvm::None;
 }
@@ -292,7 +298,11 @@ static LogicalResult verify(ApplyOp op) {
   Type resultType = op.getResult().getType();
 
   std::string applyOperator = op.apply_operator().str();
-  if (supportedBinaryApplyOperators.contains(applyOperator)) {
+  if (!supportedForApply.contains(applyOperator))
+    return op.emitError("\"" + applyOperator +
+                        "\" is not a supported operator.");
+
+  if (binary2.contains(applyOperator)) {
 
     if (!thunk)
       return op.emitError("\"" + applyOperator +
@@ -314,16 +324,12 @@ static LogicalResult verify(ApplyOp op) {
       return op.emitError(
           "Element type of result tensor does not match type of thunk.");
 
-  } else if (supportedUnaryApplyOperators.contains(applyOperator)) {
+  } else if (unary1.contains(applyOperator) || unary3.contains(applyOperator)) {
 
     if (thunk)
       return op.emitError("\"" + applyOperator +
                           "\""
                           " is a unary operator, but was given a thunk.");
-
-  } else {
-    return op.emitError("\"" + applyOperator +
-                        "\" is not a supported operator.");
   }
 
   return success();
@@ -501,7 +507,7 @@ static LogicalResult verify(MatrixMultiplyOp op) {
   if (argResult.failed())
     return argResult;
 
-  llvm::Optional<std::string> semiringError = checkSemiring(op.semiring());
+  llvm::Optional<std::string> semiringError = checkSemiringOp(op.semiring());
   if (semiringError != llvm::None) {
     return op.emitError(semiringError.getValue());
   }
@@ -625,7 +631,7 @@ static LogicalResult verify(UpdateOp op) {
 
   llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
   if (accumulateOperator) {
-    if (!supportedUpdateAccumulateOperators.contains(accumulateOperator->str()))
+    if (!supportedForUpdate.contains(accumulateOperator->str()))
       return op.emitError("\"" + accumulateOperator->str() +
                           "\" is not a supported accumulate operator.");
   }
@@ -675,7 +681,7 @@ static LogicalResult verifyEwise(T op, bool verifyResult) {
 static LogicalResult verify(UnionOp op) {
   llvm::Optional<llvm::StringRef> unionOperator = op.union_operator();
   if (unionOperator) {
-    if (!supportedUnionOperators.contains(unionOperator->str()))
+    if (!supportedForUnion.contains(unionOperator->str()))
       return op.emitError("\"" + unionOperator->str() +
                           "\" is not a supported union operator.");
   }
@@ -686,7 +692,7 @@ static LogicalResult verify(UnionOp op) {
 static LogicalResult verify(IntersectOp op) {
   llvm::Optional<llvm::StringRef> intersectOperator = op.intersect_operator();
   if (intersectOperator) {
-    if (!supportedIntersectOperators.contains(intersectOperator->str()))
+    if (!supportedForIntersect.contains(intersectOperator->str()))
       return op.emitError("\"" + intersectOperator->str() +
                           "\" is not a supported intersect operator.");
   }
@@ -702,7 +708,7 @@ static LogicalResult verify(EqualOp op) {
 
 static LogicalResult verify(ReduceToVectorOp op) {
   std::string aggregator = op.aggregator().str();
-  if (!supportedReduceAggregators.contains(aggregator))
+  if (!supportedForReduce.contains(aggregator))
     return op.emitError("\"" + aggregator +
                         "\" is not a supported aggregator.");
 
@@ -784,7 +790,7 @@ static LogicalResult verify(ReduceToScalarOp op) {
     return argResult;
 
   std::string aggregator = op.aggregator().str();
-  if (!supportedReduceAggregators.contains(aggregator))
+  if (!supportedForReduce.contains(aggregator))
     return op.emitError("\"" + aggregator +
                         "\" is not a supported aggregator.");
 
@@ -846,18 +852,18 @@ static LogicalResult verify(graphblas::SelectOp op) {
   std::vector<std::string> selectorsNeedingThunk;
   ValueRange thunks = op.thunks();
 
-  if (!supportedSelectors.contains(selector))
+  if (!supportedForSelect.contains(selector))
     return op.emitError("\"" + selector + "\" is not a supported selector.");
-  if (rank == 1 && !supportedSelectorsComparingValues.contains(selector))
+  if (rank == 1 && unary3.contains(selector))
     return op.emitError("Selector '" + selector + "' not allowed for vectors.");
 
   if (thunks.size() <= 0) {
-    if (supportedSelectorsNeedingThunk.contains(selector))
+    if (binary2.contains(selector))
       return op.emitError("Selector '" + selector + "' requires a thunk.");
   } else if (thunks.size() > 2) {
     return op.emitError("Too many thunk values provided.");
   } else {
-    if (!supportedSelectorsNeedingThunk.contains(selector))
+    if (unary3.contains(selector))
       return op.emitError("Selector '" + selector + "' cannot take a thunk.");
 
     Value thunk = thunks[0];

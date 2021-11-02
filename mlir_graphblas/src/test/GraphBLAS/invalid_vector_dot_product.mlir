@@ -9,7 +9,7 @@
 module {
 
    func @vector_dot_product_wrapper(%argA: tensor<?xi64, #CV64>, %argB: tensor<?xi64, #CV64>) -> i64 {
-       %answer = graphblas.matrix_multiply %argA, %argB { semiring = "BAD" } : (tensor<?xi64, #CV64>, tensor<?xi64, #CV64>) to i64 // expected-error {{"BAD" is not a supported semiring add.}}
+       %answer = graphblas.matrix_multiply %argA, %argB { semiring = "BAD" } : (tensor<?xi64, #CV64>, tensor<?xi64, #CV64>) to i64 // expected-error {{"BAD" is not a supported monoid.}}
        return %answer : i64
    }
 

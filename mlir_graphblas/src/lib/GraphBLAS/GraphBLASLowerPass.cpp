@@ -1416,6 +1416,7 @@ public:
     (void)module;
     Location loc = op->getLoc();
 
+    Type indexType = rewriter.getIndexType();
     Type valueType =
         input.getType().dyn_cast<RankedTensorType>().getElementType();
 
@@ -1424,15 +1425,32 @@ public:
         rewriter.create<graphblas::ApplyGenericOp>(loc, op->getResultTypes(),
                                                    input, 1);
 
+    // Choose appropriate number of arguments based on operator
+    TypeRange inputTypes;
+    if (apply_operator == "index" || apply_operator == "row" ||
+        apply_operator == "column")
+      inputTypes = {valueType, indexType, indexType};
+    else
+      inputTypes = {valueType};
+
     // Insert transformOut block
     Region &transformOutRegion = newApplyOp.getRegion(0);
     Block *transformOutBlock =
-        rewriter.createBlock(&transformOutRegion, {}, {valueType});
+        rewriter.createBlock(&transformOutRegion, {}, inputTypes);
 
     Value val = transformOutBlock->getArgument(0);
 
     Value transformResult;
-    if (apply_operator == "min") {
+    if (apply_operator == "index") {
+      Value index = transformOutBlock->getArgument(1);
+      transformResult = index;
+    } else if (apply_operator == "row") {
+      Value row = transformOutBlock->getArgument(1);
+      transformResult = row;
+    } else if (apply_operator == "column") {
+      Value column = transformOutBlock->getArgument(2);
+      transformResult = column;
+    } else if (apply_operator == "min") {
 
       Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
                       .Case<IntegerType>([&](IntegerType type) {
@@ -1570,11 +1588,17 @@ public:
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
-    Type valueType =
-        op.input().getType().dyn_cast<RankedTensorType>().getElementType();
-    Type memref1DValueType = MemRefType::get({-1}, valueType);
-
     Value inputTensor = op.input();
+    RankedTensorType inputTensorType =
+        inputTensor.getType().cast<RankedTensorType>();
+    unsigned rank = inputTensorType.getRank();
+
+    // TODO allow result value type to differ from input value type
+    Type indexType = rewriter.getIndexType();
+    Type i64Type = rewriter.getI64Type();
+    Type valueType = inputTensorType.getElementType();
+    Type memref1DValueType = MemRefType::get({-1}, valueType);
+    Type memref1DI64Type = MemRefType::get({-1}, i64Type);
 
     // Required blocks
     RegionRange extensions = op.extensions();
@@ -1601,31 +1625,104 @@ public:
 
     Value nnz = rewriter.create<graphblas::NumValsOp>(loc, inputTensor);
 
-    // Loop over values
-    scf::ParallelOp valueLoop =
-        rewriter.create<scf::ParallelOp>(loc, c0, nnz, c1);
-    ValueRange valueLoopIdx = valueLoop.getInductionVars();
+    int numArguments = extBlocks.transformOut->getArguments().size();
+    if (numArguments == 3) {
+      // Loop over pointers, indices, values
+      // This works for
+      // - vector -> passes in (val, index, index)
+      // - CSR or CSC -> passes in (val, row, col)
+      Value inputPointers = rewriter.create<sparse_tensor::ToPointersOp>(
+          loc, memref1DI64Type, inputTensor);
+      Value inputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
+          loc, memref1DI64Type, inputTensor);
+      bool byCols = false;
+      Value npointers;
+      if (rank == 1) {
+        npointers = c1;
+      } else if (hasRowOrdering(inputTensorType)) {
+        npointers = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
+      } else {
+        npointers = rewriter.create<graphblas::NumColsOp>(loc, inputTensor);
+        byCols = true;
+      }
+      scf::ParallelOp pointerLoop =
+          rewriter.create<scf::ParallelOp>(loc, c0, npointers, c1);
+      Value pointerIdx = pointerLoop.getInductionVars().front();
 
-    rewriter.setInsertionPointToStart(valueLoop.getBody());
-    Value val = rewriter.create<memref::LoadOp>(loc, inputValues, valueLoopIdx);
+      rewriter.setInsertionPointToStart(pointerLoop.getBody());
+      Value pointerIdx_plus1 =
+          rewriter.create<arith::AddIOp>(loc, pointerIdx, c1);
 
-    // scf::ParallelOp automatically gets an empty scf.yield at the end which we
-    // need to insert before
-    Operation *scfYield = valueLoop.getBody()->getTerminator();
+      Value indexStart_64 =
+          rewriter.create<memref::LoadOp>(loc, inputPointers, pointerIdx);
+      Value indexEnd_64 =
+          rewriter.create<memref::LoadOp>(loc, inputPointers, pointerIdx_plus1);
+      Value indexStart =
+          rewriter.create<arith::IndexCastOp>(loc, indexStart_64, indexType);
+      Value indexEnd =
+          rewriter.create<arith::IndexCastOp>(loc, indexEnd_64, indexType);
 
-    // insert transformOut block
-    graphblas::YieldOp transformOutYield =
-        llvm::dyn_cast_or_null<graphblas::YieldOp>(
-            extBlocks.transformOut->getTerminator());
+      scf::ForOp innerLoop =
+          rewriter.create<scf::ForOp>(loc, indexStart, indexEnd, c1);
+      Value jj = innerLoop.getInductionVar();
+      {
+        rewriter.setInsertionPointToStart(innerLoop.getBody());
+        Value col_64 = rewriter.create<memref::LoadOp>(loc, inputIndices, jj);
+        Value col = rewriter.create<arith::IndexCastOp>(loc, col_64, indexType);
+        Value val = rewriter.create<memref::LoadOp>(loc, inputValues, jj);
 
-    rewriter.mergeBlockBefore(extBlocks.transformOut, scfYield, {val});
-    Value result = transformOutYield.values().front();
-    rewriter.eraseOp(transformOutYield);
+        // insert transformOut block
+        graphblas::YieldOp transformOutYield =
+            llvm::dyn_cast_or_null<graphblas::YieldOp>(
+                extBlocks.transformOut->getTerminator());
 
-    rewriter.create<memref::StoreOp>(loc, result, outputValues, valueLoopIdx);
+        if (rank == 1)
+          rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(),
+                               {val, col, col});
+        else if (byCols)
+          rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(),
+                               {val, col, pointerIdx});
+        else
+          rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(),
+                               {val, pointerIdx, col});
+        Value result = transformOutYield.values().front();
+        rewriter.eraseOp(transformOutYield);
 
-    // end value loop
-    rewriter.setInsertionPointAfter(valueLoop);
+        rewriter.create<memref::StoreOp>(loc, result, outputValues, jj);
+        // rewriter.setInsertionPointAfter(innerLoop);
+      }
+
+      // end row loop
+      rewriter.setInsertionPointAfter(pointerLoop);
+    } else if (numArguments == 1) {
+      // Loop over values
+      scf::ParallelOp valueLoop =
+          rewriter.create<scf::ParallelOp>(loc, c0, nnz, c1);
+      ValueRange valueLoopIdx = valueLoop.getInductionVars();
+
+      rewriter.setInsertionPointToStart(valueLoop.getBody());
+      Value val =
+          rewriter.create<memref::LoadOp>(loc, inputValues, valueLoopIdx);
+
+      // scf::ParallelOp automatically gets an empty scf.yield at the end which
+      // we need to insert before
+      Operation *scfYield = valueLoop.getBody()->getTerminator();
+
+      // insert transformOut block
+      graphblas::YieldOp transformOutYield =
+          llvm::dyn_cast_or_null<graphblas::YieldOp>(
+              extBlocks.transformOut->getTerminator());
+
+      rewriter.mergeBlockBefore(extBlocks.transformOut, scfYield, {val});
+      Value result = transformOutYield.values().front();
+      rewriter.eraseOp(transformOutYield);
+
+      rewriter.create<memref::StoreOp>(loc, result, outputValues, valueLoopIdx);
+
+      // end value loop
+      rewriter.setInsertionPointAfter(valueLoop);
+    } else
+      assert(0);
 
     // Add return op
     rewriter.replaceOp(op, output);
@@ -1665,8 +1762,8 @@ public:
         rewriter.create<graphblas::MatrixMultiplyGenericOp>(
             loc, op->getResultTypes(), operands, attributes.getAttrs(), 3);
 
-    if (failed(populateSemiringRegions(rewriter, loc, semiring, valueType,
-                                       newMultOp.getRegions().slice(0, 3))))
+    if (failed(populateSemiring(rewriter, loc, semiring, valueType,
+                                newMultOp.getRegions().slice(0, 3))))
       return failure();
 
     rewriter.setInsertionPointAfter(newMultOp);
@@ -2507,8 +2604,10 @@ public:
     Value bVal = rewriter.create<memref::LoadOp>(loc, Bx, ii);
 
     // insert multiply operation block
-    rewriter.mergeBlocks(extBlocks.mult, rewriter.getBlock(),
-                         {aVal, bVal, row, col, kk});
+    ValueRange injectVals = ValueRange{aVal, bVal, row, col, kk};
+    rewriter.mergeBlocks(
+        extBlocks.mult, rewriter.getBlock(),
+        injectVals.slice(0, extBlocks.mult->getArguments().size()));
     graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
         rewriter.getBlock()->getTerminator());
     Value multResult = multYield.values().front();
