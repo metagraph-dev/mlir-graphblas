@@ -44,9 +44,9 @@ GRAPHBLAS_TO_SCF_PASSES = (
 )
 
 SCF_TO_LLVM_PASSES = (
+    "--convert-math-to-llvm",
     "--convert-scf-to-std",
     "--convert-memref-to-llvm",
-    "--convert-math-to-llvm",
     "--convert-openmp-to-llvm",
     "--convert-arith-to-llvm",
     "--convert-std-to-llvm",
