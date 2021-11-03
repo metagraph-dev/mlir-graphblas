@@ -1468,6 +1468,26 @@ public:
                 return quotient;
               });
 
+    } else if (apply_operator == "pow") {
+
+      bool thunkIsLeft = thunk == op.left();
+
+      llvm::Optional<std::string> optionalErrorMessage = llvm::None;
+      llvm::TypeSwitch<Type>(valueType)
+          .Case<IntegerType>([&](IntegerType type) {
+            // TODO find best implementation
+            optionalErrorMessage = std::string(
+                "Exponentiation is not yet supported for integer types.");
+          })
+          .Case<FloatType>([&](FloatType type) {
+            transformResult =
+                thunkIsLeft ? rewriter.create<math::PowFOp>(loc, thunk, val)
+                            : rewriter.create<math::PowFOp>(loc, val, thunk);
+          });
+
+      if (optionalErrorMessage)
+        return op.emitError(optionalErrorMessage.getValue());
+
     } else if (apply_operator == "fill") {
 
       // Always fill with the thunk, regardless of its position (left or right)

@@ -11,6 +11,7 @@ STANDARD_PASSES = [
     "--convert-linalg-to-loops",
     "--convert-scf-to-std",
     "--convert-memref-to-llvm",
+    "--convert-math-to-llvm",
     "--convert-std-to-llvm",
     "--reconcile-unrealized-casts",
 ]

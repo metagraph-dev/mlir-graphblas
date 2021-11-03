@@ -42,7 +42,7 @@ static const llvm::StringSet<> supportedSelectorsComparingValues{"gt", "ge",
                                                                  "probability"};
 
 static const llvm::StringSet<> supportedBinaryApplyOperators{"min", "div",
-                                                             "fill"};
+                                                             "pow", "fill"};
 static const llvm::StringSet<> supportedUnaryApplyOperators{"abs", "minv",
                                                             "ainv", "identity"};
 

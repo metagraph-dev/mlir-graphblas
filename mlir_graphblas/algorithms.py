@@ -924,3 +924,343 @@ class TotallyInducedEdgeSampling(Algorithm):
 
 
 ties = totally_induced_edge_sampling = TotallyInducedEdgeSampling()
+
+
+class GraphSAGE(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "graph_sage",
+            input_types=[
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?x?xf64, #CSR64>",
+                "!llvm.ptr<!llvm.ptr<i8>>",
+                "index",
+                "!llvm.ptr<i64>",
+                "!llvm.ptr<i8>",
+            ],
+            return_types=[
+                "tensor<?x?xf64, #CSR64>",
+            ],
+            aliases=_build_common_aliases(),
+        )
+
+        (
+            A,
+            features_csr,
+            weight_matrices,
+            num_weight_matrices,  # equal to len(sample_count_per_layer)
+            sample_count_per_layer,
+            rng_context,
+        ) = irb.inputs
+
+        c0 = irb.arith.constant(0, "index")
+        c1 = irb.arith.constant(1, "index")
+        c0_f64 = irb.arith.constant(0, "f64")
+        c_0_5_f64 = irb.arith.constant(0.5, "f64")
+        c1_f64 = irb.arith.constant(1, "f64")
+        c2_f64 = irb.arith.constant(2, "f64")
+        c1_i64 = irb.arith.constant(1, "i64")
+
+        num_nodes = irb.graphblas.num_rows(A)
+        num_nodes_i64 = irb.arith.index_cast(num_nodes, "i64")
+
+        concat_matrix = irb.util.new_sparse_tensor(
+            "tensor<?x?xf64, #CSR64>", num_nodes, c1
+        )
+        concat_matrix_ptr8 = irb.util.tensor_to_ptr8(concat_matrix)
+
+        # TODO move this to an inner loop for parallelization
+        # TODO fill this up early on and reuse them if non-paralllel (make sure to delete them later)
+        concat_matrix_vectors = irb.llvm.alloca(num_nodes_i64, "!llvm.ptr<i8>")
+
+        # TODO move this to an inner loop for parallelization
+        row_selector = irb.util.new_sparse_tensor("tensor<?xf64, #CV64>", num_nodes)
+        row_selector_ptr8 = irb.util.tensor_to_ptr8(row_selector)
+        irb.util.resize_sparse_index(row_selector_ptr8, c0, c1)
+        irb.util.resize_sparse_values(row_selector_ptr8, c1)
+        row_selector_pointers = irb.sparse_tensor.pointers(row_selector, c0)
+        irb.memref.store(c1_i64, row_selector_pointers, c1)
+        row_selector_indices = irb.sparse_tensor.indices(row_selector, c0)
+        row_selector_values = irb.sparse_tensor.values(row_selector)
+
+        features = irb.graphblas.convert_layout(features_csr, "tensor<?x?xf64, #CSC64>")
+        features_ptr8 = irb.util.tensor_to_ptr8(features)
+
+        h_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        with irb.for_loop(
+            0, num_weight_matrices, iter_vars=[(h_ptr8, features_ptr8)]
+        ) as k_loop_for_vars:
+            layer_idx = k_loop_for_vars.iter_var_index
+            layer_idx_i64 = irb.arith.index_cast(layer_idx, "i64")
+            num_samples_ptr = irb.llvm.getelementptr(
+                sample_count_per_layer, layer_idx_i64
+            )
+            num_samples = irb.llvm.load(num_samples_ptr, "i64")
+
+            neighborhoods_csr = irb.graphblas.matrix_select_random(
+                A, num_samples, rng_context, choose_n="choose_uniform"
+            )
+            neighborhoods = irb.graphblas.convert_layout(
+                neighborhoods_csr, "tensor<?x?xf64, #CSC64>"
+            )
+
+            h = irb.util.ptr8_to_tensor(h_ptr8, "tensor<?x?xf64, #CSC64>")
+
+            node_h_size = irb.graphblas.num_cols(h)
+            neighbor_mean_size = node_h_size
+            concat_size = irb.arith.addi(node_h_size, neighbor_mean_size)
+
+            weight_matrix_ptr_ptr = irb.llvm.getelementptr(
+                weight_matrices, layer_idx_i64
+            )
+            weight_matrix_ptr = irb.llvm.load(weight_matrix_ptr_ptr, "!llvm.ptr<i8>")
+            weight_matrix_csr = irb.util.ptr8_to_tensor(
+                weight_matrix_ptr, "tensor<?x?xf64, #CSR64>"
+            )
+            weight_matrix = irb.graphblas.convert_layout(
+                weight_matrix_csr, "tensor<?x?xf64, #CSC64>"
+            )
+
+            weight_matrix_ncols = irb.graphblas.num_cols(weight_matrix)
+            with irb.for_loop(0, num_nodes) as nodes_loop_for_vars:
+                v = nodes_loop_for_vars.iter_var_index
+                v_i64 = irb.arith.index_cast(v, "i64")
+                irb.memref.store(v_i64, row_selector_indices, c0)
+                irb.memref.store(c1_f64, row_selector_values, c0)
+
+                neighborhood_vec = irb.graphblas.matrix_multiply(
+                    row_selector, neighborhoods, "any_second"
+                )
+                neighborhood_mat = irb.graphblas.diag(
+                    neighborhood_vec, "tensor<?x?xf64, #CSR64>"
+                )
+
+                neighborhood_hs = irb.graphblas.matrix_multiply(
+                    neighborhood_mat, h, "any_second"
+                )
+
+                neighbor_sum = irb.graphblas.reduce_to_vector(
+                    neighborhood_hs, "plus", 0
+                )
+                actual_num_samples = irb.graphblas.num_vals(neighborhood_vec)
+                actual_num_samples_i64 = irb.arith.index_cast(actual_num_samples, "i64")
+                actual_num_samples_f64 = irb.arith.sitofp(actual_num_samples_i64, "f64")
+                neighbor_mean = irb.graphblas.apply(
+                    neighbor_sum, "div", right=actual_num_samples_f64
+                )
+
+                node_h = irb.graphblas.matrix_multiply(row_selector, h, "any_second")
+
+                concat = irb.util.new_sparse_tensor("tensor<?xf64, #CV64>", concat_size)
+
+                node_h_num_vals = irb.graphblas.num_vals(node_h)
+                neighbor_mean_num_vals = irb.graphblas.num_vals(neighbor_mean)
+                concat_num_vals = irb.arith.addi(
+                    node_h_num_vals, neighbor_mean_num_vals
+                )
+
+                concat_ptr8 = irb.util.tensor_to_ptr8(concat)
+                irb.util.resize_sparse_index(concat_ptr8, c0, concat_num_vals)
+                irb.util.resize_sparse_values(concat_ptr8, concat_num_vals)
+
+                concat_pointers = irb.sparse_tensor.pointers(concat, c0)
+                concat_num_vals_i64 = irb.arith.index_cast(concat_num_vals, "i64")
+                irb.memref.store(concat_num_vals_i64, concat_pointers, c1)
+
+                concat_indices = irb.sparse_tensor.indices(concat, c0)
+                concat_values = irb.sparse_tensor.values(concat)
+
+                # TODO resize one of these vectors and make that the final concat vector
+                node_h_indices = irb.sparse_tensor.indices(node_h, c0)
+                node_h_values = irb.sparse_tensor.values(node_h)
+                with irb.for_loop(c0, node_h_num_vals) as node_h_to_concat_for_vars:
+                    node_h_position = node_h_to_concat_for_vars.iter_var_index
+
+                    node_h_indices_value = irb.memref.load(
+                        node_h_indices, node_h_position
+                    )
+                    irb.memref.store(
+                        node_h_indices_value, concat_indices, node_h_position
+                    )
+
+                    node_h_values_value = irb.memref.load(
+                        node_h_values, node_h_position
+                    )
+                    irb.memref.store(
+                        node_h_values_value, concat_values, node_h_position
+                    )
+
+                neighbor_mean_indices = irb.sparse_tensor.indices(neighbor_mean, c0)
+                neighbor_mean_values = irb.sparse_tensor.values(neighbor_mean)
+                node_h_size_i64 = irb.arith.index_cast(node_h_size, "i64")
+                with irb.for_loop(
+                    c0, neighbor_mean_num_vals
+                ) as neighbor_mean_to_concat_for_vars:
+                    neighbor_mean_position = (
+                        neighbor_mean_to_concat_for_vars.iter_var_index
+                    )
+                    concat_position = irb.arith.addi(
+                        neighbor_mean_position, node_h_num_vals
+                    )
+
+                    neighbor_mean_indices_value = irb.memref.load(
+                        neighbor_mean_indices, neighbor_mean_position
+                    )
+                    concat_indices_value = irb.arith.addi(
+                        node_h_size_i64, neighbor_mean_indices_value
+                    )
+                    irb.memref.store(
+                        concat_indices_value, concat_indices, concat_position
+                    )
+
+                    neighbor_mean_values_value = irb.memref.load(
+                        neighbor_mean_values, neighbor_mean_position
+                    )
+                    irb.memref.store(
+                        neighbor_mean_values_value, concat_values, concat_position
+                    )
+
+                concat_pre_relu = irb.graphblas.matrix_multiply(
+                    concat, weight_matrix, semiring="plus_times"
+                )
+                concat_post_relu = irb.graphblas.select(concat_pre_relu, "gt", c0_f64)
+
+                concat_post_relu_squared = irb.graphblas.apply(
+                    concat_post_relu, "pow", right=c2_f64
+                )
+                squared_sum = irb.graphblas.reduce_to_scalar(
+                    concat_post_relu_squared, "plus"
+                )
+                l2_norm = irb.math.powf(squared_sum, c_0_5_f64)
+                concat_normalized = irb.graphblas.apply(
+                    concat_post_relu, "div", right=l2_norm
+                )
+
+                concat_normalized_ptr8 = irb.util.tensor_to_ptr8(concat_normalized)
+
+                concat_destination_ptr = irb.llvm.getelementptr(
+                    concat_matrix_vectors, v_i64
+                )
+                irb.llvm.store(concat_normalized_ptr8, concat_destination_ptr)
+
+            irb.util.resize_sparse_dim(concat_matrix_ptr8, c1, weight_matrix_ncols)
+            concat_matrix_pointers = irb.sparse_tensor.pointers(concat_matrix, c1)
+            concat_matrix_current_value_count = irb.new_var("index")
+            with irb.for_loop(
+                0, num_nodes, iter_vars=[(concat_matrix_current_value_count, c0)]
+            ) as concat_matrix_num_val_loop_for_vars:
+                node_idx = concat_matrix_num_val_loop_for_vars.iter_var_index
+                node_idx_i64 = irb.arith.index_cast(node_idx, "i64")
+                concat_ptr = irb.llvm.getelementptr(concat_matrix_vectors, node_idx_i64)
+                concat_ptr8 = irb.llvm.load(concat_ptr, "!llvm.ptr<i8>")
+                concat_vector = irb.util.ptr8_to_tensor(
+                    concat_ptr8, "tensor<?xf64, #CV64>"
+                )
+                concat_vector_num_values = irb.graphblas.num_vals(concat_vector)
+                updated_concat_matrix_current_value_count = irb.arith.addi(
+                    concat_matrix_current_value_count, concat_vector_num_values
+                )
+                node_idx_plus_one = irb.arith.addi(node_idx, c1)
+                updated_concat_matrix_current_value_count_i64 = irb.arith.index_cast(
+                    updated_concat_matrix_current_value_count, "i64"
+                )
+                irb.memref.store(
+                    updated_concat_matrix_current_value_count_i64,
+                    concat_matrix_pointers,
+                    node_idx_plus_one,
+                )
+                concat_matrix_num_val_loop_for_vars.yield_vars(
+                    updated_concat_matrix_current_value_count
+                )
+            concat_matrix_num_vals = (
+                concat_matrix_num_val_loop_for_vars.returned_variable[0]
+            )
+            irb.util.resize_sparse_index(concat_matrix_ptr8, c1, concat_matrix_num_vals)
+            irb.util.resize_sparse_values(concat_matrix_ptr8, concat_matrix_num_vals)
+
+            concat_matrix_pointers = irb.sparse_tensor.pointers(concat_matrix, c1)
+            concat_matrix_indices = irb.sparse_tensor.indices(concat_matrix, c1)
+            concat_matrix_values = irb.sparse_tensor.values(concat_matrix)
+            with irb.for_loop(0, num_nodes) as concat_matrix_pointers_loop_for_vars:
+                pointers_position = concat_matrix_pointers_loop_for_vars.iter_var_index
+                pointers_position_plus_one = irb.arith.addi(pointers_position, c1)
+                ptr_i64 = irb.memref.load(concat_matrix_pointers, pointers_position)
+                next_ptr_i64 = irb.memref.load(
+                    concat_matrix_pointers, pointers_position_plus_one
+                )
+                ptr = irb.arith.index_cast(ptr_i64, "index")
+                next_ptr = irb.arith.index_cast(next_ptr_i64, "index")
+                node_idx = pointers_position
+                node_idx_i64 = irb.arith.index_cast(node_idx, "i64")
+                concat_ptr = irb.llvm.getelementptr(concat_matrix_vectors, node_idx_i64)
+                concat_ptr8 = irb.llvm.load(concat_ptr, "!llvm.ptr<i8>")
+                concat_vector = irb.util.ptr8_to_tensor(
+                    concat_ptr8, "tensor<?xf64, #CV64>"
+                )
+                concat_vector_num_vals = irb.arith.subi(next_ptr, ptr)
+                concat_vector_indices = irb.sparse_tensor.indices(concat_vector, c0)
+                concat_vector_values = irb.sparse_tensor.values(concat_vector)
+                with irb.for_loop(
+                    c0, concat_vector_num_vals
+                ) as concat_matrix_fill_loop_for_vars:
+                    concat_vector_values_position = (
+                        concat_matrix_fill_loop_for_vars.iter_var_index
+                    )
+                    concat_vector_indices_value = irb.memref.load(
+                        concat_vector_indices, concat_vector_values_position
+                    )
+                    concat_vector_values_value = irb.memref.load(
+                        concat_vector_values, concat_vector_values_position
+                    )
+                    concat_matrix_values_position = irb.arith.addi(
+                        ptr, concat_vector_values_position
+                    )
+                    irb.memref.store(
+                        concat_vector_indices_value,
+                        concat_matrix_indices,
+                        concat_matrix_values_position,
+                    )
+                    irb.memref.store(
+                        concat_vector_values_value,
+                        concat_matrix_values,
+                        concat_matrix_values_position,
+                    )
+                irb.util.del_sparse_tensor(concat_vector)
+
+            post_relu = concat_matrix
+
+            next_h = irb.graphblas.convert_layout(post_relu, "tensor<?x?xf64, #CSC64>")
+            next_h_ptr8 = irb.util.tensor_to_ptr8(next_h)
+
+            k_loop_for_vars.yield_vars(next_h_ptr8)
+
+        final_h_ptr8 = k_loop_for_vars.returned_variable[0]
+        final_h_csc = irb.util.ptr8_to_tensor(final_h_ptr8, "tensor<?x?xf64, #CSC64>")
+        final_h = irb.graphblas.convert_layout(final_h_csc, "tensor<?x?xf64, #CSR64>")
+
+        irb.return_vars(final_h)
+
+        return irb
+
+    def __call__(
+        self,
+        A: MLIRSparseTensor,
+        features: MLIRSparseTensor,
+        weight_matrices: List[MLIRSparseTensor],
+        num_weight_matrices: int,
+        sample_count_per_layer: List[int],
+        rng_context: ChooseUniformContext,
+        **kwargs,
+    ) -> MLIRSparseTensor:
+        return super().__call__(
+            A,
+            features,
+            weight_matrices,
+            num_weight_matrices,
+            sample_count_per_layer,
+            rng_context,
+            **kwargs,
+        )
+
+
+graph_sage = GraphSAGE()
