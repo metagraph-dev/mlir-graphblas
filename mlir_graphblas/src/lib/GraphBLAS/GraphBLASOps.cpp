@@ -640,23 +640,15 @@ static LogicalResult verify(UpdateOp op) {
 }
 
 template <class T>
-static LogicalResult verifyEwise(T op, bool verifyResult) {
-  Type aOrigType = op.a().getType();
-  Type bOrigType = op.b().getType();
-  Type oOrigType;
-  if (verifyResult)
-    oOrigType = op.getResult().getType();
+static LogicalResult verifyEwise(T op, Value a, Value b, std::string aName, std::string bName, bool verifyType) {
+  Type aOrigType = a.getType();
+  Type bOrigType = b.getType();
 
   RankedTensorType aType = aOrigType.cast<RankedTensorType>();
   RankedTensorType bType = bOrigType.cast<RankedTensorType>();
-  RankedTensorType oType;
-  if (verifyResult)
-    oType = oOrigType.cast<RankedTensorType>();
 
   if (failed(verifySameShape(aType, bType)))
-    return op.emitError("Inputs must have identical shapes.");
-  if (verifyResult && failed(verifySameShape(aType, oType)))
-    return op.emitError("Output must have same shape as inputs.");
+    return op.emitError("\"" + aName + "\" and \"" + bName + "\" must have identical shapes.");
 
   int64_t aRank = aType.getRank();
 
@@ -664,16 +656,24 @@ static LogicalResult verifyEwise(T op, bool verifyResult) {
   if (aRank == 1) {
     errMsg = checkVectorEncoding(aType);
     if (errMsg)
-      return op.emitError("1st operand " + errMsg.getValue());
+      return op.emitError("\"" + aName + "\" " + errMsg.getValue());
+    errMsg = checkVectorEncoding(bType);
+    if (errMsg)
+      return op.emitError("\"" + bName + "\" " + errMsg.getValue());
   } else if (aRank == 2) {
     errMsg = checkMatrixEncoding(aType, EITHER);
     if (errMsg)
-      return op.emitError("1st operand " + errMsg.getValue());
+      return op.emitError("\"" + aName + "\" " + errMsg.getValue());
+    // B must be ordered the same as A
+    if (hasRowOrdering(aType))
+      errMsg = checkMatrixEncoding(bType, CSR);
+    else
+      errMsg = checkMatrixEncoding(bType, CSC);
+    if (errMsg)
+      return op.emitError("\"" + bName + "\" " + errMsg.getValue());
   }
-  if (aType != bType)
-    return op.emitError("operands must have identical types.");
-  if (verifyResult && aType != oType)
-    return op.emitError("output type must match input types.");
+  if (verifyType && aType != bType)
+    return op.emitError("\"" + aName + "\" and \"" + bName + "\" must have identical types.");
 
   return success();
 }
@@ -686,7 +686,12 @@ static LogicalResult verify(UnionOp op) {
                           "\" is not a supported union operator.");
   }
 
-  return verifyEwise(op, /* verifyResult */ true);
+  if (failed(verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+    return failure();
+  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output", /* verifyType */ true)))
+    return failure();
+
+  return success();
 }
 
 static LogicalResult verify(IntersectOp op) {
@@ -697,13 +702,16 @@ static LogicalResult verify(IntersectOp op) {
                           "\" is not a supported intersect operator.");
   }
 
-  return verifyEwise(op, /* verifyResult */ true);
+  if (failed(verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+    return failure();
+  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output", /* verifyType */ false)))
+    return failure();
+
+  return success();
 }
 
 static LogicalResult verify(EqualOp op) {
-  // TODO: this might need to be separate once masks are available for union and
-  // intersect
-  return verifyEwise(op, /* verifyResult */ false);
+  return verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true);
 }
 
 static LogicalResult verify(ReduceToVectorOp op) {

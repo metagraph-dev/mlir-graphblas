@@ -9,7 +9,7 @@
 module {
 
    func @vector_equals_wrapper(%argA: tensor<3xi64>, %argB: tensor<3xi64>) -> i1 {
-       %answer = graphblas.equal %argA, %argB : tensor<3xi64>, tensor<3xi64> // expected-error {{1st operand must be a sparse tensor.}}
+       %answer = graphblas.equal %argA, %argB : tensor<3xi64>, tensor<3xi64> // expected-error {{"a" must be a sparse tensor.}}
        return %answer : i1
    }
 
@@ -26,7 +26,7 @@ module {
 module {
 
    func @vector_equals_wrapper(%argA: tensor<3xi64, #CV64>, %argB: tensor<3xf64, #CV64>) -> i1 {
-       %answer = graphblas.equal %argA, %argB : tensor<3xi64, #CV64>, tensor<3xf64, #CV64> // expected-error {{operands must have identical types.}}
+       %answer = graphblas.equal %argA, %argB : tensor<3xi64, #CV64>, tensor<3xf64, #CV64> // expected-error {{"a" and "b" must have identical types.}}
        return %answer : i1
    }
 
@@ -43,7 +43,7 @@ module {
 module {
 
    func @vector_equals_wrapper(%argA: tensor<3xi64, #CV64>, %argB: tensor<99xi64, #CV64>) -> i1 {
-       %answer = graphblas.equal %argA, %argB : tensor<3xi64, #CV64>, tensor<99xi64, #CV64> // expected-error {{Inputs must have identical shapes.}}
+       %answer = graphblas.equal %argA, %argB : tensor<3xi64, #CV64>, tensor<99xi64, #CV64> // expected-error {{"a" and "b" must have identical shapes.}}
        return %answer : i1
    }
 
