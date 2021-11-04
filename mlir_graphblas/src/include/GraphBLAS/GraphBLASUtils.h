@@ -77,7 +77,7 @@ static const llvm::StringSet<> supportedForReduce{
     // List custom aggregators first
     "argmax", "argmin", "count",
     // Normal aggregators in alphabetical order
-    "plus"};
+    "min", "plus"};
 
 static const llvm::StringSet<> supportedForSelect{
     // List custom selectors first

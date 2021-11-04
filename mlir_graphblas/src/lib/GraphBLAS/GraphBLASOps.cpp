@@ -762,13 +762,7 @@ static LogicalResult verify(ReduceToVectorOp op) {
 
   if (aggregator == "argmin" or aggregator == "argmax") {
     Type valueType = resultType.getElementType();
-    bool valueTypeIsI64 = llvm::TypeSwitch<Type, bool>(valueType)
-                              .Case<IntegerType>([&](IntegerType type) {
-                                unsigned bitWidth = type.getWidth();
-                                return bitWidth == 64;
-                              })
-                              .Default([&](Type type) { return false; });
-    if (!valueTypeIsI64)
+    if (!valueType.isa<IntegerType>() || valueType.cast<IntegerType>().getWidth() != 64)
       return op.emitError(
           "\"" + aggregator +
           "\" requires the output vector to have i64 elements.");
@@ -831,21 +825,19 @@ static LogicalResult verify(ReduceToScalarOp op) {
   Type operandOrigType = op.input().getType();
   RankedTensorType operandType = operandOrigType.cast<RankedTensorType>();
   Type resultType = op.getResult().getType();
-  if (aggregator == "argmin" or aggregator == "argmax" or
-      aggregator == "count") {
-    if (operandType.getRank() != 1 and aggregator != "count")
-      return op.emitError("\"" + aggregator + "\" only supported for vectors.");
-    bool resultTypeIsI64 = llvm::TypeSwitch<Type, bool>(resultType)
-                               .Case<IntegerType>([&](IntegerType type) {
-                                 unsigned bitWidth = type.getWidth();
-                                 return bitWidth == 64;
-                               })
-                               .Default([&](Type type) { return false; });
-    if (!resultTypeIsI64)
+  if (aggregator == "count") {
+    if (!resultType.isa<IntegerType>() || resultType.cast<IntegerType>().getWidth() != 64)
+      return op.emitError("\"count\" requires the output type to be i64.");
+  } else if (aggregator == "argmax" || aggregator == "argmin") {
+    if (!resultType.isa<IntegerType>() || resultType.cast<IntegerType>().getWidth() != 64)
       return op.emitError("\"" + aggregator +
                           "\" requires the output type to be i64.");
-  } else if (resultType != operandType.getElementType())
-    return op.emitError("Operand and output types are incompatible.");
+    if (operandType.getRank() != 1)
+      return op.emitError("\"" + aggregator + "\" only supported for vectors.");
+  } else  {
+    if (resultType != operandType.getElementType())
+      return op.emitError("Operand and output types are incompatible.");
+  }
 
   return success();
 }
@@ -857,7 +849,7 @@ static LogicalResult verify(ReduceToScalarGenericOp op) {
     return argResult;
 
   RegionRange extensions = op.extensions();
-  if (extensions.size() < 1) {
+  if (extensions.size() < 2) {
     return op.emitError("Must have at least 2 regions: agg_identity, agg.");
   }
 
@@ -905,13 +897,7 @@ static LogicalResult verify(graphblas::SelectOp op) {
 
     if (selector == "probability") {
       // Ensure thunk type is f64
-      bool thunkTypeIsF64 = llvm::TypeSwitch<Type, bool>(thunkType)
-                                .Case<FloatType>([&](FloatType type) {
-                                  unsigned bitWidth = type.getWidth();
-                                  return bitWidth == 64;
-                                })
-                                .Default([&](Type type) { return false; });
-      if (!thunkTypeIsF64)
+      if (!thunkType.isa<FloatType>() || thunkType.cast<FloatType>().getWidth() != 64)
         return op.emitError("Select 'probability' requires f64 thunk.");
       if (thunks.size() != 2)
         return op.emitError("Selector 'probability' requires a RNG context");

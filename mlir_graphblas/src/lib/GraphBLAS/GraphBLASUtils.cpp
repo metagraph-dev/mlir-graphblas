@@ -1182,7 +1182,6 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
   Value bVal = opBlock->getArgument(1);
   Value opResult;
   if (monoidOp == "plus") {
-    // Insert add operation
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
                      return builder.create<arith::AddIOp>(loc, aVal, bVal);
