@@ -185,17 +185,21 @@ struct ExtensionBlocks {
 
 mlir::LogicalResult populateUnary(mlir::OpBuilder &builder, mlir::Location loc,
                                   mlir::StringRef unaryOp, mlir::Type valueType,
-                                  mlir::RegionRange regions);
+                                  mlir::RegionRange regions,
+                                  mlir::graphblas::YieldKind yieldKind);
 
 mlir::LogicalResult populateBinary(mlir::OpBuilder &builder, mlir::Location loc,
                                    mlir::StringRef binaryOp,
                                    mlir::Type valueType,
-                                   mlir::RegionRange regions);
+                                   mlir::RegionRange regions,
+                                   mlir::graphblas::YieldKind yieldKind);
 
 mlir::LogicalResult populateMonoid(mlir::OpBuilder &builder, mlir::Location loc,
                                    mlir::StringRef monoidOp,
                                    mlir::Type valueType,
-                                   mlir::RegionRange regions);
+                                   mlir::RegionRange regions,
+                                   mlir::graphblas::YieldKind yieldIdentity,
+                                   mlir::graphblas::YieldKind yieldKind);
 
 mlir::LogicalResult populateSemiring(mlir::OpBuilder &builder,
                                      mlir::Location loc,

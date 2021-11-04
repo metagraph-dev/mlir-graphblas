@@ -595,52 +595,9 @@ static LogicalResult verify(DiagOp op) {
   return success();
 }
 
-static LogicalResult verify(UpdateOp op) {
-  RankedTensorType iType = op.input().getType().cast<RankedTensorType>();
-  RankedTensorType oType = op.output().getType().cast<RankedTensorType>();
-  Value mask = op.mask();
-
-  int64_t iRank = iType.getRank();
-  RankedTensorType maskType;
-  if (mask) {
-    maskType = mask.getType().cast<RankedTensorType>();
-  }
-
-  if (failed(verifySameShape(iType, oType)))
-    return op.emitError(
-        "Input and Output arguments must have identical shapes.");
-  if (mask && failed(verifySameShape(oType, maskType)))
-    return op.emitError(
-        "Mask and Output arguments must have identical shapes.");
-
-  llvm::Optional<std::string> errMsg;
-  if (iRank == 1) {
-    errMsg = checkVectorEncoding(iType);
-    if (errMsg)
-      return op.emitError("input " + errMsg.getValue());
-  } else if (iRank == 2) {
-    errMsg = checkMatrixEncoding(iType, EITHER);
-    if (errMsg)
-      return op.emitError("input " + errMsg.getValue());
-  }
-
-  if (iType != oType)
-    return op.emitError("input and output must have identical types.");
-  if (mask && iType != maskType)
-    return op.emitError("mask and input must have identical types.");
-
-  llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
-  if (accumulateOperator) {
-    if (!supportedForUpdate.contains(accumulateOperator->str()))
-      return op.emitError("\"" + accumulateOperator->str() +
-                          "\" is not a supported accumulate operator.");
-  }
-
-  return success();
-}
-
 template <class T>
-static LogicalResult verifyEwise(T op, Value a, Value b, std::string aName, std::string bName, bool verifyType) {
+static LogicalResult verifyEwise(T op, Value a, Value b, std::string aName,
+                                 std::string bName, bool verifyType) {
   Type aOrigType = a.getType();
   Type bOrigType = b.getType();
 
@@ -648,7 +605,8 @@ static LogicalResult verifyEwise(T op, Value a, Value b, std::string aName, std:
   RankedTensorType bType = bOrigType.cast<RankedTensorType>();
 
   if (failed(verifySameShape(aType, bType)))
-    return op.emitError("\"" + aName + "\" and \"" + bName + "\" must have identical shapes.");
+    return op.emitError("\"" + aName + "\" and \"" + bName +
+                        "\" must have identical shapes.");
 
   int64_t aRank = aType.getRank();
 
@@ -673,7 +631,45 @@ static LogicalResult verifyEwise(T op, Value a, Value b, std::string aName, std:
       return op.emitError("\"" + bName + "\" " + errMsg.getValue());
   }
   if (verifyType && aType != bType)
-    return op.emitError("\"" + aName + "\" and \"" + bName + "\" must have identical types.");
+    return op.emitError("\"" + aName + "\" and \"" + bName +
+                        "\" must have identical types.");
+
+  return success();
+}
+
+static LogicalResult verify(UpdateOp op) {
+  llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
+  if (accumulateOperator) {
+    if (!supportedForUpdate.contains(accumulateOperator->str()))
+      return op.emitError("\"" + accumulateOperator->str() +
+                          "\" is not a supported accumulate operator.");
+  }
+
+  if (failed(verifyEwise(op, op.input(), op.output(), "input", "output",
+                         /* verifyType */ true)))
+    return failure();
+
+  Value mask = op.mask();
+  if (mask && failed(verifyEwise(op, op.output(), mask, "output", "mask",
+                                 /* verifyType */ false)))
+    return failure();
+
+  return success();
+}
+
+static LogicalResult verify(UpdateGenericOp op) {
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 1)
+    return op.emitError("Must have at least 1 region: accumulate.");
+
+  if (failed(verifyEwise(op, op.input(), op.output(), "input", "output",
+                         /* verifyType */ true)))
+    return failure();
+
+  Value mask = op.mask();
+  if (mask && failed(verifyEwise(op, op.output(), mask, "output", "mask",
+                                 /* verifyType */ false)))
+    return failure();
 
   return success();
 }
@@ -688,7 +684,22 @@ static LogicalResult verify(UnionOp op) {
 
   if (failed(verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
     return failure();
-  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output", /* verifyType */ true)))
+  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output",
+                         /* verifyType */ true)))
+    return failure();
+
+  return success();
+}
+
+static LogicalResult verify(UnionGenericOp op) {
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 1)
+    return op.emitError("Must have at least 1 region: mult.");
+
+  if (failed(verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+    return failure();
+  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output",
+                         /* verifyType */ true)))
     return failure();
 
   return success();
@@ -704,7 +715,22 @@ static LogicalResult verify(IntersectOp op) {
 
   if (failed(verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
     return failure();
-  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output", /* verifyType */ false)))
+  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output",
+                         /* verifyType */ false)))
+    return failure();
+
+  return success();
+}
+
+static LogicalResult verify(IntersectGenericOp op) {
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 1)
+    return op.emitError("Must have at least 1 region: mult.");
+
+  if (failed(verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+    return failure();
+  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output",
+                         /* verifyType */ false)))
     return failure();
 
   return success();

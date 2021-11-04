@@ -738,8 +738,6 @@ ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions,
                            " not allowed for this op");
     }
 
-    // TODO should we do some sanity checking (e.g. arg count or type) on these
-    // blocks?
     switch (kind) {
     case graphblas::YieldKind::TRANSFORM_IN_A:
       this->transformInA = &block;
@@ -821,38 +819,80 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
 
   Value opResult;
 
+  ////////////////////////////////////
+  // Unary with one argument
+  ////////////////////////////////////
   if (unaryOp == "abs") {
-    opResult = llvm::TypeSwitch<Type, Value>(valueType)
-                   .Case<IntegerType>([&](IntegerType type) {
-                     // http://graphics.stanford.edu/~seander/bithacks.html#IntegerAbs
-                     unsigned bitWidth = type.getWidth();
-                     Value shiftAmount = builder.create<ConstantOp>(
-                         loc, builder.getIntegerAttr(type, bitWidth - 1));
-                     Value mask =
-                         builder.create<arith::ShRSIOp>(loc, val, shiftAmount);
-                     Value maskPlusVal =
-                         builder.create<arith::AddIOp>(loc, mask, val);
-                     Value absVal =
-                         builder.create<arith::XOrIOp>(loc, mask, maskPlusVal);
-                     return absVal;
-                   })
-                   .Case<FloatType>([&](FloatType type) {
-                     return builder.create<math::AbsOp>(loc, val);
-                   });
+    opResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              // http://graphics.stanford.edu/~seander/bithacks.html#IntegerAbs
+              unsigned bitWidth = type.getWidth();
+              Value shiftAmount = builder.create<ConstantOp>(
+                  loc, builder.getIntegerAttr(type, bitWidth - 1));
+              Value mask =
+                  builder.create<arith::ShRSIOp>(loc, val, shiftAmount);
+              Value maskPlusVal = builder.create<arith::AddIOp>(loc, mask, val);
+              return builder.create<arith::XOrIOp>(loc, mask, maskPlusVal);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return builder.create<math::AbsOp>(loc, val);
+            });
   } else if (unaryOp == "ainv") {
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
                      Value c0_type = builder.create<ConstantOp>(
                          loc, builder.getIntegerAttr(type, 0));
-                     Value additiveInverse =
-                         builder.create<arith::SubIOp>(loc, c0_type, val);
-                     return additiveInverse;
+                     return builder.create<arith::SubIOp>(loc, c0_type, val);
                    })
                    .Case<FloatType>([&](FloatType type) {
-                     Value additiveInverse =
-                         builder.create<arith::NegFOp>(loc, val);
-                     return additiveInverse;
+                     return builder.create<arith::NegFOp>(loc, val);
                    });
+  } else if (unaryOp == "minv") {
+    opResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              // TODO we're missing python tests for all ops when given
+              // integer-typed tensors
+              unsigned bitWidth = type.getWidth();
+              Value shiftAmount = builder.create<ConstantOp>(
+                  loc, builder.getIntegerAttr(type, bitWidth - 1));
+              Value mask =
+                  builder.create<arith::ShRSIOp>(loc, val, shiftAmount);
+              Value maskPlusVal = builder.create<arith::AddIOp>(loc, mask, val);
+              Value absVal =
+                  builder.create<arith::XOrIOp>(loc, mask, maskPlusVal);
+              Value c1_type = builder.create<arith::ConstantOp>(
+                  loc, builder.getIntegerAttr(type, 1));
+              Value absValIsOne_i1 = builder.create<arith::CmpIOp>(
+                  loc, arith::CmpIPredicate::eq, absVal, c1_type);
+              Value absValIsOne_type =
+                  builder.create<arith::ExtSIOp>(loc, type, absValIsOne_i1);
+              return builder.create<arith::AndIOp>(loc, absValIsOne_type, val);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              Value c1_type = builder.create<arith::ConstantFloatOp>(
+                  loc, APFloat(1.0), type);
+              return builder.create<arith::DivFOp>(loc, c1_type, val);
+            });
+  }
+
+  ////////////////////////////////////
+  // Unary with three arguments
+  ////////////////////////////////////
+  else if (unaryOp == "column") {
+    opResult = col;
+  } else if (unaryOp == "index") {
+    // For Vectors, (row, col) is set as (index, index), so choose either
+    opResult = row;
+  } else if (unaryOp == "row") {
+    opResult = row;
+  } else if (unaryOp == "triu") {
+    opResult =
+        builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ugt, col, row);
+  } else if (unaryOp == "tril") {
+    opResult =
+        builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult, col, row);
   }
 
   builder.create<graphblas::YieldOp>(loc, yieldKind, opResult);
@@ -898,7 +938,110 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
 
   Value opResult;
 
-  if (binaryOp == "pair") {
+  ////////////////////////////////////
+  // Binary with two arguments
+  ////////////////////////////////////
+  if (binaryOp == "div") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::DivSIOp>(loc, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::DivFOp>(loc, aVal, bVal);
+                   });
+  } else if (binaryOp == "eq") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::eq, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::OEQ, aVal, bVal);
+                   });
+  } else if (binaryOp == "first") {
+    opResult = aVal;
+  } else if (binaryOp == "ge") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::sge, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::OGE, aVal, bVal);
+                   });
+  } else if (binaryOp == "gt") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::sgt, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::OGT, aVal, bVal);
+                   });
+  } else if (binaryOp == "le") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::sle, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::OLE, aVal, bVal);
+                   });
+  } else if (binaryOp == "lt") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::slt, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::OLT, aVal, bVal);
+                   });
+  } else if (binaryOp == "max") {
+    Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+                    .Case<IntegerType>([&](IntegerType type) {
+                      return builder.create<arith::CmpIOp>(
+                          loc, arith::CmpIPredicate::sgt, aVal, bVal);
+                    })
+                    .Case<FloatType>([&](FloatType type) {
+                      return builder.create<arith::CmpFOp>(
+                          loc, arith::CmpFPredicate::OGT, aVal, bVal);
+                    });
+    opResult = builder.create<SelectOp>(loc, cmp, aVal, bVal);
+  } else if (binaryOp == "min") {
+    Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+                    .Case<IntegerType>([&](IntegerType type) {
+                      return builder.create<arith::CmpIOp>(
+                          loc, arith::CmpIPredicate::slt, aVal, bVal);
+                    })
+                    .Case<FloatType>([&](FloatType type) {
+                      return builder.create<arith::CmpFOp>(
+                          loc, arith::CmpFPredicate::OLT, aVal, bVal);
+                    });
+    opResult = builder.create<SelectOp>(loc, cmp, aVal, bVal);
+  } else if (binaryOp == "minus") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::SubIOp>(loc, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::SubFOp>(loc, aVal, bVal);
+                   });
+  } else if (binaryOp == "ne") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::ne, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::ONE, aVal, bVal);
+                   });
+  } else if (binaryOp == "pair") {
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
                      return builder.create<arith::ConstantIntOp>(
@@ -908,14 +1051,6 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
                      return builder.create<arith::ConstantFloatOp>(
                          loc, APFloat(1.0), type);
                    });
-  } else if (binaryOp == "times") {
-    opResult = llvm::TypeSwitch<Type, Value>(valueType)
-                   .Case<IntegerType>([&](IntegerType type) {
-                     return builder.create<arith::MulIOp>(loc, aVal, bVal);
-                   })
-                   .Case<FloatType>([&](FloatType type) {
-                     return builder.create<arith::MulFOp>(loc, aVal, bVal);
-                   });
   } else if (binaryOp == "plus") {
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
@@ -924,6 +1059,33 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
                    .Case<FloatType>([&](FloatType type) {
                      return builder.create<arith::AddFOp>(loc, aVal, bVal);
                    });
+  } else if (binaryOp == "second") {
+    opResult = bVal;
+  } else if (binaryOp == "times") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::MulIOp>(loc, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::MulFOp>(loc, aVal, bVal);
+                   });
+  }
+
+  ////////////////////////////////////
+  // Binary with four arguments
+  ////////////////////////////////////
+  else if (binaryOp == "column") {
+    opResult =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<arith::IndexCastOp>(loc, col, valueType);
+            })
+            .Case<FloatType>([&](FloatType type) {
+              Type intType = builder.getIntegerType(type.getWidth());
+              Value intValue =
+                  builder.create<arith::IndexCastOp>(loc, col, intType);
+              return builder.create<arith::SIToFPOp>(loc, type, intValue);
+            });
   } else if (binaryOp == "row") {
     opResult =
         llvm::TypeSwitch<Type, Value>(valueType)
@@ -932,29 +1094,17 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
             })
             .Case<FloatType>([&](FloatType type) {
               unsigned bitWidth = type.getWidth();
-              Type integerType = builder.getIntegerType(bitWidth);
-              Value integerValue =
-                  builder.create<arith::IndexCastOp>(loc, row, integerType);
-              Value floatingPointValue =
-                  builder.create<arith::SIToFPOp>(loc, type, integerValue);
-              return floatingPointValue;
+              Type intType = builder.getIntegerType(bitWidth);
+              Value intValue =
+                  builder.create<arith::IndexCastOp>(loc, row, intType);
+              return builder.create<arith::SIToFPOp>(loc, type, intValue);
             });
-  } else if (binaryOp == "column") {
-    opResult =
-        llvm::TypeSwitch<Type, Value>(valueType)
-            .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<arith::IndexCastOp>(loc, col, valueType);
-            })
-            .Case<FloatType>([&](FloatType type) {
-              unsigned bitWidth = type.getWidth();
-              Type integerType = builder.getIntegerType(bitWidth);
-              Value integerValue =
-                  builder.create<arith::IndexCastOp>(loc, col, integerType);
-              Value floatingPointValue =
-                  builder.create<arith::SIToFPOp>(loc, type, integerValue);
-              return floatingPointValue;
-            });
-  } else if (binaryOp == "overlapi") {
+  }
+
+  ////////////////////////////////////
+  // Binary with five arguments
+  ////////////////////////////////////
+  else if (binaryOp == "overlapi") {
     opResult =
         llvm::TypeSwitch<Type, Value>(valueType)
             .Case<IntegerType>([&](IntegerType type) {
@@ -963,17 +1113,11 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
             })
             .Case<FloatType>([&](FloatType type) {
               unsigned bitWidth = type.getWidth();
-              Type integerType = builder.getIntegerType(bitWidth);
-              Value integerValue =
-                  builder.create<arith::IndexCastOp>(loc, overlap, integerType);
-              Value floatingPointValue =
-                  builder.create<arith::SIToFPOp>(loc, type, integerValue);
-              return floatingPointValue;
+              Type intType = builder.getIntegerType(bitWidth);
+              Value intValue =
+                  builder.create<arith::IndexCastOp>(loc, overlap, intType);
+              return builder.create<arith::SIToFPOp>(loc, type, intValue);
             });
-  } else if (binaryOp == "first") {
-    opResult = aVal;
-  } else if (binaryOp == "second") {
-    opResult = bVal;
   }
 
   builder.create<graphblas::YieldOp>(loc, yieldKind, opResult);

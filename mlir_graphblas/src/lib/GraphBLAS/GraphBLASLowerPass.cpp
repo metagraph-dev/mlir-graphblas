@@ -1518,8 +1518,6 @@ public:
                 return multipicativeInverse;
               })
               .Case<FloatType>([&](FloatType type) {
-                // TODO is there a faster way? e.g. magic with logs or
-                // exponents?
                 Value c1_type = rewriter.create<arith::ConstantFloatOp>(
                     loc, APFloat(1.0), type);
                 Value multipicativeInverse =
@@ -2705,13 +2703,53 @@ public:
   using OpRewritePattern<graphblas::UnionOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::UnionOp op,
                                 PatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+
+    Type valueType = op.a().getType().cast<RankedTensorType>().getElementType();
+
+    // New op
+    NamedAttrList attributes = {};
+    graphblas::UnionGenericOp newUnionOp =
+        rewriter.create<graphblas::UnionGenericOp>(loc, op->getResultTypes(),
+                                                   op.getOperands(),
+                                                   attributes.getAttrs(), 1);
+
+    if (failed(populateBinary(rewriter, loc, op.union_operator(), valueType,
+                              newUnionOp.getRegions().slice(0, 1),
+                              graphblas::YieldKind::MULT)))
+      return failure();
+
+    rewriter.setInsertionPointAfter(newUnionOp);
+
+    rewriter.replaceOp(op, newUnionOp.getResult());
+
+    return success();
+  };
+};
+
+class LowerUnionGenericRewrite
+    : public OpRewritePattern<graphblas::UnionGenericOp> {
+public:
+  using OpRewritePattern<graphblas::UnionGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::UnionGenericOp op,
+                                PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     // Inputs
     Value a = op.a();
     Value b = op.b();
-    std::string unionOperator = op.union_operator().str();
+
+    // Required block
+    RegionRange extensions = op.extensions();
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {graphblas::YieldKind::MULT};
+    LogicalResult extractResult =
+        extBlocks.extractBlocks(op, extensions, required, {});
+
+    if (extractResult.failed()) {
+      return extractResult;
+    }
 
     // Types
     RankedTensorType aType = a.getType().dyn_cast<RankedTensorType>();
@@ -2721,12 +2759,10 @@ public:
     Value output = callEmptyLike(rewriter, module, loc, a);
     if (rank == 2) {
       computeMatrixElementWise(rewriter, loc, module, a, b, output,
-                               unionOperator,
-                               /* intersect */ false);
+                               extBlocks.mult, UNION);
     } else {
       computeVectorElementWise(rewriter, loc, module, a, b, output,
-                               unionOperator,
-                               /* intersect */ false);
+                               extBlocks.mult, UNION);
     }
 
     rewriter.replaceOp(op, output);
@@ -2742,13 +2778,53 @@ public:
   using OpRewritePattern<graphblas::IntersectOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::IntersectOp op,
                                 PatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+
+    Type valueType = op.a().getType().cast<RankedTensorType>().getElementType();
+
+    // New op
+    NamedAttrList attributes = {};
+    graphblas::IntersectGenericOp newIntersectOp =
+        rewriter.create<graphblas::IntersectGenericOp>(
+            loc, op->getResultTypes(), op.getOperands(), attributes.getAttrs(),
+            1);
+
+    if (failed(populateBinary(rewriter, loc, op.intersect_operator(), valueType,
+                              newIntersectOp.getRegions().slice(0, 1),
+                              graphblas::YieldKind::MULT)))
+      return failure();
+
+    rewriter.setInsertionPointAfter(newIntersectOp);
+
+    rewriter.replaceOp(op, newIntersectOp.getResult());
+
+    return success();
+  };
+};
+
+class LowerIntersectGenericRewrite
+    : public OpRewritePattern<graphblas::IntersectGenericOp> {
+public:
+  using OpRewritePattern<graphblas::IntersectGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::IntersectGenericOp op,
+                                PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     // Inputs
     Value a = op.a();
     Value b = op.b();
-    std::string intersectOperator = op.intersect_operator().str();
+
+    // Required block
+    RegionRange extensions = op.extensions();
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {graphblas::YieldKind::MULT};
+    LogicalResult extractResult =
+        extBlocks.extractBlocks(op, extensions, required, {});
+
+    if (extractResult.failed()) {
+      return extractResult;
+    }
 
     // Types
     RankedTensorType aType = a.getType().dyn_cast<RankedTensorType>();
@@ -2758,10 +2834,10 @@ public:
     Value output = callEmptyLike(rewriter, module, loc, a);
     if (rank == 2) {
       computeMatrixElementWise(rewriter, loc, module, a, b, output,
-                               intersectOperator, /* intersect */ true);
+                               extBlocks.mult, INTERSECT);
     } else {
       computeVectorElementWise(rewriter, loc, module, a, b, output,
-                               intersectOperator, /* intersect */ true);
+                               extBlocks.mult, INTERSECT);
     }
 
     rewriter.replaceOp(op, output);
@@ -2777,6 +2853,47 @@ public:
   using OpRewritePattern<graphblas::UpdateOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::UpdateOp op,
                                 PatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+
+    Type valueType =
+        op.input().getType().cast<RankedTensorType>().getElementType();
+    bool maskComplement = op.mask_complement();
+    bool replace = op.replace();
+
+    // New op
+    NamedAttrList attributes = {};
+    attributes.append(StringRef("mask_complement"),
+                      rewriter.getBoolAttr(maskComplement));
+    attributes.append(StringRef("replace"), rewriter.getBoolAttr(replace));
+    graphblas::UpdateGenericOp newUpdateOp =
+        rewriter.create<graphblas::UpdateGenericOp>(loc, op->getResultTypes(),
+                                                    op.getOperands(),
+                                                    attributes.getAttrs(), 1);
+
+    // Only populate the binary block if given an accumulator
+    llvm::Optional<llvm::StringRef> accumulateOperator =
+        op.accumulate_operator();
+    if (accumulateOperator) {
+      if (failed(populateBinary(rewriter, loc, accumulateOperator->str(),
+                                valueType, newUpdateOp.getRegions().slice(0, 1),
+                                graphblas::YieldKind::ACCUMULATE)))
+        return failure();
+    }
+
+    rewriter.setInsertionPointAfter(newUpdateOp);
+
+    rewriter.replaceOp(op, newUpdateOp.getResult());
+
+    return success();
+  };
+};
+
+class LowerUpdateGenericRewrite
+    : public OpRewritePattern<graphblas::UpdateGenericOp> {
+public:
+  using OpRewritePattern<graphblas::UpdateGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::UpdateGenericOp op,
+                                PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
@@ -2784,15 +2901,21 @@ public:
     // Inputs
     Value input = op.input();
     Value output = op.output();
-    llvm::Optional<llvm::StringRef> accumulateOperator =
-        op.accumulate_operator();
-    std::string accumulateString;
-    if (accumulateOperator) {
-      accumulateString = accumulateOperator->str();
-    }
     Value mask = op.mask();
     bool maskComplement = op.mask_complement();
     bool replace = op.replace();
+
+    // Extension blocks
+    RegionRange extensions = op.extensions();
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> optional = {
+        graphblas::YieldKind::ACCUMULATE};
+    LogicalResult extractResult =
+        extBlocks.extractBlocks(op, extensions, {}, optional);
+
+    if (extractResult.failed()) {
+      return extractResult;
+    }
 
     // Types
     RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
@@ -2801,24 +2924,23 @@ public:
     auto computeEwise =
         rank == 2 ? computeMatrixElementWise : computeVectorElementWise;
 
-    if (accumulateOperator) {
+    if (extBlocks.accumulate) {
       if (mask) {
-        auto maskString = (maskComplement ? "mask_complement" : "mask");
+        EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
         if (replace) {
           // input -> output(mask) { accumulate, replace }
 
           // Step 1: apply the mask to the output
           Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
           computeEwise(rewriter, loc, module, output, mask, maskedOutput,
-                       maskString, true);
+                       nullptr, maskBehavior);
           // Step 2: apply the mask to the input
           Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput,
-                       maskString, true);
+          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                       maskBehavior);
           // Step 3: union the two masked results
           computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
-                       accumulateString,
-                       /* intersect */ false);
+                       extBlocks.accumulate, UNION);
           rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
           rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
         } else {
@@ -2826,13 +2948,12 @@ public:
 
           // Step 1: apply the mask to the input
           Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput,
-                       maskString, true);
+          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                       maskBehavior);
           // Step 2: union the two masked results
           Value outputCopy = callDupTensor(rewriter, module, loc, output);
           computeEwise(rewriter, loc, module, maskedInput, outputCopy, output,
-                       accumulateString,
-                       /* intersect */ false);
+                       extBlocks.accumulate, UNION);
           rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
           rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
         }
@@ -2841,19 +2962,19 @@ public:
 
         Value outputCopy = callDupTensor(rewriter, module, loc, output);
         computeEwise(rewriter, loc, module, input, outputCopy, output,
-                     accumulateString, /* intersect */ false);
+                     extBlocks.accumulate, UNION);
         rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
       }
     } else {
       if (mask) {
-        auto maskString = (maskComplement ? "mask_complement" : "mask");
+        EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
         if (replace) {
           // input -> output(mask) { replace }
 
           // Step 1: apply the mask to the input
           Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput,
-                       maskString, true);
+          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                       maskBehavior);
           // Step 2: swap masked input with output
           callSwapPointers(rewriter, module, loc, maskedInput, output);
           callSwapIndices(rewriter, module, loc, maskedInput, output);
@@ -2863,20 +2984,20 @@ public:
           // input -> output(mask)
 
           // Step 1: apply the mask inverse to the output
-          auto maskInverseString =
-              (maskComplement ? "mask" : "mask_complement");
+          EwiseBehavior maskInverseBehavior =
+              (maskComplement ? MASK : MASK_COMPLEMENT);
           Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
           computeEwise(rewriter, loc, module, output, mask, maskedOutput,
-                       maskInverseString, true);
+                       nullptr, maskInverseBehavior);
           // Step 2: apply the mask to the input
           Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput,
-                       maskString, true);
+          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                       maskBehavior);
           // Step 3: union the two masked results
+          // Note that there should be zero overlaps, so we do not provide
+          //      an accumulation block
           computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
-                       "plus", // Overlaps should never occur, so this choice
-                               // doesn't matter
-                       /* intersect */ false);
+                       nullptr, UNION);
           rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
           rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
         }
@@ -3712,10 +3833,12 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
            LowerApplyRewrite, LowerApplyGenericRewrite,
            LowerMatrixMultiplyReduceToScalarGenericRewrite,
            LowerMatrixMultiplyGenericRewrite, LowerUnionRewrite,
-           LowerIntersectRewrite, LowerUpdateRewrite, LowerEqualRewrite,
-           LowerDiagOpRewrite, LowerCommentRewrite, LowerPrintRewrite,
-           LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
-           LowerNumValsRewrite, LowerDupRewrite>(patterns.getContext());
+           LowerUnionGenericRewrite, LowerIntersectRewrite,
+           LowerIntersectGenericRewrite, LowerUpdateRewrite,
+           LowerUpdateGenericRewrite, LowerEqualRewrite, LowerDiagOpRewrite,
+           LowerCommentRewrite, LowerPrintRewrite, LowerSizeRewrite,
+           LowerNumRowsRewrite, LowerNumColsRewrite, LowerNumValsRewrite,
+           LowerDupRewrite>(patterns.getContext());
 }
 
 struct GraphBLASLoweringPass
