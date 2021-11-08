@@ -50,6 +50,27 @@ class BaseOp:
 ###########################################
 
 
+class SelectOp(BaseOp):
+    name = "select"
+
+    @classmethod
+    def call(cls, irbuilder, cond, lhs, rhs):
+        cls.ensure_mlirvar(cond, IntType)
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if cond.type.num != 1:
+            raise TypeError(f"Type of cond must be i1, not {cond.type}")
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var(lhs.type)
+        return ret_val, (f"{ret_val.assign} = select {cond}, {lhs}, {rhs}: {lhs.type}")
+
+
+###########################################
+# arith ops
+###########################################
+
+
 class ConstantOp(BaseOp):
     dialect = "arith"
     name = "constant"
@@ -199,22 +220,6 @@ class DivFOp(BaseOp):
         return ret_val, (f"{ret_val.assign} = arith.divf {lhs}, {rhs} : {lhs.type}")
 
 
-class SelectOp(BaseOp):
-    name = "select"
-
-    @classmethod
-    def call(cls, irbuilder, cond, lhs, rhs):
-        cls.ensure_mlirvar(cond, IntType)
-        cls.ensure_mlirvar(lhs)
-        cls.ensure_mlirvar(rhs)
-        if cond.type.num != 1:
-            raise TypeError(f"Type of cond must be i1, not {cond.type}")
-        if lhs.type != rhs.type:
-            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
-        ret_val = irbuilder.new_var(lhs.type)
-        return ret_val, (f"{ret_val.assign} = select {cond}, {lhs}, {rhs}: {lhs.type}")
-
-
 class CmpIOp(BaseOp):
     dialect = "arith"
     name = "cmpi"
@@ -265,6 +270,25 @@ class CmpFOp(BaseOp):
         return ret_val, (
             f'{ret_val.assign} = arith.cmpf "{cmpstr}", {lhs}, {rhs} : {lhs.type}'
         )
+
+
+###########################################
+# math ops
+###########################################
+
+
+class PowFOp(BaseOp):
+    dialect = "math"
+    name = "powf"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var(lhs.type)
+        return ret_val, (f"{ret_val.assign} = math.powf {lhs}, {rhs} : {lhs.type}")
 
 
 ###########################################
@@ -320,6 +344,27 @@ class MemrefLoadOp(BaseOp):
         ret_val = irbuilder.new_var(input_memref.type.value_type)
         return ret_val, (
             f"{ret_val.assign} = memref.load {input_memref}[{indices_string}] : {input_memref.type}"
+        )
+
+
+###########################################
+# linalg ops
+###########################################
+
+
+class LinalgInitOp(BaseOp):
+    dialect = "linalg"
+    name = "init_tensor"
+
+    @classmethod
+    def call(cls, irbuilder, return_type: str, *dim_sizes: str):
+        for dim_size in dim_sizes:
+            if isinstance(dim_size, int):
+                cls.ensure_mlirvar(dim_size)
+        ret_val = irbuilder.new_var(return_type)
+        dim_string = ", ".join(map(str, dim_sizes))
+        return ret_val, (
+            f"{ret_val.assign} = linalg.init_tensor[{dim_string}] : {ret_val.type}"
         )
 
 
@@ -381,6 +426,21 @@ class LLVMGetElementPtrOp(BaseOp):
         )
 
 
+class LLVMAllocaOp(BaseOp):
+    dialect = "llvm"
+    name = "alloca"
+
+    @classmethod
+    def call(cls, irbuilder, size: MLIRVar, element_type: str):
+        cls.ensure_mlirvar(size)
+        return_type = f"!llvm.ptr<{element_type}>"
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign} = llvm.alloca {size} x {size.type} : "
+            f"({size.type}) -> !llvm.ptr<{element_type}>"
+        )
+
+
 class LLVMLoadOp(BaseOp):
     dialect = "llvm"
     name = "load"
@@ -390,6 +450,19 @@ class LLVMLoadOp(BaseOp):
         cls.ensure_mlirvar(pointer)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (f"{ret_val.assign} = llvm.load {pointer} : {pointer.type}")
+
+
+class LLVMStoreOp(BaseOp):
+    dialect = "llvm"
+    name = "store"
+
+    @classmethod
+    def call(cls, irbuilder, value: MLIRVar, pointer: MLIRVar):
+        cls.ensure_mlirvar(value)
+        cls.ensure_mlirvar(pointer)
+        if value.type != pointer.type.internal_type:
+            raise TypeError("Value type and pointer internal type must match.")
+        return None, f"llvm.store {value}, {pointer} : {pointer.type}"
 
 
 ###########################################
@@ -765,7 +838,7 @@ class GraphBLAS_Apply(BaseOp):
     dialect = "graphblas"
     name = "apply"
     allowed_unary_ops = {"abs", "minv", "ainv", "identity"}
-    allowed_binary_ops = {"min", "div", "fill"}
+    allowed_binary_ops = {"min", "div", "fill", "pow"}
     allowed_ops = allowed_unary_ops | allowed_binary_ops
 
     @classmethod
@@ -1063,6 +1136,26 @@ class DelSparseTensor(BaseOp):
 
         return None, cast_string + (
             f"call @delSparseTensor({input}) : (!llvm.ptr<i8>) -> ()"
+        )
+
+
+class ResizeSparseDim(BaseOp):
+    dialect = "util"
+    name = "resize_sparse_dim"
+
+    @classmethod
+    def call(cls, irbuilder, input, dim, size):
+        cls.ensure_mlirvar(input, LlvmPtrType)
+        cls.ensure_mlirvar(dim, IndexType)
+        cls.ensure_mlirvar(size, IndexType)
+        irbuilder.needed_function_table["resize_dim"] = (
+            f"func private @resize_dim(!llvm.ptr<i8>, index, index)",
+            ["!llvm.ptr<i8>", "index", "index"],
+            "",
+        )
+
+        return None, (
+            f"call @resize_dim({input}, {dim}, {size}) : (!llvm.ptr<i8>, index, index) -> ()"
         )
 
 

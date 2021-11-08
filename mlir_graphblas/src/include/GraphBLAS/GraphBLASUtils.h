@@ -89,7 +89,7 @@ static const llvm::StringSet<> supportedForApply{
     // List custom operators first
     "fill", "identity",
     // Normal operators in alphabetical order
-    "abs", "ainv", "column", "div", "index", "min", "minv", "row"};
+    "abs", "ainv", "column", "div", "index", "min", "minv", "pow", "row"};
 
 bool hasRowOrdering(mlir::Type inputType);
 bool hasColumnOrdering(mlir::Type inputType);

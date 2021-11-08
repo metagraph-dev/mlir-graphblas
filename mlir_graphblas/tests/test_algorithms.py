@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
-from mlir_graphblas.sparse_utils import MLIRSparseTensor
+import grblas as gb
 import mlir_graphblas.algorithms as mlalgo
+from mlir_graphblas.sparse_utils import MLIRSparseTensor
+from mlir_graphblas.random_utils import ChooseUniformContext
 from mlir_graphblas.tools.utils import sparsify_array
 from mlir_graphblas.mlir_builder import GRAPHBLAS_OPENMP_PASSES
 
@@ -399,3 +401,84 @@ def test_ties():
     subgraph = mlalgo.totally_induced_edge_sampling(graph, 0.25, rand_seed=2021)
     assert np.all(subgraph.pointers[1] == [0, 1, 1, 3, 4, 5])
     assert np.all(subgraph.indices[1] == [2, 0, 4, 2, 4])
+
+
+def test_graph_sage():
+
+    # Generate Inputs & Answer
+
+    A = np.array(
+        [
+            [0, 1, 0, 1, 1, 0, 0, 0],
+            [1, 0, 0, 1, 1, 0, 0, 0],
+            [0, 0, 0, 0, 1, 1, 1, 1],
+            [1, 1, 0, 0, 1, 0, 0, 0],
+            [1, 1, 1, 1, 0, 0, 0, 0],
+            [0, 0, 1, 0, 0, 0, 1, 0],
+            [0, 0, 1, 0, 0, 1, 0, 0],
+            [0, 0, 1, 0, 0, 0, 0, 0],
+        ],
+        dtype=np.float64,
+    )
+    A = sparsify_array(A, [False, True])
+
+    _num_nodes = A.shape[0]
+    _dims = [7, 11, 13]
+    features = np.random.rand(_num_nodes, _dims[0])
+    features = sparsify_array(features, [False, True])
+
+    weight_matrices = [
+        np.random.rand(2 * prev_dim, dim) for prev_dim, dim in zip(_dims, _dims[1:])
+    ]
+    weight_matrices = [
+        weight_matrix - np.mean(weight_matrix) for weight_matrix in weight_matrices
+    ]
+    weight_matrices = [
+        sparsify_array(weight_matrix, [False, True])
+        for weight_matrix in weight_matrices
+    ]
+
+    num_weight_matrices = len(weight_matrices)
+
+    sample_count_per_layer = [999, 999]
+
+    rng_context = ChooseUniformContext(seed=1234)
+
+    ans = mlalgo.graph_sage(
+        A,
+        features,
+        weight_matrices,
+        num_weight_matrices,
+        sample_count_per_layer,
+        rng_context,
+    ).toarray()
+
+    # Generate expected results
+
+    adjacency_matrix = gb.io.from_numpy(A.toarray())
+    weights = [gb.Matrix.ss.import_fullr(w.toarray()) for w in weight_matrices]
+
+    h = gb.Matrix.ss.import_fullr(features.toarray())
+    for k in range(len(sample_count_per_layer)):
+        neighborhoods = adjacency_matrix.ss.selectk_rowwise(
+            "random", sample_count_per_layer[k]
+        )
+        next_h = gb.Matrix.new(h.dtype, nrows=_num_nodes, ncols=_dims[k + 1])
+        for v in range(_num_nodes):
+            neighborhood = gb.ss.diag(neighborhoods[v, :].new())
+            neighborhood_hs = gb.op.any_second(neighborhood @ h).new()
+            neighbor_aggregated = neighborhood_hs.reduce_columnwise(gb.agg.mean).new()
+            size = neighbor_aggregated.size
+            h_concat = gb.Vector.new(h.dtype, size=2 * size)
+            h_concat[:size] = h[v, :].new()
+            h_concat[size:] = neighbor_aggregated
+            val = gb.op.plus_times(h_concat @ weights[k]).new()
+            val = gb.op.max(val, 0).new()
+            denom = val.reduce(gb.agg.L2norm).new()
+            val = gb.binary.truediv(val, denom).new()
+            next_h[v, :] = val
+        h = next_h
+
+    expected_ans = gb.io.to_numpy(h)
+
+    assert np.all(expected_ans == ans)
