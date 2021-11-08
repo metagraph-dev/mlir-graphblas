@@ -524,9 +524,9 @@ def test_ir_reduce_to_vector(
         input_types=[input_type],
         return_types=[
             reduce_rows_output_type,
-            reduce_columns_output_type,
+            "tensor<?xi64, #CV64>",
             reduce_rows_output_type,
-            reduce_columns_output_type,
+            "tensor<?xi64, #CV64>",
             "tensor<?xi64, #CV64>",
             "tensor<?xi64, #CV64>",
         ],

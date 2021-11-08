@@ -43,80 +43,6 @@ bool hasColumnOrdering(Type inputType) {
   return true;
 }
 
-// TODO: this is very heavyweight; we already check for CSR/CSC/EITHER in the
-// verify methods; prefer hasRow/ColumnOrdering methods above
-bool typeIsCSR(Type inputType) {
-
-  sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
-      sparse_tensor::getSparseTensorEncoding(inputType);
-
-  if (!inputSparseEncoding)
-    return false;
-
-  AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
-  if (!inputDimOrdering) // if inputDimOrdering.map != nullptr ; i.e. if the
-                         // dimOrdering exists
-    return false;
-  if (inputDimOrdering.getNumDims() != 2) {
-    return false;
-  } else {
-    unsigned inputDimOrdering0 = inputDimOrdering.getDimPosition(0);
-    unsigned inputDimOrdering1 = inputDimOrdering.getDimPosition(1);
-    if (inputDimOrdering0 != 0 || inputDimOrdering1 != 1)
-      return false;
-  }
-  llvm::ArrayRef<SparseTensorEncodingAttr::DimLevelType> dlt =
-      inputSparseEncoding.getDimLevelType();
-  if (dlt.size() != 2) {
-    return false;
-  } else {
-    if (dlt[0] !=
-            sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense ||
-        dlt[1] !=
-            sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
-      return false;
-  }
-
-  return true;
-}
-
-// TODO: this is very heavyweight; we already check for CSR/CSC/EITHER in the
-// verify methods; prefer hasRow/ColumnOrdering methods above
-bool typeIsCSC(Type inputType) {
-  sparse_tensor::SparseTensorEncodingAttr inputSparseEncoding =
-      sparse_tensor::getSparseTensorEncoding(inputType);
-
-  if (!inputSparseEncoding)
-    return false;
-
-  AffineMap inputDimOrdering = inputSparseEncoding.getDimOrdering();
-  if (!inputDimOrdering) // if inputDimOrdering.map != nullptr ; i.e. if the
-                         // dimOrdering exists
-    return false;
-  if (inputDimOrdering.getNumDims() != 2) {
-    return false;
-  } else {
-    unsigned inputDimOrdering0 = inputDimOrdering.getDimPosition(0);
-    unsigned inputDimOrdering1 = inputDimOrdering.getDimPosition(1);
-    if (inputDimOrdering0 != 1 || inputDimOrdering1 != 0)
-      return false;
-  }
-
-  llvm::ArrayRef<SparseTensorEncodingAttr::DimLevelType> dlt =
-      inputSparseEncoding.getDimLevelType();
-  if (dlt.size() != 2) {
-    return false;
-  } else {
-    if (dlt[0] !=
-            sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Dense ||
-        dlt[1] !=
-            sparse_tensor::SparseTensorEncodingAttr::DimLevelType::Compressed)
-      return false;
-  }
-
-  return true;
-}
-
 int64_t getRank(Type inputType) {
   mlir::sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
       mlir::sparse_tensor::getSparseTensorEncoding(inputType);
@@ -130,6 +56,27 @@ int64_t getRank(Type inputType) {
 int64_t getRank(Value inputValue) {
   Type inputType = inputValue.getType();
   return getRank(inputType);
+}
+
+MemRefType getMemrefPointerType(Type tensorType) {
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(tensorType);
+  unsigned pointerBitWidth = sparseEncoding.getPointerBitWidth();
+  Type pointerType = IntegerType::get(tensorType.getContext(), pointerBitWidth);
+  return MemRefType::get({-1}, pointerType);
+}
+
+MemRefType getMemrefIndexType(Type tensorType) {
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(tensorType);
+  unsigned indexBitWidth = sparseEncoding.getIndexBitWidth();
+  Type indexType = IntegerType::get(tensorType.getContext(), indexBitWidth);
+  return MemRefType::get({-1}, indexType);
+}
+
+MemRefType getMemrefValueType(Type tensorType) {
+  RankedTensorType rtt = tensorType.dyn_cast<RankedTensorType>();
+  return MemRefType::get({-1}, rtt.getElementType());
 }
 
 // make Compressed Vector type

@@ -645,12 +645,12 @@ static LogicalResult verify(UpdateOp op) {
                           "\" is not a supported accumulate operator.");
   }
 
-  if (failed(verifyEwise(op, op.input(), op.output(), "input", "output",
+  if (failed(verifyEwise<UpdateOp>(op, op.input(), op.output(), "input", "output",
                          /* verifyType */ true)))
     return failure();
 
   Value mask = op.mask();
-  if (mask && failed(verifyEwise(op, op.output(), mask, "output", "mask",
+  if (mask && failed(verifyEwise<UpdateOp>(op, op.output(), mask, "output", "mask",
                                  /* verifyType */ false)))
     return failure();
 
@@ -662,12 +662,12 @@ static LogicalResult verify(UpdateGenericOp op) {
   if (extensions.size() < 1)
     return op.emitError("Must have at least 1 region: accumulate.");
 
-  if (failed(verifyEwise(op, op.input(), op.output(), "input", "output",
+  if (failed(verifyEwise<UpdateGenericOp>(op, op.input(), op.output(), "input", "output",
                          /* verifyType */ true)))
     return failure();
 
   Value mask = op.mask();
-  if (mask && failed(verifyEwise(op, op.output(), mask, "output", "mask",
+  if (mask && failed(verifyEwise<UpdateGenericOp>(op, op.output(), mask, "output", "mask",
                                  /* verifyType */ false)))
     return failure();
 
@@ -682,9 +682,9 @@ static LogicalResult verify(UnionOp op) {
                           "\" is not a supported union operator.");
   }
 
-  if (failed(verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+  if (failed(verifyEwise<UnionOp>(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
     return failure();
-  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output",
+  if (failed(verifyEwise<UnionOp>(op, op.a(), op.getResult(), "input", "output",
                          /* verifyType */ true)))
     return failure();
 
@@ -696,9 +696,9 @@ static LogicalResult verify(UnionGenericOp op) {
   if (extensions.size() < 1)
     return op.emitError("Must have at least 1 region: mult.");
 
-  if (failed(verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+  if (failed(verifyEwise<UnionGenericOp>(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
     return failure();
-  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output",
+  if (failed(verifyEwise<UnionGenericOp>(op, op.a(), op.getResult(), "input", "output",
                          /* verifyType */ true)))
     return failure();
 
@@ -713,9 +713,9 @@ static LogicalResult verify(IntersectOp op) {
                           "\" is not a supported intersect operator.");
   }
 
-  if (failed(verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+  if (failed(verifyEwise<IntersectOp>(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
     return failure();
-  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output",
+  if (failed(verifyEwise<IntersectOp>(op, op.a(), op.getResult(), "input", "output",
                          /* verifyType */ false)))
     return failure();
 
@@ -727,9 +727,9 @@ static LogicalResult verify(IntersectGenericOp op) {
   if (extensions.size() < 1)
     return op.emitError("Must have at least 1 region: mult.");
 
-  if (failed(verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+  if (failed(verifyEwise<IntersectGenericOp>(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
     return failure();
-  if (failed(verifyEwise(op, op.a(), op.getResult(), "input", "output",
+  if (failed(verifyEwise<IntersectGenericOp>(op, op.a(), op.getResult(), "input", "output",
                          /* verifyType */ false)))
     return failure();
 
@@ -737,39 +737,27 @@ static LogicalResult verify(IntersectGenericOp op) {
 }
 
 static LogicalResult verify(EqualOp op) {
-  return verifyEwise(op, op.a(), op.b(), "a", "b", /* verifyType */ true);
+  return verifyEwise<EqualOp>(op, op.a(), op.b(), "a", "b", /* verifyType */ true);
 }
 
-static LogicalResult verify(ReduceToVectorOp op) {
-  std::string aggregator = op.aggregator().str();
-  if (!supportedForReduce.contains(aggregator))
-    return op.emitError("\"" + aggregator +
-                        "\" is not a supported aggregator.");
-
-  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+template <class T>
+static LogicalResult verifyReduceToVectorArgs(T op) {
+  Type inputType = op.input().getType();
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
 
   llvm::Optional<std::string> errMsg;
-  errMsg = checkMatrixEncoding(inputType, EITHER);
+  errMsg = checkMatrixEncoding(inputTensorType, EITHER);
   if (errMsg)
     return op.emitError("operand " + errMsg.getValue());
 
-  RankedTensorType resultType =
-      op.getResult().getType().cast<RankedTensorType>();
+  Type resultType = op.getResult().getType();
+  RankedTensorType resultTensorType = resultType.cast<RankedTensorType>();
 
-  errMsg = checkVectorEncoding(resultType);
+  errMsg = checkVectorEncoding(resultTensorType);
   if (errMsg)
     return op.emitError("result " + errMsg.getValue());
 
-  if (aggregator == "argmin" or aggregator == "argmax") {
-    Type valueType = resultType.getElementType();
-    if (!valueType.isa<IntegerType>() || valueType.cast<IntegerType>().getWidth() != 64)
-      return op.emitError(
-          "\"" + aggregator +
-          "\" requires the output vector to have i64 elements.");
-  } else if (resultType.getElementType() != inputType.getElementType())
-    return op.emitError("Operand and output types are incompatible.");
-
-  ArrayRef<int64_t> inputShape = inputType.getShape();
+  ArrayRef<int64_t> inputShape = inputTensorType.getShape();
 
   int axis = op.axis();
   int expectedResultLength;
@@ -781,10 +769,61 @@ static LogicalResult verify(ReduceToVectorOp op) {
     return op.emitError("The axis attribute is expected to be 0 or 1.");
   }
 
-  ArrayRef<int64_t> resultShape = resultType.getShape();
+  ArrayRef<int64_t> resultShape = resultTensorType.getShape();
   if (resultShape[0] != expectedResultLength) {
     return op.emitError("Operand and output shapes are incompatible.");
   }
+
+  return success();
+}
+
+static LogicalResult verify(ReduceToVectorOp op) {
+  std::string aggregator = op.aggregator().str();
+  if (!supportedForReduce.contains(aggregator))
+    return op.emitError("\"" + aggregator +
+                        "\" is not a supported aggregator.");
+
+  LogicalResult argResult = verifyReduceToVectorArgs(op);
+
+  if (argResult.failed())
+    return argResult;
+
+  Type resultType = op.getResult().getType().cast<RankedTensorType>().getElementType();
+
+  StringSet<> i64Aggs{"argmax", "argmin", "count"};
+  if (i64Aggs.contains(aggregator)) {
+    if (!resultType.isa<IntegerType>() ||
+        resultType.cast<IntegerType>().getWidth() != 64)
+      return op.emitError(
+          "\"" + aggregator +
+          "\" requires the output vector to have i64 elements.");
+  } else {
+    Type inputType = op.input().getType().cast<RankedTensorType>().getElementType();
+    if (resultType != inputType)
+      return op.emitError("Operand and output types are incompatible.");
+  }
+
+  return success();
+}
+
+static LogicalResult verify(ReduceToVectorGenericOp op) {
+  LogicalResult argResult = verifyReduceToVectorArgs(op);
+
+  if (argResult.failed())
+    return argResult;
+
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 2) {
+    return op.emitError("Must have at least 2 regions: agg_identity, agg.");
+  }
+
+  // Enforce reasonable iteration direction for axis
+  bool isCSR = hasRowOrdering(op.input().getType());
+  int axis = op.axis();
+  if (axis == 0 && isCSR)
+    return op.emitError("Reducing with axis=0 requires CSC matrix.");
+  if (axis == 1 && !isCSR)
+    return op.emitError("Reducing with axis=1 requires CSR matrix.");
 
   return success();
 }
@@ -826,15 +865,17 @@ static LogicalResult verify(ReduceToScalarOp op) {
   RankedTensorType operandType = operandOrigType.cast<RankedTensorType>();
   Type resultType = op.getResult().getType();
   if (aggregator == "count") {
-    if (!resultType.isa<IntegerType>() || resultType.cast<IntegerType>().getWidth() != 64)
+    if (!resultType.isa<IntegerType>() ||
+        resultType.cast<IntegerType>().getWidth() != 64)
       return op.emitError("\"count\" requires the output type to be i64.");
   } else if (aggregator == "argmax" || aggregator == "argmin") {
-    if (!resultType.isa<IntegerType>() || resultType.cast<IntegerType>().getWidth() != 64)
+    if (!resultType.isa<IntegerType>() ||
+        resultType.cast<IntegerType>().getWidth() != 64)
       return op.emitError("\"" + aggregator +
                           "\" requires the output type to be i64.");
     if (operandType.getRank() != 1)
       return op.emitError("\"" + aggregator + "\" only supported for vectors.");
-  } else  {
+  } else {
     if (resultType != operandType.getElementType())
       return op.emitError("Operand and output types are incompatible.");
   }
@@ -897,7 +938,8 @@ static LogicalResult verify(graphblas::SelectOp op) {
 
     if (selector == "probability") {
       // Ensure thunk type is f64
-      if (!thunkType.isa<FloatType>() || thunkType.cast<FloatType>().getWidth() != 64)
+      if (!thunkType.isa<FloatType>() ||
+          thunkType.cast<FloatType>().getWidth() != 64)
         return op.emitError("Select 'probability' requires f64 thunk.");
       if (thunks.size() != 2)
         return op.emitError("Selector 'probability' requires a RNG context");

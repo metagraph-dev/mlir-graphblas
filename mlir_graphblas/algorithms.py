@@ -386,6 +386,7 @@ class Pagerank(Algorithm):
         teleport = irb.arith.divf(teleport, nrows_f64)
 
         row_degree = irb.graphblas.reduce_to_vector(A, "count", axis=1)
+        row_degree = irb.graphblas.cast(row_degree, "tensor<?xf64, #CV64>")
         # prescale row_degree with damping factor, so it isn't done each iteration
         row_degree = irb.graphblas.apply(row_degree, "div", right=var_damping)
 
@@ -896,8 +897,9 @@ class TotallyInducedEdgeSampling(Algorithm):
         row_counts = irb.graphblas.reduce_to_vector(selected_edges, "count", axis=1)
         col_counts = irb.graphblas.reduce_to_vector(selected_edges, "count", axis=0)
         selected_nodes = irb.graphblas.union(
-            row_counts, col_counts, "plus", "tensor<?xf64, #CV64>"
+            row_counts, col_counts, "plus", "tensor<?xi64, #CV64>"
         )
+        selected_nodes = irb.graphblas.cast(selected_nodes, "tensor<?xf64, #CV64>")
         # TODO: these next lines should be replaced with `extract` when available
         D_csr = irb.graphblas.diag(selected_nodes, "tensor<?x?xf64, #CSR64>")
         D_csc = irb.graphblas.diag(selected_nodes, "tensor<?x?xf64, #CSC64>")

@@ -293,6 +293,49 @@ def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]
     let verifier = [{ return ::verify(*this); }];
 }
 
+def GraphBLAS_ReduceToVectorGenericOp : GraphBLAS_Op<"reduce_to_vector_generic", [NoSideEffect]> {
+    let summary = "Matrix reduce to vector generic operation.";
+    let description = [{
+        Reduces a CSR or CSC matrix to a vector according to the given axis using the
+        specified aggregator block.
+
+        If the axis attribute is 0, the input tensor will be reduced column-wise, so the
+        resulting vector's size must be the number of columns in the input tensor.
+
+        If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
+        vector's size must be the number of rows in the input tensor.
+
+        Example:
+        ```mlir
+        %vec1 = graphblas.reduce_to_vector %matrix_1 { axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #CV64> {
+              graphblas.yield agg_identity %cf0 : f16
+          },  {
+            ^bb0(%a : f16, %b : f16):
+              %result = arith.addf %a, %b : f16
+              graphblas.yield agg %result : f16
+          }
+        %vec2 = graphblas.reduce_to_vector %matrix_2 { axis = 1 } : tensor<7x9xi64, #CSR64> to tensor<7xi64, #CV64> {
+              graphblas.yield agg_identity %ci0 : i64
+          },  {
+            ^bb0(%a : i64, %b : i64):
+              %cmp = arith.cmpi "slt", %a, %b : i64
+              %result = select %cmp, %a, %b : i64
+              graphblas.yield agg %result : i64
+          }
+        ```
+    }];
+
+    let arguments = (ins GraphBlasMatrixOperand:$input, I64Attr:$axis);
+    let results = (outs GraphBlasVectorOperand:$output);
+    let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($output) $extensions
+    }];
+
+    let verifier = [{ return ::verify(*this); }];
+}
+
 def GraphBLAS_ReduceToScalarOp : GraphBLAS_Op<"reduce_to_scalar", [NoSideEffect]> {
     let summary = "Reduce to scalar operation.";
     let description = [{
@@ -334,7 +377,10 @@ def GraphBLAS_ReduceToScalarGenericOp : GraphBLAS_Op<"reduce_to_scalar_generic",
 
         Example:
         ```mlir
+          %ci0 = arith.constant 0 : i64
           %answer = graphblas.reduce_to_scalar_generic %sparse_vector : tensor<?xi64, #CV64> to i64 {
+              graphblas.yield agg_identity %ci0 : i64
+          },  {
             ^bb0(%a : i64, %b : i64):
               %result = arith.addi %a, %b : i64
               graphblas.yield agg %result : i64

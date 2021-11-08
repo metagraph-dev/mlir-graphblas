@@ -93,8 +93,9 @@ static const llvm::StringSet<> supportedForApply{
 
 bool hasRowOrdering(mlir::Type inputType);
 bool hasColumnOrdering(mlir::Type inputType);
-bool typeIsCSR(mlir::Type inputType);
-bool typeIsCSC(mlir::Type inputType);
+mlir::MemRefType getMemrefPointerType(mlir::Type tensorType);
+mlir::MemRefType getMemrefIndexType(mlir::Type tensorType);
+mlir::MemRefType getMemrefValueType(mlir::Type tensorType);
 mlir::RankedTensorType getCompressedVectorType(mlir::MLIRContext *context,
                                                mlir::ArrayRef<int64_t> shape,
                                                mlir::Type valueType,
