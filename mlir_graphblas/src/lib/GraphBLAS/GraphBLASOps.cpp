@@ -645,13 +645,15 @@ static LogicalResult verify(UpdateOp op) {
                           "\" is not a supported accumulate operator.");
   }
 
-  if (failed(verifyEwise<UpdateOp>(op, op.input(), op.output(), "input", "output",
-                         /* verifyType */ true)))
+  if (failed(verifyEwise<UpdateOp>(op, op.input(), op.output(), "input",
+                                   "output",
+                                   /* verifyType */ true)))
     return failure();
 
   Value mask = op.mask();
-  if (mask && failed(verifyEwise<UpdateOp>(op, op.output(), mask, "output", "mask",
-                                 /* verifyType */ false)))
+  if (mask &&
+      failed(verifyEwise<UpdateOp>(op, op.output(), mask, "output", "mask",
+                                   /* verifyType */ false)))
     return failure();
 
   return success();
@@ -662,13 +664,15 @@ static LogicalResult verify(UpdateGenericOp op) {
   if (extensions.size() < 1)
     return op.emitError("Must have at least 1 region: accumulate.");
 
-  if (failed(verifyEwise<UpdateGenericOp>(op, op.input(), op.output(), "input", "output",
-                         /* verifyType */ true)))
+  if (failed(verifyEwise<UpdateGenericOp>(op, op.input(), op.output(), "input",
+                                          "output",
+                                          /* verifyType */ true)))
     return failure();
 
   Value mask = op.mask();
-  if (mask && failed(verifyEwise<UpdateGenericOp>(op, op.output(), mask, "output", "mask",
-                                 /* verifyType */ false)))
+  if (mask && failed(verifyEwise<UpdateGenericOp>(op, op.output(), mask,
+                                                  "output", "mask",
+                                                  /* verifyType */ false)))
     return failure();
 
   return success();
@@ -682,10 +686,11 @@ static LogicalResult verify(UnionOp op) {
                           "\" is not a supported union operator.");
   }
 
-  if (failed(verifyEwise<UnionOp>(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+  if (failed(verifyEwise<UnionOp>(op, op.a(), op.b(), "a", "b",
+                                  /* verifyType */ true)))
     return failure();
   if (failed(verifyEwise<UnionOp>(op, op.a(), op.getResult(), "input", "output",
-                         /* verifyType */ true)))
+                                  /* verifyType */ true)))
     return failure();
 
   return success();
@@ -696,10 +701,12 @@ static LogicalResult verify(UnionGenericOp op) {
   if (extensions.size() < 1)
     return op.emitError("Must have at least 1 region: mult.");
 
-  if (failed(verifyEwise<UnionGenericOp>(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+  if (failed(verifyEwise<UnionGenericOp>(op, op.a(), op.b(), "a", "b",
+                                         /* verifyType */ true)))
     return failure();
-  if (failed(verifyEwise<UnionGenericOp>(op, op.a(), op.getResult(), "input", "output",
-                         /* verifyType */ true)))
+  if (failed(verifyEwise<UnionGenericOp>(op, op.a(), op.getResult(), "input",
+                                         "output",
+                                         /* verifyType */ true)))
     return failure();
 
   return success();
@@ -713,10 +720,12 @@ static LogicalResult verify(IntersectOp op) {
                           "\" is not a supported intersect operator.");
   }
 
-  if (failed(verifyEwise<IntersectOp>(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+  if (failed(verifyEwise<IntersectOp>(op, op.a(), op.b(), "a", "b",
+                                      /* verifyType */ true)))
     return failure();
-  if (failed(verifyEwise<IntersectOp>(op, op.a(), op.getResult(), "input", "output",
-                         /* verifyType */ false)))
+  if (failed(verifyEwise<IntersectOp>(op, op.a(), op.getResult(), "input",
+                                      "output",
+                                      /* verifyType */ false)))
     return failure();
 
   return success();
@@ -727,17 +736,20 @@ static LogicalResult verify(IntersectGenericOp op) {
   if (extensions.size() < 1)
     return op.emitError("Must have at least 1 region: mult.");
 
-  if (failed(verifyEwise<IntersectGenericOp>(op, op.a(), op.b(), "a", "b", /* verifyType */ true)))
+  if (failed(verifyEwise<IntersectGenericOp>(op, op.a(), op.b(), "a", "b",
+                                             /* verifyType */ true)))
     return failure();
-  if (failed(verifyEwise<IntersectGenericOp>(op, op.a(), op.getResult(), "input", "output",
-                         /* verifyType */ false)))
+  if (failed(verifyEwise<IntersectGenericOp>(op, op.a(), op.getResult(),
+                                             "input", "output",
+                                             /* verifyType */ false)))
     return failure();
 
   return success();
 }
 
 static LogicalResult verify(EqualOp op) {
-  return verifyEwise<EqualOp>(op, op.a(), op.b(), "a", "b", /* verifyType */ true);
+  return verifyEwise<EqualOp>(op, op.a(), op.b(), "a", "b",
+                              /* verifyType */ true);
 }
 
 template <class T>
@@ -788,7 +800,8 @@ static LogicalResult verify(ReduceToVectorOp op) {
   if (argResult.failed())
     return argResult;
 
-  Type resultType = op.getResult().getType().cast<RankedTensorType>().getElementType();
+  Type resultType =
+      op.getResult().getType().cast<RankedTensorType>().getElementType();
 
   StringSet<> i64Aggs{"argmax", "argmin", "count"};
   if (i64Aggs.contains(aggregator)) {
@@ -798,7 +811,8 @@ static LogicalResult verify(ReduceToVectorOp op) {
           "\"" + aggregator +
           "\" requires the output vector to have i64 elements.");
   } else {
-    Type inputType = op.input().getType().cast<RankedTensorType>().getElementType();
+    Type inputType =
+        op.input().getType().cast<RankedTensorType>().getElementType();
     if (resultType != inputType)
       return op.emitError("Operand and output types are incompatible.");
   }

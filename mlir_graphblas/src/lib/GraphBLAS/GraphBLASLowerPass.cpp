@@ -769,8 +769,7 @@ public:
     StringRef aggregator = op.aggregator();
     Value input = op.input();
     int axis = op.axis();
-    RankedTensorType inputType =
-        input.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
     Type elementType = inputType.getElementType();
     Type i64Type = rewriter.getI64Type();
 
@@ -785,9 +784,9 @@ public:
       ArrayRef<int64_t> inputShape = inputType.getShape();
       ArrayRef<int64_t> flippedShape =
           ArrayRef<int64_t>{inputShape[1], inputShape[0]};
-      RankedTensorType flippedInputType =
-          getSingleCompressedMatrixType(context, flippedShape, /* colwise */ isCSR,
-                                        elementType, ptrBitWidth, idxBitWidth);
+      RankedTensorType flippedInputType = getSingleCompressedMatrixType(
+          context, flippedShape, /* colwise */ isCSR, elementType, ptrBitWidth,
+          idxBitWidth);
       Value convertedTensor = rewriter.create<graphblas::ConvertLayoutOp>(
           loc, flippedInputType, input);
       Type originalVectorType = op->getResultTypes().front();
@@ -800,11 +799,11 @@ public:
     }
 
     if (aggregator == "count") {
-      return buildAlgorithm<graphblas::ReduceToVectorOp>(
-        op, rewriter, module, i64Type, countBlock);
+      return buildAlgorithm<graphblas::ReduceToVectorOp>(op, rewriter, module,
+                                                         i64Type, countBlock);
     } else if (aggregator == "argmin" or aggregator == "argmax") {
       return buildAlgorithm<graphblas::ReduceToVectorOp>(
-        op, rewriter, module, i64Type, argminmaxBlock);
+          op, rewriter, module, i64Type, argminmaxBlock);
     } else {
       NamedAttrList attributes = {};
       attributes.append(StringRef("axis"),
@@ -827,8 +826,11 @@ public:
   };
 
   template <class T>
-  static LogicalResult buildAlgorithm(T op, PatternRewriter &rewriter, ModuleOp module, Type outputType,
-                              std::function<LogicalResult(T, PatternRewriter &, Location, Value &, Value, Value, Value, Value)> func) {
+  static LogicalResult buildAlgorithm(
+      T op, PatternRewriter &rewriter, ModuleOp module, Type outputType,
+      std::function<LogicalResult(T, PatternRewriter &, Location, Value &,
+                                  Value, Value, Value, Value)>
+          func) {
     MLIRContext *context = op.getContext();
     Location loc = op->getLoc();
 
@@ -839,8 +841,7 @@ public:
     // Types
     Type indexType = rewriter.getIndexType();
     Type i64Type = rewriter.getIntegerType(64);
-    RankedTensorType inputType =
-        input.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
     Type memrefPointerType = getMemrefPointerType(inputType);
     Type memrefIndexType = getMemrefIndexType(inputType);
     Type memrefIValueType = getMemrefValueType(inputType);
@@ -860,9 +861,8 @@ public:
     Value nnz64 = rewriter.create<arith::IndexCastOp>(loc, nnz, i64Type);
 
     // Build output vector
-    Value output = callNewTensor(
-        rewriter, module, loc, ValueRange{size},
-        getCompressedVectorType(context, outputType));
+    Value output = callNewTensor(rewriter, module, loc, ValueRange{size},
+                                 getCompressedVectorType(context, outputType));
 
     callResizeIndex(rewriter, module, loc, output, c0, nnz);
     callResizeValues(rewriter, module, loc, output, nnz);
@@ -870,17 +870,17 @@ public:
     // Sparse pointers
     Value Ip = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memrefPointerType, input, c1);
-    Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(
-        loc, memrefIndexType, input, c1);
-    Value Ix = rewriter.create<sparse_tensor::ToValuesOp>(
-        loc, memrefIValueType, input);
+    Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefIndexType,
+                                                           input, c1);
+    Value Ix = rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefIValueType,
+                                                          input);
 
     Value Op = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memrefPointerType, output, c0);
-    Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(
-        loc, memrefIndexType, output, c0);
-    Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(
-        loc, memrefOValueType, output);
+    Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefIndexType,
+                                                           output, c0);
+    Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefOValueType,
+                                                          output);
 
     // Populate output
     rewriter.create<memref::StoreOp>(loc, nnz64, Op, c1);
@@ -894,8 +894,7 @@ public:
       Value nextRowIndex =
           rewriter.create<arith::AddIOp>(loc, rowIndex, c1).getResult();
       Value ptr64 = rewriter.create<memref::LoadOp>(loc, Ip, rowIndex);
-      Value nextPtr64 =
-          rewriter.create<memref::LoadOp>(loc, Ip, nextRowIndex);
+      Value nextPtr64 = rewriter.create<memref::LoadOp>(loc, Ip, nextRowIndex);
 
       Value rowIsNonEmpty = rewriter.create<arith::CmpIOp>(
           loc, arith::CmpIPredicate::ne, ptr64, nextPtr64);
@@ -903,15 +902,14 @@ public:
           loc, TypeRange{indexType}, rowIsNonEmpty, true);
       rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.thenBlock());
       {
-        Value ptr =
-            rewriter.create<arith::IndexCastOp>(loc, ptr64, indexType);
+        Value ptr = rewriter.create<arith::IndexCastOp>(loc, ptr64, indexType);
         Value nextPtr =
             rewriter.create<arith::IndexCastOp>(loc, nextPtr64, indexType);
 
         // Inject code from func
         Value aggVal = nullptr;
-        LogicalResult funcResult = func(op, rewriter, loc,
-                                        aggVal, ptr, nextPtr, Ii, Ix);
+        LogicalResult funcResult =
+            func(op, rewriter, loc, aggVal, ptr, nextPtr, Ii, Ix);
         if (funcResult.failed()) {
           return funcResult;
         }
@@ -920,13 +918,12 @@ public:
         Value rowIndex64 =
             rewriter.create<arith::IndexCastOp>(loc, rowIndex, i64Type);
         rewriter.create<memref::StoreOp>(loc, rowIndex64, Oi, outputPos);
-        Value updatedOutputPos = rewriter.create<arith::AddIOp>(loc, outputPos, c1);
+        Value updatedOutputPos =
+            rewriter.create<arith::AddIOp>(loc, outputPos, c1);
         rewriter.create<scf::YieldOp>(loc, ValueRange{updatedOutputPos});
       }
       rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.elseBlock());
-      {
-        rewriter.create<scf::YieldOp>(loc, ValueRange{outputPos});
-      }
+      { rewriter.create<scf::YieldOp>(loc, ValueRange{outputPos}); }
       rewriter.setInsertionPointAfter(ifRowIsNonEmptyBlock);
 
       Value nextOutputPos = ifRowIsNonEmptyBlock.getResult(0);
@@ -940,7 +937,8 @@ public:
     return success();
   };
 
-  static Value computeNNZ(PatternRewriter &rewriter, Location loc, Value input, Value size) {
+  static Value computeNNZ(PatternRewriter &rewriter, Location loc, Value input,
+                          Value size) {
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
     Type indexType = rewriter.getIndexType();
@@ -955,12 +953,11 @@ public:
       rewriter.setInsertionPointToStart(nnzLoop.getBody());
       Value count = nnzLoop.getLoopBody().getArgument(1);
       Value rowIndex = nnzLoop.getInductionVar();
-      Value nextRowIndex =
-          rewriter.create<arith::AddIOp>(loc, rowIndex, c1);
+      Value nextRowIndex = rewriter.create<arith::AddIOp>(loc, rowIndex, c1);
       Value firstPtr64 =
           rewriter.create<memref::LoadOp>(loc, pointers, rowIndex);
-      Value secondPtr64 = rewriter.create<memref::LoadOp>(loc, pointers,
-                                                          nextRowIndex);
+      Value secondPtr64 =
+          rewriter.create<memref::LoadOp>(loc, pointers, nextRowIndex);
       Value rowIsEmpty = rewriter.create<arith::CmpIOp>(
           loc, arith::CmpIPredicate::eq, firstPtr64, secondPtr64);
       scf::IfOp ifRowIsEmptyBlock = rewriter.create<scf::IfOp>(
@@ -980,9 +977,9 @@ public:
 
 private:
   static LogicalResult countBlock(graphblas::ReduceToVectorOp op,
-                              PatternRewriter &rewriter, Location loc,
-                              Value &aggVal,
-                              Value ptr, Value nextPtr, Value Ii, Value Ix) {
+                                  PatternRewriter &rewriter, Location loc,
+                                  Value &aggVal, Value ptr, Value nextPtr,
+                                  Value Ii, Value Ix) {
     Type i64Type = rewriter.getI64Type();
     Value diff = rewriter.create<arith::SubIOp>(loc, nextPtr, ptr);
     aggVal = rewriter.create<arith::IndexCastOp>(loc, diff, i64Type);
@@ -991,9 +988,9 @@ private:
   }
 
   static LogicalResult argminmaxBlock(graphblas::ReduceToVectorOp op,
-                              PatternRewriter &rewriter, Location loc,
-                              Value &aggVal,
-                              Value ptr, Value nextPtr, Value Ii, Value Ix) {
+                                      PatternRewriter &rewriter, Location loc,
+                                      Value &aggVal, Value ptr, Value nextPtr,
+                                      Value Ii, Value Ix) {
     StringRef aggregator = op.aggregator();
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
     RankedTensorType inputType =
@@ -1004,8 +1001,8 @@ private:
     Value initVal = rewriter.create<memref::LoadOp>(loc, Ix, ptr);
     Value initIdx = rewriter.create<memref::LoadOp>(loc, Ii, ptr);
     Value ptrPlusOne = rewriter.create<arith::AddIOp>(loc, ptr, c1);
-    scf::ForOp loop = rewriter.create<scf::ForOp>(
-        loc, ptrPlusOne, nextPtr, c1, ValueRange{initVal, initIdx});
+    scf::ForOp loop = rewriter.create<scf::ForOp>(loc, ptrPlusOne, nextPtr, c1,
+                                                  ValueRange{initVal, initIdx});
     {
       rewriter.setInsertionPointToStart(loop.getBody());
       Value curVal = loop.getLoopBody().getArgument(1);
@@ -1014,22 +1011,21 @@ private:
       Value rowValue = rewriter.create<memref::LoadOp>(loc, Ix, curPtr);
 
       bool useMinimum = aggregator == "argmin";
-      Value mustUpdate =
-          llvm::TypeSwitch<Type, Value>(elementType)
-              .Case<IntegerType>([&](IntegerType type) {
-                return rewriter.create<arith::CmpIOp>(
-                    loc,
-                    useMinimum ? arith::CmpIPredicate::slt
-                               : arith::CmpIPredicate::sgt,
-                    rowValue, curVal);
-              })
-              .Case<FloatType>([&](FloatType type) {
-                return rewriter.create<arith::CmpFOp>(
-                    loc,
-                    useMinimum ? arith::CmpFPredicate::OLT
-                               : arith::CmpFPredicate::OGT,
-                    rowValue, curVal);
-              });
+      Value mustUpdate = llvm::TypeSwitch<Type, Value>(elementType)
+                             .Case<IntegerType>([&](IntegerType type) {
+                               return rewriter.create<arith::CmpIOp>(
+                                   loc,
+                                   useMinimum ? arith::CmpIPredicate::slt
+                                              : arith::CmpIPredicate::sgt,
+                                   rowValue, curVal);
+                             })
+                             .Case<FloatType>([&](FloatType type) {
+                               return rewriter.create<arith::CmpFOp>(
+                                   loc,
+                                   useMinimum ? arith::CmpFPredicate::OLT
+                                              : arith::CmpFPredicate::OGT,
+                                   rowValue, curVal);
+                             });
 
       scf::IfOp ifMustUpdateBlock = rewriter.create<scf::IfOp>(
           loc, TypeRange{elementType, i64Type}, mustUpdate, true);
@@ -1061,9 +1057,11 @@ public:
   LogicalResult matchAndRewrite(graphblas::ReduceToVectorGenericOp op,
                                 PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
-    Type elementType = op.input().getType().cast<RankedTensorType>().getElementType();
-    LogicalResult callResult = LowerReduceToVectorRewrite::buildAlgorithm<graphblas::ReduceToVectorGenericOp>(
-        op, rewriter, module, elementType, genericBlock);
+    Type elementType =
+        op.input().getType().cast<RankedTensorType>().getElementType();
+    LogicalResult callResult = LowerReduceToVectorRewrite::buildAlgorithm<
+        graphblas::ReduceToVectorGenericOp>(op, rewriter, module, elementType,
+                                            genericBlock);
     if (callResult.failed()) {
       return callResult;
     }
@@ -1073,9 +1071,9 @@ public:
 
 private:
   static LogicalResult genericBlock(graphblas::ReduceToVectorGenericOp op,
-                              PatternRewriter &rewriter, Location loc,
-                              Value &aggVal,
-                              Value ptr, Value nextPtr, Value Ii, Value Ix) {
+                                    PatternRewriter &rewriter, Location loc,
+                                    Value &aggVal, Value ptr, Value nextPtr,
+                                    Value Ii, Value Ix) {
     // Required blocks
     RegionRange extensions = op.extensions();
     ExtensionBlocks extBlocks;
@@ -3799,10 +3797,9 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
            LowerApplyRewrite, LowerApplyGenericRewrite,
            LowerMatrixMultiplyReduceToScalarGenericRewrite,
            LowerMatrixMultiplyRewrite, LowerMatrixMultiplyGenericRewrite,
-           LowerUnionRewrite, LowerUnionGenericRewrite,
-           LowerIntersectRewrite, LowerIntersectGenericRewrite,
-           LowerUpdateRewrite, LowerUpdateGenericRewrite,
-           LowerEqualRewrite, LowerDiagOpRewrite,
+           LowerUnionRewrite, LowerUnionGenericRewrite, LowerIntersectRewrite,
+           LowerIntersectGenericRewrite, LowerUpdateRewrite,
+           LowerUpdateGenericRewrite, LowerEqualRewrite, LowerDiagOpRewrite,
            LowerCommentRewrite, LowerPrintRewrite, LowerSizeRewrite,
            LowerNumRowsRewrite, LowerNumColsRewrite, LowerNumValsRewrite,
            LowerDupRewrite>(patterns.getContext());

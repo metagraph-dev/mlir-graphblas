@@ -801,7 +801,9 @@ class GraphBLAS_ReduceToVector(BaseOp):
             input.type.encoding.index_bit_width,
         )
         return_element_type = (
-            IntType(64) if aggregator in ("argmin", "argmax", "count") else input.type.value_type
+            IntType(64)
+            if aggregator in ("argmin", "argmax", "count")
+            else input.type.value_type
         )
         return_type = SparseTensorType([-1], return_element_type, sparse_vec_encoding)
         ret_val = irbuilder.new_var(return_type)
