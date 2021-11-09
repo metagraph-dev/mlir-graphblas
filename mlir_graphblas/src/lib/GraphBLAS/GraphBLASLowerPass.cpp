@@ -1360,7 +1360,6 @@ public:
     (void)module;
     Location loc = op->getLoc();
 
-    Type indexType = rewriter.getIndexType();
     Type valueType =
         input.getType().dyn_cast<RankedTensorType>().getElementType();
 
@@ -1369,171 +1368,26 @@ public:
         rewriter.create<graphblas::ApplyGenericOp>(loc, op->getResultTypes(),
                                                    input, 1);
 
-    // Choose appropriate number of arguments based on operator
-    TypeRange inputTypes;
-    if (apply_operator == "index" || apply_operator == "row" ||
-        apply_operator == "column")
-      inputTypes = {valueType, indexType, indexType};
-    else
-      inputTypes = {valueType};
+    // Populate based on operator kind
+    auto populateFunc =
+        (unary1.contains(apply_operator) || unary3.contains(apply_operator))
+            ? populateUnary
+            : populateBinary;
+    LogicalResult popResult =
+        populateFunc(rewriter, loc, apply_operator, valueType,
+                     newApplyOp.getRegions().slice(0, 1),
+                     graphblas::YieldKind::TRANSFORM_OUT);
+    if (failed(popResult))
+      return failure();
 
-    // Insert transformOut block
-    Region &transformOutRegion = newApplyOp.getRegion(0);
-    Block *transformOutBlock =
-        rewriter.createBlock(&transformOutRegion, {}, inputTypes);
-
-    Value val = transformOutBlock->getArgument(0);
-
-    Value transformResult;
-    if (apply_operator == "index") {
-      Value index = transformOutBlock->getArgument(1);
-      transformResult = index;
-    } else if (apply_operator == "row") {
-      Value row = transformOutBlock->getArgument(1);
-      transformResult = row;
-    } else if (apply_operator == "column") {
-      Value column = transformOutBlock->getArgument(2);
-      transformResult = column;
-    } else if (apply_operator == "min") {
-
-      Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
-                      .Case<IntegerType>([&](IntegerType type) {
-                        // http://graphics.stanford.edu/~seander/bithacks.html#IntegerMinOrMax
-                        // says this is best
-                        return rewriter.create<arith::CmpIOp>(
-                            loc, arith::CmpIPredicate::slt, val, thunk);
-                      })
-                      .Case<FloatType>([&](FloatType type) {
-                        return rewriter.create<arith::CmpFOp>(
-                            loc, arith::CmpFPredicate::OLT, val, thunk);
-                      });
-      transformResult = rewriter.create<SelectOp>(loc, cmp, val, thunk);
-
-    } else if (apply_operator == "div") {
-
-      bool thunkIsLeft = thunk == op.left();
-
-      transformResult =
-          llvm::TypeSwitch<Type, Value>(valueType)
-              .Case<IntegerType>([&](IntegerType type) {
-                Value quotient =
-                    thunkIsLeft
-                        ? rewriter.create<arith::DivSIOp>(loc, thunk, val)
-                        : rewriter.create<arith::DivSIOp>(loc, val, thunk);
-                return quotient;
-              })
-              .Case<FloatType>([&](FloatType type) {
-                Value quotient =
-                    thunkIsLeft
-                        ? rewriter.create<arith::DivFOp>(loc, thunk, val)
-                        : rewriter.create<arith::DivFOp>(loc, val, thunk);
-                return quotient;
-              });
-
-    } else if (apply_operator == "pow") {
-
-      bool thunkIsLeft = thunk == op.left();
-
-      llvm::Optional<std::string> optionalErrorMessage = llvm::None;
-      llvm::TypeSwitch<Type>(valueType)
-          .Case<IntegerType>([&](IntegerType type) {
-            // TODO find best implementation
-            optionalErrorMessage = std::string(
-                "Exponentiation is not yet supported for integer types.");
-          })
-          .Case<FloatType>([&](FloatType type) {
-            transformResult =
-                thunkIsLeft ? rewriter.create<math::PowFOp>(loc, thunk, val)
-                            : rewriter.create<math::PowFOp>(loc, val, thunk);
-          });
-
-      if (optionalErrorMessage)
-        return op.emitError(optionalErrorMessage.getValue());
-
-    } else if (apply_operator == "fill") {
-
-      // Always fill with the thunk, regardless of its position (left or right)
-      transformResult = thunk;
-
-    } else if (apply_operator == "minv") {
-
-      transformResult =
-          llvm::TypeSwitch<Type, Value>(valueType)
-              .Case<IntegerType>([&](IntegerType type) {
-                // TODO we're missing python tests for all ops when given
-                // integer-typed tensors
-                unsigned bitWidth = type.getWidth();
-                Value shiftAmount = rewriter.create<ConstantOp>(
-                    loc, rewriter.getIntegerAttr(type, bitWidth - 1));
-                Value mask =
-                    rewriter.create<arith::ShRSIOp>(loc, val, shiftAmount);
-                Value maskPlusVal =
-                    rewriter.create<arith::AddIOp>(loc, mask, val);
-                Value absVal =
-                    rewriter.create<arith::XOrIOp>(loc, mask, maskPlusVal);
-                Value c1_type = rewriter.create<arith::ConstantOp>(
-                    loc, rewriter.getIntegerAttr(type, 1));
-                Value absValIsOne_i1 = rewriter.create<arith::CmpIOp>(
-                    loc, arith::CmpIPredicate::eq, absVal, c1_type);
-                Value absValIsOne_type =
-                    rewriter.create<arith::ExtSIOp>(loc, type, absValIsOne_i1);
-                Value multipicativeInverse =
-                    rewriter.create<arith::AndIOp>(loc, absValIsOne_type, val);
-                return multipicativeInverse;
-              })
-              .Case<FloatType>([&](FloatType type) {
-                Value c1_type = rewriter.create<arith::ConstantFloatOp>(
-                    loc, APFloat(1.0), type);
-                Value multipicativeInverse =
-                    rewriter.create<arith::DivFOp>(loc, c1_type, val);
-                return multipicativeInverse;
-              });
-
-    } else if (apply_operator == "ainv") {
-
-      transformResult =
-          llvm::TypeSwitch<Type, Value>(valueType)
-              .Case<IntegerType>([&](IntegerType type) {
-                Value c0_type = rewriter.create<ConstantOp>(
-                    loc, rewriter.getIntegerAttr(type, 0));
-                Value additiveInverse =
-                    rewriter.create<arith::SubIOp>(loc, c0_type, val);
-                return additiveInverse;
-              })
-              .Case<FloatType>([&](FloatType type) {
-                Value additiveInverse =
-                    rewriter.create<arith::NegFOp>(loc, val);
-                return additiveInverse;
-              });
-
-    } else if (apply_operator == "abs") {
-
-      transformResult =
-          llvm::TypeSwitch<Type, Value>(valueType)
-              .Case<IntegerType>([&](IntegerType type) {
-                // http://graphics.stanford.edu/~seander/bithacks.html#IntegerAbs
-                unsigned bitWidth = type.getWidth();
-                Value shiftAmount = rewriter.create<ConstantOp>(
-                    loc, rewriter.getIntegerAttr(type, bitWidth - 1));
-                Value mask =
-                    rewriter.create<arith::ShRSIOp>(loc, val, shiftAmount);
-                Value maskPlusVal =
-                    rewriter.create<arith::AddIOp>(loc, mask, val);
-                Value absVal =
-                    rewriter.create<arith::XOrIOp>(loc, mask, maskPlusVal);
-                return absVal;
-              })
-              .Case<FloatType>([&](FloatType type) {
-                return rewriter.create<math::AbsOp>(loc, val);
-              });
-
-    } else {
-      return op.emitError("\"" + apply_operator +
-                          "\" is not a supported apply_operator.");
-    };
-
-    rewriter.create<graphblas::YieldOp>(
-        loc, graphblas::YieldKind::TRANSFORM_OUT, transformResult);
+    // Remove thunk from populated block
+    if (binary2.contains(apply_operator) || binary4.contains(apply_operator)) {
+      Block &block = newApplyOp.getRegion(0).front();
+      int thunkPos = thunk == op.left() ? 0 : 1;
+      Value thunkArg = block.getArgument(thunkPos);
+      thunkArg.replaceAllUsesWith(thunk);
+      block.eraseArgument(thunkPos);
+    }
 
     rewriter.replaceOp(op, newApplyOp.getResult());
 
@@ -1553,14 +1407,15 @@ public:
     Value inputTensor = op.input();
     RankedTensorType inputTensorType =
         inputTensor.getType().cast<RankedTensorType>();
+    RankedTensorType outputTensorType =
+        op.getResult().getType().cast<RankedTensorType>();
     unsigned rank = inputTensorType.getRank();
 
-    // TODO allow result value type to differ from input value type
     Type indexType = rewriter.getIndexType();
-    Type i64Type = rewriter.getI64Type();
-    Type valueType = inputTensorType.getElementType();
-    Type memref1DValueType = MemRefType::get({-1}, valueType);
-    Type memref1DI64Type = MemRefType::get({-1}, i64Type);
+    Type memrefPointerType = getMemrefPointerType(inputTensorType);
+    Type memrefIndexType = getMemrefIndexType(inputTensorType);
+    Type memrefIValueType = getMemrefValueType(inputTensorType);
+    Type memrefOValueType = getMemrefValueType(outputTensorType);
 
     // Required blocks
     RegionRange extensions = op.extensions();
@@ -1578,12 +1433,16 @@ public:
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
 
-    // Get sparse tensor info
+    // Build output with same shape as input, but possibly different output type
     Value output = rewriter.create<graphblas::DupOp>(loc, inputTensor);
+    if (inputTensorType != outputTensorType)
+      output =
+          rewriter.create<graphblas::CastOp>(loc, outputTensorType, output);
+    // Get sparse tensor info
     Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(
-        loc, memref1DValueType, inputTensor);
+        loc, memrefIValueType, inputTensor);
     Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(
-        loc, memref1DValueType, output);
+        loc, memrefOValueType, output);
 
     Value nnz = rewriter.create<graphblas::NumValsOp>(loc, inputTensor);
 
@@ -1594,9 +1453,9 @@ public:
       // - vector -> passes in (val, index, index)
       // - CSR or CSC -> passes in (val, row, col)
       Value inputPointers = rewriter.create<sparse_tensor::ToPointersOp>(
-          loc, memref1DI64Type, inputTensor);
+          loc, memrefPointerType, inputTensor);
       Value inputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
-          loc, memref1DI64Type, inputTensor);
+          loc, memrefIndexType, inputTensor);
       bool byCols = false;
       Value npointers;
       if (rank == 1) {
@@ -1638,15 +1497,16 @@ public:
             llvm::dyn_cast_or_null<graphblas::YieldOp>(
                 extBlocks.transformOut->getTerminator());
 
+        ValueRange subVals;
         if (rank == 1)
-          rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(),
-                               {val, col, col});
+          subVals = ValueRange{val, col, col};
         else if (byCols)
-          rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(),
-                               {val, col, pointerIdx});
+          subVals = ValueRange{val, col, pointerIdx};
         else
-          rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(),
-                               {val, pointerIdx, col});
+          subVals = ValueRange{val, pointerIdx, col};
+
+        rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(),
+                             subVals);
         Value result = transformOutYield.values().front();
         rewriter.eraseOp(transformOutYield);
 
@@ -1657,7 +1517,7 @@ public:
       // end row loop
       rewriter.setInsertionPointAfter(pointerLoop);
     } else if (numArguments == 1) {
-      // Loop over values
+      // Fast path: only loop over values because we don't need indices
       scf::ParallelOp valueLoop =
           rewriter.create<scf::ParallelOp>(loc, c0, nnz, c1);
       ValueRange valueLoopIdx = valueLoop.getInductionVars();

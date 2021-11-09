@@ -1047,6 +1047,11 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
                    .Case<FloatType>([&](FloatType type) {
                      return builder.create<arith::AddFOp>(loc, aVal, bVal);
                    });
+  } else if (binaryOp == "pow") {
+    if (!valueType.isa<FloatType>())
+      return binaryRegion->getParentOp()->emitError(
+          "pow requires float type input");
+    opResult = builder.create<math::PowFOp>(loc, aVal, bVal);
   } else if (binaryOp == "second") {
     opResult = bVal;
   } else if (binaryOp == "times") {

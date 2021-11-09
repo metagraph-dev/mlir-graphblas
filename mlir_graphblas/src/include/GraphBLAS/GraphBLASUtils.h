@@ -47,6 +47,7 @@ static const llvm::StringSet<> binary2{"div",
                                        "first",
                                        "pair",
                                        "plus",
+                                       "pow",
                                        "second",
                                        "times"};
 
@@ -87,9 +88,10 @@ static const llvm::StringSet<> supportedForSelect{
 
 static const llvm::StringSet<> supportedForApply{
     // List custom operators first
-    "fill", "identity",
+    "identity",
     // Normal operators in alphabetical order
-    "abs", "ainv", "column", "div", "index", "min", "minv", "pow", "row"};
+    "abs", "ainv", "column", "div", "first", "index", "min", "minv", "pow",
+    "row", "second"};
 
 bool hasRowOrdering(mlir::Type inputType);
 bool hasColumnOrdering(mlir::Type inputType);

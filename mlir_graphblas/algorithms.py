@@ -395,7 +395,7 @@ class Pagerank(Algorithm):
 
         # r = 1/nrows
         nrows_inv = irb.arith.divf(cf1, nrows_f64)
-        starting = irb.graphblas.apply(r, "fill", right=nrows_inv)
+        starting = irb.graphblas.apply(r, "second", right=nrows_inv)
         starting_ptr8 = irb.util.tensor_to_ptr8(starting)
 
         # Pagerank iterations
@@ -443,7 +443,7 @@ class Pagerank(Algorithm):
 
             # r = teleport
             # Perform this scalar assignment using an apply hack
-            new_score = irb.graphblas.apply(prev_score, "fill", right=teleport)
+            new_score = irb.graphblas.apply(prev_score, "second", right=teleport)
 
             # r += A'*w
             AT = irb.graphblas.transpose(A, "tensor<?x?xf64, #CSR64>")
@@ -856,7 +856,7 @@ class BFS(Algorithm):
                 next_level_i64 = irb.arith.index_cast(next_level, "i64")
                 next_level_f64 = irb.arith.sitofp(next_level_i64, "f64")
                 next_frontier_levels = irb.graphblas.apply(
-                    next_frontier, "fill", right=next_level_f64
+                    next_frontier, "second", right=next_level_f64
                 )
                 irb.graphblas.update(next_frontier_levels, levels, "max")
 

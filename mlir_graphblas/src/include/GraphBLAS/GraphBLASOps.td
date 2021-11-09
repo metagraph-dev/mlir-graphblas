@@ -405,9 +405,9 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
         Applies in an element-wise fashion the function indicated by the ``apply_operator``
         attribute to each element of the given sparse tensor. The operator can be unary or
         binary. Binary operators require a thunk. The supported binary operators are "min",
-        "div", and "fill". Unary operators cannot take a thunk. Unary operators cannot
-        take a thunk. The supported unary operators are "abs", "minv" (i.e. multiplicative
-        inverse or *1/x*), "ainv" (i.e. additive inverse or *-x*), and "identity".
+        "div", "first", and "second". Unary operators cannot take a thunk. The supported
+        unary operators are "abs", "minv" (i.e. multiplicative inverse or *1/x*),
+        "ainv" (i.e. additive inverse or *-x*), and "identity".
 
         The given sparse tensor must either be a CSR matrix, CSC matrix, or a sparse vector.
 
@@ -462,9 +462,18 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
 def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
     let summary = "Generic tensor apply operation.";
     let description = [{
-        Applies an arbitrary transformation to every element of a CSR or CSC matrix or sparse vector according to the given transformation block. Only one transformation block is allowed.
+        Applies an arbitrary transformation to every element of a CSR or CSC matrix or sparse vector
+        according to the given transformation block. Only one transformation block is allowed.
 
         Example:
+        ```mlir
+        %answer = graphblas.apply_generic %m : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64> {
+          ^bb0(%val: f64):
+            %result = arith.negf %val : f64
+            graphblas.yield transform_out %result : f64
+        }
+        ```
+
         ```mlir
         %thunk = constant 0.0 : f64
         %answer = graphblas.apply_generic %sparse_tensor : tensor<?xf64, #CV64> to tensor<?xf64, #CV64> {

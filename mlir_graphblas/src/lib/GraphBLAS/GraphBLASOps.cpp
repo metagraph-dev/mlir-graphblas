@@ -295,14 +295,13 @@ static LogicalResult verify(ApplyOp op) {
     return argResult;
 
   Type inputType = input.getType();
-  Type resultType = op.getResult().getType();
 
   std::string applyOperator = op.apply_operator().str();
   if (!supportedForApply.contains(applyOperator))
     return op.emitError("\"" + applyOperator +
                         "\" is not a supported operator.");
 
-  if (binary2.contains(applyOperator)) {
+  if (binary2.contains(applyOperator) || binary4.contains(applyOperator)) {
 
     if (!thunk)
       return op.emitError("\"" + applyOperator +
@@ -310,11 +309,14 @@ static LogicalResult verify(ApplyOp op) {
                           " requires a thunk.");
 
     RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-    RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
 
     Type thunkType = thunk.getType();
 
-    if (inputTensorType.getElementType() != thunkType)
+    // For binary2 ops, thunk type must match input type
+    // for binary4 ops, the thunk may be used to compare against the index
+    // values, so no check is made
+    if (inputTensorType.getElementType() != thunkType &&
+        binary2.contains(applyOperator))
       return op.emitError(
           "Element type of input tensor does not match type of thunk.");
 
