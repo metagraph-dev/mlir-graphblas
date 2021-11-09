@@ -101,37 +101,6 @@ module {
 }>
 
 module {
-    func @apply_wrapper(%sparse_tensor: tensor<2x3xi8, #CSR64>, %thunk: i8) -> tensor<2x3xf16, #CSR64> {
-        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<2x3xi8, #CSR64>, i8) to tensor<2x3xf16, #CSR64> // expected-error {{Element type of result tensor does not match type of thunk.}}
-        return %answer : tensor<2x3xf16, #CSR64>
-    }
-}
-
-// -----
-
-#CV64 = #sparse_tensor.encoding<{
-  dimLevelType = [ "compressed" ],
-  pointerBitWidth = 64,
-  indexBitWidth = 64
-}>
-
-module {
-    func @apply_wrapper(%sparse_tensor: tensor<6xi8, #CV64>, %thunk: i8) -> tensor<6xf16, #CV64> {
-        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<6xi8, #CV64>, i8) to tensor<6xf16, #CV64> // expected-error {{Element type of result tensor does not match type of thunk.}}
-        return %answer : tensor<6xf16, #CV64>
-    }
-}
-
-// -----
-
-#CSR64 = #sparse_tensor.encoding<{
-  dimLevelType = [ "dense", "compressed" ],
-  dimOrdering = affine_map<(i,j) -> (i,j)>,
-  pointerBitWidth = 64,
-  indexBitWidth = 64
-}>
-
-module {
     func @apply_wrapper(%sparse_tensor: tensor<2x3xi8, #CSR64>, %thunk: i8) -> tensor<99x99xi8, #CSR64> {
         %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "min" } : (tensor<2x3xi8, #CSR64>, i8) to tensor<99x99xi8, #CSR64> // expected-error {{operand and result shapes must match}}
         return %answer : tensor<99x99xi8, #CSR64>
