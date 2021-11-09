@@ -318,12 +318,6 @@ static LogicalResult verify(ApplyOp op) {
       return op.emitError(
           "Element type of input tensor does not match type of thunk.");
 
-    if (resultTensorType.getElementType() != thunkType)
-      // TODO this is not always correct, e.g.
-      // apply_less_than(tensor<f64>, 2.3) -> tensor<i1>.
-      return op.emitError(
-          "Element type of result tensor does not match type of thunk.");
-
   } else if (unary1.contains(applyOperator) || unary3.contains(applyOperator)) {
 
     if (thunk)

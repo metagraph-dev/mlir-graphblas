@@ -67,8 +67,8 @@ static const llvm::StringSet<> supportedForUnion{"first", "max",    "min",
                                                  "plus",  "second", "times"};
 
 static const llvm::StringSet<> supportedForIntersect{
-    "div", "first", "max", "min", "minus", "plus", "second", "times"};
-//"eq", "ne", "lt", "le", "gt", "ge"};
+    "div", "eq",  "first", "ge", "gt",   "le",     "lt",
+    "max", "min", "minus", "ne", "plus", "second", "times"};
 
 static const llvm::StringSet<> supportedForUpdate{"max", "min", "plus",
                                                   "times"};
@@ -131,7 +131,8 @@ mlir::Value callNewTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                           mlir::Location loc, mlir::ValueRange shape,
                           mlir::RankedTensorType tensorType);
 mlir::Value callEmptyLike(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
-                          mlir::Location loc, mlir::Value tensor);
+                          mlir::Location loc, mlir::Value tensor,
+                          mlir::Type valueType = nullptr);
 mlir::Value callDupTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                           mlir::Location loc, mlir::Value tensor);
 

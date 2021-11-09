@@ -2720,7 +2720,9 @@ public:
 
     unsigned rank = aType.getRank(); // ranks guaranteed to be equal
 
-    Value output = callEmptyLike(rewriter, module, loc, a);
+    Type outputType =
+        op.getResult().getType().dyn_cast<RankedTensorType>().getElementType();
+    Value output = callEmptyLike(rewriter, module, loc, a, outputType);
     if (rank == 2) {
       computeMatrixElementWise(rewriter, loc, module, a, b, output,
                                extBlocks.mult, UNION);
@@ -2795,7 +2797,9 @@ public:
 
     unsigned rank = aType.getRank(); // ranks guaranteed to be equal
 
-    Value output = callEmptyLike(rewriter, module, loc, a);
+    Type outputType =
+        op.getResult().getType().dyn_cast<RankedTensorType>().getElementType();
+    Value output = callEmptyLike(rewriter, module, loc, a, outputType);
     if (rank == 2) {
       computeMatrixElementWise(rewriter, loc, module, a, b, output,
                                extBlocks.mult, INTERSECT);

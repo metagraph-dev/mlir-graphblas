@@ -140,30 +140,40 @@ cdef extern from "SparseUtils.cpp" nogil:
     void resize_dim(void *tensor, uint64_t d, uint64_t size)
 
     void *dup_tensor(void *tensor)
-    void *empty_like(void *tensor)
+    # void *empty_like(void *tensor)
     # void *empty(void *tensor, uint64_t ndims)
 
     # All combinations of types to !llvm.ptr<i8>
     void *matrix_csr_f64_p64i64_to_ptr8(void *tensor)
     void *matrix_csr_f32_p64i64_to_ptr8(void *tensor)
     void *matrix_csr_i64_p64i64_to_ptr8(void *tensor)
+    void *matrix_csr_i32_p64i64_to_ptr8(void *tensor)
+    void *matrix_csr_i8_p64i64_to_ptr8(void *tensor)
     void *matrix_csc_f64_p64i64_to_ptr8(void *tensor)
     void *matrix_csc_f32_p64i64_to_ptr8(void *tensor)
     void *matrix_csc_i64_p64i64_to_ptr8(void *tensor)
+    void *matrix_csc_i32_p64i64_to_ptr8(void *tensor)
+    void *matrix_csc_i8_p64i64_to_ptr8(void *tensor)
     void *vector_f64_p64i64_to_ptr8(void *tensor)
     void *vector_f32_p64i64_to_ptr8(void *tensor)
     void *vector_i64_p64i64_to_ptr8(void *tensor)
     void *vector_i32_p64i64_to_ptr8(void *tensor)
+    void *vector_i8_p64i64_to_ptr8(void *tensor)
     void *ptr8_to_matrix_csr_f64_p64i64(void *tensor)
     void *ptr8_to_matrix_csr_f32_p64i64(void *tensor)
     void *ptr8_to_matrix_csr_i64_p64i64(void *tensor)
+    void *ptr8_to_matrix_csr_i32_p64i64(void *tensor)
+    void *ptr8_to_matrix_csr_i8_p64i64(void *tensor)
     void *ptr8_to_matrix_csc_f64_p64i64(void *tensor)
     void *ptr8_to_matrix_csc_f32_p64i64(void *tensor)
     void *ptr8_to_matrix_csc_i64_p64i64(void *tensor)
+    void *ptr8_to_matrix_csc_i32_p64i64(void *tensor)
+    void *ptr8_to_matrix_csc_i8_p64i64(void *tensor)
     void *ptr8_to_vector_f64_p64i64(void *tensor)
     void *ptr8_to_vector_f32_p64i64(void *tensor)
     void *ptr8_to_vector_i64_p64i64(void *tensor)
     void *ptr8_to_vector_i32_p64i64(void *tensor)
+    void *ptr8_to_vector_i8_p64i64(void *tensor)
 
 
 # st for "sparse tensor"
@@ -676,14 +686,14 @@ cdef class MLIRSparseTensor:
         rv.value_dtype = self.value_dtype
         return rv
 
-    cpdef MLIRSparseTensor empty_like(self):
-        cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
-        rv._data = empty_like(self._data)
-        rv.ndim = self.ndim
-        rv.pointer_dtype = self.pointer_dtype
-        rv.index_dtype = self.index_dtype
-        rv.value_dtype = self.value_dtype
-        return rv
+    # cpdef MLIRSparseTensor empty_like(self):
+    #     cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__
+    #     rv._data = empty_like(self._data)
+    #     rv.ndim = self.ndim
+    #     rv.pointer_dtype = self.pointer_dtype
+    #     rv.index_dtype = self.index_dtype
+    #     rv.value_dtype = self.value_dtype
+    #     return rv
 
     # cpdef MLIRSparseTensor empty(self, uint64_t ndims):
     #     cdef MLIRSparseTensor rv = MLIRSparseTensor.__new__(MLIRSparseTensor)  # avoid __init__

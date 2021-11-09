@@ -978,9 +978,11 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
   // Types
   RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
   Type int64Type = rewriter.getIntegerType(64);
-  Type valueType = outputType.getElementType();
+  Type inputElementType =
+      lhs.getType().cast<RankedTensorType>().getElementType();
   MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
-  MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
+  MemRefType memrefIValueType = getMemrefValueType(lhs.getType());
+  MemRefType memrefOValueType = getMemrefValueType(outputType);
 
   // Initial constants
   Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
@@ -993,11 +995,11 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
   Value Li = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
                                                          lhs, c0);
   Value Lx =
-      rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, lhs);
+      rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefIValueType, lhs);
   Value Ri = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
                                                          rhs, c0);
   Value Rx =
-      rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, rhs);
+      rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefIValueType, rhs);
 
   // Special handling for complemented mask
   Value ewiseSize, maskComplement, maskComplementSize;
@@ -1024,18 +1026,19 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
   rewriter.create<memref::StoreOp>(loc, ewiseSize64, Op, c1);
   Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
                                                          output, c0);
-  Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType,
-                                                        output);
+  Value Ox =
+      rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefOValueType, output);
 
   if (behavior == MASK) {
-    applyMask(rewriter, loc, valueType, c0, lhsNnz, Li, Lx, c0, rhsNnz, Ri, c0,
-              Oi, Ox);
+    applyMask(rewriter, loc, inputElementType, c0, lhsNnz, Li, Lx, c0, rhsNnz,
+              Ri, c0, Oi, Ox);
   } else if (behavior == MASK_COMPLEMENT) {
-    applyMask(rewriter, loc, valueType, c0, lhsNnz, Li, Lx, c0,
+    applyMask(rewriter, loc, inputElementType, c0, lhsNnz, Li, Lx, c0,
               maskComplementSize, maskComplement, c0, Oi, Ox);
   } else {
-    computeUnionAggregation(rewriter, loc, intersect, binaryBlock, valueType,
-                            c0, lhsNnz, Li, Lx, c0, rhsNnz, Ri, Rx, c0, Oi, Ox);
+    computeUnionAggregation(rewriter, loc, intersect, binaryBlock,
+                            inputElementType, c0, lhsNnz, Li, Lx, c0, rhsNnz,
+                            Ri, Rx, c0, Oi, Ox);
   }
 }
 
@@ -1052,9 +1055,11 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
   Type indexType = rewriter.getIndexType();
   Type boolType = rewriter.getI1Type();
   Type int64Type = rewriter.getIntegerType(64);
-  Type valueType = outputType.getElementType();
+  Type inputElementType =
+      lhs.getType().cast<RankedTensorType>().getElementType();
   MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
-  MemRefType memref1DValueType = MemRefType::get({-1}, valueType);
+  MemRefType memrefIValueType = getMemrefValueType(lhs.getType());
+  MemRefType memrefOValueType = getMemrefValueType(outputType);
 
   // Initial constants
   Value cfalse = rewriter.create<arith::ConstantIntOp>(loc, 0, boolType);
@@ -1078,13 +1083,13 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
   Value Li = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
                                                          lhs, c1);
   Value Lx =
-      rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, lhs);
+      rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefIValueType, lhs);
   Value Rp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type,
                                                           rhs, c1);
   Value Ri = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
                                                          rhs, c1);
   Value Rx =
-      rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType, rhs);
+      rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefIValueType, rhs);
   Value Op = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type,
                                                           output, c1);
 
@@ -1182,8 +1187,8 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
 
   Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
                                                          output, c1);
-  Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType,
-                                                        output);
+  Value Ox =
+      rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefOValueType, output);
 
   // 3rd pass
   //   In parallel over the rows, compute the aggregation
@@ -1217,7 +1222,7 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
   rhsColEnd = rewriter.create<arith::IndexCastOp>(loc, rhsColEnd64, indexType);
 
   if (behavior == MASK) {
-    applyMask(rewriter, loc, valueType, lhsColStart, lhsColEnd, Li, Lx,
+    applyMask(rewriter, loc, inputElementType, lhsColStart, lhsColEnd, Li, Lx,
               rhsColStart, rhsColEnd, Ri, OcolStart, Oi, Ox);
   } else if (behavior == MASK_COMPLEMENT) {
     // Need to recompute maskComplement because previous use was inside a
@@ -1226,12 +1231,12 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
         buildMaskComplement(rewriter, loc, ncols, Ri, rhsColStart, rhsColEnd);
     Value maskComplement = results[0];
     Value maskComplementSize = results[1];
-    applyMask(rewriter, loc, valueType, lhsColStart, lhsColEnd, Li, Lx, c0,
-              maskComplementSize, maskComplement, OcolStart, Oi, Ox);
+    applyMask(rewriter, loc, inputElementType, lhsColStart, lhsColEnd, Li, Lx,
+              c0, maskComplementSize, maskComplement, OcolStart, Oi, Ox);
   } else {
-    computeUnionAggregation(rewriter, loc, intersect, binaryBlock, valueType,
-                            lhsColStart, lhsColEnd, Li, Lx, rhsColStart,
-                            rhsColEnd, Ri, Rx, OcolStart, Oi, Ox);
+    computeUnionAggregation(rewriter, loc, intersect, binaryBlock,
+                            inputElementType, lhsColStart, lhsColEnd, Li, Lx,
+                            rhsColStart, rhsColEnd, Ri, Rx, OcolStart, Oi, Ox);
   }
 
   // end if cmpDiff
