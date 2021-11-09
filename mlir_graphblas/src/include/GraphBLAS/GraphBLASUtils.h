@@ -66,6 +66,8 @@ mlir::RankedTensorType getCSRType(mlir::MLIRContext *context,
                                   mlir::Type valueType);
 mlir::RankedTensorType getCSCType(mlir::MLIRContext *context,
                                   mlir::Type valueType);
+mlir::RankedTensorType getFlippedLayoutType(mlir::MLIRContext *context,
+                                            mlir::Type inputOriginalType);
 
 int64_t getRank(mlir::Type inputType);
 int64_t getRank(mlir::Value inputValue);

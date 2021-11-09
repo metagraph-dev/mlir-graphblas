@@ -15,6 +15,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "GraphBLAS/GraphBLASArrayUtils.h"
+#include "GraphBLAS/GraphBLASDialect.h"
 #include "GraphBLAS/GraphBLASPasses.h"
 #include "GraphBLAS/GraphBLASUtils.h"
 
@@ -468,58 +469,87 @@ public:
   };
 };
 
+class TransposeDWIMRewrite : public OpRewritePattern<graphblas::TransposeOp> {
+public:
+  using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
+
+  static bool needsDWIM(graphblas::TransposeOp op) {
+
+    Value inputTensor = op.input();
+    RankedTensorType inputType =
+        inputTensor.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType outputType =
+        op->getResultTypes().front().dyn_cast<RankedTensorType>();
+
+    bool inputTypeIsCSR = hasRowOrdering(inputType);
+    bool outputTypeIsCSR = hasRowOrdering(outputType);
+
+    return (inputTypeIsCSR == outputTypeIsCSR);
+  };
+
+  LogicalResult match(graphblas::TransposeOp op) const override {
+    if (needsDWIM(op))
+      return success();
+    else
+      return failure();
+  };
+
+  void rewrite(graphblas::TransposeOp op,
+               PatternRewriter &rewriter) const override {
+    MLIRContext *context = op.getContext();
+    Location loc = op->getLoc();
+
+    Value inputTensor = op.input();
+    RankedTensorType outputType =
+        op->getResultTypes().front().dyn_cast<RankedTensorType>();
+
+    RankedTensorType flippedInputType =
+        getFlippedLayoutType(context, inputTensor.getType());
+
+    Value flippedInput = rewriter.create<graphblas::ConvertLayoutOp>(
+        loc, flippedInputType, inputTensor);
+    Value transposed =
+        rewriter.create<graphblas::TransposeOp>(loc, outputType, flippedInput);
+
+    rewriter.replaceOp(op, transposed);
+  };
+};
+
 class LowerTransposeRewrite : public OpRewritePattern<graphblas::TransposeOp> {
 public:
   using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::TransposeOp op,
-                                PatternRewriter &rewriter) const override {
-    MLIRContext *context = op.getContext();
+
+  LogicalResult match(graphblas::TransposeOp op) const override {
+    if (TransposeDWIMRewrite::needsDWIM(op))
+      return failure();
+    else
+      return success();
+  };
+
+  void rewrite(graphblas::TransposeOp op,
+               PatternRewriter &rewriter) const override {
+
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     Value inputTensor = op.input();
     RankedTensorType inputType =
         inputTensor.getType().dyn_cast<RankedTensorType>();
-    llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
-    sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
-        sparse_tensor::getSparseTensorEncoding(inputType);
-    unsigned ptrBitWidth = sparseEncoding.getPointerBitWidth();
-    unsigned idxBitWidth = sparseEncoding.getIndexBitWidth();
-    Type inputValueType = inputType.getElementType();
-    RankedTensorType outputType =
-        op->getResultTypes().front().dyn_cast<RankedTensorType>();
-
-    bool inputTypeIsCSR = typeIsCSR(inputType);
-    bool outputTypeIsCSR = typeIsCSR(outputType);
+    bool inputTypeIsCSR = hasRowOrdering(inputType);
 
     RankedTensorType flippedInputType =
-        getSingleCompressedMatrixType(context, inputShape, inputTypeIsCSR,
-                                      inputValueType, ptrBitWidth, idxBitWidth);
-
-    // Add a graphblas.convert_layout op if the input and output compression
-    // types are the same
-    if (inputTypeIsCSR == outputTypeIsCSR) {
-      // TODO consider separating this out into its own rewrite pattern
-      Value flippedInput = rewriter.create<graphblas::ConvertLayoutOp>(
-          loc, flippedInputType, inputTensor);
-      Value transposed = rewriter.create<graphblas::TransposeOp>(
-          loc, outputType, flippedInput);
-
-      rewriter.replaceOp(op, transposed);
-
-      return success();
-    }
+        op.getResult().getType().cast<RankedTensorType>();
 
     // Cast types
     Value output = callDupTensor(rewriter, module, loc, inputTensor);
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    if (outputTypeIsCSR) {
-      callAssignRev(rewriter, module, loc, output, c0, c0);
-      callAssignRev(rewriter, module, loc, output, c1, c1);
-    } else {
+    if (inputTypeIsCSR) {
       callAssignRev(rewriter, module, loc, output, c0, c1);
       callAssignRev(rewriter, module, loc, output, c1, c0);
+    } else {
+      callAssignRev(rewriter, module, loc, output, c0, c0);
+      callAssignRev(rewriter, module, loc, output, c1, c1);
     }
     output = castToPtr8(rewriter, module, loc, output);
     output = castToTensor(rewriter, module, loc, output, flippedInputType);
@@ -529,8 +559,6 @@ public:
     rewriter.replaceOp(op, output);
 
     cleanupIntermediateTensor(rewriter, module, loc, output);
-
-    return success();
   };
 };
 
@@ -3647,13 +3675,14 @@ struct GraphBLASLoweringPass
     ConversionTarget target(*ctx);
     populateGraphBLASLoweringPatterns(patterns);
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
-    // TODO how can we mark graphblas ops as illegal here?
+    target.addIllegalDialect<graphblas::GraphBLASDialect>();
   }
 };
 
 void populateGraphBLASStructuralizePatterns(RewritePatternSet &patterns) {
-  patterns.add<LowerMatrixMultiplyRewrite, LowerApplyRewrite,
-               LowerReduceToScalarRewrite>(patterns.getContext());
+  patterns.add<TransposeDWIMRewrite, LowerMatrixMultiplyRewrite,
+               LowerApplyRewrite, LowerReduceToScalarRewrite>(
+      patterns.getContext());
 }
 
 struct GraphBLASStructuralizePass

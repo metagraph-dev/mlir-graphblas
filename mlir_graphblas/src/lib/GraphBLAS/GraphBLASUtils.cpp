@@ -187,6 +187,25 @@ RankedTensorType getCSCType(MLIRContext *context, Type valueType) {
                                        valueType, 64, 64);
 }
 
+RankedTensorType getFlippedLayoutType(MLIRContext *context,
+                                      Type inputOriginalType) {
+  RankedTensorType inputType = inputOriginalType.dyn_cast<RankedTensorType>();
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(inputType);
+  unsigned ptrBitWidth = sparseEncoding.getPointerBitWidth();
+  unsigned idxBitWidth = sparseEncoding.getIndexBitWidth();
+  Type inputValueType = inputType.getElementType();
+  llvm::ArrayRef<int64_t> inputShape = inputType.getShape();
+
+  bool inputTypeIsCSR = hasRowOrdering(inputType);
+
+  RankedTensorType flippedInputType =
+      getSingleCompressedMatrixType(context, inputShape, inputTypeIsCSR,
+                                    inputValueType, ptrBitWidth, idxBitWidth);
+
+  return flippedInputType;
+}
+
 /// Returns function reference (first hit also inserts into module).
 // from:
 // llvm/llvm-project/mlir/lib/Dialect/SparseTensor/Transforms/SparseTensorConversion.cpp
