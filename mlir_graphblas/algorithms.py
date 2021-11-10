@@ -386,6 +386,7 @@ class Pagerank(Algorithm):
         teleport = irb.arith.divf(teleport, nrows_f64)
 
         row_degree = irb.graphblas.reduce_to_vector(A, "count", axis=1)
+        row_degree = irb.graphblas.cast(row_degree, "tensor<?xf64, #CV64>")
         # prescale row_degree with damping factor, so it isn't done each iteration
         row_degree = irb.graphblas.apply(row_degree, "div", right=var_damping)
 
@@ -394,7 +395,7 @@ class Pagerank(Algorithm):
 
         # r = 1/nrows
         nrows_inv = irb.arith.divf(cf1, nrows_f64)
-        starting = irb.graphblas.apply(r, "fill", right=nrows_inv)
+        starting = irb.graphblas.apply(r, "second", right=nrows_inv)
         starting_ptr8 = irb.util.tensor_to_ptr8(starting)
 
         # Pagerank iterations
@@ -442,7 +443,7 @@ class Pagerank(Algorithm):
 
             # r = teleport
             # Perform this scalar assignment using an apply hack
-            new_score = irb.graphblas.apply(prev_score, "fill", right=teleport)
+            new_score = irb.graphblas.apply(prev_score, "second", right=teleport)
 
             # r += A'*w
             AT = irb.graphblas.transpose(A, "tensor<?x?xf64, #CSR64>")
@@ -855,7 +856,7 @@ class BFS(Algorithm):
                 next_level_i64 = irb.arith.index_cast(next_level, "i64")
                 next_level_f64 = irb.arith.sitofp(next_level_i64, "f64")
                 next_frontier_levels = irb.graphblas.apply(
-                    next_frontier, "fill", right=next_level_f64
+                    next_frontier, "second", right=next_level_f64
                 )
                 irb.graphblas.update(next_frontier_levels, levels, "max")
 
@@ -896,8 +897,9 @@ class TotallyInducedEdgeSampling(Algorithm):
         row_counts = irb.graphblas.reduce_to_vector(selected_edges, "count", axis=1)
         col_counts = irb.graphblas.reduce_to_vector(selected_edges, "count", axis=0)
         selected_nodes = irb.graphblas.union(
-            row_counts, col_counts, "plus", "tensor<?xf64, #CV64>"
+            row_counts, col_counts, "plus", "tensor<?xi64, #CV64>"
         )
+        selected_nodes = irb.graphblas.cast(selected_nodes, "tensor<?xf64, #CV64>")
         # TODO: these next lines should be replaced with `extract` when available
         D_csr = irb.graphblas.diag(selected_nodes, "tensor<?x?xf64, #CSR64>")
         D_csc = irb.graphblas.diag(selected_nodes, "tensor<?x?xf64, #CSC64>")

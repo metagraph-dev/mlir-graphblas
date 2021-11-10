@@ -18,8 +18,8 @@ module {
 // CHECK:           func @apply_left_thunk_min_float_matrix(%[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: f64) -> tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_3:.*]]: f64):
-// CHECK:               %[[VAL_4:.*]] = arith.cmpf olt, %[[VAL_3]], %[[VAL_1]] : f64
-// CHECK:               %[[VAL_5:.*]] = select %[[VAL_4]], %[[VAL_3]], %[[VAL_1]] : f64
+// CHECK:               %[[VAL_4:.*]] = arith.cmpf olt, %[[VAL_1]], %[[VAL_3]] : f64
+// CHECK:               %[[VAL_5:.*]] = select %[[VAL_4]], %[[VAL_1]], %[[VAL_3]] : f64
 // CHECK:               graphblas.yield transform_out %[[VAL_5]] : f64
 // CHECK:             }
 // CHECK:             return %[[VAL_6:.*]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
@@ -33,8 +33,8 @@ module {
 // CHECK:           func @apply_left_thunk_min_float_vector(%[[VAL_7:.*]]: tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: f64) -> tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_9:.*]] = graphblas.apply_generic %[[VAL_7]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_10:.*]]: f64):
-// CHECK:               %[[VAL_11:.*]] = arith.cmpf olt, %[[VAL_10]], %[[VAL_8]] : f64
-// CHECK:               %[[VAL_12:.*]] = select %[[VAL_11]], %[[VAL_10]], %[[VAL_8]] : f64
+// CHECK:               %[[VAL_11:.*]] = arith.cmpf olt,  %[[VAL_8]], %[[VAL_10]] : f64
+// CHECK:               %[[VAL_12:.*]] = select %[[VAL_11]],  %[[VAL_8]], %[[VAL_10]] : f64
 // CHECK:               graphblas.yield transform_out %[[VAL_12]] : f64
 // CHECK:             }
 // CHECK:             return %[[VAL_13:.*]] : tensor<8xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
@@ -206,8 +206,8 @@ module {
 // CHECK:           func @apply_left_thunk_min_int_matrix(%[[VAL_0:.*]]: tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_1:.*]]: i8) -> tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_2:.*]] = graphblas.apply_generic %[[VAL_0]] : tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_3:.*]]: i8):
-// CHECK:               %[[VAL_4:.*]] = arith.cmpi slt, %[[VAL_3]], %[[VAL_1]] : i8
-// CHECK:               %[[VAL_5:.*]] = select %[[VAL_4]], %[[VAL_3]], %[[VAL_1]] : i8
+// CHECK:               %[[VAL_4:.*]] = arith.cmpi slt, %[[VAL_1]], %[[VAL_3]] : i8
+// CHECK:               %[[VAL_5:.*]] = select %[[VAL_4]], %[[VAL_1]], %[[VAL_3]] : i8
 // CHECK:               graphblas.yield transform_out %[[VAL_5]] : i8
 // CHECK:             }
 // CHECK:             return %[[VAL_6:.*]] : tensor<?x?xi8, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
@@ -221,8 +221,8 @@ module {
 // CHECK:           func @apply_left_thunk_min_int_vector(%[[VAL_7:.*]]: tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>, %[[VAL_8:.*]]: i8) -> tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> {
 // CHECK:             %[[VAL_9:.*]] = graphblas.apply_generic %[[VAL_7]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>> to tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>  {
 // CHECK:             ^bb0(%[[VAL_10:.*]]: i8):
-// CHECK:               %[[VAL_11:.*]] = arith.cmpi slt, %[[VAL_10]], %[[VAL_8]] : i8
-// CHECK:               %[[VAL_12:.*]] = select %[[VAL_11]], %[[VAL_10]], %[[VAL_8]] : i8
+// CHECK:               %[[VAL_11:.*]] = arith.cmpi slt,  %[[VAL_8]], %[[VAL_10]] : i8
+// CHECK:               %[[VAL_12:.*]] = select %[[VAL_11]],  %[[VAL_8]], %[[VAL_10]] : i8
 // CHECK:               graphblas.yield transform_out %[[VAL_12]] : i8
 // CHECK:             }
 // CHECK:             return %[[VAL_13:.*]] : tensor<8xi8, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>

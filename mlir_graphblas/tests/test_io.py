@@ -233,27 +233,6 @@ def test_mlirsparsetensor_dup():
     np.testing.assert_array_equal(values[:1], a1.values)
 
 
-def test_empty_like():
-    sparsity = np.array([True, True, True], dtype=np.bool8)
-    sizes = np.array([10, 20, 30], dtype=np.uint64)
-    indices = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.uint64)
-    values = np.array([1.2, 3.4], dtype=np.float64)
-
-    a = mlir_graphblas.sparse_utils.MLIRSparseTensor(indices, values, sizes, sparsity)
-    b = a.empty_like()
-
-    assert a.ndim == b.ndim
-    assert a.shape == b.shape
-    # Pointers are the same size as original, but containing all zeros
-    for val, compare_val in zip(b.pointers, a.pointers):
-        assert val.size == compare_val.size
-        assert (val == 0).all()
-    # Indices and Values are empty
-    for val in b.indices:
-        assert val.size == 0
-    assert b.values.size == 0
-
-
 def test_from_raw_pointer():
     sparsity = np.array([True, True, True], dtype=np.bool8)
     sizes = np.array([10, 20, 30], dtype=np.uint64)

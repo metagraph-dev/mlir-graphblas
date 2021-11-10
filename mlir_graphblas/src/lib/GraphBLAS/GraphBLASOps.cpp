@@ -150,31 +150,37 @@ static llvm::Optional<std::string> checkBitWidthMatch(RankedTensorType a,
   return llvm::None;
 }
 
-static llvm::Optional<std::string> checkSemiringAdd(StringRef addName) {
-  if (!supportedSemiringAddNames.contains(addName))
-    return "\"" + addName.str() + "\" is not a supported semiring add.";
+static llvm::Optional<std::string> checkUnaryOp(StringRef unaryOp) {
+  if (!unary1.contains(unaryOp) && !unary3.contains(unaryOp))
+    return "\"" + unaryOp.str() + "\" is not a supported unary operator.";
   else
     return llvm::None;
 }
 
-static llvm::Optional<std::string>
-checkSemiringMultiply(StringRef multiplyName) {
-  if (!supportedSemiringMultiplyNames.contains(multiplyName))
-    return "\"" + multiplyName.str() +
-           "\" is not a supported semiring multiply.";
+static llvm::Optional<std::string> checkBinaryOp(StringRef binaryOp) {
+  if (!binary2.contains(binaryOp) && !binary4.contains(binaryOp) &&
+      !binary5.contains(binaryOp))
+    return "\"" + binaryOp.str() + "\" is not a supported binary operator.";
   else
     return llvm::None;
 }
 
-static llvm::Optional<std::string> checkSemiring(StringRef semiring) {
-  auto semiringParts = semiring.split('_');
-  auto addCheck = checkSemiringAdd(semiringParts.first);
-  if (addCheck != llvm::None)
-    return addCheck;
+static llvm::Optional<std::string> checkMonoidOp(StringRef monoidOp) {
+  if (!monoid2.contains(monoidOp))
+    return "\"" + monoidOp.str() + "\" is not a supported monoid.";
+  else
+    return llvm::None;
+}
 
-  auto multiplyCheck = checkSemiringMultiply(semiringParts.second);
-  if (multiplyCheck != llvm::None)
-    return multiplyCheck;
+static llvm::Optional<std::string> checkSemiringOp(StringRef semiringOp) {
+  auto semiringParts = semiringOp.split('_');
+  auto monoidCheck = checkMonoidOp(semiringParts.first);
+  if (monoidCheck != llvm::None)
+    return monoidCheck;
+
+  auto binaryCheck = checkBinaryOp(semiringParts.second);
+  if (binaryCheck != llvm::None)
+    return binaryCheck;
 
   return llvm::None;
 }
@@ -236,8 +242,7 @@ void DupOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
 }
 
 template <class T>
-static LogicalResult verifyApplyArgs(T op, Value input) {
-  Type inputType = input.getType();
+static LogicalResult verifyApplyArgs(T op, Type inputType) {
   Type resultType = op.getResult().getType();
 
   RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
@@ -283,16 +288,18 @@ static LogicalResult verify(ApplyOp op) {
   if (extractArgResult.failed())
     return extractArgResult;
 
-  LogicalResult argResult = verifyApplyArgs(op, input);
+  Type inputType = input.getType();
+  LogicalResult argResult = verifyApplyArgs(op, inputType);
 
   if (argResult.failed())
     return argResult;
 
-  Type inputType = input.getType();
-  Type resultType = op.getResult().getType();
-
   std::string applyOperator = op.apply_operator().str();
-  if (supportedBinaryApplyOperators.contains(applyOperator)) {
+  if (!supportedForApply.contains(applyOperator))
+    return op.emitError("\"" + applyOperator +
+                        "\" is not a supported operator.");
+
+  if (binary2.contains(applyOperator) || binary4.contains(applyOperator)) {
 
     if (!thunk)
       return op.emitError("\"" + applyOperator +
@@ -300,37 +307,30 @@ static LogicalResult verify(ApplyOp op) {
                           " requires a thunk.");
 
     RankedTensorType inputTensorType = inputType.dyn_cast<RankedTensorType>();
-    RankedTensorType resultTensorType = resultType.dyn_cast<RankedTensorType>();
 
     Type thunkType = thunk.getType();
 
-    if (inputTensorType.getElementType() != thunkType)
+    // For binary2 ops, thunk type must match input type
+    // for binary4 ops, the thunk may be used to compare against the index
+    // values, so no check is made
+    if (inputTensorType.getElementType() != thunkType &&
+        binary2.contains(applyOperator))
       return op.emitError(
           "Element type of input tensor does not match type of thunk.");
 
-    if (resultTensorType.getElementType() != thunkType)
-      // TODO this is not always correct, e.g.
-      // apply_less_than(tensor<f64>, 2.3) -> tensor<i1>.
-      return op.emitError(
-          "Element type of result tensor does not match type of thunk.");
-
-  } else if (supportedUnaryApplyOperators.contains(applyOperator)) {
+  } else if (unary1.contains(applyOperator) || unary3.contains(applyOperator)) {
 
     if (thunk)
       return op.emitError("\"" + applyOperator +
                           "\""
                           " is a unary operator, but was given a thunk.");
-
-  } else {
-    return op.emitError("\"" + applyOperator +
-                        "\" is not a supported operator.");
   }
 
   return success();
 }
 
 static LogicalResult verify(ApplyGenericOp op) {
-  LogicalResult argResult = verifyApplyArgs(op, op.input());
+  LogicalResult argResult = verifyApplyArgs(op, op.input().getType());
 
   if (argResult.failed())
     return argResult;
@@ -501,7 +501,7 @@ static LogicalResult verify(MatrixMultiplyOp op) {
   if (argResult.failed())
     return argResult;
 
-  llvm::Optional<std::string> semiringError = checkSemiring(op.semiring());
+  llvm::Optional<std::string> semiringError = checkSemiringOp(op.semiring());
   if (semiringError != llvm::None) {
     return op.emitError(semiringError.getValue());
   }
@@ -589,68 +589,18 @@ static LogicalResult verify(DiagOp op) {
   return success();
 }
 
-static LogicalResult verify(UpdateOp op) {
-  RankedTensorType iType = op.input().getType().cast<RankedTensorType>();
-  RankedTensorType oType = op.output().getType().cast<RankedTensorType>();
-  Value mask = op.mask();
-
-  int64_t iRank = iType.getRank();
-  RankedTensorType maskType;
-  if (mask) {
-    maskType = mask.getType().cast<RankedTensorType>();
-  }
-
-  if (failed(verifySameShape(iType, oType)))
-    return op.emitError(
-        "Input and Output arguments must have identical shapes.");
-  if (mask && failed(verifySameShape(oType, maskType)))
-    return op.emitError(
-        "Mask and Output arguments must have identical shapes.");
-
-  llvm::Optional<std::string> errMsg;
-  if (iRank == 1) {
-    errMsg = checkVectorEncoding(iType);
-    if (errMsg)
-      return op.emitError("input " + errMsg.getValue());
-  } else if (iRank == 2) {
-    errMsg = checkMatrixEncoding(iType, EITHER);
-    if (errMsg)
-      return op.emitError("input " + errMsg.getValue());
-  }
-
-  if (iType != oType)
-    return op.emitError("input and output must have identical types.");
-  if (mask && iType != maskType)
-    return op.emitError("mask and input must have identical types.");
-
-  llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
-  if (accumulateOperator) {
-    if (!supportedUpdateAccumulateOperators.contains(accumulateOperator->str()))
-      return op.emitError("\"" + accumulateOperator->str() +
-                          "\" is not a supported accumulate operator.");
-  }
-
-  return success();
-}
-
 template <class T>
-static LogicalResult verifyEwise(T op, bool verifyResult) {
-  Type aOrigType = op.a().getType();
-  Type bOrigType = op.b().getType();
-  Type oOrigType;
-  if (verifyResult)
-    oOrigType = op.getResult().getType();
+static LogicalResult verifyEwise(T op, Value a, Value b, std::string aName,
+                                 std::string bName, bool verifyType) {
+  Type aOrigType = a.getType();
+  Type bOrigType = b.getType();
 
   RankedTensorType aType = aOrigType.cast<RankedTensorType>();
   RankedTensorType bType = bOrigType.cast<RankedTensorType>();
-  RankedTensorType oType;
-  if (verifyResult)
-    oType = oOrigType.cast<RankedTensorType>();
 
   if (failed(verifySameShape(aType, bType)))
-    return op.emitError("Inputs must have identical shapes.");
-  if (verifyResult && failed(verifySameShape(aType, oType)))
-    return op.emitError("Output must have same shape as inputs.");
+    return op.emitError("\"" + aName + "\" and \"" + bName +
+                        "\" must have identical shapes.");
 
   int64_t aRank = aType.getRank();
 
@@ -658,16 +608,66 @@ static LogicalResult verifyEwise(T op, bool verifyResult) {
   if (aRank == 1) {
     errMsg = checkVectorEncoding(aType);
     if (errMsg)
-      return op.emitError("1st operand " + errMsg.getValue());
+      return op.emitError("\"" + aName + "\" " + errMsg.getValue());
+    errMsg = checkVectorEncoding(bType);
+    if (errMsg)
+      return op.emitError("\"" + bName + "\" " + errMsg.getValue());
   } else if (aRank == 2) {
     errMsg = checkMatrixEncoding(aType, EITHER);
     if (errMsg)
-      return op.emitError("1st operand " + errMsg.getValue());
+      return op.emitError("\"" + aName + "\" " + errMsg.getValue());
+    // B must be ordered the same as A
+    if (hasRowOrdering(aType))
+      errMsg = checkMatrixEncoding(bType, CSR);
+    else
+      errMsg = checkMatrixEncoding(bType, CSC);
+    if (errMsg)
+      return op.emitError("\"" + bName + "\" " + errMsg.getValue());
   }
-  if (aType != bType)
-    return op.emitError("operands must have identical types.");
-  if (verifyResult && aType != oType)
-    return op.emitError("output type must match input types.");
+  if (verifyType && aType != bType)
+    return op.emitError("\"" + aName + "\" and \"" + bName +
+                        "\" must have identical types.");
+
+  return success();
+}
+
+static LogicalResult verify(UpdateOp op) {
+  llvm::Optional<llvm::StringRef> accumulateOperator = op.accumulate_operator();
+  if (accumulateOperator) {
+    if (!supportedForUpdate.contains(accumulateOperator->str()))
+      return op.emitError("\"" + accumulateOperator->str() +
+                          "\" is not a supported accumulate operator.");
+  }
+
+  if (failed(verifyEwise<UpdateOp>(op, op.input(), op.output(), "input",
+                                   "output",
+                                   /* verifyType */ true)))
+    return failure();
+
+  Value mask = op.mask();
+  if (mask &&
+      failed(verifyEwise<UpdateOp>(op, op.output(), mask, "output", "mask",
+                                   /* verifyType */ false)))
+    return failure();
+
+  return success();
+}
+
+static LogicalResult verify(UpdateGenericOp op) {
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 1)
+    return op.emitError("Must have at least 1 region: accumulate.");
+
+  if (failed(verifyEwise<UpdateGenericOp>(op, op.input(), op.output(), "input",
+                                          "output",
+                                          /* verifyType */ true)))
+    return failure();
+
+  Value mask = op.mask();
+  if (mask && failed(verifyEwise<UpdateGenericOp>(op, op.output(), mask,
+                                                  "output", "mask",
+                                                  /* verifyType */ false)))
+    return failure();
 
   return success();
 }
@@ -675,67 +675,95 @@ static LogicalResult verifyEwise(T op, bool verifyResult) {
 static LogicalResult verify(UnionOp op) {
   llvm::Optional<llvm::StringRef> unionOperator = op.union_operator();
   if (unionOperator) {
-    if (!supportedUnionOperators.contains(unionOperator->str()))
+    if (!supportedForUnion.contains(unionOperator->str()))
       return op.emitError("\"" + unionOperator->str() +
                           "\" is not a supported union operator.");
   }
 
-  return verifyEwise(op, /* verifyResult */ true);
+  if (failed(verifyEwise<UnionOp>(op, op.a(), op.b(), "a", "b",
+                                  /* verifyType */ true)))
+    return failure();
+  if (failed(verifyEwise<UnionOp>(op, op.a(), op.getResult(), "input", "output",
+                                  /* verifyType */ true)))
+    return failure();
+
+  return success();
+}
+
+static LogicalResult verify(UnionGenericOp op) {
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 1)
+    return op.emitError("Must have at least 1 region: mult.");
+
+  if (failed(verifyEwise<UnionGenericOp>(op, op.a(), op.b(), "a", "b",
+                                         /* verifyType */ true)))
+    return failure();
+  if (failed(verifyEwise<UnionGenericOp>(op, op.a(), op.getResult(), "input",
+                                         "output",
+                                         /* verifyType */ true)))
+    return failure();
+
+  return success();
 }
 
 static LogicalResult verify(IntersectOp op) {
   llvm::Optional<llvm::StringRef> intersectOperator = op.intersect_operator();
   if (intersectOperator) {
-    if (!supportedIntersectOperators.contains(intersectOperator->str()))
+    if (!supportedForIntersect.contains(intersectOperator->str()))
       return op.emitError("\"" + intersectOperator->str() +
                           "\" is not a supported intersect operator.");
   }
 
-  return verifyEwise(op, /* verifyResult */ true);
+  if (failed(verifyEwise<IntersectOp>(op, op.a(), op.b(), "a", "b",
+                                      /* verifyType */ true)))
+    return failure();
+  if (failed(verifyEwise<IntersectOp>(op, op.a(), op.getResult(), "input",
+                                      "output",
+                                      /* verifyType */ false)))
+    return failure();
+
+  return success();
+}
+
+static LogicalResult verify(IntersectGenericOp op) {
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 1)
+    return op.emitError("Must have at least 1 region: mult.");
+
+  if (failed(verifyEwise<IntersectGenericOp>(op, op.a(), op.b(), "a", "b",
+                                             /* verifyType */ true)))
+    return failure();
+  if (failed(verifyEwise<IntersectGenericOp>(op, op.a(), op.getResult(),
+                                             "input", "output",
+                                             /* verifyType */ false)))
+    return failure();
+
+  return success();
 }
 
 static LogicalResult verify(EqualOp op) {
-  // TODO: this might need to be separate once masks are available for union and
-  // intersect
-  return verifyEwise(op, /* verifyResult */ false);
+  return verifyEwise<EqualOp>(op, op.a(), op.b(), "a", "b",
+                              /* verifyType */ true);
 }
 
-static LogicalResult verify(ReduceToVectorOp op) {
-  std::string aggregator = op.aggregator().str();
-  if (!supportedReduceAggregators.contains(aggregator))
-    return op.emitError("\"" + aggregator +
-                        "\" is not a supported aggregator.");
-
-  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
+template <class T>
+static LogicalResult verifyReduceToVectorArgs(T op) {
+  Type inputType = op.input().getType();
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
 
   llvm::Optional<std::string> errMsg;
-  errMsg = checkMatrixEncoding(inputType, EITHER);
+  errMsg = checkMatrixEncoding(inputTensorType, EITHER);
   if (errMsg)
     return op.emitError("operand " + errMsg.getValue());
 
-  RankedTensorType resultType =
-      op.getResult().getType().cast<RankedTensorType>();
+  Type resultType = op.getResult().getType();
+  RankedTensorType resultTensorType = resultType.cast<RankedTensorType>();
 
-  errMsg = checkVectorEncoding(resultType);
+  errMsg = checkVectorEncoding(resultTensorType);
   if (errMsg)
     return op.emitError("result " + errMsg.getValue());
 
-  if (aggregator == "argmin" or aggregator == "argmax") {
-    Type valueType = resultType.getElementType();
-    bool valueTypeIsI64 = llvm::TypeSwitch<Type, bool>(valueType)
-                              .Case<IntegerType>([&](IntegerType type) {
-                                unsigned bitWidth = type.getWidth();
-                                return bitWidth == 64;
-                              })
-                              .Default([&](Type type) { return false; });
-    if (!valueTypeIsI64)
-      return op.emitError(
-          "\"" + aggregator +
-          "\" requires the output vector to have i64 elements.");
-  } else if (resultType.getElementType() != inputType.getElementType())
-    return op.emitError("Operand and output types are incompatible.");
-
-  ArrayRef<int64_t> inputShape = inputType.getShape();
+  ArrayRef<int64_t> inputShape = inputTensorType.getShape();
 
   int axis = op.axis();
   int expectedResultLength;
@@ -747,10 +775,63 @@ static LogicalResult verify(ReduceToVectorOp op) {
     return op.emitError("The axis attribute is expected to be 0 or 1.");
   }
 
-  ArrayRef<int64_t> resultShape = resultType.getShape();
+  ArrayRef<int64_t> resultShape = resultTensorType.getShape();
   if (resultShape[0] != expectedResultLength) {
     return op.emitError("Operand and output shapes are incompatible.");
   }
+
+  return success();
+}
+
+static LogicalResult verify(ReduceToVectorOp op) {
+  std::string aggregator = op.aggregator().str();
+  if (!supportedForReduce.contains(aggregator))
+    return op.emitError("\"" + aggregator +
+                        "\" is not a supported aggregator.");
+
+  LogicalResult argResult = verifyReduceToVectorArgs(op);
+
+  if (argResult.failed())
+    return argResult;
+
+  Type resultType =
+      op.getResult().getType().cast<RankedTensorType>().getElementType();
+
+  StringSet<> i64Aggs{"argmax", "argmin", "count"};
+  if (i64Aggs.contains(aggregator)) {
+    if (!resultType.isa<IntegerType>() ||
+        resultType.cast<IntegerType>().getWidth() != 64)
+      return op.emitError(
+          "\"" + aggregator +
+          "\" requires the output vector to have i64 elements.");
+  } else {
+    Type inputType =
+        op.input().getType().cast<RankedTensorType>().getElementType();
+    if (resultType != inputType)
+      return op.emitError("Operand and output types are incompatible.");
+  }
+
+  return success();
+}
+
+static LogicalResult verify(ReduceToVectorGenericOp op) {
+  LogicalResult argResult = verifyReduceToVectorArgs(op);
+
+  if (argResult.failed())
+    return argResult;
+
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 2) {
+    return op.emitError("Must have at least 2 regions: agg_identity, agg.");
+  }
+
+  // Enforce reasonable iteration direction for axis
+  bool isCSR = hasRowOrdering(op.input().getType());
+  int axis = op.axis();
+  if (axis == 0 && isCSR)
+    return op.emitError("Reducing with axis=0 requires CSC matrix.");
+  if (axis == 1 && !isCSR)
+    return op.emitError("Reducing with axis=1 requires CSR matrix.");
 
   return success();
 }
@@ -784,28 +865,28 @@ static LogicalResult verify(ReduceToScalarOp op) {
     return argResult;
 
   std::string aggregator = op.aggregator().str();
-  if (!supportedReduceAggregators.contains(aggregator))
+  if (!supportedForReduce.contains(aggregator))
     return op.emitError("\"" + aggregator +
                         "\" is not a supported aggregator.");
 
   Type operandOrigType = op.input().getType();
   RankedTensorType operandType = operandOrigType.cast<RankedTensorType>();
   Type resultType = op.getResult().getType();
-  if (aggregator == "argmin" or aggregator == "argmax" or
-      aggregator == "count") {
-    if (operandType.getRank() != 1 and aggregator != "count")
-      return op.emitError("\"" + aggregator + "\" only supported for vectors.");
-    bool resultTypeIsI64 = llvm::TypeSwitch<Type, bool>(resultType)
-                               .Case<IntegerType>([&](IntegerType type) {
-                                 unsigned bitWidth = type.getWidth();
-                                 return bitWidth == 64;
-                               })
-                               .Default([&](Type type) { return false; });
-    if (!resultTypeIsI64)
+  if (aggregator == "count") {
+    if (!resultType.isa<IntegerType>() ||
+        resultType.cast<IntegerType>().getWidth() != 64)
+      return op.emitError("\"count\" requires the output type to be i64.");
+  } else if (aggregator == "argmax" || aggregator == "argmin") {
+    if (!resultType.isa<IntegerType>() ||
+        resultType.cast<IntegerType>().getWidth() != 64)
       return op.emitError("\"" + aggregator +
                           "\" requires the output type to be i64.");
-  } else if (resultType != operandType.getElementType())
-    return op.emitError("Operand and output types are incompatible.");
+    if (operandType.getRank() != 1)
+      return op.emitError("\"" + aggregator + "\" only supported for vectors.");
+  } else {
+    if (resultType != operandType.getElementType())
+      return op.emitError("Operand and output types are incompatible.");
+  }
 
   return success();
 }
@@ -817,7 +898,7 @@ static LogicalResult verify(ReduceToScalarGenericOp op) {
     return argResult;
 
   RegionRange extensions = op.extensions();
-  if (extensions.size() < 1) {
+  if (extensions.size() < 2) {
     return op.emitError("Must have at least 2 regions: agg_identity, agg.");
   }
 
@@ -825,39 +906,37 @@ static LogicalResult verify(ReduceToScalarGenericOp op) {
 }
 
 static LogicalResult verify(graphblas::SelectOp op) {
-  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
-  unsigned rank = inputType.getRank();
+  Type inputType = op.input().getType();
+  LogicalResult argResult = verifyApplyArgs(op, inputType);
 
-  llvm::Optional<std::string> errMsg;
-  if (rank == 2)
-    errMsg = checkMatrixEncoding(inputType, EITHER);
-  else
-    errMsg = checkVectorEncoding(inputType);
-  if (errMsg)
-    return op.emitError("input " + errMsg.getValue());
+  if (argResult.failed())
+    return argResult;
 
-  RankedTensorType resultType =
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
+  RankedTensorType resultTensorType =
       op.getResult().getType().cast<RankedTensorType>();
 
-  if (inputType != resultType)
+  if (inputTensorType != resultTensorType)
     return op.emitError("result type must match input type.");
+
+  unsigned rank = inputTensorType.getRank();
 
   std::string selector = op.selector().str();
   std::vector<std::string> selectorsNeedingThunk;
   ValueRange thunks = op.thunks();
 
-  if (!supportedSelectors.contains(selector))
+  if (!supportedForSelect.contains(selector))
     return op.emitError("\"" + selector + "\" is not a supported selector.");
-  if (rank == 1 && !supportedSelectorsComparingValues.contains(selector))
+  if (rank == 1 && (unary3.contains(selector) || binary4.contains(selector)))
     return op.emitError("Selector '" + selector + "' not allowed for vectors.");
 
   if (thunks.size() <= 0) {
-    if (supportedSelectorsNeedingThunk.contains(selector))
+    if (binary2.contains(selector) || binary4.contains(selector))
       return op.emitError("Selector '" + selector + "' requires a thunk.");
   } else if (thunks.size() > 2) {
     return op.emitError("Too many thunk values provided.");
   } else {
-    if (!supportedSelectorsNeedingThunk.contains(selector))
+    if (unary3.contains(selector))
       return op.emitError("Selector '" + selector + "' cannot take a thunk.");
 
     Value thunk = thunks[0];
@@ -865,24 +944,39 @@ static LogicalResult verify(graphblas::SelectOp op) {
 
     if (selector == "probability") {
       // Ensure thunk type is f64
-      bool thunkTypeIsF64 = llvm::TypeSwitch<Type, bool>(thunkType)
-                                .Case<FloatType>([&](FloatType type) {
-                                  unsigned bitWidth = type.getWidth();
-                                  return bitWidth == 64;
-                                })
-                                .Default([&](Type type) { return false; });
-      if (!thunkTypeIsF64)
+      if (!thunkType.isa<FloatType>() ||
+          thunkType.cast<FloatType>().getWidth() != 64)
         return op.emitError("Select 'probability' requires f64 thunk.");
       if (thunks.size() != 2)
         return op.emitError("Selector 'probability' requires a RNG context");
     } else {
       // All other selectors
-      if (thunkType != inputType.getElementType())
-        return op.emitError("Thunk type must match operand type.");
       if (thunks.size() > 1)
         return op.emitError("Too many thunks provided for selector '" +
                             selector + "'");
+      // For binary2 ops, thunk type must match input type
+      // for binary4 ops, the thunk may be used to compare against the index
+      // values, so no check is made
+      if (binary2.contains(selector) &&
+          thunkType != inputTensorType.getElementType())
+        return op.emitError("Thunk type must match operand type.");
     }
+  }
+
+  return success();
+}
+
+static LogicalResult verify(graphblas::SelectGenericOp op) {
+  Value input = op.input();
+  Type inputType = input.getType();
+  LogicalResult argResult = verifyApplyArgs(op, inputType);
+
+  if (argResult.failed())
+    return argResult;
+
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 1) {
+    return op.emitError("Must have at least 1 region: select_out.");
   }
 
   return success();
