@@ -9,7 +9,7 @@
 
 module {
     func @matrix_select_wrapper(%sparse_tensor: tensor<2x3xbf16, #CSR64>) -> tensor<2x3xbf16> {
-        %answer = graphblas.select %sparse_tensor { selector = "triu" } : tensor<2x3xbf16, #CSR64> to tensor<2x3xbf16> // expected-error {{result type must match input type.}}
+        %answer = graphblas.select %sparse_tensor { selector = "triu" } : tensor<2x3xbf16, #CSR64> to tensor<2x3xbf16> // expected-error {{result must be a sparse tensor.}}
         return %answer : tensor<2x3xbf16>
     }
 }

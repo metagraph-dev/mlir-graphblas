@@ -876,11 +876,12 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
 LogicalResult populateBinary(OpBuilder &builder, Location loc,
                              StringRef binaryOp, Type valueType,
                              RegionRange regions,
-                             graphblas::YieldKind yieldKind) {
+                             graphblas::YieldKind yieldKind, bool boolAsI8) {
   // This function must match the options supported by
   // GraphBLASOps.cpp::checkBinaryOp()
 
   Type indexType = builder.getIndexType();
+  Type i1Type = builder.getI1Type();
   Type i8Type = builder.getI8Type();
   Value false8 = builder.create<arith::ConstantIntOp>(loc, 0, i8Type);
   Value true8 = builder.create<arith::ConstantIntOp>(loc, 1, i8Type);
@@ -926,67 +927,57 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
                      return builder.create<arith::DivFOp>(loc, aVal, bVal);
                    });
   } else if (binaryOp == "eq") {
-    Value i1Result = llvm::TypeSwitch<Type, Value>(valueType)
-                         .Case<IntegerType>([&](IntegerType type) {
-                           return builder.create<arith::CmpIOp>(
-                               loc, arith::CmpIPredicate::eq, aVal, bVal);
-                         })
-                         .Case<FloatType>([&](FloatType type) {
-                           return builder.create<arith::CmpFOp>(
-                               loc, arith::CmpFPredicate::OEQ, aVal, bVal);
-                         });
-    // Sparse tensors cannot hold i1, so cast to i8
-    opResult = builder.create<SelectOp>(loc, i1Result, true8, false8);
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::eq, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::OEQ, aVal, bVal);
+                   });
   } else if (binaryOp == "first") {
     opResult = aVal;
   } else if (binaryOp == "ge") {
-    Value i1Result = llvm::TypeSwitch<Type, Value>(valueType)
-                         .Case<IntegerType>([&](IntegerType type) {
-                           return builder.create<arith::CmpIOp>(
-                               loc, arith::CmpIPredicate::sge, aVal, bVal);
-                         })
-                         .Case<FloatType>([&](FloatType type) {
-                           return builder.create<arith::CmpFOp>(
-                               loc, arith::CmpFPredicate::OGE, aVal, bVal);
-                         });
-    // Sparse tensors cannot hold i1, so cast to i8
-    opResult = builder.create<SelectOp>(loc, i1Result, true8, false8);
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::sge, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::OGE, aVal, bVal);
+                   });
   } else if (binaryOp == "gt") {
-    Value i1Result = llvm::TypeSwitch<Type, Value>(valueType)
-                         .Case<IntegerType>([&](IntegerType type) {
-                           return builder.create<arith::CmpIOp>(
-                               loc, arith::CmpIPredicate::sgt, aVal, bVal);
-                         })
-                         .Case<FloatType>([&](FloatType type) {
-                           return builder.create<arith::CmpFOp>(
-                               loc, arith::CmpFPredicate::OGT, aVal, bVal);
-                         });
-    // Sparse tensors cannot hold i1, so cast to i8
-    opResult = builder.create<SelectOp>(loc, i1Result, true8, false8);
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::sgt, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::OGT, aVal, bVal);
+                   });
   } else if (binaryOp == "le") {
-    Value i1Result = llvm::TypeSwitch<Type, Value>(valueType)
-                         .Case<IntegerType>([&](IntegerType type) {
-                           return builder.create<arith::CmpIOp>(
-                               loc, arith::CmpIPredicate::sle, aVal, bVal);
-                         })
-                         .Case<FloatType>([&](FloatType type) {
-                           return builder.create<arith::CmpFOp>(
-                               loc, arith::CmpFPredicate::OLE, aVal, bVal);
-                         });
-    // Sparse tensors cannot hold i1, so cast to i8
-    opResult = builder.create<SelectOp>(loc, i1Result, true8, false8);
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::sle, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::OLE, aVal, bVal);
+                   });
   } else if (binaryOp == "lt") {
-    Value i1Result = llvm::TypeSwitch<Type, Value>(valueType)
-                         .Case<IntegerType>([&](IntegerType type) {
-                           return builder.create<arith::CmpIOp>(
-                               loc, arith::CmpIPredicate::slt, aVal, bVal);
-                         })
-                         .Case<FloatType>([&](FloatType type) {
-                           return builder.create<arith::CmpFOp>(
-                               loc, arith::CmpFPredicate::OLT, aVal, bVal);
-                         });
-    // Sparse tensors cannot hold i1, so cast to i8
-    opResult = builder.create<SelectOp>(loc, i1Result, true8, false8);
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::slt, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::OLT, aVal, bVal);
+                   });
   } else if (binaryOp == "max") {
     Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
                     .Case<IntegerType>([&](IntegerType type) {
@@ -1018,17 +1009,15 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
                      return builder.create<arith::SubFOp>(loc, aVal, bVal);
                    });
   } else if (binaryOp == "ne") {
-    Value i1Result = llvm::TypeSwitch<Type, Value>(valueType)
-                         .Case<IntegerType>([&](IntegerType type) {
-                           return builder.create<arith::CmpIOp>(
-                               loc, arith::CmpIPredicate::ne, aVal, bVal);
-                         })
-                         .Case<FloatType>([&](FloatType type) {
-                           return builder.create<arith::CmpFOp>(
-                               loc, arith::CmpFPredicate::ONE, aVal, bVal);
-                         });
-    // Sparse tensors cannot hold i1, so cast to i8
-    opResult = builder.create<SelectOp>(loc, i1Result, true8, false8);
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::CmpIOp>(
+                         loc, arith::CmpIPredicate::ne, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::CmpFOp>(
+                         loc, arith::CmpFPredicate::ONE, aVal, bVal);
+                   });
   } else if (binaryOp == "pair") {
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
@@ -1112,6 +1101,10 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
               return builder.create<arith::SIToFPOp>(loc, type, intValue);
             });
   }
+
+  // Cannot store i1 in sparse tensor, so convert to i8 if needed
+  if (boolAsI8 && opResult.getType() == i1Type)
+    opResult = builder.create<SelectOp>(loc, opResult, true8, false8);
 
   builder.create<graphblas::YieldOp>(loc, yieldKind, opResult);
 

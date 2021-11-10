@@ -19,6 +19,7 @@
 #include "GraphBLAS/GraphBLASUtils.h"
 
 using namespace ::mlir;
+using namespace std::placeholders;
 
 namespace {
 
@@ -534,130 +535,6 @@ public:
   };
 };
 
-struct MatrixSelectOutputWriter {
-  MatrixSelectOutputWriter(StringRef _selector, llvm::Optional<Value> _thunk,
-                           llvm::Optional<Value> _rngContext)
-      : selector(_selector), thunk(_thunk), rngContext(_rngContext){};
-
-  void createConstants(PatternRewriter &rewriter, Location loc) {
-    Type int64Type = rewriter.getIntegerType(64);
-
-    c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
-    c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    c0_64 = rewriter.create<arith::ConstantIntOp>(loc, 0, int64Type);
-    c1_64 = rewriter.create<arith::ConstantIntOp>(loc, 1, int64Type);
-  }
-
-  void createTensor(PatternRewriter &rewriter, Location loc, ModuleOp module,
-                    Value input) {
-    RankedTensorType inputType = input.getType().cast<RankedTensorType>();
-    Type valueType = inputType.getElementType();
-    Type int64Type = rewriter.getIntegerType(64);
-
-    Type memref1DI64Type = MemRefType::get({-1}, int64Type);
-    Type memref1DValueType = MemRefType::get({-1}, valueType);
-
-    rank = inputType.getRank();
-    tensor = rewriter.create<graphblas::DupOp>(loc, input);
-    Value indexPos = (rank == 2 ? c1 : c0);
-    if (rank == 2)
-      colWise = hasColumnOrdering(inputType);
-
-    Bp = rewriter.create<sparse_tensor::ToPointersOp>(loc, memref1DI64Type,
-                                                      tensor, indexPos);
-    Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
-                                                     tensor, indexPos);
-    Bx = rewriter.create<sparse_tensor::ToValuesOp>(loc, memref1DValueType,
-                                                    tensor);
-  };
-
-  void createUpdateCurrCount(PatternRewriter &rewriter, Location loc, Value row,
-                             Value row_plus1) {
-    Value bp_curr_count = rewriter.create<memref::LoadOp>(loc, Bp, row);
-    rewriter.create<memref::StoreOp>(loc, bp_curr_count, Bp, row_plus1);
-  };
-
-  void createTestAndStore(PatternRewriter &rewriter, Location loc, Value row,
-                          Value col, Value val, Value row_plus1, Value col_64) {
-    Type indexType = rewriter.getIndexType();
-
-    Value keep;
-    if (selector == "triu") {
-      keep = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ugt,
-                                            colWise ? row : col,
-                                            colWise ? col : row);
-    } else if (selector == "tril") {
-      keep = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult,
-                                            colWise ? row : col,
-                                            colWise ? col : row);
-    } else if (selector == "gt") {
-      keep = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OGT, val,
-                                            thunk.getValue());
-    } else if (selector == "ge") {
-      keep = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OGE, val,
-                                            thunk.getValue());
-    } else if (selector == "probability") {
-      Type f64Type = rewriter.getF64Type();
-      SymbolRefAttr random_double =
-          SymbolRefAttr::get(rewriter.getContext(), "random_double");
-      // Get a random double between [0, 1)
-      CallOp randCall = rewriter.create<mlir::CallOp>(
-          loc, random_double, TypeRange{f64Type},
-          ArrayRef<Value>({rngContext.getValue()}));
-      Value rand = randCall.getResult(0);
-      keep = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OLT,
-                                            rand, thunk.getValue());
-    } else {
-      // this should be impossible because of validation
-      assert(0);
-    }
-
-    scf::IfOp ifKeep =
-        rewriter.create<scf::IfOp>(loc, keep, false /* no else region */);
-
-    rewriter.setInsertionPointToStart(ifKeep.thenBlock());
-
-    Value bj_pos_64 = rewriter.create<memref::LoadOp>(loc, Bp, row_plus1);
-    Value bj_pos =
-        rewriter.create<arith::IndexCastOp>(loc, bj_pos_64, indexType);
-
-    rewriter.create<memref::StoreOp>(loc, col_64, Bj, bj_pos);
-    rewriter.create<memref::StoreOp>(loc, val, Bx, bj_pos);
-
-    Value bj_pos_plus1 = rewriter.create<arith::AddIOp>(loc, bj_pos_64, c1_64);
-    rewriter.create<memref::StoreOp>(loc, bj_pos_plus1, Bp, row_plus1);
-
-    rewriter.setInsertionPointAfter(ifKeep);
-  };
-
-  void createTrimValues(PatternRewriter &rewriter, Location loc,
-                        ModuleOp module) {
-    Value nnz = rewriter.create<graphblas::NumValsOp>(loc, tensor);
-
-    Value indexPos = (rank == 2 ? c1 : c0);
-    callResizeIndex(rewriter, module, loc, tensor, indexPos, nnz);
-    callResizeValues(rewriter, module, loc, tensor, nnz);
-  };
-
-  StringRef selector;
-  llvm::Optional<Value> thunk;
-  llvm::Optional<Value> rngContext;
-
-  // frequently used values
-  Value tensor;
-  Value Bp;
-  Value Bj;
-  Value Bx;
-  unsigned rank;
-  bool colWise = false;
-
-  // frequently used constants
-  Value c0;
-  Value c1;
-  Value c0_64;
-  Value c1_64;
-};
-
 class LowerSelectRewrite : public OpRewritePattern<graphblas::SelectOp> {
 public:
   using OpRewritePattern<graphblas::SelectOp>::OpRewritePattern;
@@ -669,25 +546,75 @@ public:
     Value input = op.input();
     RankedTensorType inputType = input.getType().cast<RankedTensorType>();
     Type valueType = inputType.getElementType();
+
+    std::string selector = op.selector().str();
+    OperandRange thunks = op.thunks();
+
+    if (selector == "probability") {
+      Value thunk = thunks[0];
+      Value rngContext = thunks[1];
+      auto probBlock = std::bind(probabilityBlock, _1, _2, _3, _4, _5, _6, _7,
+                                 thunk, rngContext);
+      return buildAlgorithm<graphblas::SelectOp>(op, rewriter, module,
+                                                 probBlock);
+    } else {
+      // Replace with SelectGenericOp
+      graphblas::SelectGenericOp newSelectOp =
+          rewriter.create<graphblas::SelectGenericOp>(loc, op->getResultTypes(),
+                                                      input, 1);
+
+      // Populate based on operator kind
+      LogicalResult popResult = failure();
+      if (unary3.contains(selector)) {
+        popResult = populateUnary(rewriter, loc, selector, valueType,
+                                  newSelectOp.getRegions().slice(0, 1),
+                                  graphblas::YieldKind::SELECT_OUT);
+      } else {
+        popResult = populateBinary(rewriter, loc, selector, valueType,
+                                   newSelectOp.getRegions().slice(0, 1),
+                                   graphblas::YieldKind::SELECT_OUT,
+                                   /* boolAsI8 */ false);
+      }
+      if (failed(popResult))
+        return failure();
+
+      // Remove thunk from populated block
+      if (binary2.contains(selector) || binary4.contains(selector)) {
+        Value thunk = thunks[0];
+        Block &block = newSelectOp.getRegion(0).front();
+        Value thunkArg = block.getArgument(1);
+        thunkArg.replaceAllUsesWith(thunk);
+        block.eraseArgument(1);
+      }
+
+      rewriter.setInsertionPointAfter(newSelectOp);
+      rewriter.replaceOp(op, newSelectOp.getResult());
+    }
+
+    return success();
+  };
+
+  template <class T>
+  static LogicalResult
+  buildAlgorithm(T op, PatternRewriter &rewriter, ModuleOp module,
+                 std::function<LogicalResult(T, PatternRewriter &, Location,
+                                             Value &, Value, Value, Value)>
+                     func) {
+    Location loc = op->getLoc();
+
+    Value input = op.input();
+    RankedTensorType inputType = input.getType().cast<RankedTensorType>();
+    Type valueType = inputType.getElementType();
     Type int64Type = rewriter.getIntegerType(64);
     Type indexType = rewriter.getIndexType();
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
-    std::string selector = op.selector().str();
-    OperandRange thunks = op.thunks();
-    llvm::Optional<Value> thunk = llvm::None;
-    llvm::Optional<Value> rngContext = llvm::None;
-    if (thunks.size() == 2) { // Thunk & rng_context
-      thunk = thunks[0];
-      rngContext = thunks[1];
-    } else if (thunks.size() == 1) { // Thunk only
-      thunk = thunks[0];
-    }
-
     // Initial constants
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+    Value c0_64 = rewriter.create<arith::ConstantIntOp>(loc, 0, int64Type);
+    Value c1_64 = rewriter.create<arith::ConstantIntOp>(loc, 1, int64Type);
 
     // Get sparse tensor info
     unsigned rank = inputType.getRank();
@@ -695,8 +622,8 @@ public:
     if (rank == 2)
       nrow = rewriter.create<graphblas::NumRowsOp>(loc, input);
     else
-      // Vectors are stored as a 1xn matrix, so the code works correctly if we
-      // assume a single row
+      // Vectors are stored as a 1xn matrix
+      // so the code works correctly if we assume a single row
       nrow = c1;
 
     Value indexPos = (rank == 2 ? c1 : c0);
@@ -707,11 +634,18 @@ public:
     Value Ax = rewriter.create<sparse_tensor::ToValuesOp>(
         loc, memref1DValueType, input);
 
-    MatrixSelectOutputWriter *output =
-        new MatrixSelectOutputWriter(selector, thunk, rngContext);
+    // Create output
+    Value output = rewriter.create<graphblas::DupOp>(loc, input);
+    bool colWise = false;
+    if (rank == 2)
+      colWise = hasColumnOrdering(inputType);
 
-    output->createConstants(rewriter, loc);
-    output->createTensor(rewriter, loc, module, input);
+    Value Bp = rewriter.create<sparse_tensor::ToPointersOp>(
+        loc, memref1DI64Type, output, indexPos);
+    Value Bj = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memref1DI64Type,
+                                                           output, indexPos);
+    Value Bx = rewriter.create<sparse_tensor::ToValuesOp>(
+        loc, memref1DValueType, output);
 
     // Loop
     scf::ForOp outerLoop = rewriter.create<scf::ForOp>(loc, c0, nrow, c1);
@@ -720,7 +654,8 @@ public:
       rewriter.setInsertionPointToStart(outerLoop.getBody());
       Value row_plus1 = rewriter.create<arith::AddIOp>(loc, row, c1);
 
-      output->createUpdateCurrCount(rewriter, loc, row, row_plus1);
+      Value bp_curr_count = rewriter.create<memref::LoadOp>(loc, Bp, row);
+      rewriter.create<memref::StoreOp>(loc, bp_curr_count, Bp, row_plus1);
 
       Value j_start_64 = rewriter.create<memref::LoadOp>(loc, Ap, row);
       Value j_end_64 = rewriter.create<memref::LoadOp>(loc, Ap, row_plus1);
@@ -737,8 +672,38 @@ public:
         Value col_64 = rewriter.create<memref::LoadOp>(loc, Aj, jj);
         Value col = rewriter.create<arith::IndexCastOp>(loc, col_64, indexType);
         Value val = rewriter.create<memref::LoadOp>(loc, Ax, jj);
-        output->createTestAndStore(rewriter, loc, row, col, val, row_plus1,
-                                   col_64);
+
+        // Inject code from func
+        Value keep = nullptr;
+        LogicalResult funcResult = failure();
+        if (rank == 1)
+          funcResult = func(op, rewriter, loc, keep, val, col, col);
+        else if (colWise)
+          funcResult = func(op, rewriter, loc, keep, val, col, row);
+        else
+          funcResult = func(op, rewriter, loc, keep, val, row, col);
+        if (funcResult.failed()) {
+          return funcResult;
+        }
+
+        scf::IfOp ifKeep =
+            rewriter.create<scf::IfOp>(loc, keep, false /* no else region */);
+        {
+          rewriter.setInsertionPointToStart(ifKeep.thenBlock());
+
+          Value bj_pos_64 = rewriter.create<memref::LoadOp>(loc, Bp, row_plus1);
+          Value bj_pos =
+              rewriter.create<arith::IndexCastOp>(loc, bj_pos_64, indexType);
+
+          rewriter.create<memref::StoreOp>(loc, col_64, Bj, bj_pos);
+          rewriter.create<memref::StoreOp>(loc, val, Bx, bj_pos);
+
+          Value bj_pos_plus1 =
+              rewriter.create<arith::AddIOp>(loc, bj_pos_64, c1_64);
+          rewriter.create<memref::StoreOp>(loc, bj_pos_plus1, Bp, row_plus1);
+
+          rewriter.setInsertionPointAfter(ifKeep);
+        }
         // rewriter.setInsertionPointAfter(innerLoop);
       }
 
@@ -746,11 +711,88 @@ public:
     }
 
     // trim excess values
-    output->createTrimValues(rewriter, loc, module);
+    Value nnz = rewriter.create<graphblas::NumValsOp>(loc, output);
+    callResizeIndex(rewriter, module, loc, output, indexPos, nnz);
+    callResizeValues(rewriter, module, loc, output, nnz);
 
-    rewriter.replaceOp(op, output->tensor);
+    rewriter.replaceOp(op, output);
 
-    cleanupIntermediateTensor(rewriter, module, loc, output->tensor);
+    cleanupIntermediateTensor(rewriter, module, loc, output);
+
+    return success();
+  };
+
+private:
+  static LogicalResult
+  probabilityBlock(graphblas::SelectOp op, PatternRewriter &rewriter,
+                   Location loc, Value &keep, Value val, Value row, Value col,
+                   // These are not part of the standard signature
+                   // and will be passed using `bind`
+                   Value thunk, Value rngContext) {
+    Type f64Type = rewriter.getF64Type();
+    SymbolRefAttr random_double =
+        SymbolRefAttr::get(rewriter.getContext(), "random_double");
+    // Get a random double between [0, 1)
+    CallOp randCall = rewriter.create<mlir::CallOp>(
+        loc, random_double, TypeRange{f64Type}, ArrayRef<Value>({rngContext}));
+    Value rand = randCall.getResult(0);
+    keep = rewriter.create<arith::CmpFOp>(loc, arith::CmpFPredicate::OLT, rand,
+                                          thunk);
+
+    return success();
+  };
+};
+
+class LowerSelectGenericRewrite
+    : public OpRewritePattern<graphblas::SelectGenericOp> {
+public:
+  using OpRewritePattern<graphblas::SelectGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::SelectGenericOp op,
+                                PatternRewriter &rewriter) const override {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+
+    LogicalResult callResult =
+        LowerSelectRewrite::buildAlgorithm<graphblas::SelectGenericOp>(
+            op, rewriter, module, genericBlock);
+    if (callResult.failed()) {
+      return callResult;
+    }
+
+    return success();
+  };
+
+private:
+  static LogicalResult genericBlock(graphblas::SelectGenericOp op,
+                                    PatternRewriter &rewriter, Location loc,
+                                    Value &keep, Value val, Value row,
+                                    Value col) {
+    // Required blocks
+    RegionRange extensions = op.extensions();
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {
+        graphblas::YieldKind::SELECT_OUT};
+    LogicalResult extractResult =
+        extBlocks.extractBlocks(op, extensions, required, {});
+
+    if (extractResult.failed()) {
+      return extractResult;
+    }
+
+    int numArguments = extBlocks.selectOut->getArguments().size();
+
+    // scf::ForOp automatically gets an empty scf.yield at the end which
+    // we need to insert before
+    Operation *scfYield = rewriter.getBlock()->getTerminator();
+
+    // insert selectOut block
+    graphblas::YieldOp selectOutYield =
+        llvm::dyn_cast_or_null<graphblas::YieldOp>(
+            extBlocks.selectOut->getTerminator());
+
+    ValueRange subVals = ValueRange{val, row, col}.slice(0, numArguments);
+    rewriter.mergeBlockBefore(extBlocks.selectOut, scfYield, subVals);
+    keep = selectOutYield.values().front();
+    rewriter.eraseOp(selectOutYield);
 
     return success();
   };
@@ -933,6 +975,8 @@ public:
     }
 
     rewriter.replaceOp(op, output);
+
+    cleanupIntermediateTensor(rewriter, module, loc, output);
 
     return success();
   };
@@ -1369,14 +1413,15 @@ public:
                                                    input, 1);
 
     // Populate based on operator kind
-    auto populateFunc =
-        (unary1.contains(apply_operator) || unary3.contains(apply_operator))
-            ? populateUnary
-            : populateBinary;
-    LogicalResult popResult =
-        populateFunc(rewriter, loc, apply_operator, valueType,
-                     newApplyOp.getRegions().slice(0, 1),
-                     graphblas::YieldKind::TRANSFORM_OUT);
+    LogicalResult popResult = failure();
+    if (unary1.contains(apply_operator) || unary3.contains(apply_operator))
+      popResult = populateUnary(rewriter, loc, apply_operator, valueType,
+                                newApplyOp.getRegions().slice(0, 1),
+                                graphblas::YieldKind::TRANSFORM_OUT);
+    else
+      popResult = populateBinary(rewriter, loc, apply_operator, valueType,
+                                 newApplyOp.getRegions().slice(0, 1),
+                                 graphblas::YieldKind::TRANSFORM_OUT);
     if (failed(popResult))
       return failure();
 
@@ -3653,20 +3698,20 @@ public:
 };
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
-  patterns
-      .add<LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
-           LowerReduceToVectorRewrite, LowerReduceToVectorGenericRewrite,
-           LowerReduceToScalarRewrite, LowerReduceToScalarGenericRewrite,
-           LowerConvertLayoutRewrite, LowerCastRewrite, LowerTransposeRewrite,
-           LowerApplyRewrite, LowerApplyGenericRewrite,
-           LowerMatrixMultiplyReduceToScalarGenericRewrite,
-           LowerMatrixMultiplyRewrite, LowerMatrixMultiplyGenericRewrite,
-           LowerUnionRewrite, LowerUnionGenericRewrite, LowerIntersectRewrite,
-           LowerIntersectGenericRewrite, LowerUpdateRewrite,
-           LowerUpdateGenericRewrite, LowerEqualRewrite, LowerDiagOpRewrite,
-           LowerCommentRewrite, LowerPrintRewrite, LowerSizeRewrite,
-           LowerNumRowsRewrite, LowerNumColsRewrite, LowerNumValsRewrite,
-           LowerDupRewrite>(patterns.getContext());
+  patterns.add<LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
+               LowerSelectGenericRewrite, LowerReduceToVectorRewrite,
+               LowerReduceToVectorGenericRewrite, LowerReduceToScalarRewrite,
+               LowerReduceToScalarGenericRewrite, LowerConvertLayoutRewrite,
+               LowerCastRewrite, LowerTransposeRewrite, LowerApplyRewrite,
+               LowerApplyGenericRewrite,
+               LowerMatrixMultiplyReduceToScalarGenericRewrite,
+               LowerMatrixMultiplyRewrite, LowerMatrixMultiplyGenericRewrite,
+               LowerUnionRewrite, LowerUnionGenericRewrite,
+               LowerIntersectRewrite, LowerIntersectGenericRewrite,
+               LowerUpdateRewrite, LowerUpdateGenericRewrite, LowerEqualRewrite,
+               LowerDiagOpRewrite, LowerCommentRewrite, LowerPrintRewrite,
+               LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
+               LowerNumValsRewrite, LowerDupRewrite>(patterns.getContext());
 }
 
 struct GraphBLASLoweringPass

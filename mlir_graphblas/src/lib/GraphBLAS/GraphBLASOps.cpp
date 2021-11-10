@@ -242,8 +242,7 @@ void DupOp::build(OpBuilder &builder, OperationState &result, Value tensor) {
 }
 
 template <class T>
-static LogicalResult verifyApplyArgs(T op, Value input) {
-  Type inputType = input.getType();
+static LogicalResult verifyApplyArgs(T op, Type inputType) {
   Type resultType = op.getResult().getType();
 
   RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
@@ -289,12 +288,11 @@ static LogicalResult verify(ApplyOp op) {
   if (extractArgResult.failed())
     return extractArgResult;
 
-  LogicalResult argResult = verifyApplyArgs(op, input);
+  Type inputType = input.getType();
+  LogicalResult argResult = verifyApplyArgs(op, inputType);
 
   if (argResult.failed())
     return argResult;
-
-  Type inputType = input.getType();
 
   std::string applyOperator = op.apply_operator().str();
   if (!supportedForApply.contains(applyOperator))
@@ -332,7 +330,7 @@ static LogicalResult verify(ApplyOp op) {
 }
 
 static LogicalResult verify(ApplyGenericOp op) {
-  LogicalResult argResult = verifyApplyArgs(op, op.input());
+  LogicalResult argResult = verifyApplyArgs(op, op.input().getType());
 
   if (argResult.failed())
     return argResult;
@@ -908,22 +906,20 @@ static LogicalResult verify(ReduceToScalarGenericOp op) {
 }
 
 static LogicalResult verify(graphblas::SelectOp op) {
-  RankedTensorType inputType = op.input().getType().cast<RankedTensorType>();
-  unsigned rank = inputType.getRank();
+  Type inputType = op.input().getType();
+  LogicalResult argResult = verifyApplyArgs(op, inputType);
 
-  llvm::Optional<std::string> errMsg;
-  if (rank == 2)
-    errMsg = checkMatrixEncoding(inputType, EITHER);
-  else
-    errMsg = checkVectorEncoding(inputType);
-  if (errMsg)
-    return op.emitError("input " + errMsg.getValue());
+  if (argResult.failed())
+    return argResult;
 
-  RankedTensorType resultType =
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
+  RankedTensorType resultTensorType =
       op.getResult().getType().cast<RankedTensorType>();
 
-  if (inputType != resultType)
+  if (inputTensorType != resultTensorType)
     return op.emitError("result type must match input type.");
+
+  unsigned rank = inputTensorType.getRank();
 
   std::string selector = op.selector().str();
   std::vector<std::string> selectorsNeedingThunk;
@@ -931,11 +927,11 @@ static LogicalResult verify(graphblas::SelectOp op) {
 
   if (!supportedForSelect.contains(selector))
     return op.emitError("\"" + selector + "\" is not a supported selector.");
-  if (rank == 1 && unary3.contains(selector))
+  if (rank == 1 && (unary3.contains(selector) || binary4.contains(selector)))
     return op.emitError("Selector '" + selector + "' not allowed for vectors.");
 
   if (thunks.size() <= 0) {
-    if (binary2.contains(selector))
+    if (binary2.contains(selector) || binary4.contains(selector))
       return op.emitError("Selector '" + selector + "' requires a thunk.");
   } else if (thunks.size() > 2) {
     return op.emitError("Too many thunk values provided.");
@@ -955,12 +951,32 @@ static LogicalResult verify(graphblas::SelectOp op) {
         return op.emitError("Selector 'probability' requires a RNG context");
     } else {
       // All other selectors
-      if (thunkType != inputType.getElementType())
-        return op.emitError("Thunk type must match operand type.");
       if (thunks.size() > 1)
         return op.emitError("Too many thunks provided for selector '" +
                             selector + "'");
+      // For binary2 ops, thunk type must match input type
+      // for binary4 ops, the thunk may be used to compare against the index
+      // values, so no check is made
+      if (binary2.contains(selector) &&
+          thunkType != inputTensorType.getElementType())
+        return op.emitError("Thunk type must match operand type.");
     }
+  }
+
+  return success();
+}
+
+static LogicalResult verify(graphblas::SelectGenericOp op) {
+  Value input = op.input();
+  Type inputType = input.getType();
+  LogicalResult argResult = verifyApplyArgs(op, inputType);
+
+  if (argResult.failed())
+    return argResult;
+
+  RegionRange extensions = op.extensions();
+  if (extensions.size() < 1) {
+    return op.emitError("Must have at least 1 region: select_out.");
   }
 
   return success();

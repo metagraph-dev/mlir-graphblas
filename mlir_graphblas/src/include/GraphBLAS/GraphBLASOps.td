@@ -258,6 +258,45 @@ def GraphBLAS_SelectOp : GraphBLAS_Op<"select", [NoSideEffect]> {
     let verifier = [{ return ::verify(*this); }];
 }
 
+def GraphBLAS_SelectGenericOp : GraphBLAS_Op<"select_generic", [NoSideEffect]> {
+    let summary = "Generic select operation.";
+    let description = [{
+        Returns a new sparse tensor with a subset of elements from the given tensor.
+
+        The given tensor must be a sparse vector or a matrix with CSR or CSC sparsity.
+        The resulting sparse tensors will have the same encoding as the input tensor.
+
+        Selector Example (upper triangle):
+        ```mlir
+        %result = graphblas.select_generic %sparse_tensor : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64> {
+          ^bb0(%val: f64, %row: index, %col: index):
+            %result = arith.cmpi "ugt", %col, %row : index
+            return %result : i1
+        }
+        ```
+
+        Selector with Thunk Example:
+        ```mlir
+        %thunk = constant 0.0 : f64
+        %result = graphblas.select_generic %sparse_tensor : tensor<?x?xf64, #CSR64>, f64 to tensor<?x?xf64, #CSR64> {
+          ^bb0(%val: f64):
+            %result = arith.cmpf "olt", %val, %thunk : f64
+            return %result : i1
+        }
+        ```
+    }];
+
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
+    let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($output) $extensions
+    }];
+
+    let verifier = [{ return ::verify(*this); }];
+}
+
 def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]> {
     let summary = "Matrix reduce to vector operation.";
     let description = [{

@@ -196,7 +196,8 @@ mlir::LogicalResult populateBinary(mlir::OpBuilder &builder, mlir::Location loc,
                                    mlir::StringRef binaryOp,
                                    mlir::Type valueType,
                                    mlir::RegionRange regions,
-                                   mlir::graphblas::YieldKind yieldKind);
+                                   mlir::graphblas::YieldKind yieldKind,
+                                   bool boolAsI8 = true);
 
 mlir::LogicalResult populateMonoid(mlir::OpBuilder &builder, mlir::Location loc,
                                    mlir::StringRef monoidOp,
