@@ -25,7 +25,7 @@
 // CHECK:             %[[VAL_6:.*]] = arith.addf %[[VAL_4]], %[[VAL_5]] : f64
 // CHECK:             graphblas.yield add %[[VAL_6]] : f64
 // CHECK:           },  {
-// CHECK:           ^bb0(%[[VAL_7:.*]]: f64, %[[VAL_8:.*]]: f64, %[[VAL_9:.*]]: index, %[[VAL_10:.*]]: index):
+// CHECK:           ^bb0(%[[VAL_7:.*]]: f64, %[[VAL_8:.*]]: f64):
 // CHECK:             %[[VAL_11:.*]] = arith.mulf %[[VAL_7]], %[[VAL_8]] : f64
 // CHECK:             graphblas.yield mult %[[VAL_11]] : f64
 // CHECK:           }

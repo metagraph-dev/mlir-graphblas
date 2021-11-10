@@ -27,7 +27,7 @@
 // CHECK:             %[[VAL_7:.*]] = arith.addf %[[VAL_5]], %[[VAL_6]] : f64
 // CHECK:             graphblas.yield add %[[VAL_7]] : f64
 // CHECK:           },  {
-// CHECK:           ^bb0(%[[VAL_8:.*]]: f64, %[[VAL_9:.*]]: f64, %[[VAL_10:.*]]: index, %[[VAL_11:.*]]: index):
+// CHECK:           ^bb0(%[[VAL_8:.*]]: f64, %[[VAL_9:.*]]: f64):
 // CHECK:             %[[VAL_12:.*]] = arith.addf %[[VAL_8]], %[[VAL_9]] : f64
 // CHECK:             graphblas.yield mult %[[VAL_12]] : f64
 // CHECK:           },  {
@@ -57,7 +57,7 @@ func @fuse_adjacent(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #CSC64>, %t
 // CHECK:             %[[VAL_7:.*]] = arith.addf %[[VAL_5]], %[[VAL_6]] : f64
 // CHECK:             graphblas.yield add %[[VAL_7]] : f64
 // CHECK:           },  {
-// CHECK:           ^bb0(%[[VAL_8:.*]]: f64, %[[VAL_9:.*]]: f64, %[[VAL_10:.*]]: index, %[[VAL_11:.*]]: index):
+// CHECK:           ^bb0(%[[VAL_8:.*]]: f64, %[[VAL_9:.*]]: f64):
 // CHECK:             %[[VAL_12:.*]] = arith.addf %[[VAL_8]], %[[VAL_9]] : f64
 // CHECK:             graphblas.yield mult %[[VAL_12]] : f64
 // CHECK:           },  {
@@ -86,7 +86,7 @@ func @fuse_adjacent_left_thunk_div(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf
 // CHECK:             %[[VAL_7:.*]] = arith.addf %[[VAL_5]], %[[VAL_6]] : f64
 // CHECK:             graphblas.yield add %[[VAL_7]] : f64
 // CHECK:           },  {
-// CHECK:           ^bb0(%[[VAL_8:.*]]: f64, %[[VAL_9:.*]]: f64, %[[VAL_10:.*]]: index, %[[VAL_11:.*]]: index):
+// CHECK:           ^bb0(%[[VAL_8:.*]]: f64, %[[VAL_9:.*]]: f64):
 // CHECK:             graphblas.yield mult %[[VAL_3]] : f64
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_12:.*]]: f64):
@@ -114,7 +114,7 @@ func @fuse_adjacent_with_mask(%A: tensor<?x?xf64, #CSR64>, %B: tensor<?x?xf64, #
 // CHECK:             %[[VAL_7:.*]] = arith.addi %[[VAL_5]], %[[VAL_6]] : i32
 // CHECK:             graphblas.yield add %[[VAL_7]] : i32
 // CHECK:           },  {
-// CHECK:           ^bb0(%[[VAL_8:.*]]: i32, %[[VAL_9:.*]]: i32, %[[VAL_10:.*]]: index, %[[VAL_11:.*]]: index):
+// CHECK:           ^bb0(%[[VAL_8:.*]]: i32, %[[VAL_9:.*]]: i32):
 // CHECK:             %[[VAL_12:.*]] = arith.addi %[[VAL_8]], %[[VAL_9]] : i32
 // CHECK:             graphblas.yield mult %[[VAL_12]] : i32
 // CHECK:           }

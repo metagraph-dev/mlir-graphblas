@@ -85,7 +85,7 @@ module {
 
 module {
     func @matrix_multiply_wrapper(%argA: tensor<2x3xi64, #CSR64>, %argB: tensor<3x2xi64, #CSC64>) -> tensor<2x2xi64, #CSR64> {
-        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "BAD_times" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>) to tensor<2x2xi64, #CSR64> // expected-error {{"BAD" is not a supported semiring add.}}
+        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "BAD_times" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>) to tensor<2x2xi64, #CSR64> // expected-error {{"BAD" is not a supported monoid.}}
         return %answer : tensor<2x2xi64, #CSR64>
     }
 }
@@ -108,7 +108,7 @@ module {
 
 module {
     func @matrix_multiply_wrapper(%argA: tensor<2x3xi64, #CSR64>, %argB: tensor<3x2xi64, #CSC64>) -> tensor<2x2xi64, #CSR64> {
-        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_BAD" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>) to tensor<2x2xi64, #CSR64> // expected-error {{"BAD" is not a supported semiring multiply.}}
+        %answer = graphblas.matrix_multiply %argA, %argB { semiring = "plus_BAD" } : (tensor<2x3xi64, #CSR64>, tensor<3x2xi64, #CSC64>) to tensor<2x2xi64, #CSR64> // expected-error {{"BAD" is not a supported binary operator.}}
         return %answer : tensor<2x2xi64, #CSR64>
     }
 }

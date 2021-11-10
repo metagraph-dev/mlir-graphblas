@@ -23,7 +23,7 @@ module {
 
 module {
     func @vector_accumulate_wrapper(%argA: tensor<8xi64>, %argB: tensor<8xi64, #CV64>) -> () {
-        graphblas.update %argA -> %argB { accumulate_operator = "plus" } : tensor<8xi64> -> tensor<8xi64, #CV64> // expected-error {{input must be a sparse tensor.}}
+        graphblas.update %argA -> %argB { accumulate_operator = "plus" } : tensor<8xi64> -> tensor<8xi64, #CV64> // expected-error {{"input" must be a sparse tensor.}}
     }
 }
 
@@ -37,7 +37,7 @@ module {
 
 module {
     func @vector_accumulate_wrapper(%argA: tensor<8xi64, #CV64>, %argB: tensor<8xf64, #CV64>) -> () {
-        graphblas.update %argA -> %argB { accumulate_operator = "plus" } : tensor<8xi64, #CV64> -> tensor<8xf64, #CV64> // expected-error {{input and output must have identical types.}}
+        graphblas.update %argA -> %argB { accumulate_operator = "plus" } : tensor<8xi64, #CV64> -> tensor<8xf64, #CV64> // expected-error {{"input" and "output" must have identical types.}}
     }
 }
 
@@ -51,6 +51,6 @@ module {
 
 module {
     func @vector_accumulate_wrapper(%argA: tensor<3xi64, #CV64>, %argB: tensor<8xi64, #CV64>) -> () {
-        graphblas.update %argA -> %argB { accumulate_operator = "plus" } : tensor<3xi64, #CV64> -> tensor<8xi64, #CV64> // expected-error {{Input and Output arguments must have identical shapes.}}
+        graphblas.update %argA -> %argB { accumulate_operator = "plus" } : tensor<3xi64, #CV64> -> tensor<8xi64, #CV64> // expected-error {{"input" and "output" must have identical shapes.}}
     }
 }

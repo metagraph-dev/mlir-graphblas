@@ -801,7 +801,9 @@ class GraphBLAS_ReduceToVector(BaseOp):
             input.type.encoding.index_bit_width,
         )
         return_element_type = (
-            IntType(64) if aggregator in ("argmin", "argmax") else input.type.value_type
+            IntType(64)
+            if aggregator in ("argmin", "argmax", "count")
+            else input.type.value_type
         )
         return_type = SparseTensorType([-1], return_element_type, sparse_vec_encoding)
         ret_val = irbuilder.new_var(return_type)
@@ -838,19 +840,21 @@ class GraphBLAS_Apply(BaseOp):
     dialect = "graphblas"
     name = "apply"
     allowed_unary_ops = {"abs", "minv", "ainv", "identity"}
-    allowed_binary_ops = {"min", "div", "fill", "pow"}
+    allowed_binary_ops = {"first", "min", "div", "pow", "second"}
     allowed_ops = allowed_unary_ops | allowed_binary_ops
 
     @classmethod
-    def call(cls, irbuilder, input, apply_op, *, left=None, right=None):
+    def call(
+        cls, irbuilder, input, apply_op, *, left=None, right=None, return_type=None
+    ):
         cls.ensure_mlirvar(input, SparseTensorType)
         if apply_op not in cls.allowed_ops:
             raise TypeError(
                 f"Illegal apply_op: {apply_op}, must be one of {cls.allowed_ops}"
             )
 
-        # TODO: return_type might be influenced by future allowable ops
-        return_type = input.type
+        if return_type is None:
+            return_type = input.type
         ret_val = irbuilder.new_var(return_type)
 
         if apply_op in cls.allowed_binary_ops:

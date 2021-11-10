@@ -252,14 +252,14 @@ public:
     fatal("dup");
     return NULL;
   }
-  virtual void *empty_like() {
-    fatal("empty_like");
-    return NULL;
-  }
-  virtual void *empty(uint64_t ndims) {
-    fatal("empty");
-    return NULL;
-  }
+  //virtual void *empty_like() {
+  //  fatal("empty_like");
+  //  return NULL;
+  //}
+  //virtual void *empty(uint64_t ndims) {
+  //  fatal("empty");
+  //  return NULL;
+  //}
 
   virtual bool verify() {
     fatal("verify");
@@ -492,7 +492,7 @@ public:
   */
 
   // Used by `empty_like`
-  SparseTensorStorage(const std::vector<uint64_t> &other_sizes, void *other)
+  /*SparseTensorStorage(const std::vector<uint64_t> &other_sizes, void *other)
       : sizes(other_sizes),
         rev(static_cast<SparseTensorStorage<P, I, V> *>(other)->rev),
         pointers(other_sizes.size()), indices(other_sizes.size()) {
@@ -503,12 +503,12 @@ public:
     for (uint64_t dim = 0; dim < other_sizes.size(); dim++) {
       pointers[dim].resize(tensor->pointers[dim].size());
     }
-  }
+  }*/
 
   // Used by `empty`
   // Note that `len(pointers[0]) == 0`!
-  SparseTensorStorage(uint64_t ndims)
-      : sizes(ndims), rev(ndims), pointers(ndims), indices(ndims) {}
+  /*SparseTensorStorage(uint64_t ndims)
+      : sizes(ndims), rev(ndims), pointers(ndims), indices(ndims) {}*/
 
   // Used by `dup`
   SparseTensorStorage(void *other)
@@ -567,16 +567,16 @@ public:
     return tensor;
   }
   // New tensor of same type with same shape
-  void *empty_like() override {
-    SparseTensorStorageBase *tensor =
-        new SparseTensorStorage<P, I, V>(sizes, this);
-    return tensor;
-  }
+  //void *empty_like() override {
+  //  SparseTensorStorageBase *tensor =
+  //      new SparseTensorStorage<P, I, V>(sizes, this);
+  //  return tensor;
+  //}
   // New tensor of dimensions `ndims` (no shape; must use `resize_dim`)
-  /*void *empty(uint64_t ndims) override {
-    SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(ndims);
-    return tensor;
-  }*/
+  //void *empty(uint64_t ndims) override {
+  //  SparseTensorStorageBase *tensor = new SparseTensorStorage<P, I, V>(ndims);
+  //  return tensor;
+  //}
 
   bool verify() override {
     bool rv = true;
@@ -1175,12 +1175,12 @@ void resize_dim(void *tensor, uint64_t d, uint64_t size) {
 void *dup_tensor(void *tensor) {
   return static_cast<SparseTensorStorageBase *>(tensor)->dup();
 }
-void *empty_like(void *tensor) {
-  return static_cast<SparseTensorStorageBase *>(tensor)->empty_like();
-}
-void *empty(void *tensor, uint64_t ndims) {
-  return static_cast<SparseTensorStorageBase *>(tensor)->empty(ndims);
-}
+//void *empty_like(void *tensor) {
+//  return static_cast<SparseTensorStorageBase *>(tensor)->empty_like();
+//}
+//void *empty(void *tensor, uint64_t ndims) {
+//  return static_cast<SparseTensorStorageBase *>(tensor)->empty(ndims);
+//}
 // Combinations of real types to !llvm.ptr<i8>
 void *matrix_csr_f64_p64i64_to_ptr8(void *tensor) { return tensor; }
 void *matrix_csc_f64_p64i64_to_ptr8(void *tensor) { return tensor; }
@@ -1188,10 +1188,15 @@ void *matrix_csr_f32_p64i64_to_ptr8(void *tensor) { return tensor; }
 void *matrix_csc_f32_p64i64_to_ptr8(void *tensor) { return tensor; }
 void *matrix_csr_i64_p64i64_to_ptr8(void *tensor) { return tensor; }
 void *matrix_csc_i64_p64i64_to_ptr8(void *tensor) { return tensor; }
+void *matrix_csr_i32_p64i64_to_ptr8(void *tensor) { return tensor; }
+void *matrix_csc_i32_p64i64_to_ptr8(void *tensor) { return tensor; }
+void *matrix_csr_i8_p64i64_to_ptr8(void *tensor) { return tensor; }
+void *matrix_csc_i8_p64i64_to_ptr8(void *tensor) { return tensor; }
 void *vector_f64_p64i64_to_ptr8(void *tensor) { return tensor; }
 void *vector_f32_p64i64_to_ptr8(void *tensor) { return tensor; }
 void *vector_i64_p64i64_to_ptr8(void *tensor) { return tensor; }
 void *vector_i32_p64i64_to_ptr8(void *tensor) { return tensor; }
+void *vector_i8_p64i64_to_ptr8(void *tensor) { return tensor; }
 // Combinations of !llvm.ptr<i8> to real types
 void *ptr8_to_matrix_csr_f64_p64i64(void *tensor) { return tensor; }
 void *ptr8_to_matrix_csc_f64_p64i64(void *tensor) { return tensor; }
@@ -1199,10 +1204,15 @@ void *ptr8_to_matrix_csr_f32_p64i64(void *tensor) { return tensor; }
 void *ptr8_to_matrix_csc_f32_p64i64(void *tensor) { return tensor; }
 void *ptr8_to_matrix_csr_i64_p64i64(void *tensor) { return tensor; }
 void *ptr8_to_matrix_csc_i64_p64i64(void *tensor) { return tensor; }
+void *ptr8_to_matrix_csr_i32_p64i64(void *tensor) { return tensor; }
+void *ptr8_to_matrix_csc_i32_p64i64(void *tensor) { return tensor; }
+void *ptr8_to_matrix_csr_i8_p64i64(void *tensor) { return tensor; }
+void *ptr8_to_matrix_csc_i8_p64i64(void *tensor) { return tensor; }
 void *ptr8_to_vector_f64_p64i64(void *tensor) { return tensor; }
 void *ptr8_to_vector_f32_p64i64(void *tensor) { return tensor; }
 void *ptr8_to_vector_i64_p64i64(void *tensor) { return tensor; }
 void *ptr8_to_vector_i32_p64i64(void *tensor) { return tensor; }
+void *ptr8_to_vector_i8_p64i64(void *tensor) { return tensor; }
 
 // Print functions
 void print_int_as_char(int64_t character_int) {

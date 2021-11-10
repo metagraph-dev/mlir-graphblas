@@ -11,6 +11,13 @@
 
 using namespace mlir;
 
+enum EwiseBehavior {
+  UNION,
+  INTERSECT,
+  MASK,
+  MASK_COMPLEMENT,
+};
+
 ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
                                Value fullSize, Value maskIndices,
                                Value maskStart, Value maskEnd);
@@ -37,17 +44,19 @@ Value computeIndexOverlapSize(PatternRewriter &rewriter, Location loc,
                               Value Bi);
 
 Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
-                              bool intersect, std::string agg, Type valueType,
-                              Value aPosStart, Value aPosEnd, Value Ai,
-                              Value Ax, Value bPosStart, Value bPosEnd,
-                              Value Bi, Value Bx, Value oPosStart, Value Oi,
-                              Value Ox);
+                              bool intersect, Block *binaryBlock,
+                              Type valueType, Value aPosStart, Value aPosEnd,
+                              Value Ai, Value Ax, Value bPosStart,
+                              Value bPosEnd, Value Bi, Value Bx,
+                              Value oPosStart, Value Oi, Value Ox);
 
 void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
                               ModuleOp module, Value lhs, Value rhs,
-                              Value output, std::string op, bool intersect);
+                              Value output, Block *binaryBlock,
+                              EwiseBehavior behavior);
 void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
                               ModuleOp module, Value lhs, Value rhs,
-                              Value output, std::string op, bool intersect);
+                              Value output, Block *binaryBlock,
+                              EwiseBehavior behavior);
 
 #endif // GRAPHBLAS_GRAPHBLASARRAYUTILS_H

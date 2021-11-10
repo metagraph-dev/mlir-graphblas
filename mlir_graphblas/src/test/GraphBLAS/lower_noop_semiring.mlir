@@ -25,9 +25,25 @@ func @noop_semiring(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CSC64>) ->
         ^bb0(%add_a: f64, %add_b: f64):
             graphblas.yield add %add_a : f64
     },{
-        ^bb0(%mult_a: f64, %mult_b: f64, %a_row: index, %b_col: index, %overlap_index: index):
+        ^bb0(%mult_a: f64, %mult_b: f64):
             graphblas.yield mult %mult_b : f64
     }
     return %answer : tensor<?x?xf64, #CSR64>
 }
 
+// verify that mult block can take up to 5 args
+// CHECK-LABEL:   func @noop_semiring5(
+func @noop_semiring5(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSR64> {
+    %answer = graphblas.matrix_multiply_generic %a, %b {mask_complement = false} : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to tensor<?x?xf64, #CSR64> {
+        ^bb0:
+            %identity = arith.constant 0.0 : f64
+            graphblas.yield add_identity %identity : f64
+    },{
+        ^bb0(%add_a: f64, %add_b: f64):
+            graphblas.yield add %add_a : f64
+    },{
+        ^bb0(%mult_a: f64, %mult_b: f64, %a_row: index, %b_col: index, %overlap_index: index):
+            graphblas.yield mult %mult_b : f64
+    }
+    return %answer : tensor<?x?xf64, #CSR64>
+}
