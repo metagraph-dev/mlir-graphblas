@@ -46,7 +46,6 @@ static const llvm::StringSet<> binary2{"div",
                                        "times"
                                        "first",
                                        "pair",
-                                       "plus",
                                        "pow",
                                        "second",
                                        "times"};

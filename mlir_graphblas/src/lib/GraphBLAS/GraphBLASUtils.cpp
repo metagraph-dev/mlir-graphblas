@@ -767,8 +767,8 @@ ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions,
     case graphblas::YieldKind::ACCUMULATE:
       this->accumulate = &block;
       break;
-    default:
-      return op->emitError("unsupported graphblas extension block type");
+      // default:
+      //   return op->emitError("unsupported graphblas extension block type");
     }
     seen.insert(kind);
   }
