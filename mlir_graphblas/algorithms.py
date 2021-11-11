@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from typing import List, Tuple
 from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
@@ -1266,3 +1267,106 @@ class GraphSAGE(Algorithm):
 
 
 graph_sage = GraphSAGE()
+
+
+def haversine_distance(
+    irb, many_lat, many_lon, single_lat, single_lon, *, radius=6371.0, to_radians=True
+):
+    """Compute the distances between many_{lat,lon} and single_{lat,lon}"""
+    # many_lat (and many_lon) may be a Matrix or a Vector
+    # single_lat (and single_lon) must be a Vector
+    cf05 = irb.arith.constant(0.5, "f64")
+    cf2 = irb.arith.constant(2.0, "f64")
+    cf_2radius = irb.arith.constant(2 * radius, "f64")
+    ret_type = many_lat.type
+    if to_radians:
+        cf_rad = irb.arith.constant(math.tau / 360, "f64")
+        many_lat = irb.graphblas.apply(many_lat, "times", right=cf_rad)
+        many_lon = irb.graphblas.apply(many_lon, "times", right=cf_rad)
+        single_lat = irb.graphblas.apply(single_lat, "times", right=cf_rad)
+        single_lon = irb.graphblas.apply(single_lon, "times", right=cf_rad)
+    if many_lat.type.encoding.rank == 1:  # Vector
+        diff_lat = irb.graphblas.intersect(single_lat, many_lat, "minus", ret_type)
+        diff_lon = irb.graphblas.intersect(single_lon, many_lon, "minus", ret_type)
+        cos_terms = irb.graphblas.intersect(
+            irb.graphblas.apply(single_lat, "cos"),
+            irb.graphblas.apply(many_lat, "cos"),
+            "times",
+            ret_type,
+        )
+    else:  # Matrix
+        single_lat = irb.graphblas.diag(single_lat, ret_type)
+        single_lon = irb.graphblas.diag(single_lon, ret_type)
+        diff_lat = irb.graphblas.matrix_multiply(single_lat, many_lat, "any_minus")
+        diff_lon = irb.graphblas.matrix_multiply(single_lon, many_lon, "any_minus")
+        cos_terms = irb.graphblas.matrix_multiply(
+            irb.graphblas.apply(single_lat, "cos"),
+            irb.graphblas.apply(many_lat, "cos"),
+            "any_times",
+        )
+    a = irb.graphblas.intersect(
+        irb.graphblas.apply(
+            irb.graphblas.apply(
+                irb.graphblas.apply(diff_lat, "times", left=cf05), "sin"
+            ),
+            "pow",
+            right=cf2,
+        ),
+        irb.graphblas.intersect(
+            cos_terms,
+            irb.graphblas.apply(
+                irb.graphblas.apply(
+                    irb.graphblas.apply(diff_lon, "times", left=cf05), "sin"
+                ),
+                "pow",
+                right=cf2,
+            ),
+            "times",
+            ret_type,
+        ),
+        "plus",
+        ret_type,
+    )
+    return irb.graphblas.apply(
+        irb.graphblas.apply(irb.graphblas.apply(a, "sqrt"), "asin"),
+        "times",
+        left=cf_2radius,
+    )
+
+
+class HaversineDistanceAlgo(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "haversine_distance",
+            input_types=[
+                "tensor<?xf64, #CV64>",
+                "tensor<?xf64, #CV64>",
+                "tensor<?xf64, #CV64>",
+                "tensor<?xf64, #CV64>",
+            ],
+            return_types=["tensor<?xf64, #CV64>"],
+            aliases=_build_common_aliases(),
+        )
+        (
+            v1,
+            w1,
+            v2,
+            w2,
+        ) = irb.inputs
+        result = haversine_distance(irb, v1, w1, v2, w2)
+        irb.return_vars(result)
+
+        return irb
+
+    def __call__(
+        self,
+        v1: MLIRSparseTensor,
+        w1: MLIRSparseTensor,
+        v2: MLIRSparseTensor,
+        w2: MLIRSparseTensor,
+        **kwargs,
+    ) -> MLIRSparseTensor:
+        return super().__call__(v1, w1, v2, w2, **kwargs)
+
+
+haversine_distance_algo = HaversineDistanceAlgo()

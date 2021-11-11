@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import pytest
 import grblas as gb
@@ -525,3 +526,43 @@ def test_graph_sage():
 
     print("pre-final comparison")
     assert np.isclose(expected, ans).all()
+
+
+def test_haversine_distance():
+    # Sanity check
+    # https://www.igismap.com/haversine-formula-calculate-geographic-distance-earth/
+    # Nebraska
+    # v1 = Vector.from_values([0], [41.507483])
+    # w1 = Vector.from_values([0], [-99.436554])
+    # Kansas
+    # v2 = Vector.from_values([0], [38.504048])
+    # w2 = Vector.from_values([0], [-98.315949])
+
+    # haversine_distance(v1, w1, v2, w2)[0].new().isclose(347.3, abs_tol=0.1)
+    v1 = MLIRSparseTensor(
+        np.array([[0]], dtype=np.uint64),
+        np.array([41.507483], dtype=np.float64),
+        np.array([1], dtype=np.uint64),
+        np.array([True], dtype=np.bool8),
+    )
+    w1 = MLIRSparseTensor(
+        np.array([[0]], dtype=np.uint64),
+        np.array([-99.436554], dtype=np.float64),
+        np.array([1], dtype=np.uint64),
+        np.array([True], dtype=np.bool8),
+    )
+    v2 = MLIRSparseTensor(
+        np.array([[0]], dtype=np.uint64),
+        np.array([38.504048], dtype=np.float64),
+        np.array([1], dtype=np.uint64),
+        np.array([True], dtype=np.bool8),
+    )
+    w2 = MLIRSparseTensor(
+        np.array([[0]], dtype=np.uint64),
+        np.array([-98.315949], dtype=np.float64),
+        np.array([1], dtype=np.uint64),
+        np.array([True], dtype=np.bool8),
+    )
+
+    dist = mlalgo.haversine_distance_algo(v1, w1, v2, w2)
+    assert math.isclose(dist.values[0], 347.3, abs_tol=0.1)

@@ -24,7 +24,8 @@ enum CompressionType { CSR, CSC, EITHER };
 // operators The vector index will be filled in as *both* the row and column.
 
 // Unary operators which take a single argument (value)
-static const llvm::StringSet<> unary1{"abs", "ainv", "minv"};
+static const llvm::StringSet<> unary1{"abs",  "ainv", "acos", "asin", "cos",
+                                      "minv", "sin",  "sqrt", "tan"};
 
 // Unary operators which take 3 arguments (value, row, column)
 static const llvm::StringSet<> unary3{"column", "index", "row", "tril", "triu"};
@@ -89,9 +90,11 @@ static const llvm::StringSet<> supportedForSelect{
 static const llvm::StringSet<> supportedForApply{
     // List custom operators first
     "identity",
-    // Normal operators in alphabetical order
-    "abs", "ainv", "column", "div", "first", "index", "min", "minv", "pow",
-    "row", "second"};
+    // Unary operators in alphabetical order
+    "abs", "ainv", "acos", "asin", "column", "cos", "index", "minv", "row",
+    "sin", "sqrt", "tan",
+    // Binary operatorso in alphabetical order
+    "div", "first", "max", "min", "pow", "second", "times"};
 
 bool hasRowOrdering(mlir::Type inputType);
 bool hasColumnOrdering(mlir::Type inputType);
