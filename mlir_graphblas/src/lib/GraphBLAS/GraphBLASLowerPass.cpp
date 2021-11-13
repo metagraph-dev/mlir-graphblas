@@ -596,7 +596,8 @@ public:
       if (unary3.contains(selector)) {
         popResult = populateUnary(rewriter, loc, selector, valueType,
                                   newSelectOp.getRegions().slice(0, 1),
-                                  graphblas::YieldKind::SELECT_OUT);
+                                  graphblas::YieldKind::SELECT_OUT,
+                                  /* boolAsI8 */ false);
       } else {
         popResult = populateBinary(rewriter, loc, selector, valueType,
                                    newSelectOp.getRegions().slice(0, 1),
@@ -641,7 +642,6 @@ public:
     // Initial constants
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    Value c0_64 = rewriter.create<arith::ConstantIntOp>(loc, 0, int64Type);
     Value c1_64 = rewriter.create<arith::ConstantIntOp>(loc, 1, int64Type);
 
     // Get sparse tensor info
@@ -874,6 +874,9 @@ public:
     } else if (aggregator == "argmin" or aggregator == "argmax") {
       return buildAlgorithm<graphblas::ReduceToVectorOp>(
           op, rewriter, module, i64Type, argminmaxBlock);
+    } else if (aggregator == "first" or aggregator == "last") {
+      return buildAlgorithm<graphblas::ReduceToVectorOp>(
+          op, rewriter, module, elementType, firstLastBlock);
     } else {
       NamedAttrList attributes = {};
       attributes.append(StringRef("axis"),
@@ -1117,6 +1120,23 @@ private:
     }
 
     aggVal = loop.getResult(1);
+
+    return success();
+  }
+
+  static LogicalResult firstLastBlock(graphblas::ReduceToVectorOp op,
+                                      PatternRewriter &rewriter, Location loc,
+                                      Value &aggVal, Value ptr, Value nextPtr,
+                                      Value Ii, Value Ix) {
+    StringRef aggregator = op.aggregator();
+    Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+
+    if (aggregator == "first") {
+      aggVal = rewriter.create<memref::LoadOp>(loc, Ix, ptr);
+    } else {
+      Value lastPtr = rewriter.create<arith::SubIOp>(loc, nextPtr, c1);
+      aggVal = rewriter.create<memref::LoadOp>(loc, Ix, lastPtr);
+    }
 
     return success();
   }

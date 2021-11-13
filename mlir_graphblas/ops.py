@@ -783,7 +783,17 @@ class GraphBLAS_Select(BaseOp):
 class GraphBLAS_ReduceToVector(BaseOp):
     dialect = "graphblas"
     name = "reduce_to_vector"
-    allowed_aggregators = {"plus", "count", "argmin", "argmax"}
+    allowed_aggregators = {
+        "argmax",
+        "argmin",
+        "count",
+        "first",
+        "last",
+        "max",
+        "min",
+        "plus",
+        "times",
+    }
 
     @classmethod
     def call(cls, irbuilder, input, aggregator, axis):
@@ -848,6 +858,7 @@ class GraphBLAS_Apply(BaseOp):
         "column",
         "cos",
         "index",
+        "isinf",
         "minv",
         "row",
         "sin",

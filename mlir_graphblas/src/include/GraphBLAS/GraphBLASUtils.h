@@ -24,8 +24,8 @@ enum CompressionType { CSR, CSC, EITHER };
 // operators The vector index will be filled in as *both* the row and column.
 
 // Unary operators which take a single argument (value)
-static const llvm::StringSet<> unary1{"abs",  "ainv", "acos", "asin", "cos",
-                                      "minv", "sin",  "sqrt", "tan"};
+static const llvm::StringSet<> unary1{"abs",   "ainv", "acos", "asin", "cos",
+                                      "isinf", "minv", "sin",  "sqrt", "tan"};
 
 // Unary operators which take 3 arguments (value, row, column)
 static const llvm::StringSet<> unary3{"column", "index", "row", "tril", "triu"};
@@ -49,6 +49,7 @@ static const llvm::StringSet<> binary2{"div",
                                        "pair",
                                        "plus",
                                        "pow",
+                                       "rdiv",
                                        "second",
                                        "times"};
 
@@ -77,9 +78,9 @@ static const llvm::StringSet<> supportedForUpdate{"max", "min", "plus",
 
 static const llvm::StringSet<> supportedForReduce{
     // List custom aggregators first
-    "argmax", "argmin", "count",
+    "argmax", "argmin", "count", "first", "last",
     // Normal aggregators in alphabetical order
-    "min", "plus"};
+    "max", "min", "plus", "times"};
 
 static const llvm::StringSet<> supportedForSelect{
     // List custom selectors first
@@ -91,8 +92,8 @@ static const llvm::StringSet<> supportedForApply{
     // List custom operators first
     "identity",
     // Unary operators in alphabetical order
-    "abs", "ainv", "acos", "asin", "column", "cos", "index", "minv", "row",
-    "sin", "sqrt", "tan",
+    "abs", "ainv", "acos", "asin", "column", "cos", "index", "isinf", "minv",
+    "row", "sin", "sqrt", "tan",
     // Binary operatorso in alphabetical order
     "div", "first", "max", "min", "pow", "second", "times"};
 
@@ -195,7 +196,8 @@ struct ExtensionBlocks {
 mlir::LogicalResult populateUnary(mlir::OpBuilder &builder, mlir::Location loc,
                                   mlir::StringRef unaryOp, mlir::Type valueType,
                                   mlir::RegionRange regions,
-                                  mlir::graphblas::YieldKind yieldKind);
+                                  mlir::graphblas::YieldKind yieldKind,
+                                  bool boolAsI8 = true);
 
 mlir::LogicalResult populateBinary(mlir::OpBuilder &builder, mlir::Location loc,
                                    mlir::StringRef binaryOp,

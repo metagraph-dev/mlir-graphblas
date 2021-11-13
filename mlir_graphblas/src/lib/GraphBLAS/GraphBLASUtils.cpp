@@ -785,11 +785,15 @@ ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions,
 
 LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
                             Type valueType, RegionRange regions,
-                            graphblas::YieldKind yieldKind) {
+                            graphblas::YieldKind yieldKind, bool boolAsI8) {
   // This function must match the options supported by
   // GraphBLASOps.cpp::checkUnaryOp()
 
   Type indexType = builder.getIndexType();
+  Type i1Type = builder.getI1Type();
+  Type i8Type = builder.getI8Type();
+  Value false8 = builder.create<arith::ConstantIntOp>(loc, 0, i8Type);
+  Value true8 = builder.create<arith::ConstantIntOp>(loc, 1, i8Type);
 
   // Insert unary operation
   Region *unaryRegion = regions[0];
@@ -874,6 +878,25 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
       return unaryRegion->getParentOp()->emitError(
           "cos requires float type input");
     opResult = builder.create<math::CosOp>(loc, val);
+  } else if (unaryOp == "isinf") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "isinf requires float type input");
+    // Check for Nan, +inf, -inf
+    FloatType fType = valueType.cast<FloatType>();
+    Value posInf = builder.create<arith::ConstantOp>(
+        loc, fType,
+        builder.getFloatAttr(fType, APFloat::getInf(fType.getFloatSemantics(),
+                                                    /*negative=*/false)));
+    Value negInf = builder.create<arith::ConstantOp>(
+        loc, fType,
+        builder.getFloatAttr(fType, APFloat::getInf(fType.getFloatSemantics(),
+                                                    /*negative=*/true)));
+    Value isPosInf = builder.create<arith::CmpFOp>(
+        loc, arith::CmpFPredicate::UEQ, val, posInf);
+    Value isNegInf = builder.create<arith::CmpFOp>(
+        loc, arith::CmpFPredicate::UEQ, val, negInf);
+    opResult = builder.create<arith::OrIOp>(loc, isPosInf, isNegInf);
   } else if (unaryOp == "minv") {
     opResult =
         llvm::TypeSwitch<Type, Value>(valueType)
@@ -931,6 +954,10 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
         builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult, col, row);
   }
 
+  // Cannot store i1 in sparse tensor, so convert to i8 if needed
+  if (boolAsI8 && opResult.getType() == i1Type)
+    opResult = builder.create<SelectOp>(loc, opResult, true8, false8);
+
   builder.create<graphblas::YieldOp>(loc, yieldKind, opResult);
 
   return success();
@@ -977,6 +1004,12 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
     overlap = binaryBlock->getArgument(4);
 
   Value opResult;
+
+  // Quick substitutions
+  if (binaryOp == "rdiv") {
+    binaryOp = "div";
+    swap(aVal, bVal);
+  }
 
   ////////////////////////////////////
   // Binary with two arguments
