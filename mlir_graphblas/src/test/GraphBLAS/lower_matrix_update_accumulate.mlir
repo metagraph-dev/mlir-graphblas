@@ -9,7 +9,7 @@
 
 // CHECK-LABEL:   func @matrix_update_accumulate(
 // CHECK-SAME:                                    %[[VAL_0:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>,
-// CHECK-SAME:                                    %[[VAL_1:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) -> index {
+// CHECK-SAME:                                    %[[VAL_1:.*]]: tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>) {
 // CHECK-DAG:       %[[VAL_2:.*]] = arith.constant 0 : index
 // CHECK-DAG:       %[[VAL_3:.*]] = arith.constant 1 : index
 // CHECK-DAG:       %[[VAL_4:.*]] = arith.constant 0 : i64
@@ -215,12 +215,12 @@
 // CHECK:             scf.yield
 // CHECK:           }
 // CHECK:           sparse_tensor.release %[[VAL_10]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
-// CHECK:           return %[[VAL_2]] : index
+// CHECK:           return
 // CHECK:         }
 
-func @matrix_update_accumulate(%input: tensor<?x?xf64, #CSR64>, %output: tensor<?x?xf64, #CSR64>) -> index {
-    %meaningless = graphblas.update %input -> %output { accumulate_operator = "min" } : tensor<?x?xf64, #CSR64> -> tensor<?x?xf64, #CSR64>
-    return %meaningless : index
+func @matrix_update_accumulate(%input: tensor<?x?xf64, #CSR64>, %output: tensor<?x?xf64, #CSR64>) {
+    graphblas.update %input -> %output { accumulate_operator = "min" } : tensor<?x?xf64, #CSR64> -> tensor<?x?xf64, #CSR64>
+    return
 }
 
 // TODO: Check all type combinations

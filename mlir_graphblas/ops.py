@@ -696,7 +696,7 @@ class GraphBLAS_Update(BaseOp):
         irbuilder,
         input,
         output,
-        accumulate="plus",
+        accumulate=None,
         *,
         mask=None,
         mask_complement=False,
@@ -704,15 +704,17 @@ class GraphBLAS_Update(BaseOp):
     ):
         cls.ensure_mlirvar(input, SparseTensorType)
         cls.ensure_mlirvar(output, SparseTensorType)
-        if accumulate not in cls.allowed_accumulators:
+        if accumulate is not None and accumulate not in cls.allowed_accumulators:
             raise TypeError(
                 f"Illegal accumulator: {accumulate}, must be one of {cls.allowed_accumulators}"
             )
-        ret_val = irbuilder.new_var("index")
-        return ret_val, (
-            f'{ret_val.assign} = graphblas.update {input} -> {output} {"("+str(mask)+")" if mask is not None else ""} '
-            f'{{ accumulate_operator = "{accumulate}", mask_complement = {"true" if mask_complement else "false"}, '
-            f'replace = {"true" if replace else "false"} }} : {input.type} -> {output.type}'
+        accum_str = f'accumulate_operator = "{accumulate}", ' if accumulate else ""
+        mask_str = f"({mask})" if mask is not None else ""
+        mask_type_str = f"({mask.type})" if mask is not None else ""
+        return None, (
+            f"graphblas.update {input} -> {output}{mask_str} "
+            f'{{ {accum_str}mask_complement = {"true" if mask_complement else "false"}, '
+            f'replace = {"true" if replace else "false"} }} : {input.type} -> {output.type}{mask_type_str}'
         )
 
 

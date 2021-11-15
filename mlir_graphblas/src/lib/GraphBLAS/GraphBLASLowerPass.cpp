@@ -2776,7 +2776,6 @@ public:
                                 PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
-    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
 
     Type valueType =
         op.input().getType().cast<RankedTensorType>().getElementType();
@@ -2803,7 +2802,7 @@ public:
         return failure();
 
       rewriter.setInsertionPointAfter(newUpdateOp);
-      rewriter.replaceOp(op, newUpdateOp.getResult());
+      rewriter.eraseOp(op);
 
       return success();
     }
@@ -2866,8 +2865,7 @@ public:
       rewriter.create<sparse_tensor::ReleaseOp>(loc, inputCopy);
     }
 
-    // TODO: figure out how to replace an op with no return type
-    rewriter.replaceOp(op, c0);
+    rewriter.eraseOp(op);
 
     return success();
   };
@@ -2881,7 +2879,6 @@ public:
                                 PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
-    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
 
     // Inputs
     Value input = op.input();
@@ -2950,8 +2947,7 @@ public:
       rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
     }
 
-    // TODO: figure out how to replace an op with no return type
-    rewriter.replaceOp(op, c0);
+    rewriter.eraseOp(op);
 
     return success();
   };
