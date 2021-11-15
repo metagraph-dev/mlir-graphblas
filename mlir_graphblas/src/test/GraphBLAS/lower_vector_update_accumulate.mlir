@@ -14,7 +14,7 @@
 // CHECK-DAG:       %[[VAL_4:.*]] = arith.constant 0 : i64
 // CHECK-DAG:       %[[VAL_5:.*]] = arith.constant false
 // CHECK-DAG:       %[[VAL_6:.*]] = arith.constant true
-// CHECK-DAG:       %[[VAL_7:.*]] = arith.constant 0.000000e+00 : f64
+// CHECK-DAG:       %[[VAL_7:.*]] = arith.constant -1.000000e+00 : f64
 // CHECK:           %[[VAL_8:.*]] = call @vector_f64_p64i64_to_ptr8(%[[VAL_1]]) : (tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
 // CHECK:           %[[VAL_9:.*]] = call @dup_tensor(%[[VAL_8]]) : (!llvm.ptr<i8>) -> !llvm.ptr<i8>
 // CHECK:           %[[VAL_10:.*]] = call @ptr8_to_vector_f64_p64i64(%[[VAL_9]]) : (!llvm.ptr<i8>) -> tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>

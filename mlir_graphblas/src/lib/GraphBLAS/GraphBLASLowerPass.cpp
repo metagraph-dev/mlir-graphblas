@@ -2774,36 +2774,100 @@ public:
   using OpRewritePattern<graphblas::UpdateOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::UpdateOp op,
                                 PatternRewriter &rewriter) const override {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
+    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
 
     Type valueType =
         op.input().getType().cast<RankedTensorType>().getElementType();
     bool maskComplement = op.mask_complement();
     bool replace = op.replace();
-
-    // New op
-    NamedAttrList attributes = {};
-    attributes.append(StringRef("mask_complement"),
-                      rewriter.getBoolAttr(maskComplement));
-    attributes.append(StringRef("replace"), rewriter.getBoolAttr(replace));
-    graphblas::UpdateGenericOp newUpdateOp =
-        rewriter.create<graphblas::UpdateGenericOp>(loc, op->getResultTypes(),
-                                                    op.getOperands(),
-                                                    attributes.getAttrs(), 1);
-
-    // Only populate the binary block if given an accumulator
     llvm::Optional<llvm::StringRef> accumulateOperator =
         op.accumulate_operator();
+
+    // Use generic for accumulator
     if (accumulateOperator) {
+      // New op
+      NamedAttrList attributes = {};
+      attributes.append(StringRef("mask_complement"),
+                        rewriter.getBoolAttr(maskComplement));
+      attributes.append(StringRef("replace"), rewriter.getBoolAttr(replace));
+      graphblas::UpdateGenericOp newUpdateOp =
+          rewriter.create<graphblas::UpdateGenericOp>(loc, op->getResultTypes(),
+                                                      op.getOperands(),
+                                                      attributes.getAttrs(), 1);
+
       if (failed(populateBinary(rewriter, loc, accumulateOperator->str(),
                                 valueType, newUpdateOp.getRegions().slice(0, 1),
                                 graphblas::YieldKind::ACCUMULATE)))
         return failure();
+
+      rewriter.setInsertionPointAfter(newUpdateOp);
+      rewriter.replaceOp(op, newUpdateOp.getResult());
+
+      return success();
     }
 
-    rewriter.setInsertionPointAfter(newUpdateOp);
+    // No accumulator; lower without generic op
 
-    rewriter.replaceOp(op, newUpdateOp.getResult());
+    Value input = op.input();
+    Value output = op.output();
+    Value mask = op.mask();
+
+    // Types
+    RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
+
+    unsigned rank = outputType.getRank(); // ranks guaranteed to be equal
+    auto computeEwise =
+        rank == 2 ? computeMatrixElementWise : computeVectorElementWise;
+
+    if (mask) {
+      EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
+      if (replace) {
+        // input -> output(mask) { replace }
+
+        // Step 1: apply the mask to the input
+        Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+        computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                     maskBehavior);
+        // Step 2: swap masked input with output
+        callSwapPointers(rewriter, module, loc, maskedInput, output);
+        callSwapIndices(rewriter, module, loc, maskedInput, output);
+        callSwapValues(rewriter, module, loc, maskedInput, output);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
+      } else {
+        // input -> output(mask)
+
+        // Step 1: apply the mask inverse to the output
+        EwiseBehavior maskInverseBehavior =
+            (maskComplement ? MASK : MASK_COMPLEMENT);
+        Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
+        computeEwise(rewriter, loc, module, output, mask, maskedOutput, nullptr,
+                     maskInverseBehavior);
+        // Step 2: apply the mask to the input
+        Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+        computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                     maskBehavior);
+        // Step 3: union the two masked results
+        // Note that there should be zero overlaps, so we do not provide
+        //      an accumulation block
+        computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
+                     nullptr, UNION);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
+      }
+    } else {
+      // input -> output { replace? }
+
+      Value inputCopy = callDupTensor(rewriter, module, loc, input);
+      callSwapPointers(rewriter, module, loc, inputCopy, output);
+      callSwapIndices(rewriter, module, loc, inputCopy, output);
+      callSwapValues(rewriter, module, loc, inputCopy, output);
+      rewriter.create<sparse_tensor::ReleaseOp>(loc, inputCopy);
+    }
+
+    // TODO: figure out how to replace an op with no return type
+    rewriter.replaceOp(op, c0);
 
     return success();
   };
@@ -2845,92 +2909,45 @@ public:
     auto computeEwise =
         rank == 2 ? computeMatrixElementWise : computeVectorElementWise;
 
-    if (extBlocks.accumulate) {
-      if (mask) {
-        EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
-        if (replace) {
-          // input -> output(mask) { accumulate, replace }
+    if (mask) {
+      EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
+      if (replace) {
+        // input -> output(mask) { accumulate, replace }
 
-          // Step 1: apply the mask to the output
-          Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
-          computeEwise(rewriter, loc, module, output, mask, maskedOutput,
-                       nullptr, maskBehavior);
-          // Step 2: apply the mask to the input
-          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
-                       maskBehavior);
-          // Step 3: union the two masked results
-          computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
-                       extBlocks.accumulate, UNION);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
-        } else {
-          // input -> output(mask) { accumulate }
-
-          // Step 1: apply the mask to the input
-          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
-                       maskBehavior);
-          // Step 2: union the two masked results
-          Value outputCopy = callDupTensor(rewriter, module, loc, output);
-          computeEwise(rewriter, loc, module, maskedInput, outputCopy, output,
-                       extBlocks.accumulate, UNION);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
-        }
+        // Step 1: apply the mask to the output
+        Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
+        computeEwise(rewriter, loc, module, output, mask, maskedOutput, nullptr,
+                     maskBehavior);
+        // Step 2: apply the mask to the input
+        Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+        computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                     maskBehavior);
+        // Step 3: union the two masked results
+        computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
+                     extBlocks.accumulate, UNION);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
       } else {
-        // input -> output { accumulate, replace? }
+        // input -> output(mask) { accumulate }
 
+        // Step 1: apply the mask to the input
+        Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+        computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                     maskBehavior);
+        // Step 2: union the two masked results
         Value outputCopy = callDupTensor(rewriter, module, loc, output);
-        computeEwise(rewriter, loc, module, input, outputCopy, output,
+        computeEwise(rewriter, loc, module, maskedInput, outputCopy, output,
                      extBlocks.accumulate, UNION);
         rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
       }
     } else {
-      if (mask) {
-        EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
-        if (replace) {
-          // input -> output(mask) { replace }
+      // input -> output { accumulate, replace? }
 
-          // Step 1: apply the mask to the input
-          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
-                       maskBehavior);
-          // Step 2: swap masked input with output
-          callSwapPointers(rewriter, module, loc, maskedInput, output);
-          callSwapIndices(rewriter, module, loc, maskedInput, output);
-          callSwapValues(rewriter, module, loc, maskedInput, output);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
-        } else {
-          // input -> output(mask)
-
-          // Step 1: apply the mask inverse to the output
-          EwiseBehavior maskInverseBehavior =
-              (maskComplement ? MASK : MASK_COMPLEMENT);
-          Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
-          computeEwise(rewriter, loc, module, output, mask, maskedOutput,
-                       nullptr, maskInverseBehavior);
-          // Step 2: apply the mask to the input
-          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
-                       maskBehavior);
-          // Step 3: union the two masked results
-          // Note that there should be zero overlaps, so we do not provide
-          //      an accumulation block
-          computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
-                       nullptr, UNION);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
-        }
-      } else {
-        // input -> output { replace? }
-
-        Value inputCopy = callDupTensor(rewriter, module, loc, input);
-        callSwapPointers(rewriter, module, loc, inputCopy, output);
-        callSwapIndices(rewriter, module, loc, inputCopy, output);
-        callSwapValues(rewriter, module, loc, inputCopy, output);
-        rewriter.create<sparse_tensor::ReleaseOp>(loc, inputCopy);
-      }
+      Value outputCopy = callDupTensor(rewriter, module, loc, output);
+      computeEwise(rewriter, loc, module, input, outputCopy, output,
+                   extBlocks.accumulate, UNION);
+      rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
     }
 
     // TODO: figure out how to replace an op with no return type
