@@ -593,7 +593,7 @@ public:
 
       // Populate based on operator kind
       LogicalResult popResult = failure();
-      if (unary3.contains(selector)) {
+      if (unary1.contains(selector) || unary3.contains(selector)) {
         popResult = populateUnary(rewriter, loc, selector, valueType,
                                   newSelectOp.getRegions().slice(0, 1),
                                   graphblas::YieldKind::SELECT_OUT,

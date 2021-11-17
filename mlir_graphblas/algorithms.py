@@ -438,9 +438,7 @@ class Pagerank(Algorithm):
             )
 
             # w = t ./ d
-            w = irb.graphblas.intersect(
-                prev_score, row_degree, "div", "tensor<?xf64, #CV64>"
-            )
+            w = irb.graphblas.intersect(prev_score, row_degree, "div")
 
             # r = teleport
             # Perform this scalar assignment using an apply hack
@@ -454,9 +452,7 @@ class Pagerank(Algorithm):
             # rdiff = sum(abs(prev_score - new_score))
             # TODO: this should technically be union, but we don't allow "minus" for union
             #       Replace with apply(neg), then union(plus)
-            new_rdiff = irb.graphblas.intersect(
-                prev_score, new_score, "minus", "tensor<?xf64, #CV64>"
-            )
+            new_rdiff = irb.graphblas.intersect(prev_score, new_score, "minus")
             new_rdiff = irb.graphblas.apply(new_rdiff, "abs")
             new_rdiff = irb.graphblas.reduce_to_scalar(new_rdiff, "plus")
 
@@ -897,9 +893,7 @@ class TotallyInducedEdgeSampling(Algorithm):
         )
         row_counts = irb.graphblas.reduce_to_vector(selected_edges, "count", axis=1)
         col_counts = irb.graphblas.reduce_to_vector(selected_edges, "count", axis=0)
-        selected_nodes = irb.graphblas.union(
-            row_counts, col_counts, "plus", "tensor<?xi64, #CV64>"
-        )
+        selected_nodes = irb.graphblas.union(row_counts, col_counts, "plus")
         selected_nodes = irb.graphblas.cast(selected_nodes, "tensor<?xf64, #CV64>")
         # TODO: these next lines should be replaced with `extract` when available
         D_csr = irb.graphblas.diag(selected_nodes, "tensor<?x?xf64, #CSR64>")
@@ -1278,7 +1272,6 @@ def haversine_distance(
     cf05 = irb.arith.constant(0.5, "f64")
     cf2 = irb.arith.constant(2.0, "f64")
     cf_2radius = irb.arith.constant(2 * radius, "f64")
-    ret_type = many_lat.type
     if to_radians:
         cf_rad = irb.arith.constant(math.tau / 360, "f64")
         many_lat = irb.graphblas.apply(many_lat, "times", right=cf_rad)
@@ -1286,17 +1279,16 @@ def haversine_distance(
         single_lat = irb.graphblas.apply(single_lat, "times", right=cf_rad)
         single_lon = irb.graphblas.apply(single_lon, "times", right=cf_rad)
     if many_lat.type.encoding.rank == 1:  # Vector
-        diff_lat = irb.graphblas.intersect(single_lat, many_lat, "minus", ret_type)
-        diff_lon = irb.graphblas.intersect(single_lon, many_lon, "minus", ret_type)
+        diff_lat = irb.graphblas.intersect(single_lat, many_lat, "minus")
+        diff_lon = irb.graphblas.intersect(single_lon, many_lon, "minus")
         cos_terms = irb.graphblas.intersect(
             irb.graphblas.apply(single_lat, "cos"),
             irb.graphblas.apply(many_lat, "cos"),
             "times",
-            ret_type,
         )
     else:  # Matrix
-        single_lat = irb.graphblas.diag(single_lat, ret_type)
-        single_lon = irb.graphblas.diag(single_lon, ret_type)
+        single_lat = irb.graphblas.diag(single_lat, "tensor<?x?xf64, #CSR64>")
+        single_lon = irb.graphblas.diag(single_lon, "tensor<?x?xf64, #CSR64>")
         diff_lat = irb.graphblas.matrix_multiply(single_lat, many_lat, "any_minus")
         diff_lon = irb.graphblas.matrix_multiply(single_lon, many_lon, "any_minus")
         cos_terms = irb.graphblas.matrix_multiply(
@@ -1322,13 +1314,369 @@ def haversine_distance(
                 right=cf2,
             ),
             "times",
-            ret_type,
         ),
         "plus",
-        ret_type,
     )
     return irb.graphblas.apply(
         irb.graphblas.apply(irb.graphblas.apply(a, "sqrt"), "asin"),
         "times",
         left=cf_2radius,
     )
+
+
+class GeoLocation(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "geolocation",
+            input_types=[
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?xf64, #CV64>",
+                "tensor<?xf64, #CV64>",
+                "i64",
+                "f64",
+                "f64",
+            ],
+            return_types=["tensor<?xf64, #CV64>", "tensor<?xf64, #CV64>"],
+            aliases=_build_common_aliases(),
+        )
+        (A, known_lat, known_lon, max_iter, eps, max_mad) = irb.inputs
+        A_csc = irb.graphblas.convert_layout(A, "tensor<?x?xf64, #CSC64>")
+
+        TO_RADIANS = irb.arith.constant(math.tau / 360.0, "f64")
+        TO_DEGREES = irb.arith.constant(360.0 / math.tau, "f64")
+        c0 = irb.arith.constant(0, "index")
+        c1 = irb.arith.constant(1, "index")
+        ci0 = irb.arith.constant(0, "i64")
+        ci1 = irb.arith.constant(1, "i64")
+        ci2 = irb.arith.constant(2, "i64")
+        cf0 = irb.arith.constant(0.0, "f64")
+        cf1 = irb.arith.constant(1.0, "f64")
+        size = irb.graphblas.size(known_lat)
+        # TODO: replace this with assign scalar
+        all_ones = irb.graphblas.reduce_to_vector(A, "plus", axis=1)
+        all_ones = irb.graphblas.apply(all_ones, "second", right=cf1)
+
+        unknown = irb.util.new_sparse_tensor("tensor<?xf64, #CV64>", size)
+        irb.graphblas.update(all_ones, unknown, mask=known_lat, mask_complement=True)
+
+        U = irb.graphblas.matrix_multiply(
+            irb.graphblas.diag(unknown, "tensor<?x?xf64, #CSR64>"), A_csc, "any_second"
+        )
+
+        lat = irb.graphblas.dup(known_lat)
+        lon = irb.graphblas.dup(known_lon)
+
+        # Outer Loop
+        with irb.while_loop(c0) as outer_loop:
+            with outer_loop.before as outer_before:
+                outer_count = outer_before.arg_vars[0]
+
+                Ulat = irb.graphblas.matrix_multiply(
+                    U, irb.graphblas.diag(lat, "tensor<?x?xf64, #CSC64>"), "any_second"
+                )
+                Ulat = irb.graphblas.convert_layout(Ulat, "tensor<?x?xf64, #CSC64>")
+                Ulon = irb.graphblas.matrix_multiply(
+                    U, irb.graphblas.diag(lon, "tensor<?x?xf64, #CSC64>"), "any_second"
+                )
+                Ulon = irb.graphblas.convert_layout(Ulon, "tensor<?x?xf64, #CSC64>")
+                degrees = irb.graphblas.reduce_to_vector(Ulat, "count", axis=1)
+
+                one_neighbor = irb.graphblas.cast(
+                    irb.graphblas.select(degrees, "eq", ci1), "tensor<?xf64, #CV64>"
+                )
+                two_neighbors = irb.graphblas.cast(
+                    irb.graphblas.select(degrees, "eq", ci2), "tensor<?xf64, #CV64>"
+                )
+                many_neighbors = irb.graphblas.cast(
+                    irb.graphblas.select(degrees, "gt", ci2), "tensor<?xf64, #CV64>"
+                )
+
+                # Compute where num neighbors == 1
+                mad = irb.graphblas.apply(one_neighbor, "times", right=cf0)
+                one_neighbor = irb.graphblas.diag(
+                    one_neighbor, "tensor<?x?xf64, #CSR64>"
+                )
+                irb.graphblas.update(
+                    irb.graphblas.reduce_to_vector(
+                        irb.graphblas.matrix_multiply(one_neighbor, Ulat, "any_second"),
+                        "plus",
+                        axis=1,
+                    ),
+                    lat,
+                    accumulate="second",
+                )
+                irb.graphblas.update(
+                    irb.graphblas.reduce_to_vector(
+                        irb.graphblas.matrix_multiply(one_neighbor, Ulon, "any_second"),
+                        "plus",
+                        axis=1,
+                    ),
+                    lon,
+                    accumulate="second",
+                )
+
+                # Compute where num neighbors == 2
+                two_neighbors = irb.graphblas.diag(
+                    two_neighbors, "tensor<?x?xf64, #CSR64>"
+                )
+                two_lat = irb.graphblas.apply(
+                    irb.graphblas.matrix_multiply(two_neighbors, Ulat, "any_second"),
+                    "times",
+                    right=TO_RADIANS,
+                )
+                two_lon = irb.graphblas.apply(
+                    irb.graphblas.matrix_multiply(two_neighbors, Ulon, "any_second"),
+                    "times",
+                    right=TO_RADIANS,
+                )
+                lat1 = irb.graphblas.reduce_to_vector(two_lat, "first", axis=1)
+                lat2 = irb.graphblas.reduce_to_vector(two_lat, "last", axis=1)
+                lon1 = irb.graphblas.reduce_to_vector(two_lon, "first", axis=1)
+                lon2 = irb.graphblas.reduce_to_vector(two_lon, "last", axis=1)
+
+                cos_lat2 = irb.graphblas.apply(lat2, "cos")
+                diff_lon = irb.graphblas.intersect(lon2, lon1, "minus")
+                bx = irb.graphblas.intersect(
+                    cos_lat2, irb.graphblas.apply(diff_lon, "cos"), "times"
+                )
+                by = irb.graphblas.intersect(
+                    cos_lat2, irb.graphblas.apply(diff_lon, "sin"), "times"
+                )
+                cos_lat1_bx = irb.graphblas.intersect(
+                    irb.graphblas.apply(lat1, "cos"), bx, "plus"
+                )
+                lat3 = irb.graphblas.intersect(
+                    irb.graphblas.intersect(
+                        irb.graphblas.apply(lat1, "sin"),
+                        irb.graphblas.apply(lat2, "sin"),
+                        "plus",
+                    ),
+                    irb.graphblas.intersect(cos_lat1_bx, by, "hypot"),
+                    "atan2",
+                )
+                lon3 = irb.graphblas.intersect(
+                    lon1, irb.graphblas.intersect(by, cos_lat1_bx, "atan2"), "plus"
+                )
+                irb.graphblas.update(
+                    irb.graphblas.apply(lat3, "times", right=TO_DEGREES),
+                    lat,
+                    accumulate="second",
+                )
+                irb.graphblas.update(
+                    irb.graphblas.apply(lon3, "times", right=TO_DEGREES),
+                    lon,
+                    accumulate="second",
+                )
+
+                irb.graphblas.update(
+                    haversine_distance(irb, lat1, lon1, lat3, lon3, to_radians=False),
+                    mad,
+                    accumulate="plus",
+                )
+
+                # Compute where num neighbors > 2
+                many_neighbors = irb.graphblas.diag(
+                    many_neighbors, "tensor<?x?xf64, #CSR64>"
+                )
+                many_lat = irb.graphblas.matrix_multiply(
+                    many_neighbors, Ulat, "any_second"
+                )
+                many_lon = irb.graphblas.matrix_multiply(
+                    many_neighbors, Ulon, "any_second"
+                )
+
+                many_lat_csc = irb.graphblas.convert_layout(
+                    many_lat, "tensor<?x?xf64, #CSC64>"
+                )
+                many_lon_csc = irb.graphblas.convert_layout(
+                    many_lon, "tensor<?x?xf64, #CSC64>"
+                )
+
+                # compute mean as sum/count
+                sum_lat = irb.graphblas.reduce_to_vector(many_lat, "plus", axis=1)
+                sum_lon = irb.graphblas.reduce_to_vector(many_lon, "plus", axis=1)
+                count_lat = irb.graphblas.cast(
+                    irb.graphblas.reduce_to_vector(many_lat, "count", axis=1),
+                    "tensor<?xf64, #CV64>",
+                )
+                count_lon = irb.graphblas.cast(
+                    irb.graphblas.reduce_to_vector(many_lon, "count", axis=1),
+                    "tensor<?xf64, #CV64>",
+                )
+                cur_lat = irb.graphblas.intersect(sum_lat, count_lat, "div")
+                cur_lon = irb.graphblas.intersect(sum_lon, count_lon, "div")
+
+                cur_lat_ptr8 = irb.util.tensor_to_ptr8(cur_lat)
+                cur_lon_ptr8 = irb.util.tensor_to_ptr8(cur_lon)
+
+                with irb.while_loop(cur_lat_ptr8, cur_lon_ptr8, ci0) as inner_loop:
+                    with inner_loop.before as before_region:
+                        cur_lat = irb.util.ptr8_to_tensor(
+                            before_region.arg_vars[0], "tensor<?xf64, #CV64>"
+                        )
+                        cur_lon = irb.util.ptr8_to_tensor(
+                            before_region.arg_vars[1], "tensor<?xf64, #CV64>"
+                        )
+                        count = before_region.arg_vars[2]
+
+                        D = haversine_distance(
+                            irb, many_lat_csc, many_lon_csc, cur_lat, cur_lon
+                        )
+                        Dinv = irb.graphblas.select(D, "ne", cf0)
+                        Dinv = irb.graphblas.apply(Dinv, "minv")
+                        Dinv_csc = irb.graphblas.convert_layout(
+                            Dinv, "tensor<?x?xf64, #CSC64>"
+                        )
+                        Dinvs = irb.graphblas.reduce_to_vector(Dinv, "plus", axis=1)
+                        W = irb.graphblas.matrix_multiply(
+                            irb.graphblas.diag(Dinvs, "tensor<?x?xf64, #CSR64>"),
+                            Dinv_csc,
+                            "any_rdiv",
+                        )
+
+                        Tlat = irb.graphblas.reduce_to_vector(
+                            irb.graphblas.intersect(many_lat, W, "times"),
+                            "plus",
+                            axis=1,
+                        )
+                        Tlon = irb.graphblas.reduce_to_vector(
+                            irb.graphblas.intersect(many_lon, W, "times"),
+                            "plus",
+                            axis=1,
+                        )
+
+                        Dcounts = irb.graphblas.reduce_to_vector(D, "count", axis=1)
+                        Dinv_counts = irb.graphblas.reduce_to_vector(
+                            Dinv, "count", axis=1
+                        )
+
+                        num_zeros = irb.graphblas.cast(
+                            irb.graphblas.intersect(Dcounts, Dinv_counts, "minus"),
+                            "tensor<?xf64, #CV64>",
+                        )
+                        Rlat = irb.graphblas.intersect(
+                            irb.graphblas.intersect(Tlat, cur_lat, "minus"),
+                            Dinvs,
+                            "times",
+                        )
+                        Rlon = irb.graphblas.intersect(
+                            irb.graphblas.intersect(Tlon, cur_lon, "minus"),
+                            Dinvs,
+                            "times",
+                        )
+                        r = irb.graphblas.intersect(Rlat, Rlon, "hypot")
+
+                        rinv = irb.graphblas.intersect(num_zeros, r, "div")
+                        rinv_zeros = irb.graphblas.apply(
+                            irb.graphblas.select(rinv, "isinf"), "second", right=cf0
+                        )
+                        irb.graphblas.update(rinv_zeros, rinv, "second")
+
+                        alpha = irb.graphblas.apply(
+                            irb.graphblas.apply(rinv, "minus", left=cf1),
+                            "max",
+                            right=cf0,
+                        )
+                        beta = irb.graphblas.apply(rinv, "min", cf1)
+                        next_lat = irb.graphblas.intersect(
+                            irb.graphblas.intersect(alpha, Tlat, "times"),
+                            irb.graphblas.intersect(beta, cur_lat, "times"),
+                            "plus",
+                        )
+                        next_lon = irb.graphblas.intersect(
+                            irb.graphblas.intersect(alpha, Tlon, "times"),
+                            irb.graphblas.intersect(beta, cur_lon, "times"),
+                            "plus",
+                        )
+
+                        next_lat_nvals = irb.graphblas.num_vals(next_lat)
+                        cur_lat_nvals = irb.graphblas.num_vals(cur_lat)
+                        diff_nvals = irb.arith.cmpi(next_lat_nvals, cur_lat_nvals, "ne")
+                        irb.add_statement(f"scf.if {diff_nvals} {{")
+                        irb.graphblas.update(cur_lat, next_lat, "first")
+                        irb.graphblas.update(cur_lon, next_lon, "first")
+                        irb.add_statement("}")
+
+                        diff_lat = irb.graphblas.intersect(cur_lat, next_lat, "minus")
+                        diff_lon = irb.graphblas.intersect(cur_lon, next_lon, "minus")
+                        not_converged = irb.graphblas.intersect(
+                            diff_lat, diff_lon, "hypot"
+                        )
+                        not_converged = irb.graphblas.apply(
+                            not_converged, "gt", eps, return_type="tensor<?xi8, #CV64>"
+                        )
+                        not_converged = irb.graphblas.reduce_to_scalar(
+                            not_converged, "lor"
+                        )
+                        not_converged = irb.arith.trunci(not_converged, "i1")
+
+                        max_iter_not_reached = irb.arith.cmpi(count, max_iter, "slt")
+                        condition = irb.arith.andi(not_converged, max_iter_not_reached)
+
+                        next_lat_ptr8 = irb.util.tensor_to_ptr8(next_lat)
+                        next_lon_ptr8 = irb.util.tensor_to_ptr8(next_lon)
+                        next_count = irb.arith.addi(count, ci1)
+                        D_ptr8 = irb.util.tensor_to_ptr8(D)
+                        before_region.condition(
+                            condition, next_lat_ptr8, next_lon_ptr8, next_count, D_ptr8
+                        )
+                    with inner_loop.after as after_region:
+                        after_region.yield_vars(*after_region.arg_vars[:3])
+
+                cur_lat = irb.util.ptr8_to_tensor(
+                    inner_loop.returned_variable[0], "tensor<?xf64, #CV64>"
+                )
+                cur_lon = irb.util.ptr8_to_tensor(
+                    inner_loop.returned_variable[1], "tensor<?xf64, #CV64>"
+                )
+                D = irb.util.ptr8_to_tensor(
+                    inner_loop.returned_variable[3], "tensor<?x?xf64, #CSR64>"
+                )
+
+                irb.graphblas.update(cur_lat, lat, accumulate="second")
+                irb.graphblas.update(cur_lon, lon, accumulate="second")
+
+                # TODO: this should actually use median, not mean
+                # compute mean as sum/count
+                sum_D = irb.graphblas.reduce_to_vector(D, "plus", axis=1)
+                count_D = irb.graphblas.cast(
+                    irb.graphblas.reduce_to_vector(D, "count", axis=1),
+                    "tensor<?xf64, #CV64>",
+                )
+                mean_D = irb.graphblas.intersect(sum_D, count_D, "div")
+                irb.graphblas.update(mean_D, mad, accumulate="second")
+
+                # Drop values with large absolute deviation
+                mad_mask = irb.graphblas.select(mad, "gt", max_mad)
+                irb.graphblas.update(lat, lat, mask=mad_mask, mask_complement=True)
+                irb.graphblas.update(lon, lon, mask=mad_mask, mask_complement=True)
+
+                lat_nvals = irb.graphblas.num_vals(lat)
+                condition = irb.arith.cmpi(lat_nvals, size, "ne")
+
+                next_outer_count = irb.arith.addi(outer_count, c1)
+                outer_before.condition(condition, next_outer_count)
+            with outer_loop.after as outer_after:
+                outer_after.yield_vars(*outer_after.arg_vars)
+
+        # End Outer Loop
+
+        irb.return_vars(lat, lon)
+
+        return irb
+
+    def __call__(
+        self,
+        graph: MLIRSparseTensor,
+        lat: MLIRSparseTensor,
+        lon: MLIRSparseTensor,
+        *,
+        max_iter: int = 1000,
+        eps: float = 0.001,
+        max_mad: float = 1500.0,
+        **kwargs,
+    ) -> MLIRSparseTensor:
+        return super().__call__(graph, lat, lon, max_iter, eps, max_mad, **kwargs)
+
+
+geolocation = GeoLocation()

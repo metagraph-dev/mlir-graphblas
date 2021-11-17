@@ -505,7 +505,7 @@ class MLIRFunctionBuilder:
         def returned_variable(self) -> MLIRTuple:
             if self.before_region is None:
                 raise RuntimeError(
-                    'Cannot access result of scf.while loop unti the "before" region has been built.'
+                    'Cannot access result of scf.while loop until the "before" region has been built.'
                 )
             return self.before_region.returned_var
 

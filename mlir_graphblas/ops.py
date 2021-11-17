@@ -272,6 +272,65 @@ class CmpFOp(BaseOp):
         )
 
 
+class AndIOp(BaseOp):
+    dialect = "arith"
+    name = "andi"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var("i1")
+        return ret_val, (f"{ret_val.assign} = arith.andi {lhs}, {rhs} : {lhs.type}")
+
+
+class OrIOp(BaseOp):
+    dialect = "arith"
+    name = "ori"
+
+    @classmethod
+    def call(cls, irbuilder, lhs, rhs):
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var("i1")
+        return ret_val, (f"{ret_val.assign} = arith.ori {lhs}, {rhs} : {lhs.type}")
+
+
+class TruncIOp(BaseOp):
+    dialect = "arith"
+    name = "trunci"
+
+    @classmethod
+    def call(cls, irbuilder, val, return_type):
+        cls.ensure_mlirvar(val)
+        ret_val = irbuilder.new_var(return_type)
+        if isinstance(ret_val.type, SparseTensorType):
+            if not isinstance(val.type, SparseTensorType):
+                raise TypeError(
+                    f"val type is not compatible with return_type: {val.type} vs {return_type}"
+                )
+            in_bits = val.type.value_type.num
+            out_bits = ret_val.type.value_type.num
+        else:
+            if not isinstance(val.type, IntType):
+                raise TypeError(
+                    f"val type is not compatible with return_type: {val.type} vs {return_type}"
+                )
+            in_bits = val.type.num
+            out_bits = ret_val.type.num
+        if in_bits < out_bits:
+            raise ValueError(
+                f"return_type must have fewer bits than val type: {in_bits} < {out_bits}"
+            )
+        return ret_val, (
+            f"{ret_val.assign} = arith.trunci {val} : {val.type} to {ret_val.type}"
+        )
+
+
 ###########################################
 # math ops
 ###########################################
@@ -639,17 +698,12 @@ class GraphBLAS_Transpose(BaseOp):
 class GraphBLAS_Union(BaseOp):
     dialect = "graphblas"
     name = "union"
-    allowed_operators = {"plus", "times", "min", "max", "first", "second"}
 
     @classmethod
-    def call(cls, irbuilder, lhs, rhs, operator, return_type: str):
+    def call(cls, irbuilder, lhs, rhs, operator):
         cls.ensure_mlirvar(lhs, SparseTensorType)
         cls.ensure_mlirvar(rhs, SparseTensorType)
-        if operator not in cls.allowed_operators:
-            raise TypeError(
-                f"Illegal operator: {operator}, must be one of {cls.allowed_operators}"
-            )
-        ret_val = irbuilder.new_var(return_type)
+        ret_val = irbuilder.new_var(lhs.type)
         return ret_val, (
             f'{ret_val.assign} = graphblas.union {lhs}, {rhs} {{ union_operator = "{operator}" }} :'
             f"({lhs.type}, {rhs.type}) to {ret_val.type}"
@@ -659,25 +713,15 @@ class GraphBLAS_Union(BaseOp):
 class GraphBLAS_Intersect(BaseOp):
     dialect = "graphblas"
     name = "intersect"
-    allowed_operators = {
-        "plus",
-        "minus",
-        "times",
-        "div",
-        "min",
-        "max",
-        "first",
-        "second",
-    }
 
     @classmethod
-    def call(cls, irbuilder, lhs, rhs, operator, return_type: str):
+    def call(cls, irbuilder, lhs, rhs, operator):
         cls.ensure_mlirvar(lhs, SparseTensorType)
         cls.ensure_mlirvar(rhs, SparseTensorType)
-        if operator not in cls.allowed_operators:
-            raise TypeError(
-                f"Illegal operator: {operator}, must be one of {cls.allowed_operators}"
-            )
+        # Figure out correct return type
+        return_type = lhs.type
+        if operator in {"eq", "ge", "gt", "le", "lt", "ne"}:
+            return_type = SparseTensorType(lhs.type.shape, "i8", lhs.type.encoding)
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
             f'{ret_val.assign} = graphblas.intersect {lhs}, {rhs} {{ intersect_operator = "{operator}" }} :'
@@ -688,7 +732,6 @@ class GraphBLAS_Intersect(BaseOp):
 class GraphBLAS_Update(BaseOp):
     dialect = "graphblas"
     name = "update"
-    allowed_accumulators = {"plus", "times", "min", "max"}
 
     @classmethod
     def call(
@@ -704,10 +747,6 @@ class GraphBLAS_Update(BaseOp):
     ):
         cls.ensure_mlirvar(input, SparseTensorType)
         cls.ensure_mlirvar(output, SparseTensorType)
-        if accumulate is not None and accumulate not in cls.allowed_accumulators:
-            raise TypeError(
-                f"Illegal accumulator: {accumulate}, must be one of {cls.allowed_accumulators}"
-            )
         accum_str = f'accumulate_operator = "{accumulate}", ' if accumulate else ""
         mask_str = f"({mask})" if mask is not None else ""
         mask_type_str = f"({mask.type})" if mask is not None else ""
@@ -735,7 +774,6 @@ class GraphBLAS_Equal(BaseOp):
 class GraphBLAS_Select(BaseOp):
     dialect = "graphblas"
     name = "select"
-    allowed_selectors = {"triu", "tril", "gt", "ge", "probability"}
 
     @classmethod
     def call(
@@ -752,10 +790,6 @@ class GraphBLAS_Select(BaseOp):
             cls.ensure_mlirvar(thunk)
         if rng_context is not None:
             cls.ensure_mlirvar(rng_context)
-        if selector not in cls.allowed_selectors:
-            raise ValueError(
-                f"Illegal selector: {selector}, must be one of {cls.allowed_selectors}"
-            )
         if selector == "probability":
             irbuilder.needed_function_table["random_double"] = (
                 f"func private @random_double(!llvm.ptr<i8>) -> (f64)",
@@ -785,26 +819,11 @@ class GraphBLAS_Select(BaseOp):
 class GraphBLAS_ReduceToVector(BaseOp):
     dialect = "graphblas"
     name = "reduce_to_vector"
-    allowed_aggregators = {
-        "argmax",
-        "argmin",
-        "count",
-        "first",
-        "last",
-        "max",
-        "min",
-        "plus",
-        "times",
-    }
 
     @classmethod
     def call(cls, irbuilder, input, aggregator, axis):
         cls.ensure_mlirvar(input, SparseTensorType)
-        if aggregator not in cls.allowed_aggregators:
-            raise TypeError(
-                f"Illegal aggregator: {aggregator}, must be one of {cls.allowed_aggregators}"
-            )
-        elif axis not in (0, 1):
+        if axis not in (0, 1):
             raise TypeError(f"Illegal axis: {axis}, must be 0 or 1")
         sparse_vec_encoding = SparseEncodingType(
             ["compressed"],
@@ -828,15 +847,10 @@ class GraphBLAS_ReduceToVector(BaseOp):
 class GraphBLAS_ReduceToScalar(BaseOp):
     dialect = "graphblas"
     name = "reduce_to_scalar"
-    allowed_aggregators = {"plus", "count", "argmin", "argmax"}
 
     @classmethod
     def call(cls, irbuilder, input, aggregator):
         cls.ensure_mlirvar(input, SparseTensorType)
-        if aggregator not in cls.allowed_aggregators:
-            raise TypeError(
-                f"Illegal aggregator: {aggregator}, must be one of {cls.allowed_aggregators}"
-            )
         if aggregator in {"count", "argmin", "argmax"}:
             return_type = "i64"
         else:
@@ -851,60 +865,32 @@ class GraphBLAS_ReduceToScalar(BaseOp):
 class GraphBLAS_Apply(BaseOp):
     dialect = "graphblas"
     name = "apply"
-    allowed_unary_ops = {
-        "identity",
-        "abs",
-        "ainv",
-        "acos",
-        "asin",
-        "column",
-        "cos",
-        "index",
-        "isinf",
-        "minv",
-        "row",
-        "sin",
-        "sqrt",
-        "tan",
-    }
-    allowed_binary_ops = {"div", "first", "max", "min", "pow", "second", "times"}
-    allowed_ops = allowed_unary_ops | allowed_binary_ops
 
     @classmethod
     def call(
-        cls, irbuilder, input, apply_op, *, left=None, right=None, return_type=None
+        cls, irbuilder, input, apply_op, right=None, *, left=None, return_type=None
     ):
         cls.ensure_mlirvar(input, SparseTensorType)
-        if apply_op not in cls.allowed_ops:
-            raise TypeError(
-                f"Illegal apply_op: {apply_op}, must be one of {cls.allowed_ops}"
-            )
 
         if return_type is None:
             return_type = input.type
         ret_val = irbuilder.new_var(return_type)
 
-        if apply_op in cls.allowed_binary_ops:
-            if left is not None:
-                if right is not None:
-                    raise TypeError("Exactly one thunk allowed.")
-                cls.ensure_mlirvar(left)
-                code = (
-                    f"{ret_val.assign} = graphblas.apply {left}, {input} "
-                    f'{{ apply_operator = "{apply_op}" }} : ({left.type}, {input.type}) to {ret_val.type}'
-                )
-            elif right is not None:
-                cls.ensure_mlirvar(right)
-                code = (
-                    f"{ret_val.assign} = graphblas.apply {input}, {right} "
-                    f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {right.type}) to {ret_val.type}'
-                )
-            else:
-                raise TypeError("A thunk is required.")
-
-        elif apply_op in cls.allowed_unary_ops:
-            if left is not None or right is not None:
-                raise TypeError(f"apply_op misuse: {apply_op} cannot take a thunk.")
+        if left is not None:
+            if right is not None:
+                raise TypeError("Only one thunk allowed.")
+            cls.ensure_mlirvar(left)
+            code = (
+                f"{ret_val.assign} = graphblas.apply {left}, {input} "
+                f'{{ apply_operator = "{apply_op}" }} : ({left.type}, {input.type}) to {ret_val.type}'
+            )
+        elif right is not None:
+            cls.ensure_mlirvar(right)
+            code = (
+                f"{ret_val.assign} = graphblas.apply {input}, {right} "
+                f'{{ apply_operator = "{apply_op}" }} : ({input.type}, {right.type}) to {ret_val.type}'
+            )
+        else:
             code = (
                 f"{ret_val.assign} = graphblas.apply {input} "
                 f'{{ apply_operator = "{apply_op}" }} : ({input.type}) to {ret_val.type}'
@@ -917,30 +903,10 @@ class GraphBLAS_MatrixMultiply(BaseOp):
     dialect = "graphblas"
     name = "matrix_multiply"
 
-    allowed_semiring_adds = {"plus", "any", "min"}
-    allowed_semiring_muls = {
-        "pair",
-        "times",
-        "plus",
-        "firsti",
-        "secondi",
-        "overlapi",
-        "first",
-        "second",
-    }
-    allowed_semirings = {
-        f"{add}_{mul}"
-        for add, mul in itertools.product(allowed_semiring_adds, allowed_semiring_muls)
-    }
-
     @classmethod
     def call(cls, irbuilder, a, b, semiring, *, mask=None, mask_complement=False):
         cls.ensure_mlirvar(a, SparseTensorType)
         cls.ensure_mlirvar(b, SparseTensorType)
-        if semiring not in cls.allowed_semirings:
-            raise TypeError(
-                f"Illegal semiring: {semiring}, must be one of {cls.allowed_semirings}"
-            )
         if len(b.type.shape) == 1:
             return_type = b.type
         else:
