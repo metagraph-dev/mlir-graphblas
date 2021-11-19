@@ -606,11 +606,11 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
   Value typedPlaceholder = llvm::TypeSwitch<Type, Value>(valueType)
                                .Case<IntegerType>([&](IntegerType type) {
                                  return rewriter.create<arith::ConstantIntOp>(
-                                     loc, 0, type.getWidth());
+                                     loc, -1, type.getWidth());
                                })
                                .Case<FloatType>([&](FloatType type) {
                                  return rewriter.create<arith::ConstantFloatOp>(
-                                     loc, APFloat(0.0), type);
+                                     loc, APFloat(-1.0), type);
                                });
 
   // While Loop (exit when either array is exhausted)
@@ -741,7 +741,8 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
 
     rewriter.create<memref::StoreOp>(loc, aggVal, Ox, posO);
   } else {
-    assert(0 && "Intersecting values found, but no binary block provided.");
+    // Arriving here is a mistake; fill with -1
+    rewriter.create<memref::StoreOp>(loc, typedPlaceholder, Ox, posO);
   }
   rewriter.create<scf::YieldOp>(
       loc, ValueRange{posAplus1, posBplus1, posOplus1, ctrue, ctrue});

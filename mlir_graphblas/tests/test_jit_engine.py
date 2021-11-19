@@ -1,4 +1,5 @@
-from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE, STANDARD_PASSES
+from .jit_engine_test_utils import MLIR_TYPE_TO_NP_TYPE
+from mlir_graphblas.mlir_builder import GRAPHBLAS_PASSES
 
 import itertools
 import mlir_graphblas
@@ -259,7 +260,7 @@ def test_jit_engine_simple(engine, mlir_template, args, expected_result, mlir_ty
         else expected_result
     )
 
-    engine.add(mlir_text, STANDARD_PASSES)
+    engine.add(mlir_text, GRAPHBLAS_PASSES)
 
     compiled_func = engine[func_name]
     result = compiled_func(*args)
@@ -324,7 +325,7 @@ func @{func_name}(%argA: tensor<10x20x30x{mlir_type}, #sparseTensor>) -> {mlir_t
     a = MLIRSparseTensor(indices, values, sizes, sparsity)
     assert a.verify()
 
-    assert engine.add(mlir_text, STANDARD_PASSES) == [func_name]
+    assert engine.add(mlir_text, GRAPHBLAS_PASSES) == [func_name]
 
     result = engine[func_name](a)
     expected_result = 4.6
@@ -349,7 +350,7 @@ func @func_singleton_tuple_return_value_{mlir_type}() -> ({mlir_type}) {{
 }}
 """
 
-    assert engine.add(mlir_text, STANDARD_PASSES) == [
+    assert engine.add(mlir_text, GRAPHBLAS_PASSES) == [
         f"func_singleton_tuple_return_value_{mlir_type}"
     ]
     result = engine[f"func_singleton_tuple_return_value_{mlir_type}"]()
@@ -376,7 +377,7 @@ func @func_multiple_scalar_return_values() -> (i8, i16, i32, i64, f32, f64) {
     return %result_0, %result_1, %result_2, %result_3, %result_4, %result_5 : i8, i16, i32, i64, f32, f64
 }
 """
-    assert engine.add(mlir_text, STANDARD_PASSES) == [
+    assert engine.add(mlir_text, GRAPHBLAS_PASSES) == [
         "func_multiple_scalar_return_values"
     ]
     results = engine.func_multiple_scalar_return_values()
@@ -399,7 +400,7 @@ func @func_multiple_dense_tensor_return_values(%dummy_input_a: tensor<1xi8>, %du
     return %result_0, %result_1, %result_2 : f32, tensor<2x2xf32>, tensor<3x3xi8>
 }
 """
-    assert engine.add(mlir_text, STANDARD_PASSES) == [
+    assert engine.add(mlir_text, GRAPHBLAS_PASSES) == [
         "func_multiple_dense_tensor_return_values"
     ]
     dummy_input_a = np.array([111], dtype=np.int8)
@@ -496,7 +497,7 @@ func @{func_name}(%sequence: !llvm.ptr<{mlir_type}>) -> {mlir_type} {{
         else expected_result
     )
 
-    engine.add(mlir_text, STANDARD_PASSES)
+    engine.add(mlir_text, GRAPHBLAS_PASSES)
 
     compiled_func = engine[func_name]
     result = compiled_func(*args)
@@ -579,7 +580,7 @@ func @sparse_tensors_summation(%sequence: !llvm.ptr<!llvm.ptr<i8>>, %sequence_le
   return %sum : f64
 }
 """
-    assert engine.add(mlir_text, STANDARD_PASSES) == ["sparse_tensors_summation"]
+    assert engine.add(mlir_text, GRAPHBLAS_PASSES) == ["sparse_tensors_summation"]
 
     num_sparse_tensors = 10
 
@@ -717,7 +718,7 @@ def test_jit_engine_zero_values(engine):
 
     assert input_tensor.verify()
     assert output_tensor.verify()
-    assert engine.add(mlir_text, STANDARD_PASSES) == ["transpose"]
+    assert engine.add(mlir_text, GRAPHBLAS_PASSES) == ["transpose"]
     assert engine.transpose(output_tensor, input_tensor) is None
     assert input_tensor.verify()
     assert np.isclose(input_tensor.toarray(), np.array([[8, 0], [9, 0]])).all()
@@ -746,7 +747,7 @@ func @test_func(%arg0: f32) -> f32 {
 }
 """
 
-    assert engine.add(mlir_code, STANDARD_PASSES) == ["test_func"]
+    assert engine.add(mlir_code, GRAPHBLAS_PASSES) == ["test_func"]
     assert engine["test_func"](4) == 4
 
 

@@ -24,31 +24,17 @@ enum CompressionType { CSR, CSC, EITHER };
 // operators The vector index will be filled in as *both* the row and column.
 
 // Unary operators which take a single argument (value)
-static const llvm::StringSet<> unary1{"abs", "ainv", "minv"};
+static const llvm::StringSet<> unary1{"abs",   "ainv", "acos", "asin", "cos",
+                                      "isinf", "minv", "sin",  "sqrt", "tan"};
 
 // Unary operators which take 3 arguments (value, row, column)
 static const llvm::StringSet<> unary3{"column", "index", "row", "tril", "triu"};
 
 // Binary operators which take 2 arguments (leftValue, rightValue)
-static const llvm::StringSet<> binary2{"div",
-                                       "eq",
-                                       "first",
-                                       "ge",
-                                       "gt",
-                                       "le",
-                                       "lt",
-                                       "max",
-                                       "min",
-                                       "minus",
-                                       "ne",
-                                       "plus",
-                                       "second",
-                                       "times"
-                                       "first",
-                                       "pair",
-                                       "pow",
-                                       "second",
-                                       "times"};
+static const llvm::StringSet<> binary2{
+    "atan2", "div",  "eq",   "first", "ge",   "gt",     "hypot",
+    "land",  "le",   "lor",  "lt",    "max",  "min",    "minus",
+    "ne",    "pair", "plus", "pow",   "rdiv", "second", "times"};
 
 // Binary operators which take 4 arguments (leftValue, rightValue, row, column)
 static const llvm::StringSet<> binary4{"column", "index", "row"};
@@ -59,7 +45,8 @@ static const llvm::StringSet<> binary4{"column", "index", "row"};
 static const llvm::StringSet<> binary5{"overlapi"};
 
 // Monoids always take 2 arguments (leftValue, rightValue)
-static const llvm::StringSet<> monoid2{"any", "min", "plus"};
+static const llvm::StringSet<> monoid2{"any", "land", "lor",  "max",
+                                       "min", "plus", "times"};
 
 // TODO: create allUnary, allBinary, allMonoid
 
@@ -67,30 +54,34 @@ static const llvm::StringSet<> supportedForUnion{"first", "max",    "min",
                                                  "plus",  "second", "times"};
 
 static const llvm::StringSet<> supportedForIntersect{
-    "div", "eq",  "first", "ge", "gt",   "le",     "lt",
-    "max", "min", "minus", "ne", "plus", "second", "times"};
+    "atan2", "div", "eq",   "first",  "ge",    "gt", "hypot",
+    "le",    "lt",  "max",  "min",    "minus", "ne", "pair",
+    "plus",  "pow", "rdiv", "second", "times"};
 
-static const llvm::StringSet<> supportedForUpdate{"max", "min", "plus",
-                                                  "times"};
+static const llvm::StringSet<> supportedForUpdate{"first", "max",    "min",
+                                                  "plus",  "second", "times"};
 
 static const llvm::StringSet<> supportedForReduce{
     // List custom aggregators first
-    "argmax", "argmin", "count",
+    "argmax", "argmin", "count", "first", "last",
     // Normal aggregators in alphabetical order
-    "min", "plus"};
+    "any", "land", "lor", "max", "min", "plus", "times"};
 
 static const llvm::StringSet<> supportedForSelect{
     // List custom selectors first
     "probability",
     // Normal selectors in alphabetical order
-    "ge", "gt", "tril", "triu"};
+    "eq", "ge", "gt", "isinf", "le", "lt", "ne", "tril", "triu"};
 
 static const llvm::StringSet<> supportedForApply{
     // List custom operators first
     "identity",
-    // Normal operators in alphabetical order
-    "abs", "ainv", "column", "div", "first", "index", "min", "minv", "pow",
-    "row", "second"};
+    // Unary operators in alphabetical order
+    "abs", "ainv", "acos", "asin", "column", "cos", "index", "isinf", "minv",
+    "row", "sin", "sqrt", "tan",
+    // Binary operators in alphabetical order
+    "div", "eq", "first", "ge", "gt", "le", "lt", "max", "min", "minus", "ne",
+    "plus", "pow", "second", "times"};
 
 bool hasRowOrdering(mlir::Type inputType);
 bool hasColumnOrdering(mlir::Type inputType);
@@ -191,7 +182,8 @@ struct ExtensionBlocks {
 mlir::LogicalResult populateUnary(mlir::OpBuilder &builder, mlir::Location loc,
                                   mlir::StringRef unaryOp, mlir::Type valueType,
                                   mlir::RegionRange regions,
-                                  mlir::graphblas::YieldKind yieldKind);
+                                  mlir::graphblas::YieldKind yieldKind,
+                                  bool boolAsI8 = true);
 
 mlir::LogicalResult populateBinary(mlir::OpBuilder &builder, mlir::Location loc,
                                    mlir::StringRef binaryOp,

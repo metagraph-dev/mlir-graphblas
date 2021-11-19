@@ -23,7 +23,7 @@
 // CHECK:           %[[VAL_5:.*]] = arith.constant false
 // CHECK:           %[[VAL_6:.*]] = arith.constant true
 // CHECK:           %[[VAL_7:.*]] = arith.constant 0 : i64
-// CHECK:           %[[VAL_8:.*]] = arith.constant 0.000000e+00 : f64
+// CHECK:           %[[VAL_8:.*]] = arith.constant -1.000000e+00 : f64
 // CHECK:           %[[VAL_9:.*]] = tensor.dim %[[VAL_0]], %[[VAL_2]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           %[[VAL_10:.*]] = sparse_tensor.init{{\[}}%[[VAL_9]]] : tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           %[[VAL_11:.*]] = call @vector_f64_p64i64_to_ptr8(%[[VAL_10]]) : (tensor<?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "compressed" ], pointerBitWidth = 64, indexBitWidth = 64 }>>) -> !llvm.ptr<i8>
@@ -143,7 +143,7 @@ func @vector_intersect(%a: tensor<?xf64, #CV64>, %b: tensor<?xf64, #CV64>) -> te
 // CHECK:           %[[VAL_4:.*]] = arith.constant 0 : i64
 // CHECK:           %[[VAL_5:.*]] = arith.constant false
 // CHECK:           %[[VAL_6:.*]] = arith.constant true
-// CHECK:           %[[VAL_7:.*]] = arith.constant 0.000000e+00 : f64
+// CHECK:           %[[VAL_7:.*]] = arith.constant -1.000000e+00 : f64
 // CHECK:           %[[VAL_8:.*]] = tensor.dim %[[VAL_0]], %[[VAL_2]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           %[[VAL_9:.*]] = tensor.dim %[[VAL_0]], %[[VAL_3]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>
 // CHECK:           %[[VAL_10:.*]] = sparse_tensor.init{{\[}}%[[VAL_8]], %[[VAL_9]]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>

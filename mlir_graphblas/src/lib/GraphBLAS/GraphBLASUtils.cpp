@@ -235,16 +235,44 @@ void callPrintTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
     Value vectorLengthMinusOne =
         builder.create<arith::SubIOp>(loc, vectorLength, c1);
 
-    Value firstValuesValue =
-        builder.create<memref::LoadOp>(loc, inputValues, c0);
-    Value firstIndicesValue_i64 =
-        builder.create<memref::LoadOp>(loc, inputIndices, c0);
-    Value firstIndicesValue = builder.create<arith::IndexCastOp>(
-        loc, firstIndicesValue_i64, indexType);
+    Value nnz = builder.create<graphblas::NumValsOp>(loc, input);
+    Value hasNoEntries =
+        builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, nnz, c0);
+    scf::IfOp ifHasNoEntries = builder.create<scf::IfOp>(
+        loc, TypeRange{indexType, inputValueType}, hasNoEntries, true);
+    builder.setInsertionPointToStart(ifHasNoEntries.thenBlock());
+    {
+      // Choose index that will never be reached and placeholder initial value
+      Value typedPlaceholder =
+          llvm::TypeSwitch<Type, Value>(inputValueType)
+              .Case<IntegerType>([&](IntegerType type) {
+                return builder.create<arith::ConstantIntOp>(loc, -1,
+                                                            type.getWidth());
+              })
+              .Case<FloatType>([&](FloatType type) {
+                return builder.create<arith::ConstantFloatOp>(
+                    loc, APFloat(-1.0), type);
+              });
+      builder.create<scf::YieldOp>(loc,
+                                   ValueRange{vectorLength, typedPlaceholder});
+    }
+    builder.setInsertionPointToStart(ifHasNoEntries.elseBlock());
+    {
+      Value firstValuesValue =
+          builder.create<memref::LoadOp>(loc, inputValues, c0);
+      Value firstIndicesValue_i64 =
+          builder.create<memref::LoadOp>(loc, inputIndices, c0);
+      Value firstIndicesValue = builder.create<arith::IndexCastOp>(
+          loc, firstIndicesValue_i64, indexType);
+      builder.create<scf::YieldOp>(
+          loc, ValueRange{firstIndicesValue, firstValuesValue});
+    }
+    builder.setInsertionPointAfter(ifHasNoEntries);
 
-    scf::ForOp forEachLoop = builder.create<scf::ForOp>(
-        loc, c0, vectorLength, c1,
-        ValueRange{c0, firstIndicesValue, firstValuesValue});
+    scf::ForOp forEachLoop =
+        builder.create<scf::ForOp>(loc, c0, vectorLength, c1,
+                                   ValueRange{c0, ifHasNoEntries.getResult(0),
+                                              ifHasNoEntries.getResult(1)});
     {
       builder.setInsertionPointToStart(forEachLoop.getBody());
       Value toPrintPosition = forEachLoop.getInductionVar();
@@ -785,11 +813,15 @@ ExtensionBlocks::extractBlocks(Operation *op, RegionRange &regions,
 
 LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
                             Type valueType, RegionRange regions,
-                            graphblas::YieldKind yieldKind) {
+                            graphblas::YieldKind yieldKind, bool boolAsI8) {
   // This function must match the options supported by
   // GraphBLASOps.cpp::checkUnaryOp()
 
   Type indexType = builder.getIndexType();
+  Type i1Type = builder.getI1Type();
+  Type i8Type = builder.getI8Type();
+  Value false8 = builder.create<arith::ConstantIntOp>(loc, 0, i8Type);
+  Value true8 = builder.create<arith::ConstantIntOp>(loc, 1, i8Type);
 
   // Insert unary operation
   Region *unaryRegion = regions[0];
@@ -840,6 +872,59 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
                    .Case<FloatType>([&](FloatType type) {
                      return builder.create<arith::NegFOp>(loc, val);
                    });
+  } else if (unaryOp == "acos") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "acos requires float type input");
+    // acos = atan2(sqrt(1-val**2), val)
+    Value cf1 = builder.create<arith::ConstantFloatOp>(
+        loc, APFloat(1.0), valueType.cast<FloatType>());
+    Value tmp = builder.create<arith::MulFOp>(loc, val, val);
+    tmp = builder.create<arith::SubFOp>(loc, cf1, tmp);
+    tmp = builder.create<math::SqrtOp>(loc, tmp);
+    opResult = builder.create<math::Atan2Op>(loc, tmp, val);
+  } else if (unaryOp == "asin") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "asin requires float type input");
+    // asin = atan2(val, sqrt(1-val**2))
+    Value cf1 = builder.create<arith::ConstantFloatOp>(
+        loc, APFloat(1.0), valueType.cast<FloatType>());
+    Value tmp = builder.create<arith::MulFOp>(loc, val, val);
+    tmp = builder.create<arith::SubFOp>(loc, cf1, tmp);
+    tmp = builder.create<math::SqrtOp>(loc, tmp);
+    opResult = builder.create<math::Atan2Op>(loc, val, tmp);
+  } else if (unaryOp == "tan") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "tan requires float type input");
+    Value tmp = builder.create<math::CosOp>(loc, val);
+    opResult = builder.create<math::SinOp>(loc, val);
+    opResult = builder.create<arith::DivFOp>(loc, opResult, tmp);
+  } else if (unaryOp == "cos") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "cos requires float type input");
+    opResult = builder.create<math::CosOp>(loc, val);
+  } else if (unaryOp == "isinf") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "isinf requires float type input");
+    // Check for Nan, +inf, -inf
+    FloatType fType = valueType.cast<FloatType>();
+    Value posInf = builder.create<arith::ConstantOp>(
+        loc, fType,
+        builder.getFloatAttr(fType, APFloat::getInf(fType.getFloatSemantics(),
+                                                    /*negative=*/false)));
+    Value negInf = builder.create<arith::ConstantOp>(
+        loc, fType,
+        builder.getFloatAttr(fType, APFloat::getInf(fType.getFloatSemantics(),
+                                                    /*negative=*/true)));
+    Value isPosInf = builder.create<arith::CmpFOp>(
+        loc, arith::CmpFPredicate::UEQ, val, posInf);
+    Value isNegInf = builder.create<arith::CmpFOp>(
+        loc, arith::CmpFPredicate::UEQ, val, negInf);
+    opResult = builder.create<arith::OrIOp>(loc, isPosInf, isNegInf);
   } else if (unaryOp == "minv") {
     opResult =
         llvm::TypeSwitch<Type, Value>(valueType)
@@ -867,6 +952,16 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
                   loc, APFloat(1.0), type);
               return builder.create<arith::DivFOp>(loc, c1_type, val);
             });
+  } else if (unaryOp == "sin") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "sin requires float type input");
+    opResult = builder.create<math::SinOp>(loc, val);
+  } else if (unaryOp == "sqrt") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "sqrt requires float type input");
+    opResult = builder.create<math::SqrtOp>(loc, val);
   }
 
   ////////////////////////////////////
@@ -886,6 +981,10 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
     opResult =
         builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ult, col, row);
   }
+
+  // Cannot store i1 in sparse tensor, so convert to i8 if needed
+  if (boolAsI8 && opResult.getType() == i1Type)
+    opResult = builder.create<SelectOp>(loc, opResult, true8, false8);
 
   builder.create<graphblas::YieldOp>(loc, yieldKind, opResult);
 
@@ -934,10 +1033,21 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
 
   Value opResult;
 
+  // Quick substitutions
+  if (binaryOp == "rdiv") {
+    binaryOp = "div";
+    swap(aVal, bVal);
+  }
+
   ////////////////////////////////////
   // Binary with two arguments
   ////////////////////////////////////
-  if (binaryOp == "div") {
+  if (binaryOp == "atan2") {
+    if (!valueType.isa<FloatType>())
+      return binaryRegion->getParentOp()->emitError(
+          "atan2 requires float type input");
+    opResult = builder.create<math::Atan2Op>(loc, aVal, bVal);
+  } else if (binaryOp == "div") {
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
                      return builder.create<arith::DivSIOp>(loc, aVal, bVal);
@@ -977,6 +1087,19 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
                      return builder.create<arith::CmpFOp>(
                          loc, arith::CmpFPredicate::OGT, aVal, bVal);
                    });
+  } else if (binaryOp == "hypot") {
+    if (!valueType.isa<FloatType>())
+      return binaryRegion->getParentOp()->emitError(
+          "hypot requires float type input");
+    Value aSq = builder.create<arith::MulFOp>(loc, aVal, aVal);
+    Value bSq = builder.create<arith::MulFOp>(loc, bVal, bVal);
+    opResult = builder.create<arith::AddFOp>(loc, aSq, bSq);
+    opResult = builder.create<math::SqrtOp>(loc, opResult);
+  } else if (binaryOp == "land") {
+    if (!valueType.isa<IntegerType>())
+      return binaryRegion->getParentOp()->emitError(
+          "land requires integer type input");
+    opResult = builder.create<arith::AndIOp>(loc, aVal, bVal);
   } else if (binaryOp == "le") {
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
@@ -987,6 +1110,11 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
                      return builder.create<arith::CmpFOp>(
                          loc, arith::CmpFPredicate::OLE, aVal, bVal);
                    });
+  } else if (binaryOp == "lor") {
+    if (!valueType.isa<IntegerType>())
+      return binaryRegion->getParentOp()->emitError(
+          "lor requires integer type input");
+    opResult = builder.create<arith::OrIOp>(loc, aVal, bVal);
   } else if (binaryOp == "lt") {
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
@@ -997,6 +1125,11 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
                      return builder.create<arith::CmpFOp>(
                          loc, arith::CmpFPredicate::OLT, aVal, bVal);
                    });
+  } else if (binaryOp == "lxor") {
+    if (!valueType.isa<IntegerType>())
+      return binaryRegion->getParentOp()->emitError(
+          "lxor requires integer type input");
+    opResult = builder.create<arith::XOrIOp>(loc, aVal, bVal);
   } else if (binaryOp == "max") {
     Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
                     .Case<IntegerType>([&](IntegerType type) {
@@ -1151,8 +1284,7 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
   // Insert monoid identity
   /*Block *identityBlock = */ builder.createBlock(identityRegion, {}, {});
   Value identity;
-  if (monoidOp == "plus" || monoidOp == "any") {
-    // Add identity
+  if (monoidOp == "any" || monoidOp == "lor" || monoidOp == "plus") {
     identity = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
                      return builder.create<arith::ConstantIntOp>(
@@ -1162,6 +1294,31 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
                      return builder.create<arith::ConstantFloatOp>(
                          loc, APFloat(0.0), type);
                    });
+  } else if (monoidOp == "land" || monoidOp == "times") {
+    identity = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::ConstantIntOp>(
+                         loc, 1, type.getWidth());
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::ConstantFloatOp>(
+                         loc, APFloat(1.0), type);
+                   });
+  } else if (monoidOp == "max") {
+    identity =
+        llvm::TypeSwitch<Type, Value>(valueType)
+            .Case<IntegerType>([&](IntegerType type) {
+              return builder.create<ConstantOp>(
+                  loc,
+                  builder.getIntegerAttr(
+                      valueType, APInt::getSignedMinValue(type.getWidth())));
+            })
+            .Case<FloatType>([&](FloatType type) {
+              return builder.create<ConstantOp>(
+                  loc, builder.getFloatAttr(
+                           valueType, APFloat::getLargest(
+                                          type.getFloatSemantics(), true)));
+            });
   } else if (monoidOp == "min") {
     identity =
         llvm::TypeSwitch<Type, Value>(valueType)
@@ -1186,14 +1343,31 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
   Value aVal = opBlock->getArgument(0);
   Value bVal = opBlock->getArgument(1);
   Value opResult;
-  if (monoidOp == "plus") {
-    opResult = llvm::TypeSwitch<Type, Value>(valueType)
-                   .Case<IntegerType>([&](IntegerType type) {
-                     return builder.create<arith::AddIOp>(loc, aVal, bVal);
-                   })
-                   .Case<FloatType>([&](FloatType type) {
-                     return builder.create<arith::AddFOp>(loc, aVal, bVal);
-                   });
+  if (monoidOp == "any") {
+    // Same as "second" for multiplicative op?
+    // https://github.com/DrTimothyAldenDavis/SuiteSparse/blob/master/GraphBLAS/Source/Template/GB_binop_factory.c#L243-L244
+    opResult = bVal;
+  } else if (monoidOp == "land") {
+    if (!valueType.isa<IntegerType>())
+      return opRegion->getParentOp()->emitError(
+          "land requires integer type input");
+    opResult = builder.create<arith::AndIOp>(loc, aVal, bVal);
+  } else if (monoidOp == "lor") {
+    if (!valueType.isa<IntegerType>())
+      return opRegion->getParentOp()->emitError(
+          "lor requires integer type input");
+    opResult = builder.create<arith::OrIOp>(loc, aVal, bVal);
+  } else if (monoidOp == "max") {
+    Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
+                    .Case<IntegerType>([&](IntegerType type) {
+                      return builder.create<arith::CmpIOp>(
+                          loc, arith::CmpIPredicate::sgt, aVal, bVal);
+                    })
+                    .Case<FloatType>([&](FloatType type) {
+                      return builder.create<arith::CmpFOp>(
+                          loc, arith::CmpFPredicate::OGT, aVal, bVal);
+                    });
+    opResult = builder.create<SelectOp>(loc, cmp, aVal, bVal);
   } else if (monoidOp == "min") {
     Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
                     .Case<IntegerType>([&](IntegerType type) {
@@ -1205,10 +1379,22 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
                           loc, arith::CmpFPredicate::OLT, aVal, bVal);
                     });
     opResult = builder.create<SelectOp>(loc, cmp, aVal, bVal);
-  } else if (monoidOp == "any") {
-    // Same as "second" for multiplicative op?
-    // https://github.com/DrTimothyAldenDavis/SuiteSparse/blob/master/GraphBLAS/Source/Template/GB_binop_factory.c#L243-L244
-    opResult = bVal;
+  } else if (monoidOp == "plus") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::AddIOp>(loc, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::AddFOp>(loc, aVal, bVal);
+                   });
+  } else if (monoidOp == "times") {
+    opResult = llvm::TypeSwitch<Type, Value>(valueType)
+                   .Case<IntegerType>([&](IntegerType type) {
+                     return builder.create<arith::MulIOp>(loc, aVal, bVal);
+                   })
+                   .Case<FloatType>([&](FloatType type) {
+                     return builder.create<arith::MulFOp>(loc, aVal, bVal);
+                   });
   }
 
   builder.create<graphblas::YieldOp>(loc, yieldKind, opResult);

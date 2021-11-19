@@ -870,24 +870,25 @@ static LogicalResult verify(ReduceToScalarOp op) {
     return op.emitError("\"" + aggregator +
                         "\" is not a supported aggregator.");
 
+  StringSet<> i64Aggs{"argmax", "argmin", "count"};
+  StringSet<> vectorOnlyAggs{"argmax", "argmin", "first", "last"};
+
   Type operandOrigType = op.input().getType();
   RankedTensorType operandType = operandOrigType.cast<RankedTensorType>();
   Type resultType = op.getResult().getType();
-  if (aggregator == "count") {
-    if (!resultType.isa<IntegerType>() ||
-        resultType.cast<IntegerType>().getWidth() != 64)
-      return op.emitError("\"count\" requires the output type to be i64.");
-  } else if (aggregator == "argmax" || aggregator == "argmin") {
+
+  if (i64Aggs.contains(aggregator)) {
     if (!resultType.isa<IntegerType>() ||
         resultType.cast<IntegerType>().getWidth() != 64)
       return op.emitError("\"" + aggregator +
                           "\" requires the output type to be i64.");
-    if (operandType.getRank() != 1)
-      return op.emitError("\"" + aggregator + "\" only supported for vectors.");
   } else {
     if (resultType != operandType.getElementType())
       return op.emitError("Operand and output types are incompatible.");
   }
+
+  if (vectorOnlyAggs.contains(aggregator) && operandType.getRank() != 1)
+    return op.emitError("\"" + aggregator + "\" only supported for vectors.");
 
   return success();
 }

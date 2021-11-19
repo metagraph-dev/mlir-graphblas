@@ -1,4 +1,4 @@
-from .jit_engine_test_utils import STANDARD_PASSES
+from mlir_graphblas.mlir_builder import GRAPHBLAS_PASSES
 
 import mlir_graphblas
 import mlir_graphblas.sparse_utils
@@ -34,7 +34,7 @@ func @many_inputs_constant_output(
 }
 """
     engine = mlir_graphblas.MlirJitEngine()
-    assert engine.add(mlir_text, STANDARD_PASSES) == ["many_inputs_constant_output"]
+    assert engine.add(mlir_text, GRAPHBLAS_PASSES) == ["many_inputs_constant_output"]
     callable_func = engine.many_inputs_constant_output
 
     indices = np.array([[0, 0], [1, 1]], dtype=np.uint64)
