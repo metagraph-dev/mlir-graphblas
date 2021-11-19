@@ -677,8 +677,6 @@ def GraphBLAS_MatrixMultiplyReduceToScalarGenericOp :
         identity block. These latter two blocks are used for reducing the result of the matrix multiply
         to a scalar.
 
-
-
         Example:
         ```mlir
         %answer = graphblas.matrix_multiply_reduce_to_scalar_generic %a, %b : (tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSC64>) to f64 {

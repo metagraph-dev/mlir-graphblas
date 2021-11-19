@@ -568,12 +568,6 @@ public:
   using OpRewritePattern<graphblas::SelectOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::SelectOp op,
                                 PatternRewriter &rewriter) const override {
-    ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = op->getLoc();
-
-    Value input = op.input();
-    RankedTensorType inputType = input.getType().cast<RankedTensorType>();
-    Type valueType = inputType.getElementType();
 
     std::string selector = op.selector().str();
     OperandRange thunks = op.thunks();
@@ -583,9 +577,14 @@ public:
       Value rngContext = thunks[1];
       auto probBlock = std::bind(probabilityBlock, _1, _2, _3, _4, _5, _6, _7,
                                  thunk, rngContext);
-      return buildAlgorithm<graphblas::SelectOp>(op, rewriter, module,
-                                                 probBlock);
+      return buildAlgorithm<graphblas::SelectOp>(op, rewriter, probBlock);
     } else {
+      Location loc = op->getLoc();
+
+      Value input = op.input();
+      RankedTensorType inputType = input.getType().cast<RankedTensorType>();
+      Type valueType = inputType.getElementType();
+
       // Replace with SelectGenericOp
       graphblas::SelectGenericOp newSelectOp =
           rewriter.create<graphblas::SelectGenericOp>(loc, op->getResultTypes(),
@@ -625,10 +624,11 @@ public:
 
   template <class T>
   static LogicalResult
-  buildAlgorithm(T op, PatternRewriter &rewriter, ModuleOp module,
+  buildAlgorithm(T op, PatternRewriter &rewriter,
                  std::function<LogicalResult(T, PatternRewriter &, Location,
                                              Value &, Value, Value, Value)>
                      func) {
+    ModuleOp module = op->template getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     Value input = op.input();
@@ -777,11 +777,9 @@ public:
   using OpRewritePattern<graphblas::SelectGenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::SelectGenericOp op,
                                 PatternRewriter &rewriter) const override {
-    ModuleOp module = op->getParentOfType<ModuleOp>();
-
     LogicalResult callResult =
         LowerSelectRewrite::buildAlgorithm<graphblas::SelectGenericOp>(
-            op, rewriter, module, genericBlock);
+            op, rewriter, genericBlock);
     if (callResult.failed()) {
       return callResult;
     }
@@ -826,58 +824,65 @@ private:
   };
 };
 
+class ReduceToVectorDWIMRewrite
+    : public OpRewritePattern<graphblas::ReduceToVectorOp> {
+public:
+  using OpRewritePattern<graphblas::ReduceToVectorOp>::OpRewritePattern;
+
+  static bool needsDWIM(graphblas::ReduceToVectorOp op) {
+    int axis = op.axis();
+    bool isCSR = hasRowOrdering(op.input().getType());
+    return ((axis == 0 && isCSR) || (axis == 1 && !isCSR));
+  };
+
+  LogicalResult matchAndRewrite(graphblas::ReduceToVectorOp op,
+                                PatternRewriter &rewriter) const override {
+    if (!needsDWIM(op))
+      return failure();
+
+    MLIRContext *context = op.getContext();
+    Location loc = op->getLoc();
+
+    Value input = op.input();
+    RankedTensorType flippedInputType =
+        getFlippedLayoutType(context, input.getType());
+
+    rewriter.setInsertionPoint(op);
+    Value flippedInput = rewriter.create<graphblas::ConvertLayoutOp>(
+        loc, flippedInputType, input);
+    op.inputMutable().assign(flippedInput);
+
+    return success();
+  };
+};
+
 class LowerReduceToVectorRewrite
     : public OpRewritePattern<graphblas::ReduceToVectorOp> {
 public:
   using OpRewritePattern<graphblas::ReduceToVectorOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::ReduceToVectorOp op,
                                 PatternRewriter &rewriter) const override {
-    MLIRContext *context = op.getContext();
-    ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = op->getLoc();
+    if (ReduceToVectorDWIMRewrite::needsDWIM(op))
+      return failure();
 
-    StringRef aggregator = op.aggregator();
     Value input = op.input();
-    int axis = op.axis();
+    StringRef aggregator = op.aggregator();
     RankedTensorType inputType = input.getType().dyn_cast<RankedTensorType>();
     Type elementType = inputType.getElementType();
     Type i64Type = rewriter.getI64Type();
 
-    // Ensure iteration order is appropriate for axis
-    bool isCSR = hasRowOrdering(inputType);
-    if ((axis == 0 && isCSR) || (axis == 1 && !isCSR)) {
-      sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
-          sparse_tensor::getSparseTensorEncoding(inputType);
-      unsigned ptrBitWidth = sparseEncoding.getPointerBitWidth();
-      unsigned idxBitWidth = sparseEncoding.getIndexBitWidth();
-
-      ArrayRef<int64_t> inputShape = inputType.getShape();
-      ArrayRef<int64_t> flippedShape =
-          ArrayRef<int64_t>{inputShape[1], inputShape[0]};
-      RankedTensorType flippedInputType = getSingleCompressedMatrixType(
-          context, flippedShape, /* colwise */ isCSR, elementType, ptrBitWidth,
-          idxBitWidth);
-      Value convertedTensor = rewriter.create<graphblas::ConvertLayoutOp>(
-          loc, flippedInputType, input);
-      Type originalVectorType = op->getResultTypes().front();
-      Value reducedResult = rewriter.create<graphblas::ReduceToVectorOp>(
-          loc, originalVectorType, convertedTensor, aggregator, axis);
-
-      rewriter.replaceOp(op, reducedResult);
-
-      return success();
-    }
-
     if (aggregator == "count") {
-      return buildAlgorithm<graphblas::ReduceToVectorOp>(op, rewriter, module,
-                                                         i64Type, countBlock);
+      return buildAlgorithm<graphblas::ReduceToVectorOp>(op, rewriter, i64Type,
+                                                         countBlock);
     } else if (aggregator == "argmin" or aggregator == "argmax") {
-      return buildAlgorithm<graphblas::ReduceToVectorOp>(
-          op, rewriter, module, i64Type, argminmaxBlock);
+      return buildAlgorithm<graphblas::ReduceToVectorOp>(op, rewriter, i64Type,
+                                                         argminmaxBlock);
     } else if (aggregator == "first" or aggregator == "last") {
       return buildAlgorithm<graphblas::ReduceToVectorOp>(
-          op, rewriter, module, elementType, firstLastBlock);
+          op, rewriter, elementType, firstLastBlock);
     } else {
+      Location loc = op->getLoc();
+
       NamedAttrList attributes = {};
       attributes.append(StringRef("axis"),
                         rewriter.getIntegerAttr(i64Type, op.axis()));
@@ -900,11 +905,12 @@ public:
 
   template <class T>
   static LogicalResult buildAlgorithm(
-      T op, PatternRewriter &rewriter, ModuleOp module, Type outputType,
+      T op, PatternRewriter &rewriter, Type outputType,
       std::function<LogicalResult(T, PatternRewriter &, Location, Value &,
                                   Value, Value, Value, Value)>
           func) {
     MLIRContext *context = op.getContext();
+    ModuleOp module = op->template getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     // Inputs
@@ -1148,11 +1154,10 @@ public:
   using OpRewritePattern<graphblas::ReduceToVectorGenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::ReduceToVectorGenericOp op,
                                 PatternRewriter &rewriter) const override {
-    ModuleOp module = op->getParentOfType<ModuleOp>();
     Type elementType =
         op.input().getType().cast<RankedTensorType>().getElementType();
     LogicalResult callResult = LowerReduceToVectorRewrite::buildAlgorithm<
-        graphblas::ReduceToVectorGenericOp>(op, rewriter, module, elementType,
+        graphblas::ReduceToVectorGenericOp>(op, rewriter, elementType,
                                             genericBlock);
     if (callResult.failed()) {
       return callResult;
@@ -1689,12 +1694,112 @@ public:
   };
 };
 
+class MatrixMultiplyGenericDWIMFirstArgRewrite
+    : public OpRewritePattern<graphblas::MatrixMultiplyGenericOp> {
+public:
+  using OpRewritePattern<graphblas::MatrixMultiplyGenericOp>::OpRewritePattern;
+
+  template <class T>
+  static bool needsDWIM(T op) {
+    return hasColumnOrdering(op.a().getType());
+  };
+
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyGenericOp op,
+                                PatternRewriter &rewriter) const override {
+    if (!needsDWIM(op))
+      return failure();
+
+    MLIRContext *context = op.getContext();
+    Location loc = op->getLoc();
+    Value A = op.a();
+    RankedTensorType aType = A.getType().cast<RankedTensorType>();
+    RankedTensorType flippedMatrixType = getFlippedLayoutType(context, aType);
+
+    rewriter.setInsertionPoint(op);
+    Value flippedA =
+        rewriter.create<graphblas::ConvertLayoutOp>(loc, flippedMatrixType, A);
+    op.aMutable().assign(flippedA);
+
+    return success();
+  };
+};
+
+class MatrixMultiplyGenericDWIMSecondArgRewrite
+    : public OpRewritePattern<graphblas::MatrixMultiplyGenericOp> {
+public:
+  using OpRewritePattern<graphblas::MatrixMultiplyGenericOp>::OpRewritePattern;
+
+  template <class T>
+  static bool needsDWIM(T op) {
+    return hasRowOrdering(op.b().getType());
+  };
+
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyGenericOp op,
+                                PatternRewriter &rewriter) const override {
+    if (!needsDWIM(op))
+      return failure();
+
+    MLIRContext *context = op.getContext();
+    Location loc = op->getLoc();
+    Value B = op.b();
+    RankedTensorType bType = B.getType().cast<RankedTensorType>();
+    RankedTensorType flippedMatrixType = getFlippedLayoutType(context, bType);
+
+    rewriter.setInsertionPoint(op);
+    Value flippedB =
+        rewriter.create<graphblas::ConvertLayoutOp>(loc, flippedMatrixType, B);
+    op.bMutable().assign(flippedB);
+
+    return success();
+  };
+};
+
+class MatrixMultiplyGenericDWIMMaskRewrite
+    : public OpRewritePattern<graphblas::MatrixMultiplyGenericOp> {
+public:
+  using OpRewritePattern<graphblas::MatrixMultiplyGenericOp>::OpRewritePattern;
+
+  template <class T>
+  static bool needsDWIM(T op) {
+    Value mask = op.mask();
+    if (!mask)
+      return false;
+    return hasColumnOrdering(mask.getType());
+  };
+
+  LogicalResult matchAndRewrite(graphblas::MatrixMultiplyGenericOp op,
+                                PatternRewriter &rewriter) const override {
+    if (!needsDWIM(op))
+      return failure();
+
+    MLIRContext *context = op.getContext();
+    Location loc = op->getLoc();
+
+    Value mask = op.mask();
+    RankedTensorType maskType = mask.getType().cast<RankedTensorType>();
+    RankedTensorType flippedMatrixType =
+        getFlippedLayoutType(context, maskType);
+
+    rewriter.setInsertionPoint(op);
+    Value flippedMask = rewriter.create<graphblas::ConvertLayoutOp>(
+        loc, flippedMatrixType, mask);
+    op.maskMutable().assign(flippedMask);
+
+    return success();
+  };
+};
+
 class LowerMatrixMultiplyGenericRewrite
     : public OpRewritePattern<graphblas::MatrixMultiplyGenericOp> {
 public:
   using OpRewritePattern<graphblas::MatrixMultiplyGenericOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::MatrixMultiplyGenericOp op,
                                 PatternRewriter &rewriter) const override {
+    if (MatrixMultiplyGenericDWIMFirstArgRewrite::needsDWIM(op) ||
+        MatrixMultiplyGenericDWIMSecondArgRewrite::needsDWIM(op) ||
+        MatrixMultiplyGenericDWIMMaskRewrite::needsDWIM(op))
+      return failure();
+
     // Required blocks
     RegionRange extensions = op.extensions();
     ExtensionBlocks extBlocks;
@@ -2333,6 +2438,92 @@ private:
   }
 };
 
+class MatrixMultiplyReduceToScalarGenericDWIMFirstArgRewrite
+    : public OpRewritePattern<
+          graphblas::MatrixMultiplyReduceToScalarGenericOp> {
+public:
+  using OpRewritePattern<
+      graphblas::MatrixMultiplyReduceToScalarGenericOp>::OpRewritePattern;
+
+  LogicalResult
+  matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op,
+                  PatternRewriter &rewriter) const override {
+    if (!MatrixMultiplyGenericDWIMFirstArgRewrite::needsDWIM(op))
+      return failure();
+
+    MLIRContext *context = op.getContext();
+    Location loc = op->getLoc();
+    Value A = op.a();
+    RankedTensorType aType = A.getType().cast<RankedTensorType>();
+    RankedTensorType flippedMatrixType = getFlippedLayoutType(context, aType);
+
+    rewriter.setInsertionPoint(op);
+    Value flippedA =
+        rewriter.create<graphblas::ConvertLayoutOp>(loc, flippedMatrixType, A);
+    op.aMutable().assign(flippedA);
+
+    return success();
+  };
+};
+
+class MatrixMultiplyReduceToScalarGenericDWIMSecondArgRewrite
+    : public OpRewritePattern<
+          graphblas::MatrixMultiplyReduceToScalarGenericOp> {
+public:
+  using OpRewritePattern<
+      graphblas::MatrixMultiplyReduceToScalarGenericOp>::OpRewritePattern;
+
+  LogicalResult
+  matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op,
+                  PatternRewriter &rewriter) const override {
+    if (!MatrixMultiplyGenericDWIMSecondArgRewrite::needsDWIM(op))
+      return failure();
+
+    MLIRContext *context = op.getContext();
+    Location loc = op->getLoc();
+    Value B = op.b();
+    RankedTensorType bType = B.getType().cast<RankedTensorType>();
+    RankedTensorType flippedMatrixType = getFlippedLayoutType(context, bType);
+
+    rewriter.setInsertionPoint(op);
+    Value flippedB =
+        rewriter.create<graphblas::ConvertLayoutOp>(loc, flippedMatrixType, B);
+    op.bMutable().assign(flippedB);
+
+    return success();
+  };
+};
+
+class MatrixMultiplyReduceToScalarGenericDWIMMaskRewrite
+    : public OpRewritePattern<
+          graphblas::MatrixMultiplyReduceToScalarGenericOp> {
+public:
+  using OpRewritePattern<
+      graphblas::MatrixMultiplyReduceToScalarGenericOp>::OpRewritePattern;
+
+  LogicalResult
+  matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op,
+                  PatternRewriter &rewriter) const override {
+    if (!MatrixMultiplyGenericDWIMMaskRewrite::needsDWIM(op))
+      return failure();
+
+    MLIRContext *context = op.getContext();
+    Location loc = op->getLoc();
+
+    Value mask = op.mask();
+    RankedTensorType maskType = mask.getType().cast<RankedTensorType>();
+    RankedTensorType flippedMatrixType =
+        getFlippedLayoutType(context, maskType);
+
+    rewriter.setInsertionPoint(op);
+    Value flippedMask = rewriter.create<graphblas::ConvertLayoutOp>(
+        loc, flippedMatrixType, mask);
+    op.maskMutable().assign(flippedMask);
+
+    return success();
+  };
+};
+
 class LowerMatrixMultiplyReduceToScalarGenericRewrite
     : public OpRewritePattern<
           graphblas::MatrixMultiplyReduceToScalarGenericOp> {
@@ -2342,6 +2533,11 @@ public:
   LogicalResult
   matchAndRewrite(graphblas::MatrixMultiplyReduceToScalarGenericOp op,
                   PatternRewriter &rewriter) const override {
+    if (MatrixMultiplyGenericDWIMFirstArgRewrite::needsDWIM(op) ||
+        MatrixMultiplyGenericDWIMSecondArgRewrite::needsDWIM(op) ||
+        MatrixMultiplyGenericDWIMMaskRewrite::needsDWIM(op))
+      return failure();
+
     ModuleOp module = op->getParentOfType<ModuleOp>(); /* ignore unused variable
                                                           for debugging */
     (void)module;
@@ -3796,10 +3992,18 @@ struct GraphBLASLoweringPass
 };
 
 void populateGraphBLASStructuralizePatterns(RewritePatternSet &patterns) {
-  patterns.add<TransposeDWIMRewrite, LowerMatrixMultiplyRewrite,
-               LowerApplyRewrite, LowerUnionRewrite, LowerIntersectRewrite,
-               LowerUpdateRewrite, LowerReduceToScalarRewrite>(
-      patterns.getContext());
+  patterns
+      .add<TransposeDWIMRewrite, ReduceToVectorDWIMRewrite,
+           MatrixMultiplyGenericDWIMFirstArgRewrite,
+           MatrixMultiplyGenericDWIMSecondArgRewrite,
+           MatrixMultiplyGenericDWIMMaskRewrite,
+           MatrixMultiplyReduceToScalarGenericDWIMFirstArgRewrite,
+           MatrixMultiplyReduceToScalarGenericDWIMSecondArgRewrite,
+           MatrixMultiplyReduceToScalarGenericDWIMMaskRewrite,
+           LowerMatrixMultiplyRewrite, LowerApplyRewrite, LowerSelectRewrite,
+           LowerUnionRewrite, LowerIntersectRewrite, LowerUpdateRewrite,
+           LowerReduceToVectorRewrite, LowerReduceToScalarRewrite>(
+          patterns.getContext());
 }
 
 struct GraphBLASStructuralizePass

@@ -150,12 +150,13 @@ static llvm::Optional<std::string> checkBitWidthMatch(RankedTensorType a,
   return llvm::None;
 }
 
-static llvm::Optional<std::string> checkUnaryOp(StringRef unaryOp) {
-  if (!unary1.contains(unaryOp) && !unary3.contains(unaryOp))
-    return "\"" + unaryOp.str() + "\" is not a supported unary operator.";
-  else
-    return llvm::None;
-}
+// TODO currently unused
+// static llvm::Optional<std::string> checkUnaryOp(StringRef unaryOp) {
+//   if (!unary1.contains(unaryOp) && !unary3.contains(unaryOp))
+//     return "\"" + unaryOp.str() + "\" is not a supported unary operator.";
+//   else
+//     return llvm::None;
+// }
 
 static llvm::Optional<std::string> checkBinaryOp(StringRef binaryOp) {
   if (!binary2.contains(binaryOp) && !binary4.contains(binaryOp) &&
@@ -389,16 +390,16 @@ static LogicalResult verifyMatrixMultiplyArgs(T op,
   llvm::Optional<std::string> errMsg;
   if (aRank == 2 && bRank == 2) {
     // Matrix-Matrix
-    errMsg = checkMatrixEncoding(aType, CSR);
+    errMsg = checkMatrixEncoding(aType, EITHER);
     if (errMsg)
       return op.emitError("1st operand " + errMsg.getValue());
 
-    errMsg = checkMatrixEncoding(bType, CSC);
+    errMsg = checkMatrixEncoding(bType, EITHER);
     if (errMsg)
       return op.emitError("2nd operand " + errMsg.getValue());
 
     if (checkResultTensorType) {
-      errMsg = checkMatrixEncoding(resultType, CSR);
+      errMsg = checkMatrixEncoding(resultType, EITHER);
       if (errMsg)
         return op.emitError("result " + errMsg.getValue());
       if (resultShape[0] != aShape[0] || resultShape[1] != bShape[1])
@@ -411,7 +412,7 @@ static LogicalResult verifyMatrixMultiplyArgs(T op,
       return op.emitError("Operand shapes are incompatible.");
   } else if (aRank == 2 && bRank == 1) {
     // Matrix-Vector
-    errMsg = checkMatrixEncoding(aType, CSR);
+    errMsg = checkMatrixEncoding(aType, EITHER);
     if (errMsg)
       return op.emitError("1st operand " + errMsg.getValue());
 
@@ -435,7 +436,7 @@ static LogicalResult verifyMatrixMultiplyArgs(T op,
     if (errMsg)
       return op.emitError("1st operand " + errMsg.getValue());
 
-    errMsg = checkMatrixEncoding(bType, CSC);
+    errMsg = checkMatrixEncoding(bType, EITHER);
     if (errMsg)
       return op.emitError("2nd operand " + errMsg.getValue());
 
@@ -470,7 +471,7 @@ static LogicalResult verifyMatrixMultiplyArgs(T op,
     if (checkResultTensorType) {
       ArrayRef<int64_t> maskShape = maskType.getShape();
       if (resultRank == 2) {
-        errMsg = checkMatrixEncoding(maskType, CSR);
+        errMsg = checkMatrixEncoding(maskType, EITHER);
         if (errMsg)
           return op.emitError("3rd operand (mask) " + errMsg.getValue());
 
