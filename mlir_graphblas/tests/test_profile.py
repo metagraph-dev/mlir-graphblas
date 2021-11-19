@@ -3,14 +3,13 @@ import os
 import pytest
 import uuid
 import tempfile
-import numpy as np
 
 from io import StringIO
 from contextlib import contextmanager
 from typing import Generator, List
 
 from mlir_graphblas import MlirJitEngine
-from .jit_engine_test_utils import STANDARD_PASSES
+from mlir_graphblas.mlir_builder import GRAPHBLAS_PASSES
 
 ###########
 # Helpers #
@@ -54,7 +53,7 @@ func @{function_name}(%input_val: i64) -> i64 {{
 }}
 """
     try:
-        engine.add(mlir_text, STANDARD_PASSES, profile=True)
+        engine.add(mlir_text, GRAPHBLAS_PASSES, profile=True)
     except NotImplementedError as e:
         if not sys.platform.startswith("linux"):
             pytest.skip(f"Profiling not supported on {sys.platform}.")
@@ -104,7 +103,7 @@ func @{function_name}(%input_val: i64) -> (i64, i64) {{
     try:
         engine.add(
             mlir_text,
-            STANDARD_PASSES,
+            GRAPHBLAS_PASSES,
             profile=True,
             profile_result_directory=result_dir.name,
         )

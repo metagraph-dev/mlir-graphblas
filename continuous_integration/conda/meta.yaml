@@ -23,6 +23,7 @@ requirements:
     - donfig
     - pymlir
     - llvmlite
+    - jinja2
 
   run:
     - python

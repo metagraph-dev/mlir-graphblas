@@ -18,30 +18,9 @@ from lit.llvm.subst import FindTool
 
 def _build_graphblas_exec():
     from mlir_graphblas.engine import EXTERNAL_LIBS
+    from mlir_graphblas.mlir_builder import GRAPHBLAS_PASSES
 
-    ex = [
-        "graphblas-opt",
-        "--graphblas-structuralize",
-        "--graphblas-optimize",
-        "--graphblas-lower",
-        "--sparsification",
-        "--sparse-tensor-conversion",
-        "--linalg-bufferize",
-        "--convert-scf-to-std",
-        "--func-bufferize",
-        "--tensor-constant-bufferize",
-        "--tensor-bufferize",
-        "--finalizing-bufferize",
-        "--convert-linalg-to-loops",
-        "--convert-scf-to-std",
-        "--convert-vector-to-llvm",
-        "--convert-memref-to-llvm",
-        "--convert-math-to-llvm",
-        "--convert-std-to-llvm",
-        "--reconcile-unrealized-casts",
-        "|",
-        "mlir-cpu-runner",
-    ]
+    ex = ["graphblas-opt"] + list(GRAPHBLAS_PASSES) + ["|", "mlir-cpu-runner"]
     for ext_lib in EXTERNAL_LIBS:
         ex.append(f"-shared-libs={ext_lib}")
     bin_dir = os.path.dirname(sys.executable)

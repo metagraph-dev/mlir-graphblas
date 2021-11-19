@@ -865,7 +865,7 @@ def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
      OptionalAttr<StrAttr>:$accumulate_operator,
      DefaultValuedAttr<BoolAttr, "false">:$replace,
      DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
-    let results = (outs Index:$fake_output);
+    let results = (outs);
 
     let assemblyFormat = [{
            $input `->` $output (`(` $mask^ `)`)? attr-dict `:` type($input) `->` type($output) (`(` type($mask)^ `)`)?
@@ -909,7 +909,7 @@ def GraphBLAS_UpdateGenericOp : GraphBLAS_Op<"update_generic", []> {
      Optional<GraphBlasMatrixOrVectorOperand>:$mask,
      DefaultValuedAttr<BoolAttr, "false">:$replace,
      DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
-    let results = (outs Index:$fake_output);
+    let results = (outs);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
 
     let assemblyFormat = [{

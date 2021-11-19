@@ -593,10 +593,11 @@ public:
 
       // Populate based on operator kind
       LogicalResult popResult = failure();
-      if (unary3.contains(selector)) {
+      if (unary1.contains(selector) || unary3.contains(selector)) {
         popResult = populateUnary(rewriter, loc, selector, valueType,
                                   newSelectOp.getRegions().slice(0, 1),
-                                  graphblas::YieldKind::SELECT_OUT);
+                                  graphblas::YieldKind::SELECT_OUT,
+                                  /* boolAsI8 */ false);
       } else {
         popResult = populateBinary(rewriter, loc, selector, valueType,
                                    newSelectOp.getRegions().slice(0, 1),
@@ -641,7 +642,6 @@ public:
     // Initial constants
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    Value c0_64 = rewriter.create<arith::ConstantIntOp>(loc, 0, int64Type);
     Value c1_64 = rewriter.create<arith::ConstantIntOp>(loc, 1, int64Type);
 
     // Get sparse tensor info
@@ -874,6 +874,9 @@ public:
     } else if (aggregator == "argmin" or aggregator == "argmax") {
       return buildAlgorithm<graphblas::ReduceToVectorOp>(
           op, rewriter, module, i64Type, argminmaxBlock);
+    } else if (aggregator == "first" or aggregator == "last") {
+      return buildAlgorithm<graphblas::ReduceToVectorOp>(
+          op, rewriter, module, elementType, firstLastBlock);
     } else {
       NamedAttrList attributes = {};
       attributes.append(StringRef("axis"),
@@ -1117,6 +1120,23 @@ private:
     }
 
     aggVal = loop.getResult(1);
+
+    return success();
+  }
+
+  static LogicalResult firstLastBlock(graphblas::ReduceToVectorOp op,
+                                      PatternRewriter &rewriter, Location loc,
+                                      Value &aggVal, Value ptr, Value nextPtr,
+                                      Value Ii, Value Ix) {
+    StringRef aggregator = op.aggregator();
+    Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+
+    if (aggregator == "first") {
+      aggVal = rewriter.create<memref::LoadOp>(loc, Ix, ptr);
+    } else {
+      Value lastPtr = rewriter.create<arith::SubIOp>(loc, nextPtr, c1);
+      aggVal = rewriter.create<memref::LoadOp>(loc, Ix, lastPtr);
+    }
 
     return success();
   }
@@ -2754,36 +2774,98 @@ public:
   using OpRewritePattern<graphblas::UpdateOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::UpdateOp op,
                                 PatternRewriter &rewriter) const override {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     Type valueType =
         op.input().getType().cast<RankedTensorType>().getElementType();
     bool maskComplement = op.mask_complement();
     bool replace = op.replace();
-
-    // New op
-    NamedAttrList attributes = {};
-    attributes.append(StringRef("mask_complement"),
-                      rewriter.getBoolAttr(maskComplement));
-    attributes.append(StringRef("replace"), rewriter.getBoolAttr(replace));
-    graphblas::UpdateGenericOp newUpdateOp =
-        rewriter.create<graphblas::UpdateGenericOp>(loc, op->getResultTypes(),
-                                                    op.getOperands(),
-                                                    attributes.getAttrs(), 1);
-
-    // Only populate the binary block if given an accumulator
     llvm::Optional<llvm::StringRef> accumulateOperator =
         op.accumulate_operator();
+
+    // Use generic for accumulator
     if (accumulateOperator) {
+      // New op
+      NamedAttrList attributes = {};
+      attributes.append(StringRef("mask_complement"),
+                        rewriter.getBoolAttr(maskComplement));
+      attributes.append(StringRef("replace"), rewriter.getBoolAttr(replace));
+      graphblas::UpdateGenericOp newUpdateOp =
+          rewriter.create<graphblas::UpdateGenericOp>(loc, op->getResultTypes(),
+                                                      op.getOperands(),
+                                                      attributes.getAttrs(), 1);
+
       if (failed(populateBinary(rewriter, loc, accumulateOperator->str(),
                                 valueType, newUpdateOp.getRegions().slice(0, 1),
                                 graphblas::YieldKind::ACCUMULATE)))
         return failure();
+
+      rewriter.setInsertionPointAfter(newUpdateOp);
+      rewriter.eraseOp(op);
+
+      return success();
     }
 
-    rewriter.setInsertionPointAfter(newUpdateOp);
+    // No accumulator; lower without generic op
 
-    rewriter.replaceOp(op, newUpdateOp.getResult());
+    Value input = op.input();
+    Value output = op.output();
+    Value mask = op.mask();
+
+    // Types
+    RankedTensorType outputType = output.getType().dyn_cast<RankedTensorType>();
+
+    unsigned rank = outputType.getRank(); // ranks guaranteed to be equal
+    auto computeEwise =
+        rank == 2 ? computeMatrixElementWise : computeVectorElementWise;
+
+    if (mask) {
+      EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
+      if (replace) {
+        // input -> output(mask) { replace }
+
+        // Step 1: apply the mask to the input
+        Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+        computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                     maskBehavior);
+        // Step 2: swap masked input with output
+        callSwapPointers(rewriter, module, loc, maskedInput, output);
+        callSwapIndices(rewriter, module, loc, maskedInput, output);
+        callSwapValues(rewriter, module, loc, maskedInput, output);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
+      } else {
+        // input -> output(mask)
+
+        // Step 1: apply the mask inverse to the output
+        EwiseBehavior maskInverseBehavior =
+            (maskComplement ? MASK : MASK_COMPLEMENT);
+        Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
+        computeEwise(rewriter, loc, module, output, mask, maskedOutput, nullptr,
+                     maskInverseBehavior);
+        // Step 2: apply the mask to the input
+        Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+        computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                     maskBehavior);
+        // Step 3: union the two masked results
+        // Note that there should be zero overlaps, so we do not provide
+        //      an accumulation block
+        computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
+                     nullptr, UNION);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
+      }
+    } else {
+      // input -> output { replace? }
+
+      Value inputCopy = callDupTensor(rewriter, module, loc, input);
+      callSwapPointers(rewriter, module, loc, inputCopy, output);
+      callSwapIndices(rewriter, module, loc, inputCopy, output);
+      callSwapValues(rewriter, module, loc, inputCopy, output);
+      rewriter.create<sparse_tensor::ReleaseOp>(loc, inputCopy);
+    }
+
+    rewriter.eraseOp(op);
 
     return success();
   };
@@ -2797,7 +2879,6 @@ public:
                                 PatternRewriter &rewriter) const override {
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
-    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
 
     // Inputs
     Value input = op.input();
@@ -2825,96 +2906,51 @@ public:
     auto computeEwise =
         rank == 2 ? computeMatrixElementWise : computeVectorElementWise;
 
-    if (extBlocks.accumulate) {
-      if (mask) {
-        EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
-        if (replace) {
-          // input -> output(mask) { accumulate, replace }
+    if (mask) {
+      EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
+      if (replace) {
+        // input -> output(mask) { accumulate, replace }
+        // Must think of this as `output(mask) << input` so ordering is correct
 
-          // Step 1: apply the mask to the output
-          Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
-          computeEwise(rewriter, loc, module, output, mask, maskedOutput,
-                       nullptr, maskBehavior);
-          // Step 2: apply the mask to the input
-          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
-                       maskBehavior);
-          // Step 3: union the two masked results
-          computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
-                       extBlocks.accumulate, UNION);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
-        } else {
-          // input -> output(mask) { accumulate }
-
-          // Step 1: apply the mask to the input
-          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
-                       maskBehavior);
-          // Step 2: union the two masked results
-          Value outputCopy = callDupTensor(rewriter, module, loc, output);
-          computeEwise(rewriter, loc, module, maskedInput, outputCopy, output,
-                       extBlocks.accumulate, UNION);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
-        }
+        // Step 1: apply the mask to the output
+        Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
+        computeEwise(rewriter, loc, module, output, mask, maskedOutput, nullptr,
+                     maskBehavior);
+        // Step 2: apply the mask to the input
+        Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+        computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                     maskBehavior);
+        // Step 3: union the two masked results
+        computeEwise(rewriter, loc, module, maskedOutput, maskedInput, output,
+                     extBlocks.accumulate, UNION);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
       } else {
-        // input -> output { accumulate, replace? }
+        // input -> output(mask) { accumulate }
+        // Must think of this as `output(mask) << input` so ordering is correct
 
+        // Step 1: apply the mask to the input
+        Value maskedInput = callEmptyLike(rewriter, module, loc, input);
+        computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+                     maskBehavior);
+        // Step 2: union the two masked results
         Value outputCopy = callDupTensor(rewriter, module, loc, output);
-        computeEwise(rewriter, loc, module, input, outputCopy, output,
+        computeEwise(rewriter, loc, module, outputCopy, maskedInput, output,
                      extBlocks.accumulate, UNION);
         rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
+        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
       }
     } else {
-      if (mask) {
-        EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
-        if (replace) {
-          // input -> output(mask) { replace }
+      // input -> output { accumulate, replace? }
+      // Must think of this as `output << input` so ordering is correct
 
-          // Step 1: apply the mask to the input
-          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
-                       maskBehavior);
-          // Step 2: swap masked input with output
-          callSwapPointers(rewriter, module, loc, maskedInput, output);
-          callSwapIndices(rewriter, module, loc, maskedInput, output);
-          callSwapValues(rewriter, module, loc, maskedInput, output);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
-        } else {
-          // input -> output(mask)
-
-          // Step 1: apply the mask inverse to the output
-          EwiseBehavior maskInverseBehavior =
-              (maskComplement ? MASK : MASK_COMPLEMENT);
-          Value maskedOutput = callEmptyLike(rewriter, module, loc, output);
-          computeEwise(rewriter, loc, module, output, mask, maskedOutput,
-                       nullptr, maskInverseBehavior);
-          // Step 2: apply the mask to the input
-          Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-          computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
-                       maskBehavior);
-          // Step 3: union the two masked results
-          // Note that there should be zero overlaps, so we do not provide
-          //      an accumulation block
-          computeEwise(rewriter, loc, module, maskedInput, maskedOutput, output,
-                       nullptr, UNION);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedOutput);
-          rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
-        }
-      } else {
-        // input -> output { replace? }
-
-        Value inputCopy = callDupTensor(rewriter, module, loc, input);
-        callSwapPointers(rewriter, module, loc, inputCopy, output);
-        callSwapIndices(rewriter, module, loc, inputCopy, output);
-        callSwapValues(rewriter, module, loc, inputCopy, output);
-        rewriter.create<sparse_tensor::ReleaseOp>(loc, inputCopy);
-      }
+      Value outputCopy = callDupTensor(rewriter, module, loc, output);
+      computeEwise(rewriter, loc, module, outputCopy, input, output,
+                   extBlocks.accumulate, UNION);
+      rewriter.create<sparse_tensor::ReleaseOp>(loc, outputCopy);
     }
 
-    // TODO: figure out how to replace an op with no return type
-    rewriter.replaceOp(op, c0);
+    rewriter.eraseOp(op);
 
     return success();
   };
@@ -3112,99 +3148,107 @@ private:
         rewriter, module, loc, {vectorLength, vectorLength}, resultTensorType);
 
     Value outputNNZ = rewriter.create<graphblas::NumValsOp>(loc, vector);
-    callResizeIndex(rewriter, module, loc, output, c1, outputNNZ);
-    callResizeValues(rewriter, module, loc, output, outputNNZ);
-
-    Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
-        loc, memref1DI64Type, output, c1);
-    Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(
-        loc, memref1DValueType, output);
-
-    scf::ForOp copyValuesAndIndicesLoop =
-        rewriter.create<scf::ForOp>(loc, c0, outputNNZ, c1);
+    Value hasValues = rewriter.create<arith::CmpIOp>(
+        loc, arith::CmpIPredicate::ugt, outputNNZ, c0);
+    scf::IfOp ifHasValues = rewriter.create<scf::IfOp>(loc, hasValues, false);
     {
-      rewriter.setInsertionPointToStart(copyValuesAndIndicesLoop.getBody());
-      Value outputPosition = copyValuesAndIndicesLoop.getInductionVar();
-      Value vectorIndex =
-          rewriter.create<memref::LoadOp>(loc, vectorIndices, outputPosition);
-      rewriter.create<memref::StoreOp>(loc, vectorIndex, outputIndices,
-                                       outputPosition);
-      Value vectorValue =
-          rewriter.create<memref::LoadOp>(loc, vectorValues, outputPosition);
-      rewriter.create<memref::StoreOp>(loc, vectorValue, outputValues,
-                                       outputPosition);
-      rewriter.setInsertionPointAfter(copyValuesAndIndicesLoop);
-    }
+      rewriter.setInsertionPointToStart(ifHasValues.thenBlock());
 
-    Value outputPointers = rewriter.create<sparse_tensor::ToPointersOp>(
-        loc, memref1DI64Type, output, c1);
-    Value initialVectorIndicesValue =
-        rewriter.create<memref::LoadOp>(loc, vectorIndices, c0);
-    Value vectorLengthMinusOne =
-        rewriter.create<arith::SubIOp>(loc, vectorLength, c1);
-    scf::ForOp pointersUpdateLoop = rewriter.create<scf::ForOp>(
-        loc, c0, vectorLength, c1,
-        ValueRange{c0_i64, c0, initialVectorIndicesValue});
-    {
-      rewriter.setInsertionPointToStart(pointersUpdateLoop.getBody());
-      Value pointersPosition = pointersUpdateLoop.getInductionVar();
-      Value ptr_i64 = pointersUpdateLoop.getLoopBody().getArgument(1);
-      Value vectorIndicesPosition =
-          pointersUpdateLoop.getLoopBody().getArgument(2);
-      Value vectorIndicesValue =
-          pointersUpdateLoop.getLoopBody().getArgument(3);
+      callResizeIndex(rewriter, module, loc, output, c1, outputNNZ);
+      callResizeValues(rewriter, module, loc, output, outputNNZ);
 
-      rewriter.create<memref::StoreOp>(loc, ptr_i64, outputPointers,
-                                       pointersPosition);
-      Value pointersPosition_i64 =
-          rewriter.create<arith::IndexCastOp>(loc, pointersPosition, int64Type);
-      Value rowHasValue = rewriter.create<arith::CmpIOp>(
-          op.getLoc(), arith::CmpIPredicate::eq, vectorIndicesValue,
-          pointersPosition_i64);
-      Value notAtLastIteration = rewriter.create<arith::CmpIOp>(
-          op.getLoc(), arith::CmpIPredicate::ne, pointersPosition,
-          vectorLengthMinusOne);
-      Value mustUpdate =
-          rewriter.create<arith::AndIOp>(loc, notAtLastIteration, rowHasValue);
+      Value outputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
+          loc, memref1DI64Type, output, c1);
+      Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(
+          loc, memref1DValueType, output);
 
-      scf::IfOp ifMustUpdateBlock = rewriter.create<scf::IfOp>(
-          loc, TypeRange{int64Type, indexType, int64Type}, mustUpdate, true);
+      scf::ForOp copyValuesAndIndicesLoop =
+          rewriter.create<scf::ForOp>(loc, c0, outputNNZ, c1);
       {
-        rewriter.setInsertionPointToStart(ifMustUpdateBlock.thenBlock());
-        Value nextPtr_i64 =
-            rewriter.create<arith::AddIOp>(loc, ptr_i64, c1_i64);
-        Value nextVectorIndicesPosition =
-            rewriter.create<arith::AddIOp>(loc, vectorIndicesPosition, c1);
-        Value nextUpdatedVectorIndicesValue = rewriter.create<memref::LoadOp>(
-            loc, vectorIndices, nextVectorIndicesPosition);
+        rewriter.setInsertionPointToStart(copyValuesAndIndicesLoop.getBody());
+        Value outputPosition = copyValuesAndIndicesLoop.getInductionVar();
+        Value vectorIndex =
+            rewriter.create<memref::LoadOp>(loc, vectorIndices, outputPosition);
+        rewriter.create<memref::StoreOp>(loc, vectorIndex, outputIndices,
+                                         outputPosition);
+        Value vectorValue =
+            rewriter.create<memref::LoadOp>(loc, vectorValues, outputPosition);
+        rewriter.create<memref::StoreOp>(loc, vectorValue, outputValues,
+                                         outputPosition);
+        rewriter.setInsertionPointAfter(copyValuesAndIndicesLoop);
+      }
+
+      Value outputPointers = rewriter.create<sparse_tensor::ToPointersOp>(
+          loc, memref1DI64Type, output, c1);
+      Value initialVectorIndicesValue =
+          rewriter.create<memref::LoadOp>(loc, vectorIndices, c0);
+      Value vectorLengthMinusOne =
+          rewriter.create<arith::SubIOp>(loc, vectorLength, c1);
+      scf::ForOp pointersUpdateLoop = rewriter.create<scf::ForOp>(
+          loc, c0, vectorLength, c1,
+          ValueRange{c0_i64, c0, initialVectorIndicesValue});
+      {
+        rewriter.setInsertionPointToStart(pointersUpdateLoop.getBody());
+        Value pointersPosition = pointersUpdateLoop.getInductionVar();
+        Value ptr_i64 = pointersUpdateLoop.getLoopBody().getArgument(1);
+        Value vectorIndicesPosition =
+            pointersUpdateLoop.getLoopBody().getArgument(2);
+        Value vectorIndicesValue =
+            pointersUpdateLoop.getLoopBody().getArgument(3);
+
+        rewriter.create<memref::StoreOp>(loc, ptr_i64, outputPointers,
+                                         pointersPosition);
+        Value pointersPosition_i64 = rewriter.create<arith::IndexCastOp>(
+            loc, pointersPosition, int64Type);
+        Value rowHasValue = rewriter.create<arith::CmpIOp>(
+            op.getLoc(), arith::CmpIPredicate::eq, vectorIndicesValue,
+            pointersPosition_i64);
+        Value notAtLastIteration = rewriter.create<arith::CmpIOp>(
+            op.getLoc(), arith::CmpIPredicate::ne, pointersPosition,
+            vectorLengthMinusOne);
+        Value mustUpdate = rewriter.create<arith::AndIOp>(
+            loc, notAtLastIteration, rowHasValue);
+
+        scf::IfOp ifMustUpdateBlock = rewriter.create<scf::IfOp>(
+            loc, TypeRange{int64Type, indexType, int64Type}, mustUpdate, true);
+        {
+          rewriter.setInsertionPointToStart(ifMustUpdateBlock.thenBlock());
+          Value nextPtr_i64 =
+              rewriter.create<arith::AddIOp>(loc, ptr_i64, c1_i64);
+          Value nextVectorIndicesPosition =
+              rewriter.create<arith::AddIOp>(loc, vectorIndicesPosition, c1);
+          Value nextUpdatedVectorIndicesValue = rewriter.create<memref::LoadOp>(
+              loc, vectorIndices, nextVectorIndicesPosition);
+
+          rewriter.create<scf::YieldOp>(
+              loc, ValueRange{nextPtr_i64, nextVectorIndicesPosition,
+                              nextUpdatedVectorIndicesValue});
+        }
+        {
+          rewriter.setInsertionPointToStart(ifMustUpdateBlock.elseBlock());
+          rewriter.create<scf::YieldOp>(
+              loc,
+              ValueRange{ptr_i64, vectorIndicesPosition, vectorIndicesValue});
+        }
+        rewriter.setInsertionPointAfter(ifMustUpdateBlock);
+
+        Value updatedPtr_i64 = ifMustUpdateBlock.getResult(0);
+        Value updatedVectorIndicesPosition = ifMustUpdateBlock.getResult(1);
+        Value updatedVectorIndicesValue = ifMustUpdateBlock.getResult(2);
 
         rewriter.create<scf::YieldOp>(
-            loc, ValueRange{nextPtr_i64, nextVectorIndicesPosition,
-                            nextUpdatedVectorIndicesValue});
+            loc, ValueRange{updatedPtr_i64, updatedVectorIndicesPosition,
+                            updatedVectorIndicesValue});
+
+        rewriter.setInsertionPointAfter(pointersUpdateLoop);
       }
-      {
-        rewriter.setInsertionPointToStart(ifMustUpdateBlock.elseBlock());
-        rewriter.create<scf::YieldOp>(
-            loc,
-            ValueRange{ptr_i64, vectorIndicesPosition, vectorIndicesValue});
-      }
-      rewriter.setInsertionPointAfter(ifMustUpdateBlock);
 
-      Value updatedPtr_i64 = ifMustUpdateBlock.getResult(0);
-      Value updatedVectorIndicesPosition = ifMustUpdateBlock.getResult(1);
-      Value updatedVectorIndicesValue = ifMustUpdateBlock.getResult(2);
-
-      rewriter.create<scf::YieldOp>(
-          loc, ValueRange{updatedPtr_i64, updatedVectorIndicesPosition,
-                          updatedVectorIndicesValue});
-
-      rewriter.setInsertionPointAfter(pointersUpdateLoop);
+      Value outputNNZ_i64 =
+          rewriter.create<arith::IndexCastOp>(loc, outputNNZ, int64Type);
+      rewriter.create<memref::StoreOp>(loc, outputNNZ_i64, outputPointers,
+                                       vectorLength);
+      rewriter.setInsertionPointAfter(ifHasValues);
     }
-
-    Value outputNNZ_i64 =
-        rewriter.create<arith::IndexCastOp>(loc, outputNNZ, int64Type);
-    rewriter.create<memref::StoreOp>(loc, outputNNZ_i64, outputPointers,
-                                     vectorLength);
 
     rewriter.replaceOp(op, output);
 
@@ -3247,7 +3291,6 @@ private:
 
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    Value c2 = rewriter.create<arith::ConstantIndexOp>(loc, 2);
 
     Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, matrix);
 
@@ -3260,7 +3303,6 @@ private:
 
     Value output = callNewTensor(rewriter, module, loc, ValueRange{nrows},
                                  resultTensorType);
-    callResizeDim(rewriter, module, loc, output, c0, nrows);
 
     // We do two loops, one to find the output vector's nnz
     // and one to fill up the output's indices and values.
@@ -3364,7 +3406,6 @@ private:
     }
     Value outputNNZ = outputNNZLoop.getResult(0);
 
-    callResizePointers(rewriter, module, loc, output, c0, c2);
     callResizeIndex(rewriter, module, loc, output, c0, outputNNZ);
     callResizeValues(rewriter, module, loc, output, outputNNZ);
 
@@ -3379,14 +3420,14 @@ private:
     Value outputValues = rewriter.create<sparse_tensor::ToValuesOp>(
         loc, memref1DValueType, output);
 
-    scf::ForOp outputValueAndIncidesFillingLoop =
+    scf::ForOp outputValueAndIndicesFillingLoop =
         rewriter.create<scf::ForOp>(loc, c0, nrows, c1, ValueRange{c0});
     {
       Value outputValuesPosition =
-          outputValueAndIncidesFillingLoop.getLoopBody().getArgument(1);
-      Value rowIndex = outputValueAndIncidesFillingLoop.getInductionVar();
+          outputValueAndIndicesFillingLoop.getLoopBody().getArgument(1);
+      Value rowIndex = outputValueAndIndicesFillingLoop.getInductionVar();
       rewriter.setInsertionPointToStart(
-          outputValueAndIncidesFillingLoop.getBody());
+          outputValueAndIndicesFillingLoop.getBody());
 
       Value nextRowIndex = rewriter.create<arith::AddIOp>(loc, rowIndex, c1);
       Value firstPtr_i64 =
@@ -3499,7 +3540,7 @@ private:
       Value nextOutputValuesPosition = ifDiagonalNotFoundBlock.getResult(0);
 
       rewriter.create<scf::YieldOp>(loc, ValueRange{nextOutputValuesPosition});
-      rewriter.setInsertionPointAfter(outputValueAndIncidesFillingLoop);
+      rewriter.setInsertionPointAfter(outputValueAndIndicesFillingLoop);
     }
 
     rewriter.replaceOp(op, output);
