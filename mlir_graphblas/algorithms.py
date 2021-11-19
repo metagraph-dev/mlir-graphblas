@@ -1648,8 +1648,12 @@ class GeoLocation(Algorithm):
 
                 # Drop values with large absolute deviation
                 mad_mask = irb.graphblas.select(mad, "gt", max_mad)
-                irb.graphblas.update(lat, lat, mask=mad_mask, mask_complement=True)
-                irb.graphblas.update(lon, lon, mask=mad_mask, mask_complement=True)
+                irb.graphblas.update(
+                    lat, lat, mask=mad_mask, mask_complement=True, replace=True
+                )
+                irb.graphblas.update(
+                    lon, lon, mask=mad_mask, mask_complement=True, replace=True
+                )
 
                 lat_nvals = irb.graphblas.num_vals(lat)
                 condition = irb.arith.cmpi(lat_nvals, size, "ne")

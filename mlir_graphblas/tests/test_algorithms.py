@@ -585,3 +585,45 @@ def test_haversine_distance():
 
     dist = compiled_func(v1, w1, v2, w2)
     assert math.isclose(dist.values[0], 347.3, abs_tol=0.1)
+
+
+def test_geolocation():
+    # fmt: off
+    indices = np.array([
+        [0, 1], [0, 2],
+        [1, 0], [1, 3],
+        [2, 0], [2, 4], [2, 5],
+        [3, 1], [3, 4], [3, 6], [3, 7],
+        [4, 2], [4, 3],
+        [5, 2],
+        [6, 3],
+        [7, 3],
+    ], dtype=np.uint64)
+    values = np.array(
+        [100, 200, 100, 300, 200, 400, 500, 300, 600, 700, 800, 400, 600, 500, 700, 800],
+        dtype=np.float64)
+    sizes = np.array([8, 8], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    graph = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    indices = np.array([[1], [2], [4], [6], [7]], dtype=np.uint64)
+    values = np.array([37.7449063493, 37.8668048274, 9.4276164485, 33.9774659389, 39.2598884729], dtype=np.float64)
+    sizes = np.array([8], dtype=np.uint64)
+    sparsity = np.array([True], dtype=np.bool8)
+    lat = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    indices = np.array([[1], [2], [4], [6], [7]], dtype=np.uint64)
+    values = np.array([-122.009432884, -122.257973253, -110.640705659, -114.886512278, -106.804662071],
+                      dtype=np.float64)
+    lon = MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    expected_lat = np.array(
+        [37.80592086, 37.74490635, 37.86680483, 33.97769335,  9.42761645, 37.86680483, 33.97746594, 39.25988847])
+    expected_lon = np.array(
+        [-122.13360051, -122.00943288, -122.25797325, -114.88638873,
+         -110.64070566, -122.25797325, -114.88651228, -106.80466207])
+    # fmt: on
+    lat, lon = mlalgo.geolocation(graph, lat, lon)
+
+    np.testing.assert_allclose(lat.toarray(), expected_lat)
+    np.testing.assert_allclose(lon.toarray(), expected_lon)

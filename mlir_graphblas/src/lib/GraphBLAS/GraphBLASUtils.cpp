@@ -235,16 +235,44 @@ void callPrintTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
     Value vectorLengthMinusOne =
         builder.create<arith::SubIOp>(loc, vectorLength, c1);
 
-    Value firstValuesValue =
-        builder.create<memref::LoadOp>(loc, inputValues, c0);
-    Value firstIndicesValue_i64 =
-        builder.create<memref::LoadOp>(loc, inputIndices, c0);
-    Value firstIndicesValue = builder.create<arith::IndexCastOp>(
-        loc, firstIndicesValue_i64, indexType);
+    Value nnz = builder.create<graphblas::NumValsOp>(loc, input);
+    Value hasNoEntries =
+        builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::eq, nnz, c0);
+    scf::IfOp ifHasNoEntries = builder.create<scf::IfOp>(
+        loc, TypeRange{indexType, inputValueType}, hasNoEntries, true);
+    builder.setInsertionPointToStart(ifHasNoEntries.thenBlock());
+    {
+      // Choose index that will never be reached and placeholder initial value
+      Value typedPlaceholder =
+          llvm::TypeSwitch<Type, Value>(inputValueType)
+              .Case<IntegerType>([&](IntegerType type) {
+                return builder.create<arith::ConstantIntOp>(loc, -1,
+                                                            type.getWidth());
+              })
+              .Case<FloatType>([&](FloatType type) {
+                return builder.create<arith::ConstantFloatOp>(
+                    loc, APFloat(-1.0), type);
+              });
+      builder.create<scf::YieldOp>(loc,
+                                   ValueRange{vectorLength, typedPlaceholder});
+    }
+    builder.setInsertionPointToStart(ifHasNoEntries.elseBlock());
+    {
+      Value firstValuesValue =
+          builder.create<memref::LoadOp>(loc, inputValues, c0);
+      Value firstIndicesValue_i64 =
+          builder.create<memref::LoadOp>(loc, inputIndices, c0);
+      Value firstIndicesValue = builder.create<arith::IndexCastOp>(
+          loc, firstIndicesValue_i64, indexType);
+      builder.create<scf::YieldOp>(
+          loc, ValueRange{firstIndicesValue, firstValuesValue});
+    }
+    builder.setInsertionPointAfter(ifHasNoEntries);
 
-    scf::ForOp forEachLoop = builder.create<scf::ForOp>(
-        loc, c0, vectorLength, c1,
-        ValueRange{c0, firstIndicesValue, firstValuesValue});
+    scf::ForOp forEachLoop =
+        builder.create<scf::ForOp>(loc, c0, vectorLength, c1,
+                                   ValueRange{c0, ifHasNoEntries.getResult(0),
+                                              ifHasNoEntries.getResult(1)});
     {
       builder.setInsertionPointToStart(forEachLoop.getBody());
       Value toPrintPosition = forEachLoop.getInductionVar();
