@@ -22,6 +22,8 @@ using namespace mlir::sparse_tensor;
 bool hasRowOrdering(Type inputType) {
   sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
       sparse_tensor::getSparseTensorEncoding(inputType);
+  if (sparseEncoding.getDimLevelType().size() != 2)
+    return false;
   AffineMap dimOrdering = sparseEncoding.getDimOrdering();
   unsigned dimSize = dimOrdering.getNumResults();
   for (unsigned i = 0; i < dimSize; i++) {
@@ -34,6 +36,8 @@ bool hasRowOrdering(Type inputType) {
 bool hasColumnOrdering(Type inputType) {
   sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
       sparse_tensor::getSparseTensorEncoding(inputType);
+  if (sparseEncoding.getDimLevelType().size() != 2)
+    return false;
   AffineMap dimOrdering = sparseEncoding.getDimOrdering();
   unsigned dimSize = dimOrdering.getNumResults();
   for (unsigned i = 0; i < dimSize; i++) {
