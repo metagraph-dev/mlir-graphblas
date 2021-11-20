@@ -1191,5 +1191,24 @@ static LogicalResult verify(PrintOp op) {
   return success();
 }
 
+static LogicalResult verify(PrintTensorOp op) {
+  Type operandOrigType = op.input().getType();
+  RankedTensorType operandType = operandOrigType.cast<RankedTensorType>();
+  int64_t rank = operandType.getRank();
+
+  llvm::Optional<std::string> errMsg;
+  if (rank == 1) {
+    errMsg = checkVectorEncoding(operandType);
+    if (errMsg)
+      return op.emitError("input " + errMsg.getValue());
+  } else {
+    errMsg = checkMatrixEncoding(operandType, EITHER);
+    if (errMsg)
+      return op.emitError("input " + errMsg.getValue());
+  }
+
+  return success();
+}
+
 #define GET_OP_CLASSES
 #include "GraphBLAS/GraphBLASOps.cpp.inc"

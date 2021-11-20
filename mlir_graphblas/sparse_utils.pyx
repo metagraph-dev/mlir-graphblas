@@ -120,6 +120,7 @@ cdef extern from "SparseUtils.cpp" nogil:
     # HACKED IN
     uint64_t get_rank(void *tensor)
     bool verify(void *tensor)
+    void print_tensor(void *tensor, int64_t level)
 
     # These return pointers to the vectors
     void *get_rev_ptr(void *)
@@ -580,7 +581,10 @@ cdef class MLIRSparseTensor:
             )
 
         return dense_array
-    
+
+    cpdef void print_tensor(self, level=4):
+        print_tensor(self._data, level)
+
     cpdef ndarray get_indices(self, uint64_t d):
         cdef StridedMemRefType[uint8_t, one] ref8
         cdef StridedMemRefType[uint16_t, one] ref16

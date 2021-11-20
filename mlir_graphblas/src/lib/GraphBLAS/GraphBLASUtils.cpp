@@ -460,6 +460,19 @@ void callPrintTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
   return;
 }
 
+void callPrintTensorComponents(OpBuilder &builder, ModuleOp &mod, Location loc,
+                               Value input, int64_t level) {
+  Type i64Type = builder.getI64Type();
+  Value lvl = builder.create<arith::ConstantIntOp>(loc, level, i64Type);
+  Value input_ptr8 = castToPtr8(builder, mod, loc, input);
+  Type ptr8Type = input_ptr8.getType();
+  FlatSymbolRefAttr func =
+      getFunc(mod, loc, "print_tensor", TypeRange(), {ptr8Type, i64Type});
+  builder.create<CallOp>(loc, func, TypeRange(),
+                         ArrayRef<Value>({input_ptr8, lvl}));
+  return;
+}
+
 void callPrintString(OpBuilder &builder, ModuleOp &mod, Location loc,
                      StringRef string) {
   Type int64Type = builder.getIntegerType(64);

@@ -1190,4 +1190,27 @@ def GraphBLAS_PrintOp : GraphBLAS_Op<"print", []> {
     let verifier = [{ return ::verify(*this); }];
 }
 
+
+def GraphBLAS_PrintTensorOp : GraphBLAS_Op<"print_tensor", []> {
+    let summary = "Print tensor operation.";
+    let description = [{
+        Prints the sparse components of a tensor to stdout.
+        This is useful for debugging and testing.
+
+        ```mlir
+        graphblas.print_tensor %sparse_tensor { level=4 } : tensor<?x?xf64, #CSR64>
+        ```
+    }];
+
+    let arguments = (
+        ins GraphBlasMatrixOrVectorOperand:$input,
+        I64Attr:$level);
+
+    let assemblyFormat = [{
+        $input attr-dict `:` type($input)
+    }];
+
+    let verifier = [{ return ::verify(*this); }];
+}
+
 #endif // GRAPHBLAS_OPS

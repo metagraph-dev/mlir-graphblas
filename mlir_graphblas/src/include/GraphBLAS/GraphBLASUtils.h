@@ -112,6 +112,9 @@ int64_t getRank(mlir::Value inputValue);
 
 void callPrintTensor(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                      mlir::Location loc, mlir::Value input);
+void callPrintTensorComponents(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
+                               mlir::Location loc, mlir::Value input,
+                               int64_t level);
 void callPrintString(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
                      mlir::Location loc, mlir::StringRef string);
 void callPrintValue(mlir::OpBuilder &builder, mlir::ModuleOp &mod,
