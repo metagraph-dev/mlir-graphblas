@@ -265,6 +265,13 @@ public:
     fatal("verify");
     return false;
   }
+
+  virtual void print_components(int64_t level) {
+    fatal("print_components");
+  }
+  virtual void print_dense() {
+    fatal("print_dense");
+  }
   //// <- MODIFIED
 
 private:
@@ -760,6 +767,73 @@ public:
       }
     }
     return rv;
+  }
+
+  void print_components(int64_t level) override {
+    // level 0 prints a dense tensor with '_' for missing values
+    // level 1 prints the values array
+    // level 2 prints indices and values
+    // level 3 prints pointers, indices, and values
+    // level 4 prints shape, pointers, indices, values
+    // level 5 prints rev, shape, pointers, indices, values
+    uint64_t rank = getRank();
+    if (level >= 5) {
+      // Print rev
+      std::cout << "rev=(";
+      for (uint64_t i=0; i<rank; i++) {
+        if (i != 0)
+          std::cout << ", ";
+        std::cout << rev[i];
+      }
+      std::cout << ")\n";
+    }
+    if (level >= 4) {
+      // Print shape
+      std::cout << "shape=(";
+      for (uint64_t i=0; i<rank; i++) {
+        if (i != 0)
+          std::cout << ", ";
+        std::cout << sizes[rev[i]];
+      }
+      std::cout << ")\n";
+    }
+    if (level >= 3) {
+      // Print pointers
+      std::vector<P> ptrs = pointers[rank == 2 ? 1 : 0];
+      std::cout << "pointers=(";
+      for (uint64_t i=0; i<ptrs.size(); i++) {
+        if (i != 0)
+          std::cout << ", ";
+        std::cout << ptrs[i];
+      }
+      std::cout << ")\n";
+    }
+    if (level >= 2) {
+      // Print indices
+      std::cout << "indices=(";
+      std::vector<I> idx = indices[rank == 2 ? 1 : 0];
+      for (uint64_t i=0; i<idx.size(); i++) {
+        if (i != 0)
+          std::cout << ", ";
+        std::cout << idx[i];
+      }
+      std::cout << ")\n";
+    }
+    if (level >= 1) {
+      // Print values
+      std::cout << "values=(";
+      for (uint64_t i=0; i<values.size(); i++) {
+        if (i != 0)
+          std::cout << ", ";
+        std::cout << values[i];
+      }
+      std::cout << ")\n";
+    }
+  }
+
+  void print_dense() override {
+    std::cout << "print_dense is not implemented";
+    std::cout << '\n';
   }
   //// <- MODIFIED
 };
@@ -1366,6 +1440,13 @@ memrefCopy(int64_t elemSize, UnrankedMemRefType<char> *srcArg,
       writeIndex -= dst.sizes[axis] * dstStrides[axis];
     }
   }
+}
+
+void print_tensor(void *tensor, int64_t level) {
+  if (level <= 0)
+    static_cast<SparseTensorStorageBase *>(tensor)->print_dense();
+  else
+    static_cast<SparseTensorStorageBase *>(tensor)->print_components(level);
 }
 //// <- MODIFIED
 

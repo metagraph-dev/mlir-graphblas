@@ -3792,6 +3792,25 @@ public:
   };
 };
 
+class LowerPrintTensorRewrite
+    : public OpRewritePattern<graphblas::PrintTensorOp> {
+public:
+  using OpRewritePattern<graphblas::PrintTensorOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::PrintTensorOp op,
+                                PatternRewriter &rewriter) const override {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+    Value input = op.input();
+    int64_t level = op.level();
+
+    callPrintTensorComponents(rewriter, module, loc, input, level);
+
+    rewriter.eraseOp(op);
+
+    return success();
+  };
+};
+
 class LowerMatrixSelectRandomRewrite
     : public OpRewritePattern<graphblas::MatrixSelectRandomOp> {
 public:
@@ -3975,8 +3994,9 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
                LowerIntersectRewrite, LowerIntersectGenericRewrite,
                LowerUpdateRewrite, LowerUpdateGenericRewrite, LowerEqualRewrite,
                LowerDiagOpRewrite, LowerCommentRewrite, LowerPrintRewrite,
-               LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
-               LowerNumValsRewrite, LowerDupRewrite>(patterns.getContext());
+               LowerPrintTensorRewrite, LowerSizeRewrite, LowerNumRowsRewrite,
+               LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite>(
+      patterns.getContext());
 }
 
 struct GraphBLASLoweringPass
