@@ -33,13 +33,13 @@ module {
       // CHECK: third line : 1.3 |"| 34
       graphblas.print %0, %1 { strings = ["third line : ", " |\"| "] } : f32, i8
 
-      %dense_vec = arith.constant dense<[0.0, 10.0, 20.0, 0.0]> : tensor<4xf64>
+      %dense_vec = arith.constant dense<[0.0, 10.0, 0.0, 20.0]> : tensor<4xf64>
       %vec = sparse_tensor.convert %dense_vec : tensor<4xf64> to tensor<?xf64, #CV64>
 
-      // CHECK: vec [0, 10, 20, 0]
+      // CHECK: vec [0, 10, 0, 20]
       graphblas.print %dense_vec { strings = ["vec "] } : tensor<4xf64>
 
-      // CHECK: vec [_, 10, 20, _]
+      // CHECK: vec [_, 10, _, 20]
       graphblas.print %vec { strings = ["vec "] } : tensor<?xf64, #CV64>
 
       %dense_mat = arith.constant dense<[

@@ -348,7 +348,8 @@ class MLIRFunctionBuilder:
             )
 
     def new_var(self, var_type: str) -> MLIRVar:
-        var_name = f"var{next(self.var_name_counter)}"
+        var_num = next(self.var_name_counter)
+        var_name = f"var{var_num}"
         var_type = Type.find(var_type, self.aliases)
         return MLIRVar(var_name, var_type)
 
@@ -395,21 +396,28 @@ class MLIRFunctionBuilder:
             self.preamble_template: Optional[jinja2.Template] = None
 
         def start_preamble(self):
-            if self.returned_var is not None or self.preamble_template is not None:
+            if self.preamble_template is not None:
                 raise RuntimeError("scf.while preamble template already generated.")
-            self.preamble_template = jinja2.Template(
-                "{{ returned_var }} = scf.while ("
-                + ", ".join(
-                    f"{arg_var.assign} = {init_val}"
-                    for arg_var, init_val in zip(
-                        self.arg_vars, self.input_initial_values
+            preamble_template_string = ""
+            if len(self.arg_vars) != 0:
+                self.preamble_template = jinja2.Template(
+                    "scf.while ("
+                    + ", ".join(
+                        f"{arg_var.assign} = {init_val}"
+                        for arg_var, init_val in zip(
+                            self.arg_vars, self.input_initial_values
+                        )
                     )
+                    + ") : ("
+                    + ", ".join(str(var.type) for var in self.arg_vars)
+                    + ") -> ({{ after_region_arg_types }}) {",
+                    undefined=jinja2.StrictUndefined,
                 )
-                + ") : ("
-                + ", ".join(str(var.type) for var in self.arg_vars)
-                + ") -> ({{ after_region_arg_types }}) {",
-                undefined=jinja2.StrictUndefined,
-            )
+            else:
+                self.preamble_template = jinja2.Template(
+                    "scf.while : () -> ({{ after_region_arg_types }}) {",
+                    undefined=jinja2.StrictUndefined,
+                )
 
         def finish_preamble(self):
             if not self.condition_has_been_built():
@@ -420,14 +428,20 @@ class MLIRFunctionBuilder:
             if self.preamble_template is None:
                 raise RuntimeError("scf.while preamble template not yet generated.")
             assert self.returned_var is None
-            self.returned_var = self.builder.new_tuple(
-                *(var.type for var in self.forwarded_vars)
-            )
-            after_region_arg_types = ", ".join(str(t) for t in self.returned_var.types)
+            if len(self.forwarded_vars) != 0:
+                self.returned_var = self.builder.new_tuple(
+                    *(var.type for var in self.forwarded_vars)
+                )
+                after_region_arg_types = ", ".join(
+                    str(t) for t in self.returned_var.types
+                )
+            else:
+                after_region_arg_types = ""
             preamble = self.preamble_template.render(
-                returned_var=self.returned_var.assign,
                 after_region_arg_types=after_region_arg_types,
             )
+            if self.returned_var is not None:
+                preamble = f"{self.returned_var.assign} = {preamble}"
             self.builder.add_statement(preamble)
             return
 
@@ -443,12 +457,14 @@ class MLIRFunctionBuilder:
             return self.forwarded_vars is not None
 
         def condition(self, condition_var: MLIRVar, *after_region_args: MLIRVar):
-            self.builder.add_statement(
-                f"scf.condition({condition_var}) "
-                + ", ".join(map(str, after_region_args))
-                + " : "
-                + ", ".join(str(arg.type) for arg in after_region_args)
-            )
+            condition_string = f"scf.condition({condition_var}) "
+            if len(after_region_args) != 0:
+                condition_string += (
+                    ", ".join(map(str, after_region_args))
+                    + " : "
+                    + ", ".join(str(arg.type) for arg in after_region_args)
+                )
+            self.builder.add_statement(condition_string)
             self.forwarded_vars = after_region_args
             assert self.condition_has_been_built()
             return
@@ -464,11 +480,15 @@ class MLIRFunctionBuilder:
             ]
 
         def write_preamble(self):
-            self.builder.add_statement(
-                "^bb0("
-                + ", ".join(f"{var.assign}: {var.type}" for var in self.arg_vars)
-                + "):"
-            )
+            preamble_string = "^bb0"
+            if len(self.arg_vars) != 0:
+                preamble_string += (
+                    "("
+                    + ", ".join(f"{var.assign}: {var.type}" for var in self.arg_vars)
+                    + ")"
+                )
+            preamble_string += ":"
+            self.builder.add_statement(preamble_string)
 
         def write_postamble(self):
             self.builder.add_statement("}")
@@ -486,9 +506,12 @@ class MLIRFunctionBuilder:
                     raise TypeError(
                         f"{yielded_vars!r} and {before_region_arg_var!r} have different types."
                     )
-            yield_vals = ", ".join(str(var) for var in yielded_vars)
-            yield_types = ", ".join(str(var.type) for var in yielded_vars)
-            self.builder.add_statement(f"scf.yield {yield_vals} : {yield_types}")
+            yield_string = "scf.yield "
+            if len(yielded_vars) != 0:
+                yield_vals = ", ".join(str(var) for var in yielded_vars)
+                yield_types = ", ".join(str(var.type) for var in yielded_vars)
+                yield_string += f"{yield_vals} : {yield_types}"
+            self.builder.add_statement(yield_string)
 
     class WhileLoopRegions:
         def __init__(
