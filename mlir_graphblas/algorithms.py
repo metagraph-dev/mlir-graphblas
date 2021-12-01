@@ -1684,3 +1684,135 @@ class GeoLocation(Algorithm):
 
 
 geolocation = GeoLocation()
+
+
+class ConnectedComponents(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "connected_components",
+            input_types=["tensor<?x?xf64, #CSR64>"],
+            return_types=[
+                "tensor<?xf64, #CV64>",
+            ],
+            aliases=_build_common_aliases(),
+        )
+
+        (A,) = irb.inputs
+
+        c0 = irb.arith.constant(0, "index")
+        c1 = irb.arith.constant(1, "index")
+        c0_i1 = irb.arith.constant(0, "i1")
+
+        n = irb.graphblas.num_rows(A)
+        n_i64 = irb.arith.index_cast(n, "i64")
+
+        f = irb.util.new_sparse_tensor("tensor<?xf64, #CV64>", n)
+        f_ptr8 = irb.util.tensor_to_ptr8(f)
+        irb.util.resize_sparse_index(f_ptr8, c0, n)
+        irb.util.resize_sparse_values(f_ptr8, n)
+        f_pointers = irb.sparse_tensor.pointers(f, c0)
+        f_indices = irb.sparse_tensor.indices(f, c0)
+        f_values = irb.sparse_tensor.values(f)
+        with irb.for_loop(0, n) as f_arange_for_vars:
+            f_values_position = f_arange_for_vars.iter_var_index
+            f_values_position_i64 = irb.arith.index_cast(f_values_position, "i64")
+            f_values_position_f64 = irb.arith.sitofp(f_values_position_i64, "f64")
+            irb.memref.store(f_values_position_i64, f_pointers, f_values_position)
+            irb.memref.store(f_values_position_i64, f_indices, f_values_position)
+            irb.memref.store(f_values_position_f64, f_values, f_values_position)
+        irb.memref.store(n_i64, f_pointers, c1)
+
+        gp = irb.graphblas.dup(f)
+        gp_values = irb.sparse_tensor.values(gp)
+
+        with irb.while_loop() as while_loop:
+            with while_loop.before as before_region:
+                # TODO code below assume I, f, gp, and gp_dup are dense
+                # when sparse output is supported, make them dense tensors
+                # There's a lot of room to optimize here.
+
+                I = irb.graphblas.dup(f)
+                gp_dup = irb.graphblas.dup(gp)
+
+                # mngp << op.min_second(A @ gp)
+                mngp = irb.graphblas.matrix_multiply(A, gp, "min_second")
+                mngp_indices = irb.sparse_tensor.indices(mngp, c0)
+                mngp_values = irb.sparse_tensor.values(mngp)
+
+                # f(binary.min)[I] << mngp
+                # TODO eventually implement grapblas.assign
+                I_values = irb.sparse_tensor.values(I)
+                mngp_pointer = irb.new_var("index")
+                with irb.for_loop(
+                    0, n, iter_vars=[(mngp_pointer, c0)]
+                ) as for_vars:  # TODO parallelize
+                    I_values_position = for_vars.iter_var_index
+
+                    mngp_index_i64 = irb.memref.load(mngp_indices, mngp_pointer)
+                    mngp_index = irb.arith.index_cast(mngp_index_i64, "index")
+                    mngp_present = irb.arith.cmpi(mngp_index, I_values_position, "eq")
+
+                    updated_mngp_pointer = irb.new_var("index")
+                    irb.add_statement(
+                        f"""
+{updated_mngp_pointer.assign} = scf.if {mngp_present} -> (index) {{
+"""
+                    )
+                    I_value = irb.memref.load(I_values, I_values_position)
+                    I_value_i64 = irb.arith.fptosi(I_value, "i64")
+                    I_value_as_index = irb.arith.index_cast(I_value_i64, "index")
+
+                    f_value = irb.memref.load(f_values, I_value_as_index)
+                    mngp_value = irb.memref.load(mngp_values, mngp_pointer)
+
+                    # TODO would an scf.if be faster? Or do they compile down to the same code?
+                    f_value_is_min = irb.arith.cmpf(f_value, mngp_value, "olt")
+
+                    value_to_store = irb.select(f_value_is_min, f_value, mngp_value)
+                    irb.memref.store(value_to_store, f_values, I_value_as_index)
+
+                    mngp_pointer_plus_one = irb.arith.addi(mngp_pointer, c1)
+                    irb.add_statement(
+                        f"""
+  scf.yield {mngp_pointer_plus_one} : index
+}} else {{
+  scf.yield {mngp_pointer} : index
+}}
+"""
+                    )
+                    for_vars.yield_vars(updated_mngp_pointer)
+
+                # f << op.min(f | mngp)
+                irb.graphblas.update(mngp, f, "min")
+
+                # f << op.min(f | gp)
+                irb.graphblas.update(gp, f, "min")
+
+                # gp << f[I] // I has same values as f here
+                # TODO eventually implement grapblas.extract
+                with irb.for_loop(0, n) as for_vars:  # TODO parallelize
+                    f_values_position = for_vars.iter_var_index
+                    f_value = irb.memref.load(f_values, f_values_position)
+                    f_value_i64 = irb.arith.fptosi(f_value, "i64")
+                    f_value_as_index = irb.arith.index_cast(f_value_i64, "index")
+
+                    value_to_store = irb.memref.load(f_values, f_value_as_index)
+                    irb.memref.store(value_to_store, gp_values, f_values_position)
+
+                no_change = irb.graphblas.equal(gp, gp_dup)
+                change = irb.arith.cmpi(no_change, c0_i1, "eq")
+                before_region.condition(change)
+            with while_loop.after as after_region:
+                after_region.yield_vars(*after_region.arg_vars)
+
+        irb.return_vars(f)
+
+        return irb
+
+    def __call__(
+        self, A: MLIRSparseTensor, **kwargs
+    ) -> Tuple[MLIRSparseTensor, MLIRSparseTensor]:
+        return super().__call__(A, **kwargs)
+
+
+connected_components = ConnectedComponents()
