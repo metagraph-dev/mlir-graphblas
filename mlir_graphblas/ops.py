@@ -982,6 +982,50 @@ class GraphBLAS_MatrixSelectRandom(BaseOp):
         )
 
 
+class GraphBLAS_FromCOO(BaseOp):
+    dialect = "graphblas"
+    name = "from_coo"
+
+    @classmethod
+    def call(cls, irbuilder, indices, values, shape):
+        cls.ensure_mlirvar(indices, TensorType)
+        cls.ensure_mlirvar(values, TensorType)
+        if not hasattr(shape, "__len__"):
+            shape = [shape]
+        priors = []
+        for i in range(len(shape)):
+            if not isinstance(shape[i], MLIRVar):
+                dim = irbuilder.new_var("index")
+                priors.append(f"{dim.assign} = constant {shape[i]} : index")
+                shape[i] = dim
+        if len(shape) == 2:
+            ret_type = f"tensor<?x?x{values.type.value_type}, #CSR64>"
+        else:
+            ret_type = f"tensor<?x{values.type.value_type}, #CV64>"
+        ret_val = irbuilder.new_var(ret_type)
+        dimstr = ", ".join(map(str, shape))
+        return ret_val, "\n".join(priors) + (
+            f"{ret_val.assign} = graphblas.from_coo {indices}, {values} [{dimstr}]"
+            + f" : {indices.type}, {values.type} to {ret_val.type}"
+        )
+
+
+class GraphBLAS_ToCOO(BaseOp):
+    dialect = "graphblas"
+    name = "to_coo"
+
+    @classmethod
+    def call(cls, irbuilder, tensor):
+        cls.ensure_mlirvar(tensor, SparseTensorType)
+        ret_val = irbuilder.new_tuple(
+            "tensor<?x?xindex>", f"tensor<?x{tensor.type.value_type}>"
+        )
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.to_coo {tensor} : "
+            f"{tensor.type} to tensor<?x?xindex>, tensor<?x{tensor.type.value_type}>"
+        )
+
+
 class GraphBLAS_Print(BaseOp):
     dialect = "graphblas"
     name = "print"

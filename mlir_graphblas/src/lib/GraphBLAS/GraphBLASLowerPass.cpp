@@ -3981,6 +3981,211 @@ public:
   };
 };
 
+class LowerFromCoordinatesRewrite
+    : public OpRewritePattern<graphblas::FromCoordinatesOp> {
+public:
+  using OpRewritePattern<graphblas::FromCoordinatesOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::FromCoordinatesOp op,
+                                PatternRewriter &rewriter) const override {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+    Value indices = op.indices();
+    Value values = op.values();
+    ValueRange sizes = op.sizes();
+
+    // Types
+    RankedTensorType resultType =
+        op.getResult().getType().cast<RankedTensorType>();
+    Type int64Type = rewriter.getIntegerType(64);
+    MemRefType memrefI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memrefValueType =
+        MemRefType::get({-1}, resultType.getElementType());
+
+    unsigned rank = resultType.getRank();
+
+    // Initial constants
+    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+    Value ci0 = rewriter.create<arith::ConstantIntOp>(loc, 0, int64Type);
+    Value ci1 = rewriter.create<arith::ConstantIntOp>(loc, 1, int64Type);
+
+    Value output =
+        rewriter.create<sparse_tensor::InitOp>(loc, resultType, sizes);
+
+    // Sparse Tensor info
+    Value npointers, dimIndex;
+    if (rank == 1) {
+      npointers = c1;
+      dimIndex = c0;
+    } else {
+      npointers = sizes[0];
+      dimIndex = c1;
+    }
+
+    // Size sparse arrays
+    Value nnz = rewriter.create<tensor::DimOp>(loc, indices, c0);
+    Value npointers_plus1 = rewriter.create<arith::AddIOp>(loc, npointers, c1);
+    callResizePointers(rewriter, module, loc, output, dimIndex,
+                       npointers_plus1);
+    callResizeIndex(rewriter, module, loc, output, dimIndex, nnz);
+    callResizeValues(rewriter, module, loc, output, nnz);
+
+    Value Op = rewriter.create<sparse_tensor::ToPointersOp>(loc, memrefI64Type,
+                                                            output, dimIndex);
+    Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefI64Type,
+                                                           output, dimIndex);
+    Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefValueType,
+                                                          output);
+
+    // Populate from indices and values
+    // We assume everything is in the correct order
+    // Increment the pointer count and fill in the index and value
+    scf::ForOp loop = rewriter.create<scf::ForOp>(loc, c0, nnz, c1);
+    {
+      rewriter.setInsertionPointToStart(loop.getBody());
+      Value pos = loop.getInductionVar();
+
+      if (rank == 2) {
+        Value row = rewriter.create<tensor::ExtractOp>(loc, indices,
+                                                       ValueRange{pos, c0});
+        Value currRowCount = rewriter.create<memref::LoadOp>(loc, Op, row);
+        Value rowCount_plus1 =
+            rewriter.create<arith::AddIOp>(loc, currRowCount, ci1);
+        rewriter.create<memref::StoreOp>(loc, rowCount_plus1, Op, row);
+      }
+      Value idx = rewriter.create<tensor::ExtractOp>(loc, indices,
+                                                     ValueRange{pos, dimIndex});
+      Value idx64 = rewriter.create<arith::IndexCastOp>(loc, idx, int64Type);
+      Value val = rewriter.create<tensor::ExtractOp>(loc, values, pos);
+      rewriter.create<memref::StoreOp>(loc, idx64, Oi, pos);
+      rewriter.create<memref::StoreOp>(loc, val, Ox, pos);
+
+      rewriter.setInsertionPointAfter(loop);
+    }
+
+    if (rank == 2) {
+      // Update pointers using cumsum
+      scf::ForOp cumSumLoop =
+          rewriter.create<scf::ForOp>(loc, c0, npointers, c1, ValueRange{ci0});
+      {
+        rewriter.setInsertionPointToStart(cumSumLoop.getBody());
+        Value pos = cumSumLoop.getInductionVar();
+        Value base = cumSumLoop.getLoopBody().getArgument(1);
+
+        Value numEntries = rewriter.create<memref::LoadOp>(loc, Op, pos);
+        rewriter.create<memref::StoreOp>(loc, base, Op, pos);
+        Value nextBase = rewriter.create<arith::AddIOp>(loc, base, numEntries);
+        rewriter.create<scf::YieldOp>(loc, nextBase);
+
+        rewriter.setInsertionPointAfter(cumSumLoop);
+      }
+    }
+    // Update last pointer with nnz
+    Value nnz64 = rewriter.create<arith::IndexCastOp>(loc, nnz, int64Type);
+    rewriter.create<memref::StoreOp>(loc, nnz64, Op, npointers);
+
+    rewriter.replaceOp(op, output);
+
+    return success();
+  };
+};
+
+class LowerToCoordinatesRewrite
+    : public OpRewritePattern<graphblas::ToCoordinatesOp> {
+public:
+  using OpRewritePattern<graphblas::ToCoordinatesOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ToCoordinatesOp op,
+                                PatternRewriter &rewriter) const override {
+    Location loc = op->getLoc();
+    Value input = op.input();
+    RankedTensorType inputType = input.getType().cast<RankedTensorType>();
+    RankedTensorType valuesType =
+        op.getResult(1).getType().cast<RankedTensorType>();
+
+    unsigned rank = inputType.getRank();
+    Value nvals = rewriter.create<graphblas::NumValsOp>(loc, input);
+    Value nrank = rewriter.create<arith::ConstantIndexOp>(loc, rank);
+
+    Type indexType = rewriter.getIndexType();
+    Type int64Type = rewriter.getIntegerType(64);
+    MemRefType memrefI64Type = MemRefType::get({-1}, int64Type);
+    MemRefType memrefIndicesType = MemRefType::get({-1, -1}, indexType);
+    MemRefType memrefValueType =
+        MemRefType::get({-1}, valuesType.getElementType());
+
+    Value indices = rewriter.create<memref::AllocOp>(loc, memrefIndicesType,
+                                                     ValueRange{nvals, nrank});
+    Value values =
+        rewriter.create<memref::AllocOp>(loc, memrefValueType, nvals);
+
+    // Initial constants
+    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+
+    // Get sparse tensor info
+    Value npointers, dimIndex;
+    if (rank == 1) {
+      npointers = c1;
+      dimIndex = c0;
+    } else {
+      npointers = rewriter.create<graphblas::NumRowsOp>(loc, input);
+      dimIndex = c1;
+    }
+
+    Value Ip = rewriter.create<sparse_tensor::ToPointersOp>(loc, memrefI64Type,
+                                                            input, dimIndex);
+    Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefI64Type,
+                                                           input, dimIndex);
+    Value Ix =
+        rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefValueType, input);
+
+    // Iterate through input, populating indices and values
+    scf::ForOp rowLoop = rewriter.create<scf::ForOp>(loc, c0, npointers, c1);
+    {
+      rewriter.setInsertionPointToStart(rowLoop.getBody());
+      Value row = rowLoop.getInductionVar();
+      Value row_plus1 = rewriter.create<arith::AddIOp>(loc, row, c1);
+
+      Value j_start_64 = rewriter.create<memref::LoadOp>(loc, Ip, row);
+      Value j_end_64 = rewriter.create<memref::LoadOp>(loc, Ip, row_plus1);
+      Value j_start =
+          rewriter.create<arith::IndexCastOp>(loc, j_start_64, indexType);
+      Value j_end =
+          rewriter.create<arith::IndexCastOp>(loc, j_end_64, indexType);
+
+      scf::ForOp colLoop = rewriter.create<scf::ForOp>(loc, j_start, j_end, c1);
+      {
+        rewriter.setInsertionPointToStart(colLoop.getBody());
+        Value jj = colLoop.getInductionVar();
+
+        Value col_64 = rewriter.create<memref::LoadOp>(loc, Ii, jj);
+        Value col = rewriter.create<arith::IndexCastOp>(loc, col_64, indexType);
+        Value val = rewriter.create<memref::LoadOp>(loc, Ix, jj);
+
+        if (rank == 2)
+          rewriter.create<memref::StoreOp>(loc, row, indices,
+                                           ValueRange{jj, c0});
+        rewriter.create<memref::StoreOp>(loc, col, indices,
+                                         ValueRange{jj, dimIndex});
+        rewriter.create<memref::StoreOp>(loc, val, values, jj);
+
+        rewriter.setInsertionPointAfter(colLoop);
+      }
+
+      rewriter.setInsertionPointAfter(rowLoop);
+    }
+
+    // Convert memrefs to tensors
+    // Note: these will be moved to `bufferization::ToTensorOp` in the future
+    Value indicesTensor = rewriter.create<memref::TensorLoadOp>(loc, indices);
+    Value valuesTensor = rewriter.create<memref::TensorLoadOp>(loc, values);
+
+    rewriter.replaceOp(op, ValueRange{indicesTensor, valuesTensor});
+
+    return success();
+  };
+};
+
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
                LowerSelectGenericRewrite, LowerReduceToVectorRewrite,
@@ -3995,7 +4200,8 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
                LowerUpdateRewrite, LowerUpdateGenericRewrite, LowerEqualRewrite,
                LowerDiagOpRewrite, LowerCommentRewrite, LowerPrintRewrite,
                LowerPrintTensorRewrite, LowerSizeRewrite, LowerNumRowsRewrite,
-               LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite>(
+               LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite,
+               LowerFromCoordinatesRewrite, LowerToCoordinatesRewrite>(
       patterns.getContext());
 }
 

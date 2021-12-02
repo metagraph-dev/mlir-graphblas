@@ -1684,3 +1684,105 @@ class GeoLocation(Algorithm):
 
 
 geolocation = GeoLocation()
+
+
+def euclidean_distance(irb, x, y):
+    # https://scikit-learn.org/stable/modules/generated/sklearn.metrics.pairwise.euclidean_distances.html#sklearn.metrics.pairwise.euclidean_distances
+    # Assumes x and y are dense tensors
+    x2 = irb.graphblas.intersect(x, x, "times")
+    xx = irb.graphblas.reduce_to_vector(x2, "plus", axis=1)
+    y2 = irb.graphblas.intersect(y, y, "times")
+    yy = irb.graphblas.reduce_to_vector(y2, "plus", axis=1)
+    yT = irb.graphblas.transpose(y, "tensor<?x?xf64, #CSC64>")
+    yT = irb.graphblas.apply(yT, "times", right=irb.arith.constant(-2, "f64"))
+    rv = irb.graphblas.matrix_multiply(x, yT, "plus_times")
+    rv = irb.graphblas.matrix_multiply(
+        irb.graphblas.diag(xx, "tensor<?x?xf64, #CSR64>"), rv, "min_plus"
+    )
+    rv = irb.graphblas.matrix_multiply(
+        rv, irb.graphblas.diag(yy, "tensor<?x?xf64, #CSC64>"), "min_plus"
+    )
+    rv = irb.graphblas.apply(rv, "sqrt")
+    return rv
+
+
+def normprob(irb, x):
+    x_max = irb.graphblas.reduce_to_vector(x, "max", axis=0)
+    x = irb.graphblas.matrix_multiply(
+        x, irb.graphblas.diag(x_max, "tensor<?x?xf64, #CSC64>"), "min_minus"
+    )
+    x_exp = irb.graphblas.apply(x, "exp")
+    x_exp_sum = irb.graphblas.reduce_to_vector(x_exp, "plus", axis=0)
+    rv = irb.graphblas.matrix_multiply(
+        x_exp, irb.graphblas.diag(x_exp_sum, "tensor<?x?xf64, #CSC64>"), "min_div"
+    )
+    rv = irb.graphblas.apply(rv, "log")
+    return rv
+
+
+class ApplicationClassification(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "application_classification",
+            input_types=[
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?xf64, #CV64>",
+                "tensor<?xf64, #CV64>",
+            ],
+            return_types=["tensor<?x?xf64, #CSR64>"],
+            aliases=_build_common_aliases(),
+        )
+        (
+            data_vertex,
+            data_edges_table,
+            pattern_vertex,
+            pattern_edges_table,
+            pr,
+            pc,
+        ) = irb.inputs
+        num_dv = irb.graphblas.num_rows(data_vertex)
+        num_pv = irb.graphblas.num_rows(pattern_vertex)
+        num_de = irb.graphblas.num_rows(data_edges_table)
+        num_pe = irb.graphblas.num_rows(pattern_edges_table)
+
+        # Vertex Similarity
+        cv = euclidean_distance(irb, data_vertex, pattern_vertex)
+        neg_cv = irb.graphblas.apply(cv, "ainv")
+        mu = normprob(irb, neg_cv)
+        cv = normprob(irb, cv)
+        mu_max = irb.graphblas.reduce_to_vector(mu, "max", axis=0)
+
+        # Edge Similarity
+
+        # Combine
+
+        # Loop
+
+        irb.return_vars(mu)
+        return irb
+
+    def __call__(
+        self,
+        data_vertex: np.ndarray,
+        data_edge_table: np.ndarray,
+        pattern_vertex: np.ndarray,
+        pattern_edge_table: np.ndarray,
+        pr: np.ndarray,
+        pc: np.ndarray,
+        **kwargs,
+    ) -> MLIRSparseTensor:
+        return super().__call__(
+            data_vertex,
+            data_edge_table,
+            pattern_vertex,
+            pattern_edge_table,
+            pr,
+            pc,
+            **kwargs,
+        )
+
+
+application_classification = ApplicationClassification()
