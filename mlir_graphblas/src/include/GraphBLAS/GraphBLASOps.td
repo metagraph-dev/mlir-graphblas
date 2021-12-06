@@ -1213,4 +1213,56 @@ def GraphBLAS_PrintTensorOp : GraphBLAS_Op<"print_tensor", []> {
     let verifier = [{ return ::verify(*this); }];
 }
 
+
+def GraphBLAS_FromCoordinatesOp : GraphBLAS_Op<"from_coo", [NoSideEffect]> {
+    let summary = "Build new sparse tensor from coordinate tensors.";
+    let description = [{
+        Builds a new sparse tensor using two dense tensors representing
+        the indices as coordinates and associated values.
+        The indices must be *sorted* or things break badly.
+
+        ```mlir
+        %v = graphblas.from_coo %indices, %vals : tensor<?xindex>, tensor<?xf64> to tensor<?xf64, #CSR64>
+        ```
+    }];
+
+    let arguments = (
+        ins 2DTensorOf<[Index]>:$indices,
+        1DTensorOf<[AnyType]>:$values,
+        Variadic<Index>:$sizes);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
+
+    let assemblyFormat = [{
+           $indices `,` $values `[` $sizes `]` attr-dict `:` type($indices) `,` type($values) `to` type($output)
+    }];
+
+    let verifier = [{ return ::verify(*this); }];
+}
+
+
+def GraphBLAS_ToCoordinatesOp : GraphBLAS_Op<"to_coo", [NoSideEffect]> {
+    let summary = "Extract coordinate tensors from sparse tensor.";
+    let description = [{
+        Returns the indices as coordinates and associated values from a sparse tensor.
+        The indices are returned as `tensor<?x?xindex>` while the values are returned
+        as `tensor<?xVALUE_TYPE>`
+
+        ```mlir
+        %indices, %vals = graphblas.to_coo %v : tensor<?xf64, #CSR64> to tensor<?x?xindex>, tensor<?xf64>
+        ```
+    }];
+
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
+    let results = (
+        outs 2DTensorOf<[Index]>:$indices,
+        1DTensorOf<[AnyType]>:$values);
+
+    let assemblyFormat = [{
+           $input attr-dict `:` type($input) `to` type($indices) `,` type($values)
+    }];
+
+    let verifier = [{ return ::verify(*this); }];
+}
+
+
 #endif // GRAPHBLAS_OPS

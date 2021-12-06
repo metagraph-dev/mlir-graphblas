@@ -24,8 +24,9 @@ enum CompressionType { CSR, CSC, EITHER };
 // operators The vector index will be filled in as *both* the row and column.
 
 // Unary operators which take a single argument (value)
-static const llvm::StringSet<> unary1{"abs",   "ainv", "acos", "asin", "cos",
-                                      "isinf", "minv", "sin",  "sqrt", "tan"};
+static const llvm::StringSet<> unary1{"abs",  "ainv", "acos",  "asin",
+                                      "cos",  "exp",  "isinf", "log",
+                                      "minv", "sin",  "sqrt",  "tan"};
 
 // Unary operators which take 3 arguments (value, row, column)
 static const llvm::StringSet<> unary3{"column", "index", "row", "tril", "triu"};
@@ -77,8 +78,8 @@ static const llvm::StringSet<> supportedForApply{
     // List custom operators first
     "identity",
     // Unary operators in alphabetical order
-    "abs", "ainv", "acos", "asin", "column", "cos", "index", "isinf", "minv",
-    "row", "sin", "sqrt", "tan",
+    "abs", "ainv", "acos", "asin", "column", "cos", "exp", "index", "isinf",
+    "log", "minv", "row", "sin", "sqrt", "tan",
     // Binary operators in alphabetical order
     "div", "eq", "first", "ge", "gt", "le", "lt", "max", "min", "minus", "ne",
     "plus", "pow", "second", "times"};

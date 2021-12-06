@@ -5,6 +5,7 @@ from mlir_graphblas.mlir_builder import MLIRFunctionBuilder
 from mlir_graphblas.types import AliasMap, SparseEncodingType, AffineMap
 from mlir_graphblas.random_utils import ChooseUniformContext, ChooseWeightedContext
 from .sparse_utils import MLIRSparseTensor
+from . import algo_utils
 
 
 class Algorithm:
@@ -1263,67 +1264,6 @@ class GraphSAGE(Algorithm):
 graph_sage = GraphSAGE()
 
 
-def haversine_distance(
-    irb, many_lat, many_lon, single_lat, single_lon, *, radius=6371.0, to_radians=True
-):
-    """Compute the distances between many_{lat,lon} and single_{lat,lon}"""
-    # many_lat (and many_lon) may be a Matrix or a Vector
-    # single_lat (and single_lon) must be a Vector
-    cf05 = irb.arith.constant(0.5, "f64")
-    cf2 = irb.arith.constant(2.0, "f64")
-    cf_2radius = irb.arith.constant(2 * radius, "f64")
-    if to_radians:
-        cf_rad = irb.arith.constant(math.tau / 360, "f64")
-        many_lat = irb.graphblas.apply(many_lat, "times", right=cf_rad)
-        many_lon = irb.graphblas.apply(many_lon, "times", right=cf_rad)
-        single_lat = irb.graphblas.apply(single_lat, "times", right=cf_rad)
-        single_lon = irb.graphblas.apply(single_lon, "times", right=cf_rad)
-    if many_lat.type.encoding.rank == 1:  # Vector
-        diff_lat = irb.graphblas.intersect(single_lat, many_lat, "minus")
-        diff_lon = irb.graphblas.intersect(single_lon, many_lon, "minus")
-        cos_terms = irb.graphblas.intersect(
-            irb.graphblas.apply(single_lat, "cos"),
-            irb.graphblas.apply(many_lat, "cos"),
-            "times",
-        )
-    else:  # Matrix
-        single_lat = irb.graphblas.diag(single_lat, "tensor<?x?xf64, #CSR64>")
-        single_lon = irb.graphblas.diag(single_lon, "tensor<?x?xf64, #CSR64>")
-        diff_lat = irb.graphblas.matrix_multiply(single_lat, many_lat, "any_minus")
-        diff_lon = irb.graphblas.matrix_multiply(single_lon, many_lon, "any_minus")
-        cos_terms = irb.graphblas.matrix_multiply(
-            irb.graphblas.apply(single_lat, "cos"),
-            irb.graphblas.apply(many_lat, "cos"),
-            "any_times",
-        )
-    a = irb.graphblas.intersect(
-        irb.graphblas.apply(
-            irb.graphblas.apply(
-                irb.graphblas.apply(diff_lat, "times", left=cf05), "sin"
-            ),
-            "pow",
-            right=cf2,
-        ),
-        irb.graphblas.intersect(
-            cos_terms,
-            irb.graphblas.apply(
-                irb.graphblas.apply(
-                    irb.graphblas.apply(diff_lon, "times", left=cf05), "sin"
-                ),
-                "pow",
-                right=cf2,
-            ),
-            "times",
-        ),
-        "plus",
-    )
-    return irb.graphblas.apply(
-        irb.graphblas.apply(irb.graphblas.apply(a, "sqrt"), "asin"),
-        "times",
-        left=cf_2radius,
-    )
-
-
 class GeoLocation(Algorithm):
     def _build(self):
         irb = MLIRFunctionBuilder(
@@ -1469,7 +1409,9 @@ class GeoLocation(Algorithm):
                 )
 
                 irb.graphblas.update(
-                    haversine_distance(irb, lat1, lon1, lat3, lon3, to_radians=False),
+                    algo_utils.haversine_distance(
+                        irb, lat1, lon1, lat3, lon3, to_radians=False
+                    ),
                     mad,
                     accumulate="plus",
                 )
@@ -1519,7 +1461,7 @@ class GeoLocation(Algorithm):
                         )
                         count = before_region.arg_vars[2]
 
-                        D = haversine_distance(
+                        D = algo_utils.haversine_distance(
                             irb, many_lat_csc, many_lon_csc, cur_lat, cur_lon
                         )
                         Dinv = irb.graphblas.select(D, "ne", cf0)
@@ -1816,3 +1758,236 @@ class ConnectedComponents(Algorithm):
 
 
 connected_components = ConnectedComponents()
+
+
+class ApplicationClassification(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "application_classification",
+            input_types=[
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?x?xindex>",
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?x?xf64, #CSR64>",
+                "tensor<?x?xindex>",
+            ],
+            return_types=["tensor<?x?xf64, #CSR64>"],
+            aliases=_build_common_aliases(),
+        )
+        (
+            data_vertex,
+            data_edges_table,
+            data_edges,
+            pattern_vertex,
+            pattern_edges_table,
+            pattern_edges,
+        ) = irb.inputs
+        num_dv = irb.graphblas.num_rows(data_vertex)
+        num_pv = irb.graphblas.num_rows(pattern_vertex)
+        num_de = irb.graphblas.num_rows(data_edges_table)
+        num_pe = irb.graphblas.num_rows(pattern_edges_table)
+
+        pe_ones = algo_utils.tensor_fill(irb, num_pe, 1, "f64")
+        pattern_graph = irb.graphblas.from_coo(pattern_edges, pe_ones, (num_pv, num_pv))
+
+        # Vertex Similarity
+        cv = algo_utils.euclidean_distance(irb, data_vertex, pattern_vertex)
+        neg_cv = irb.graphblas.apply(cv, "ainv")
+        mu = algo_utils.normprob(irb, neg_cv)
+        cv = algo_utils.normprob(irb, cv)
+        mu_max = irb.graphblas.reduce_to_vector(mu, "max", axis=0)
+        pe_arange = algo_utils.tensor_arange(irb, num_pe)
+        pe_arange_col = algo_utils.tensor_to_col(irb, pe_arange)
+        v_bak_max_graph = irb.graphblas.matrix_multiply(
+            irb.graphblas.diag(mu_max, "tensor<?x?xf64, #CSR64>"),
+            pattern_graph,
+            "min_first",
+        )
+        _, v_bak_values = irb.graphblas.to_coo(v_bak_max_graph)
+        v_bak_max = irb.graphblas.from_coo(pe_arange_col, v_bak_values, (num_pe,))
+        v_fwd_max_graph = irb.graphblas.matrix_multiply(
+            pattern_graph,
+            irb.graphblas.diag(mu_max, "tensor<?x?xf64, #CSC64>"),
+            "min_second",
+        )
+        _, v_fwd_values = irb.graphblas.to_coo(v_fwd_max_graph)
+        v_fwd_max = irb.graphblas.from_coo(pe_arange_col, v_fwd_values, (num_pe,))
+
+        # Edge Similarity
+        ce = algo_utils.euclidean_distance(irb, data_edges_table, pattern_edges_table)
+        neg_ce = irb.graphblas.apply(ce, "ainv")
+        xe = algo_utils.normprob(irb, neg_ce)
+        ce = algo_utils.normprob(irb, ce)
+
+        # Combine
+        cnull = irb.graphblas.from_coo(
+            pe_arange_col,
+            algo_utils.tensor_fill(irb, num_pe, 0, "f64"),
+            shape=(num_pe,),
+        )
+        de_arange = algo_utils.tensor_arange(irb, num_de)
+        de_arange_col = algo_utils.tensor_to_col(irb, de_arange)
+        de_ones = algo_utils.tensor_fill(irb, num_de, 1, "f64")
+        # from_coo requires sorted order, so build the transpose, then flip
+        data_fwd_graph = irb.graphblas.from_coo(
+            algo_utils.tensor_insert_col(irb, de_arange_col, data_edges, 0),
+            de_ones,
+            shape=(num_de, num_dv),
+        )
+        data_fwd_graph = irb.graphblas.transpose(
+            data_fwd_graph, "tensor<?x?xf64, #CSR64>"
+        )
+        fwd_max = irb.graphblas.matrix_multiply(data_fwd_graph, xe, "max_second")
+        fwd_max = irb.graphblas.matrix_multiply(
+            fwd_max, irb.graphblas.diag(v_bak_max, "tensor<?x?xf64, #CSC64>"), "min_max"
+        )
+        data_bak_graph = irb.graphblas.from_coo(
+            algo_utils.tensor_insert_col(irb, de_arange_col, data_edges, 1),
+            de_ones,
+            shape=(num_dv, num_de),
+        )
+        bak_max = irb.graphblas.matrix_multiply(data_bak_graph, xe, "max_second")
+        bak_max = irb.graphblas.matrix_multiply(
+            bak_max, irb.graphblas.diag(v_fwd_max, "tensor<?x?xf64, #CSC64>"), "min_max"
+        )
+
+        # Prepare loop inputs
+        mu_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        fwd_max_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        bak_max_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        mu_init_ptr8 = irb.util.tensor_to_ptr8(mu)
+        fwd_max_init_ptr8 = irb.util.tensor_to_ptr8(fwd_max)
+        bak_max_init_ptr8 = irb.util.tensor_to_ptr8(bak_max)
+
+        # Loop
+        with irb.for_loop(
+            0,
+            num_pv,
+            iter_vars=[
+                (mu_ptr8, mu_init_ptr8),
+                (fwd_max_ptr8, fwd_max_init_ptr8),
+                (bak_max_ptr8, bak_max_init_ptr8),
+            ],
+        ) as for_vars:
+            # Convert pointers to tensors
+            mu = irb.util.ptr8_to_tensor(mu_ptr8, "tensor<?x?xf64, #CSR64>")
+            fwd_max = irb.util.ptr8_to_tensor(fwd_max_ptr8, "tensor<?x?xf64, #CSR64>")
+            bak_max = irb.util.ptr8_to_tensor(bak_max_ptr8, "tensor<?x?xf64, #CSR64>")
+
+            # from_coo requires sorted order, so build the transpose, then flip
+            pattern_fwd_graph = irb.graphblas.from_coo(
+                algo_utils.tensor_insert_col(irb, pe_arange_col, pattern_edges, 0),
+                pe_ones,
+                shape=(num_pe, num_pv),
+            )
+            pattern_fwd_graph = irb.graphblas.transpose(
+                pattern_fwd_graph, "tensor<?x?xf64, #CSC64>"
+            )
+            v_fwd = irb.graphblas.matrix_multiply(mu, pattern_fwd_graph, "min_first")
+            v_fwd = irb.graphblas.intersect(v_fwd, fwd_max, "minus")
+            pattern_bak_graph = irb.graphblas.from_coo(
+                algo_utils.tensor_insert_col(irb, pe_arange_col, pattern_edges, 1),
+                pe_ones,
+                shape=(num_pv, num_pe),
+            )
+            v_bak = irb.graphblas.matrix_multiply(mu, pattern_bak_graph, "min_first")
+            v_bak = irb.graphblas.intersect(v_bak, bak_max, "minus")
+            v_fwd_max = irb.graphblas.reduce_to_vector(v_fwd, "max", axis=0)
+            v_bak_max = irb.graphblas.reduce_to_vector(v_bak, "max", axis=0)
+            dbg_transpose = irb.graphblas.transpose(
+                data_bak_graph, "tensor<?x?xf64, #CSR64>"
+            )
+            e_bak = irb.graphblas.matrix_multiply(dbg_transpose, v_fwd, "min_second")
+            e_bak = irb.graphblas.intersect(e_bak, ce, "minus")
+            e_fwd = irb.graphblas.matrix_multiply(dbg_transpose, v_bak, "min_second")
+            e_fwd = irb.graphblas.intersect(e_fwd, ce, "minus")
+            e_bak_norm = irb.graphblas.apply(e_bak, "exp")
+            e_bak_norm = irb.graphblas.reduce_to_vector(e_bak_norm, "plus", axis=0)
+            e_bak_norm = irb.graphblas.apply(e_bak_norm, "log")
+            e_fwd_norm = irb.graphblas.apply(e_fwd, "exp")
+            e_fwd_norm = irb.graphblas.reduce_to_vector(e_fwd_norm, "plus", axis=0)
+            e_fwd_norm = irb.graphblas.apply(e_fwd_norm, "log")
+            fwd_max = irb.graphblas.matrix_multiply(data_fwd_graph, e_fwd, "max_second")
+            bak_max = irb.graphblas.matrix_multiply(data_bak_graph, e_bak, "max_second")
+            fwd_max = irb.graphblas.matrix_multiply(
+                fwd_max,
+                irb.graphblas.diag(e_fwd_norm, "tensor<?x?xf64, #CSC64>"),
+                "min_minus",
+            )
+            bak_max = irb.graphblas.matrix_multiply(
+                bak_max,
+                irb.graphblas.diag(e_bak_norm, "tensor<?x?xf64, #CSC64>"),
+                "min_minus",
+            )
+            fwd_max = irb.graphblas.matrix_multiply(
+                fwd_max,
+                irb.graphblas.diag(
+                    irb.graphblas.intersect(v_bak_max, cnull, "minus"),
+                    "tensor<?x?xf64, #CSC64>",
+                ),
+                "min_max",
+            )
+            bak_max = irb.graphblas.matrix_multiply(
+                bak_max,
+                irb.graphblas.diag(
+                    irb.graphblas.intersect(v_fwd_max, cnull, "minus"),
+                    "tensor<?x?xf64, #CSC64>",
+                ),
+                "min_max",
+            )
+            mu = irb.graphblas.apply(cv, "ainv")
+            fwd_tmp = irb.graphblas.matrix_multiply(
+                fwd_max,
+                irb.graphblas.transpose(pattern_fwd_graph, "tensor<?x?xf64, #CSC64>"),
+                "plus_plus",
+            )
+            bak_tmp = irb.graphblas.matrix_multiply(
+                bak_max,
+                irb.graphblas.transpose(pattern_bak_graph, "tensor<?x?xf64, #CSC64>"),
+                "plus_plus",
+            )
+            irb.graphblas.update(fwd_tmp, mu, "plus")
+            irb.graphblas.update(bak_tmp, mu, "plus")
+            mu = algo_utils.normprob(irb, mu)
+
+            # Cast yield args to pointers
+            mu_result_ptr8 = irb.util.tensor_to_ptr8(mu)
+            fwd_max_result_ptr8 = irb.util.tensor_to_ptr8(fwd_max)
+            bak_max_result_ptr8 = irb.util.tensor_to_ptr8(bak_max)
+
+            for_vars.yield_vars(
+                mu_result_ptr8, fwd_max_result_ptr8, bak_max_result_ptr8
+            )
+
+        # One final cast from ptr8 to tensor
+        mu_final = irb.util.ptr8_to_tensor(
+            for_vars.returned_variable[0], "tensor<?x?xf64, #CSR64>"
+        )
+
+        irb.return_vars(mu_final)
+
+        return irb
+
+    def __call__(
+        self,
+        data_vertex: np.ndarray,
+        data_edge_table: np.ndarray,
+        pattern_vertex: np.ndarray,
+        pattern_edge_table: np.ndarray,
+        data_edges: np.ndarray,
+        pattern_edges: np.ndarray,
+        **kwargs,
+    ) -> MLIRSparseTensor:
+        return super().__call__(
+            data_vertex,
+            data_edge_table,
+            pattern_vertex,
+            pattern_edge_table,
+            data_edges,
+            pattern_edges,
+            **kwargs,
+        )
+
+
+application_classification = ApplicationClassification()

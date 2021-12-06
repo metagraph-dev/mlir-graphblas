@@ -923,3 +923,97 @@ def test_ir_transpose(
     expected_output_matrix = dense_input_matrix.T
 
     assert np.all(expected_output_matrix == output_matrix)
+
+
+def test_matrix_to_from_coo(engine: MlirJitEngine, aliases: AliasMap):
+    irb = MLIRFunctionBuilder(
+        "matrix_to_coo",
+        input_types=["tensor<?x?xf64, #CSR64>"],
+        return_types=["tensor<?x?xindex>", "tensor<?xf64>"],
+        aliases=aliases,
+    )
+    (tensor,) = irb.inputs
+    indices, values = irb.graphblas.to_coo(tensor)
+    irb.return_vars(indices, values)
+    matrix_to_coo = irb.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test results
+    input_indices = np.array(
+        [[0, 1], [0, 2], [1, 0], [1, 3], [2, 0], [2, 4], [6, 2]], dtype=np.uint64
+    )
+    input_values = np.array([-100, 200, 300, 400, 175, 222, 333.333], dtype=np.float64)
+    sizes = np.array([7, 5], dtype=np.uint64)
+    sparsity = np.array([False, True], dtype=np.bool8)
+    graph = MLIRSparseTensor(input_indices, input_values, sizes, sparsity)
+    graph.verify()
+
+    new_indices, new_values = matrix_to_coo(graph)
+
+    np.testing.assert_equal(input_indices, new_indices)
+    np.testing.assert_allclose(input_values, new_values)
+
+    irb = MLIRFunctionBuilder(
+        "matrix_from_coo",
+        input_types=["tensor<?x?xindex>", "tensor<?xf64>", "index", "index"],
+        return_types=["tensor<?x?xf64, #CSR64>"],
+        aliases=aliases,
+    )
+    (indices, values, nrows, ncols) = irb.inputs
+    tensor = irb.graphblas.from_coo(indices, values, (nrows, ncols))
+    irb.return_vars(tensor)
+    matrix_from_coo = irb.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test results
+    g2 = matrix_from_coo(input_indices, input_values, 7, 5)
+    g2.verify()
+
+    g2_indices, g2_values = matrix_to_coo(g2)
+
+    np.testing.assert_equal(input_indices, g2_indices)
+    np.testing.assert_allclose(input_values, g2_values)
+
+
+def test_vector_to_from_coo(engine: MlirJitEngine, aliases: AliasMap):
+    irb = MLIRFunctionBuilder(
+        "vector_to_coo",
+        input_types=["tensor<?xf64, #CV64>"],
+        return_types=["tensor<?x?xindex>", "tensor<?xf64>"],
+        aliases=aliases,
+    )
+    (tensor,) = irb.inputs
+    indices, values = irb.graphblas.to_coo(tensor)
+    irb.return_vars(indices, values)
+    vector_to_coo = irb.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test results
+    input_indices = np.array([[1], [6], [8]], dtype=np.uint64)
+    input_values = np.array([19.234, 1.1, 2.2], dtype=np.float64)
+    sizes = np.array([20], dtype=np.uint64)
+    sparsity = np.array([True], dtype=np.bool8)
+    vec = MLIRSparseTensor(input_indices, input_values, sizes, sparsity)
+    vec.verify()
+
+    new_indices, new_values = vector_to_coo(vec)
+
+    np.testing.assert_equal(input_indices, new_indices)
+    np.testing.assert_allclose(input_values, new_values)
+
+    irb = MLIRFunctionBuilder(
+        "vector_from_coo",
+        input_types=["tensor<?x?xindex>", "tensor<?xf64>", "index"],
+        return_types=["tensor<?xf64, #CV64>"],
+        aliases=aliases,
+    )
+    (indices, values, size) = irb.inputs
+    tensor = irb.graphblas.from_coo(indices, values, (size,))
+    irb.return_vars(tensor)
+    vector_from_coo = irb.compile(engine=engine, passes=GRAPHBLAS_PASSES)
+
+    # Test results
+    v2 = vector_from_coo(input_indices, input_values, 20)
+    v2.verify()
+
+    v2_indices, v2_values = vector_to_coo(v2)
+
+    np.testing.assert_equal(input_indices, v2_indices)
+    np.testing.assert_allclose(input_values, v2_values)

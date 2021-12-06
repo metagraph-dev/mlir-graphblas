@@ -911,18 +911,16 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
     tmp = builder.create<arith::SubFOp>(loc, cf1, tmp);
     tmp = builder.create<math::SqrtOp>(loc, tmp);
     opResult = builder.create<math::Atan2Op>(loc, val, tmp);
-  } else if (unaryOp == "tan") {
-    if (!valueType.isa<FloatType>())
-      return unaryRegion->getParentOp()->emitError(
-          "tan requires float type input");
-    Value tmp = builder.create<math::CosOp>(loc, val);
-    opResult = builder.create<math::SinOp>(loc, val);
-    opResult = builder.create<arith::DivFOp>(loc, opResult, tmp);
   } else if (unaryOp == "cos") {
     if (!valueType.isa<FloatType>())
       return unaryRegion->getParentOp()->emitError(
           "cos requires float type input");
     opResult = builder.create<math::CosOp>(loc, val);
+  } else if (unaryOp == "exp") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "exp requires float type input");
+    opResult = builder.create<math::ExpOp>(loc, val);
   } else if (unaryOp == "isinf") {
     if (!valueType.isa<FloatType>())
       return unaryRegion->getParentOp()->emitError(
@@ -942,6 +940,11 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
     Value isNegInf = builder.create<arith::CmpFOp>(
         loc, arith::CmpFPredicate::UEQ, val, negInf);
     opResult = builder.create<arith::OrIOp>(loc, isPosInf, isNegInf);
+  } else if (unaryOp == "log") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "log requires float type input");
+    opResult = builder.create<math::LogOp>(loc, val);
   } else if (unaryOp == "minv") {
     opResult =
         llvm::TypeSwitch<Type, Value>(valueType)
@@ -979,6 +982,13 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
       return unaryRegion->getParentOp()->emitError(
           "sqrt requires float type input");
     opResult = builder.create<math::SqrtOp>(loc, val);
+  } else if (unaryOp == "tan") {
+    if (!valueType.isa<FloatType>())
+      return unaryRegion->getParentOp()->emitError(
+          "tan requires float type input");
+    Value tmp = builder.create<math::CosOp>(loc, val);
+    opResult = builder.create<math::SinOp>(loc, val);
+    opResult = builder.create<arith::DivFOp>(loc, opResult, tmp);
   }
 
   ////////////////////////////////////

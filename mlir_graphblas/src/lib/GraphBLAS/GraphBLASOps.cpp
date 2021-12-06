@@ -1210,5 +1210,74 @@ static LogicalResult verify(PrintTensorOp op) {
   return success();
 }
 
+static LogicalResult verify(FromCoordinatesOp op) {
+  Type indicesType = op.indices().getType();
+  Type valuesType = op.values().getType();
+  auto encIdx = sparse_tensor::getSparseTensorEncoding(indicesType);
+  auto encVal = sparse_tensor::getSparseTensorEncoding(valuesType);
+
+  if (encIdx)
+    return op.emitError("Indices must be a dense tensor.");
+  if (encVal)
+    return op.emitError("Values must be a dense tensor.");
+
+  ValueRange sizes = op.sizes();
+  Type resultType = op.getResult().getType();
+  RankedTensorType resultTensorType = resultType.cast<RankedTensorType>();
+  size_t rank = resultTensorType.getRank();
+
+  if (sizes.size() != rank)
+    return op.emitError("Length of sizes must match result.");
+
+  llvm::Optional<std::string> errMsg;
+  if (rank == 1) {
+    errMsg = checkVectorEncoding(resultTensorType);
+    if (errMsg)
+      return op.emitError("result " + errMsg.getValue());
+  } else {
+    errMsg = checkMatrixEncoding(resultTensorType, CSR);
+    if (errMsg)
+      return op.emitError("result " + errMsg.getValue());
+  }
+
+  Type valueType = valuesType.cast<RankedTensorType>().getElementType();
+  Type rvalType = resultTensorType.getElementType();
+  if (rvalType != valueType)
+    return op.emitError("Value type must match return type");
+
+  return success();
+}
+
+static LogicalResult verify(ToCoordinatesOp op) {
+  Type indicesType = op.getResult(0).getType();
+  Type valuesType = op.getResult(1).getType();
+  auto encIdx = sparse_tensor::getSparseTensorEncoding(indicesType);
+  auto encVal = sparse_tensor::getSparseTensorEncoding(valuesType);
+
+  if (encIdx)
+    return op.emitError("Returned indices must be a dense tensor.");
+  if (encVal)
+    return op.emitError("Returned values must be a dense tensor.");
+
+  Type inputType = op.input().getType();
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
+  int64_t rank = inputTensorType.getRank();
+
+  llvm::Optional<std::string> errMsg;
+  if (rank == 1)
+    errMsg = checkVectorEncoding(inputTensorType);
+  else
+    errMsg = checkMatrixEncoding(inputTensorType, CSR);
+  if (errMsg)
+    return op.emitError("input " + errMsg.getValue());
+
+  Type valueType = valuesType.cast<RankedTensorType>().getElementType();
+  Type ivalType = inputTensorType.getElementType();
+  if (ivalType != valueType)
+    return op.emitError("Input type must match return value type");
+
+  return success();
+}
+
 #define GET_OP_CLASSES
 #include "GraphBLAS/GraphBLASOps.cpp.inc"
