@@ -1219,6 +1219,7 @@ def GraphBLAS_FromCoordinatesOp : GraphBLAS_Op<"from_coo", [NoSideEffect]> {
     let description = [{
         Builds a new sparse tensor using two dense tensors representing
         the indices as coordinates and associated values.
+        The indices must be *sorted* or things break badly.
 
         ```mlir
         %v = graphblas.from_coo %indices, %vals : tensor<?xindex>, tensor<?xf64> to tensor<?xf64, #CSR64>

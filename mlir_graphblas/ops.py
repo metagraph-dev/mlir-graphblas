@@ -77,6 +77,10 @@ class ConstantOp(BaseOp):
 
     @classmethod
     def call(cls, irbuilder, value, type):
+        # Special handling in case value is *already* an MLIR constant
+        if isinstance(value, MLIRVar):
+            return value, None
+
         if str(type) in {"bf16", "f16", "f32", "f64", "f80", "f128"}:
             value = float(value)
         ret_val = irbuilder.new_var(type)
@@ -439,14 +443,9 @@ class TensorDimOp(BaseOp):
     @classmethod
     def call(cls, irbuilder, input_tensor: MLIRVar, index: Union[MLIRVar, int]):
         cls.ensure_mlirvar(input_tensor, (TensorType, SparseTensorType))
-        if not isinstance(index, MLIRVar):
-            index_value = index
-            index = irbuilder.new_var("i64")
-            priors = f"{index.assign} = constant {index_value} : i64\n"
-        else:
-            priors = ""
+        index = irbuilder.arith.constant(index, "index")
         ret_val = irbuilder.new_var("index")
-        return ret_val, priors + (
+        return ret_val, (
             f"{ret_val.assign} = tensor.dim {input_tensor}, {index} : "
             f"{input_tensor.type}"
         )
@@ -463,6 +462,28 @@ class TensorExtractOp(BaseOp):
         ret_val = irbuilder.new_var(input.type.value_type)
         return ret_val, (
             f"{ret_val.assign} = tensor.extract {input}[{dim}] : {input.type}"
+        )
+
+
+class TensorFromElementsOp(BaseOp):
+    dialect = "tensor"
+    name = "from_elements"
+
+    @classmethod
+    def call(cls, irbuilder, *elements):
+        common_type = None
+        for elem in elements:
+            cls.ensure_mlirvar(elem)
+            if common_type is None:
+                common_type = elem.type
+            elif common_type != elem.type:
+                raise TypeError(
+                    f"All elements must have the same type: {elem.type} != {common_type}"
+                )
+        ret_val = irbuilder.new_var(f"tensor<{len(elements)}x{common_type}>")
+        elemstr = ", ".join(map(str, elements))
+        return ret_val, (
+            f"{ret_val.assign} = tensor.from_elements {elemstr} : {ret_val.type}"
         )
 
 
@@ -992,19 +1013,14 @@ class GraphBLAS_FromCOO(BaseOp):
         cls.ensure_mlirvar(values, TensorType)
         if not hasattr(shape, "__len__"):
             shape = [shape]
-        priors = []
-        for i in range(len(shape)):
-            if not isinstance(shape[i], MLIRVar):
-                dim = irbuilder.new_var("index")
-                priors.append(f"{dim.assign} = constant {shape[i]} : index")
-                shape[i] = dim
+        shape = [irbuilder.arith.constant(sh, "index") for sh in shape]
         if len(shape) == 2:
             ret_type = f"tensor<?x?x{values.type.value_type}, #CSR64>"
         else:
             ret_type = f"tensor<?x{values.type.value_type}, #CV64>"
         ret_val = irbuilder.new_var(ret_type)
         dimstr = ", ".join(map(str, shape))
-        return ret_val, "\n".join(priors) + (
+        return ret_val, (
             f"{ret_val.assign} = graphblas.from_coo {indices}, {values} [{dimstr}]"
             + f" : {indices.type}, {values.type} to {ret_val.type}"
         )

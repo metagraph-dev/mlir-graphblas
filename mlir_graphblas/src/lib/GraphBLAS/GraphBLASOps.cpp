@@ -1264,15 +1264,12 @@ static LogicalResult verify(ToCoordinatesOp op) {
   int64_t rank = inputTensorType.getRank();
 
   llvm::Optional<std::string> errMsg;
-  if (rank == 1) {
+  if (rank == 1)
     errMsg = checkVectorEncoding(inputTensorType);
-    if (errMsg)
-      return op.emitError("input " + errMsg.getValue());
-  } else {
+  else
     errMsg = checkMatrixEncoding(inputTensorType, CSR);
-    if (errMsg)
-      return op.emitError("input " + errMsg.getValue());
-  }
+  if (errMsg)
+    return op.emitError("input " + errMsg.getValue());
 
   Type valueType = valuesType.cast<RankedTensorType>().getElementType();
   Type ivalType = inputTensorType.getElementType();

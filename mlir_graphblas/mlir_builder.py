@@ -340,6 +340,9 @@ class MLIRFunctionBuilder:
 
     def add_statement(self, statement: str) -> None:
         """In an ideal world, no human would ever call this method."""
+        if not statement:
+            return
+
         for line in map(str.strip, statement.split("\n")):
             self.current_statement_list.append(
                 " " * self.default_indentation_size
