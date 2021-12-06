@@ -2,6 +2,7 @@ import math
 import numpy as np
 import pytest
 import grblas as gb
+import scipy.sparse as ss
 import mlir_graphblas.algorithms as mlalgo
 from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from mlir_graphblas.random_utils import ChooseUniformContext
@@ -568,3 +569,58 @@ def test_geolocation():
 
     np.testing.assert_allclose(lat.toarray(), expected_lat)
     np.testing.assert_allclose(lon.toarray(), expected_lon)
+
+
+CONNECTED_COMPONENTS_TEST_CASES = [
+    pytest.param(
+        np.array(
+            [
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+                [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+                [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            ]
+        ),
+        id="orphans",
+    ),
+    pytest.param(
+        np.array(
+            [
+                [0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+                [1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0],
+                [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0],
+            ]
+        ),
+        id="no_orphans",
+    ),
+]
+
+
+@pytest.mark.parametrize("A_dense", CONNECTED_COMPONENTS_TEST_CASES)
+def test_connected_components(A_dense):
+    A = ss.csr_matrix(A_dense)
+    num_connected_components, expected_ans = ss.csgraph.connected_components(A)
+
+    A_sparse = sparsify_array(A_dense.astype(float), [False, True])
+    ans = mlalgo.connected_components(A_sparse)
+    ans = ans.toarray()
+
+    assert num_connected_components == len(np.unique(ans))
+    assert num_connected_components == len(set(zip(ans, expected_ans)))

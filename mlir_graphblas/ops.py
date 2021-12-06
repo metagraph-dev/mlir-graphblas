@@ -126,6 +126,19 @@ class SignedIntToFloatOp(BaseOp):
         )
 
 
+class FloatToSignedIntOp(BaseOp):
+    dialect = "arith"
+    name = "fptosi"
+
+    @classmethod
+    def call(cls, irbuilder, value: MLIRVar, result_type):
+        cls.ensure_mlirvar(value)
+        ret_val = irbuilder.new_var(result_type)
+        return ret_val, (
+            f"{ret_val.assign} = arith.fptosi {value} : {value.type} to {ret_val.type}"
+        )
+
+
 class AddIOp(BaseOp):
     dialect = "arith"
     name = "addi"
@@ -1072,6 +1085,19 @@ class GraphBLAS_Print(BaseOp):
             )
             + "] } : "
             + ", ".join(str(v.type) for v in values)
+        )
+
+
+class GraphBLAS_PrintTensor(BaseOp):
+    dialect = "graphblas"
+    name = "print_tensor"
+
+    @classmethod
+    def call(cls, irbuilder, tensor, level: int):
+        cls.ensure_mlirvar(tensor, SparseTensorType)
+        return (
+            None,
+            f"graphblas.print_tensor {tensor} {{ level = {level} }} : {tensor.type}",
         )
 
 
