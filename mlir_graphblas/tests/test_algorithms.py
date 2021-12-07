@@ -631,22 +631,24 @@ def test_connected_components(A_dense):
 
 
 def test_application_classification():
-    with np.load(os.path.join(TEST_FOLDER, 'data/application_classification.npz')) as data:
+    with np.load(
+        os.path.join(TEST_FOLDER, "data/application_classification.npz")
+    ) as data:
         # Inputs
-        data_vertex = data['data_vertex']
-        pattern_vertex = data['pattern_vertex']
-        data_edges_table = data['data_edges_table']
-        pattern_edges_table = data['pattern_edges_table']
-        de = data['data_edges']
-        pe = data['pattern_edges']
+        data_vertex = data["data_vertex"]
+        pattern_vertex = data["pattern_vertex"]
+        data_edges_table = data["data_edges_table"]
+        pattern_edges_table = data["pattern_edges_table"]
+        de = data["data_edges"]
+        pe = data["pattern_edges"]
         # Expected output
-        expected_output = data['mu']
+        expected_output = data["mu"]
 
     def sparse_from_dense(arr):
         nrows, ncols = arr.shape
-        indices = np.array([
-            [i // ncols, i % ncols] for i in range(nrows * ncols)
-        ], dtype=np.uint64)
+        indices = np.array(
+            [[i // ncols, i % ncols] for i in range(nrows * ncols)], dtype=np.uint64
+        )
         values = arr.flatten()
         sizes = np.array(arr.shape, dtype=np.uint64)
         sparsity = np.array([False, True], dtype=np.bool8)
