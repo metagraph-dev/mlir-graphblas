@@ -3312,7 +3312,6 @@ public:
     Type i64Type = rewriter.getI64Type();
     Type memrefPointerType = getMemrefPointerType(inputTensorType);
     Type memrefIndexType = getMemrefIndexType(inputTensorType);
-    Type memrefIValueType = getMemrefValueType(inputTensorType);
     Type memrefOValueType = getMemrefValueType(outputTensorType);
     unsigned rank = inputTensorType.getRank();
 
@@ -3353,8 +3352,6 @@ public:
         loc, memrefPointerType, input, dimIndex);
     Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefIndexType,
                                                            input, dimIndex);
-    Value Ix = rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefIValueType,
-                                                          input);
     Value Op = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memrefPointerType, output, dimIndex);
     Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefIndexType,
