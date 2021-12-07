@@ -1,3 +1,4 @@
+import os
 import math
 import numpy as np
 import pytest
@@ -8,6 +9,9 @@ from mlir_graphblas.sparse_utils import MLIRSparseTensor
 from mlir_graphblas.random_utils import ChooseUniformContext
 from mlir_graphblas.tools.utils import sparsify_array
 from mlir_graphblas.mlir_builder import GRAPHBLAS_OPENMP_PASSES
+
+
+TEST_FOLDER = os.path.dirname(__file__)
 
 
 @pytest.mark.parametrize("special_passes", [None, GRAPHBLAS_OPENMP_PASSES])
@@ -624,3 +628,34 @@ def test_connected_components(A_dense):
 
     assert num_connected_components == len(np.unique(ans))
     assert num_connected_components == len(set(zip(ans, expected_ans)))
+
+
+def test_application_classification():
+    with np.load(os.path.join(TEST_FOLDER, 'data/application_classification.npz')) as data:
+        # Inputs
+        data_vertex = data['data_vertex']
+        pattern_vertex = data['pattern_vertex']
+        data_edges_table = data['data_edges_table']
+        pattern_edges_table = data['pattern_edges_table']
+        de = data['data_edges']
+        pe = data['pattern_edges']
+        # Expected output
+        expected_output = data['mu']
+
+    def sparse_from_dense(arr):
+        nrows, ncols = arr.shape
+        indices = np.array([
+            [i // ncols, i % ncols] for i in range(nrows * ncols)
+        ], dtype=np.uint64)
+        values = arr.flatten()
+        sizes = np.array(arr.shape, dtype=np.uint64)
+        sparsity = np.array([False, True], dtype=np.bool8)
+        return MLIRSparseTensor(indices, values, sizes, sparsity)
+
+    dv = sparse_from_dense(data_vertex)
+    pv = sparse_from_dense(pattern_vertex)
+    det = sparse_from_dense(data_edges_table)
+    pet = sparse_from_dense(pattern_edges_table)
+    rv = mlalgo.application_classification(dv, det, de, pv, pet, pe)
+
+    np.testing.assert_array_almost_equal(expected_output, rv.values.reshape(rv.shape))

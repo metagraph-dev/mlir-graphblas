@@ -673,6 +673,20 @@ static LogicalResult verify(UpdateGenericOp op) {
   return success();
 }
 
+static LogicalResult verify(UniformComplementOp op) {
+  if (failed(verifyEwise<UniformComplementOp>(op, op.input(), op.getResult(),
+                                              "input", "output",
+                                              /* verifyType */ false)))
+    return failure();
+
+  Type valueType = op.value().getType();
+  Type resultElementType = getElementTypeOrSelf(op.getResult());
+  if (valueType != resultElementType)
+    return op.emitError("Element type of result must match type of value");
+
+  return success();
+}
+
 static LogicalResult verify(UnionOp op) {
   llvm::Optional<llvm::StringRef> unionOperator = op.union_operator();
   if (unionOperator) {
