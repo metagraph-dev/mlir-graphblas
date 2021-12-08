@@ -3,7 +3,7 @@ Various ops written in MLIR which implement dialects or other utilities
 """
 
 import itertools
-
+import math
 from typing import Tuple, Sequence, Optional, Union
 from .mlir_builder import MLIRFunctionBuilder, MLIRVar
 from .types import (
@@ -75,6 +75,20 @@ class ConstantOp(BaseOp):
     dialect = "arith"
     name = "constant"
 
+    # Special constants
+    INFINITY = {
+        "+inf": {
+            "f64": "0x7FF0000000000000",
+            "f32": "0x7F800000",
+            "f16": "0x7C00",
+        },
+        "-inf": {
+            "f64": "0xFFF0000000000000",
+            "f32": "0xFF800000",
+            "f16": "0xFC00",
+        },
+    }
+
     @classmethod
     def call(cls, irbuilder, value, type):
         # Special handling in case value is *already* an MLIR constant
@@ -82,7 +96,12 @@ class ConstantOp(BaseOp):
             return value, None
 
         if str(type) in {"bf16", "f16", "f32", "f64", "f80", "f128"}:
-            value = float(value)
+            if value == math.inf:
+                value = cls.INFINITY["+inf"][str(type)]
+            elif value == -math.inf:
+                value = cls.INFINITY["-inf"][str(type)]
+            else:
+                value = float(value)
         ret_val = irbuilder.new_var(type)
         return ret_val, (f"{ret_val.assign} = arith.constant {value} : {type}")
 
@@ -788,6 +807,23 @@ class GraphBLAS_Update(BaseOp):
             f"graphblas.update {input} -> {output}{mask_str} "
             f'{{ {accum_str}mask_complement = {"true" if mask_complement else "false"}, '
             f'replace = {"true" if replace else "false"} }} : {input.type} -> {output.type}{mask_type_str}'
+        )
+
+
+class GraphBLAS_UniformComplement(BaseOp):
+    dialect = "graphblas"
+    name = "uniform_complement"
+
+    @classmethod
+    def call(cls, irbuilder, input, value):
+        cls.ensure_mlirvar(input, SparseTensorType)
+        value = irbuilder.arith.constant(value, input.type.value_type)
+        ret_val = irbuilder.new_var(
+            SparseTensorType(input.type.shape, value.type, input.type.encoding)
+        )
+        return ret_val, (
+            f"{ret_val.assign} = graphblas.uniform_complement {input}, {value} : "
+            f"{input.type}, {value.type} to {ret_val.type}"
         )
 
 

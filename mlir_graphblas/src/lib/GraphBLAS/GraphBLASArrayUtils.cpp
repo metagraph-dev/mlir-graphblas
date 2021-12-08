@@ -1036,6 +1036,7 @@ void computeVectorElementWise(PatternRewriter &rewriter, Location loc,
   } else if (behavior == MASK_COMPLEMENT) {
     applyMask(rewriter, loc, inputElementType, c0, lhsNnz, Li, Lx, c0,
               maskComplementSize, maskComplement, c0, Oi, Ox);
+    rewriter.create<memref::DeallocOp>(loc, maskComplement);
   } else {
     computeUnionAggregation(rewriter, loc, intersect, binaryBlock,
                             inputElementType, c0, lhsNnz, Li, Lx, c0, rhsNnz,
@@ -1147,6 +1148,7 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
     unionSize =
         computeIndexOverlapSize(rewriter, loc, true, lhsColStart, lhsColEnd, Li,
                                 c0, maskComplementSize, maskComplement);
+    rewriter.create<memref::DeallocOp>(loc, maskComplement);
   } else {
     unionSize =
         computeIndexOverlapSize(rewriter, loc, intersect, lhsColStart,
@@ -1234,6 +1236,7 @@ void computeMatrixElementWise(PatternRewriter &rewriter, Location loc,
     Value maskComplementSize = results[1];
     applyMask(rewriter, loc, inputElementType, lhsColStart, lhsColEnd, Li, Lx,
               c0, maskComplementSize, maskComplement, OcolStart, Oi, Ox);
+    rewriter.create<memref::DeallocOp>(loc, maskComplement);
   } else {
     computeUnionAggregation(rewriter, loc, intersect, binaryBlock,
                             inputElementType, lhsColStart, lhsColEnd, Li, Lx,

@@ -917,6 +917,29 @@ def GraphBLAS_UpdateGenericOp : GraphBLAS_Op<"update_generic", []> {
     let verifier = [{ return ::verify(*this); }];
 }
 
+def GraphBLAS_UniformComplementOp : GraphBLAS_Op<"uniform_complement", [NoSideEffect]> {
+    let summary = "Structural Complement filled with a uniform value.";
+    let description = [{
+        Returns the complement of the structure of a vector or matrix, filled
+        with a uniform scalar value.
+
+        Example:
+        ```mlir
+        %cf2 = arith.constant 2.0 : f32
+        %answer = graphblas.uniform_complement %mat, %cf2 : tensor<?x?xf64, #CSR64>, f32 to tensor<?x?xf32, #CSR64>
+        ```
+    }];
+
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, AnyType:$value);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
+
+    let assemblyFormat = [{
+            $input `,` $value attr-dict `:` type($input) `,` type($value) `to` type($output)
+    }];
+
+    let verifier = [{ return ::verify(*this); }];
+}
+
 def GraphBLAS_EqualOp : GraphBLAS_Op<"equal", [NoSideEffect]> {
     let summary = "Equality checking operation for vectors and matrices.";
     let description = [{

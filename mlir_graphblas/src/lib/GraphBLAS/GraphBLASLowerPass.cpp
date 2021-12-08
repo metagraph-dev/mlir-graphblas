@@ -3291,6 +3291,125 @@ public:
   };
 };
 
+class LowerUniformComplementRewrite
+    : public OpRewritePattern<graphblas::UniformComplementOp> {
+public:
+  using OpRewritePattern<graphblas::UniformComplementOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::UniformComplementOp op,
+                                PatternRewriter &rewriter) const override {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    // Inputs
+    Value input = op.input();
+    Value value = op.value();
+    RankedTensorType inputTensorType =
+        input.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType outputTensorType =
+        op.getResult().getType().dyn_cast<RankedTensorType>();
+    Type outputElementType = outputTensorType.getElementType();
+    Type indexType = rewriter.getIndexType();
+    Type i64Type = rewriter.getI64Type();
+    Type memrefPointerType = getMemrefPointerType(inputTensorType);
+    Type memrefIndexType = getMemrefIndexType(inputTensorType);
+    Type memrefOValueType = getMemrefValueType(outputTensorType);
+    unsigned rank = inputTensorType.getRank();
+
+    // Initial constants
+    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+
+    Value output =
+        callEmptyLike(rewriter, module, loc, input, outputElementType);
+
+    // Resize output (max size - nnz)
+    Value size, npointers, compSize, dimIndex;
+    if (rank == 1) {
+      npointers = c1;
+      size = rewriter.create<graphblas::SizeOp>(loc, input);
+      compSize = size;
+      dimIndex = c0;
+    } else {
+      Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, input);
+      Value ncols = rewriter.create<graphblas::NumColsOp>(loc, input);
+      size = rewriter.create<arith::MulIOp>(loc, nrows, ncols);
+      dimIndex = c1;
+      if (hasRowOrdering(inputTensorType)) {
+        npointers = nrows;
+        compSize = ncols;
+      } else {
+        npointers = ncols;
+        compSize = nrows;
+      }
+    }
+    Value nnz = rewriter.create<graphblas::NumValsOp>(loc, input);
+    Value newSize = rewriter.create<arith::SubIOp>(loc, size, nnz);
+    callResizeIndex(rewriter, module, loc, output, dimIndex, newSize);
+    callResizeValues(rewriter, module, loc, output, newSize);
+
+    // Get sparse tensor info
+    Value Ip = rewriter.create<sparse_tensor::ToPointersOp>(
+        loc, memrefPointerType, input, dimIndex);
+    Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefIndexType,
+                                                           input, dimIndex);
+    Value Op = rewriter.create<sparse_tensor::ToPointersOp>(
+        loc, memrefPointerType, output, dimIndex);
+    Value Oi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefIndexType,
+                                                           output, dimIndex);
+    Value Ox = rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefOValueType,
+                                                          output);
+
+    scf::ForOp loop =
+        rewriter.create<scf::ForOp>(loc, c0, npointers, c1, ValueRange{c0});
+    {
+      rewriter.setInsertionPointToStart(loop.getBody());
+      Value rowCount = loop.getLoopBody().getArgument(1);
+      Value rowIndex = loop.getInductionVar();
+
+      Value row_plus1 = rewriter.create<arith::AddIOp>(loc, rowIndex, c1);
+      Value idxStart_64 = rewriter.create<memref::LoadOp>(loc, Ip, rowIndex);
+      Value idxEnd_64 = rewriter.create<memref::LoadOp>(loc, Ip, row_plus1);
+      Value idxStart =
+          rewriter.create<arith::IndexCastOp>(loc, idxStart_64, indexType);
+      Value idxEnd =
+          rewriter.create<arith::IndexCastOp>(loc, idxEnd_64, indexType);
+
+      ValueRange mcResults =
+          buildMaskComplement(rewriter, loc, compSize, Ii, idxStart, idxEnd);
+      Value maskComplement = mcResults[0];
+      Value maskComplementSize = mcResults[1];
+
+      Value newCount =
+          rewriter.create<arith::AddIOp>(loc, rowCount, maskComplementSize);
+      Value newCount_64 =
+          rewriter.create<arith::IndexCastOp>(loc, newCount, i64Type);
+      rewriter.create<memref::StoreOp>(loc, newCount_64, Op, row_plus1);
+
+      scf::ForOp innerLoop =
+          rewriter.create<scf::ForOp>(loc, c0, maskComplementSize, c1);
+      {
+        rewriter.setInsertionPointToStart(innerLoop.getBody());
+        Value mcIndex = innerLoop.getInductionVar();
+        Value colIndex = rewriter.create<arith::AddIOp>(loc, mcIndex, rowCount);
+
+        Value innerIdx =
+            rewriter.create<memref::LoadOp>(loc, maskComplement, mcIndex);
+        rewriter.create<memref::StoreOp>(loc, innerIdx, Oi, colIndex);
+        rewriter.create<memref::StoreOp>(loc, value, Ox, colIndex);
+
+        rewriter.setInsertionPointAfter(innerLoop);
+      }
+
+      rewriter.create<scf::YieldOp>(loc, ValueRange{newCount});
+      rewriter.setInsertionPointAfter(loop);
+    }
+
+    rewriter.replaceOp(op, output);
+
+    return success();
+  };
+};
+
 class LowerDiagOpRewrite : public OpRewritePattern<graphblas::DiagOp> {
 public:
   using OpRewritePattern<graphblas::DiagOp>::OpRewritePattern;
@@ -4192,7 +4311,7 @@ void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
                LowerReduceToVectorGenericRewrite, LowerReduceToScalarRewrite,
                LowerReduceToScalarGenericRewrite, LowerConvertLayoutRewrite,
                LowerCastRewrite, LowerTransposeRewrite, LowerApplyRewrite,
-               LowerApplyGenericRewrite,
+               LowerApplyGenericRewrite, LowerUniformComplementRewrite,
                LowerMatrixMultiplyReduceToScalarGenericRewrite,
                LowerMatrixMultiplyRewrite, LowerMatrixMultiplyGenericRewrite,
                LowerUnionRewrite, LowerUnionGenericRewrite,

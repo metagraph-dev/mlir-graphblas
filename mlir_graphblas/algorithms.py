@@ -1839,6 +1839,9 @@ class ApplicationClassification(Algorithm):
             data_fwd_graph, "tensor<?x?xf64, #CSR64>"
         )
         fwd_max = irb.graphblas.matrix_multiply(data_fwd_graph, xe, "max_second")
+        irb.graphblas.update(
+            irb.graphblas.uniform_complement(fwd_max, 0), fwd_max, "second"
+        )
         fwd_max = irb.graphblas.matrix_multiply(
             fwd_max, irb.graphblas.diag(v_bak_max, "tensor<?x?xf64, #CSC64>"), "min_max"
         )
@@ -1848,6 +1851,9 @@ class ApplicationClassification(Algorithm):
             shape=(num_dv, num_de),
         )
         bak_max = irb.graphblas.matrix_multiply(data_bak_graph, xe, "max_second")
+        irb.graphblas.update(
+            irb.graphblas.uniform_complement(bak_max, 0), bak_max, "second"
+        )
         bak_max = irb.graphblas.matrix_multiply(
             bak_max, irb.graphblas.diag(v_fwd_max, "tensor<?x?xf64, #CSC64>"), "min_max"
         )
@@ -1909,7 +1915,13 @@ class ApplicationClassification(Algorithm):
             e_fwd_norm = irb.graphblas.reduce_to_vector(e_fwd_norm, "plus", axis=0)
             e_fwd_norm = irb.graphblas.apply(e_fwd_norm, "log")
             fwd_max = irb.graphblas.matrix_multiply(data_fwd_graph, e_fwd, "max_second")
+            irb.graphblas.update(
+                irb.graphblas.uniform_complement(fwd_max, -math.inf), fwd_max, "second"
+            )
             bak_max = irb.graphblas.matrix_multiply(data_bak_graph, e_bak, "max_second")
+            irb.graphblas.update(
+                irb.graphblas.uniform_complement(bak_max, -math.inf), bak_max, "second"
+            )
             fwd_max = irb.graphblas.matrix_multiply(
                 fwd_max,
                 irb.graphblas.diag(e_fwd_norm, "tensor<?x?xf64, #CSC64>"),
