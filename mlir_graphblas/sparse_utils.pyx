@@ -552,28 +552,43 @@ cdef class MLIRSparseTensor:
             rv[i] = pointer.size != 0
         return rv
 
-    def toarray(self):
+    def toarray(self, missing=0):
         try:
             import scipy.sparse as ss
         except ImportError:
             raise ImportError("scipy is required for `toarray`")
-        """Assumes missing values are zero."""
         dense_array = None
         if np.all(self.sparsity == np.array([1])):  # sparse vector
             (vec_length,) = self.shape
-            dense_array = np.zeros(vec_length, dtype=self.values.dtype)
+            dense_array = np.ones(vec_length, dtype=self.values.dtype) * missing
             dense_array[self.indices] = self.values
         elif np.all(self.sparsity == np.array([0, 1])):  # sparse matrix
+            # Utilize the scipy.sparse machinery, but do things twice to determine
+            # what is actually a zero and what is missing (bad assumption on the part
+            # of scipy.sparse)
             if np.all(self.rev == np.array([0, 1])):  # CSR matrix
                 dense_array = ss.csr_matrix(
                     (self.values, self.indices[1], self.pointers[1]),
                     shape=self.shape,
                 ).toarray()
-            elif np.all(self.rev == np.array([1, 0])):  # CSC matrix
+                if missing != 0:
+                    changed_array = ss.csr_matrix(
+                        (np.where(self.values == 0, 1, self.values), self.indices[1], self.pointers[1]),
+                        shape=self.shape,
+                    ).toarray()
+            else:  # CSC matrix
                 dense_array = ss.csc_matrix(
                     (self.values, self.indices[1], self.pointers[1]),
                     shape=self.shape,
                 ).toarray()
+                if missing != 0:
+                    changed_array = ss.csc_matrix(
+                        (np.where(self.values == 0, 1, self.values), self.indices[1], self.pointers[1]),
+                        shape=self.shape,
+                    ).toarray()
+
+            if missing != 0:
+                dense_array = np.where(changed_array == 0, missing, dense_array)
 
         if dense_array is None:
             raise NotImplementedError(

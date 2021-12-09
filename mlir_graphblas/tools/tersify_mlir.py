@@ -2,19 +2,18 @@ import fileinput
 import subprocess
 from collections import OrderedDict
 
-from ..types import AliasMap, SparseEncodingType
+from ..types import AliasMap, SparseEncodingType, AffineMap
 from ..cli import MlirOptCli
 
 
 DEFAULT_ALIASES = AliasMap()
 csr64 = SparseEncodingType(["dense", "compressed"], [0, 1], 64, 64)
 csc64 = SparseEncodingType(["dense", "compressed"], [1, 0], 64, 64)
-csx64 = SparseEncodingType(["dense", "compressed"], None, 64, 64)
 cv64 = SparseEncodingType(["compressed"], None, 64, 64)
 DEFAULT_ALIASES["CSR64"] = csr64
 DEFAULT_ALIASES["CSC64"] = csc64
-DEFAULT_ALIASES["CSX64"] = csx64
 DEFAULT_ALIASES["CV64"] = cv64
+DEFAULT_ALIASES["map1d"] = AffineMap("(d0)[s0, s1] -> (d0 * s1 + s0)")
 
 CLI = None
 

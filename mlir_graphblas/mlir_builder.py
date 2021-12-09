@@ -292,7 +292,8 @@ class MLIRFunctionBuilder:
     def print_mlir(self):
         from .tools import tersify_mlir
 
-        print(tersify_mlir(self.get_mlir(make_private=False), self.aliases))
+        mlir_text = self.get_mlir_module(make_private=False)
+        print(tersify_mlir(mlir_text, self.aliases))
 
     def compile(self, engine=None, passes=None):
         if engine is None:

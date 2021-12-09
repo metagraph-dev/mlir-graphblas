@@ -1751,9 +1751,7 @@ class ConnectedComponents(Algorithm):
 
         return irb
 
-    def __call__(
-        self, A: MLIRSparseTensor, **kwargs
-    ) -> Tuple[MLIRSparseTensor, MLIRSparseTensor]:
+    def __call__(self, A: MLIRSparseTensor, **kwargs) -> MLIRSparseTensor:
         return super().__call__(A, **kwargs)
 
 
@@ -1983,11 +1981,11 @@ class ApplicationClassification(Algorithm):
 
     def __call__(
         self,
-        data_vertex: np.ndarray,
-        data_edge_table: np.ndarray,
+        data_vertex: MLIRSparseTensor,
+        data_edge_table: MLIRSparseTensor,
         pattern_vertex: np.ndarray,
-        pattern_edge_table: np.ndarray,
-        data_edges: np.ndarray,
+        pattern_edge_table: MLIRSparseTensor,
+        data_edges: MLIRSparseTensor,
         pattern_edges: np.ndarray,
         **kwargs,
     ) -> MLIRSparseTensor:
