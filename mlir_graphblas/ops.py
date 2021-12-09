@@ -396,9 +396,39 @@ class MemrefAllocOp(BaseOp):
     name = "alloc"
 
     @classmethod
-    def call(cls, irbuilder, type: str):
+    def call(cls, irbuilder, type: str, *dim_sizes):
         ret_val = irbuilder.new_var(type)
-        return ret_val, (f"{ret_val.assign} = memref.alloc() : {ret_val.type}")
+        for ds in dim_sizes:
+            cls.ensure_mlirvar(ds, IndexType)
+        shape = MemrefType.parse(type, irbuilder.aliases).shape
+        expected_num_dim_sizes = sum((d == -1 for d in shape))
+        if expected_num_dim_sizes != len(dim_sizes):
+            raise ValueError(
+                f"{type} expected {expected_num_dim_sizes} given dim sizes; got {len(dim_sizes)}."
+            )
+        return ret_val, (
+            f"{ret_val.assign} = memref.alloc({', '.join(str(ds) for ds in dim_sizes)}) : {ret_val.type}"
+        )
+
+
+class MemrefAllocaOp(BaseOp):
+    dialect = "memref"
+    name = "alloca"
+
+    @classmethod
+    def call(cls, irbuilder, type: str, *dim_sizes):
+        ret_val = irbuilder.new_var(type)
+        for ds in dim_sizes:
+            cls.ensure_mlirvar(ds, IndexType)
+        shape = MemrefType.parse(type, irbuilder.aliases).shape
+        expected_num_dim_sizes = sum((d == -1 for d in shape))
+        if expected_num_dim_sizes != len(dim_sizes):
+            raise ValueError(
+                f"{type} expected {expected_num_dim_sizes} given dim sizes; got {len(dim_sizes)}."
+            )
+        return ret_val, (
+            f"{ret_val.assign} = memref.alloca({', '.join(str(ds) for ds in dim_sizes)}) : {ret_val.type}"
+        )
 
 
 class MemrefStoreOp(BaseOp):
@@ -439,6 +469,20 @@ class MemrefLoadOp(BaseOp):
         ret_val = irbuilder.new_var(input_memref.type.value_type)
         return ret_val, (
             f"{ret_val.assign} = memref.load {input_memref}[{indices_string}] : {input_memref.type}"
+        )
+
+
+class MemrefTensorLoadOp(BaseOp):
+    dialect = "memref"
+    name = "tensor_load"
+
+    @classmethod
+    def call(cls, irbuilder, input_memref: MLIRVar, return_type: str):
+        cls.ensure_mlirvar(input_memref, MemrefType)
+        # TODO infer return_type from input_memref
+        ret_val = irbuilder.new_var(return_type)
+        return ret_val, (
+            f"{ret_val.assign} = memref.tensor_load {input_memref} : {input_memref.type}"
         )
 
 
