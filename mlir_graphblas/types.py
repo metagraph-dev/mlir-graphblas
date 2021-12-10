@@ -86,23 +86,35 @@ class IntType(Type):
 
 
 class MemrefType(Type):
-    _patt = re.compile(r"^memref<\s*((?:\?x)*)(.+)\s*>$")
+    _patt = re.compile(r"^memref<\s*((?:(?:[^,])*x)*)([^, ]+)\s*>$")
 
-    def __init__(self, rank: int, value_type: Type):
+    def __init__(self, shape: Sequence[int], value_type: Type):
+        shape = tuple(shape)
         if not isinstance(value_type, Type):
             raise TypeError(f"value_type must be a Type, not {type(value_type)}")
-        self.rank = rank
+        elif not all(isinstance(dim, int) for dim in shape):
+            raise TypeError(f"shape must be a sequence of ints, not {type(shape)}")
+        self.shape = shape
         self.value_type = value_type
 
     def __str__(self):
-        return f"memref<{'?x'*self.rank}{self.value_type}>"
+        shape_string = "x".join("?" if dim == -1 else str(dim) for dim in self.shape)
+        return f"memref<{shape_string}x{self.value_type}>"
 
     @classmethod
     def parse(cls, text: str, aliases: AliasMap = None):
         if m := cls._patt.match(text):
-            rank = m.group(1).count("?x")
+            dim_strings = m.group(1).split("x")[:-1]
+            if dim_strings == ["*"]:
+                raise NotImplementedError(f"Unranked memrefs not currently supported.")
+            elif (
+                any(not s.isdigit() for s in dim_strings if s != "?")
+                or len(dim_strings) == 0
+            ):
+                raise ValueError(f"{repr(text)} does not have a valid shape.")
+            shape = [int(dim) if dim.isdigit() else -1 for dim in dim_strings]
             value_type = Type.find(m.group(2), aliases=aliases)
-            return MemrefType(rank, value_type)
+            return MemrefType(shape, value_type)
 
 
 class TensorType(Type):

@@ -2001,3 +2001,391 @@ class ApplicationClassification(Algorithm):
 
 
 application_classification = ApplicationClassification()
+
+
+class GraphWave(Algorithm):
+    def _build(self):
+        irb = MLIRFunctionBuilder(
+            "triangle_count",
+            input_types=[
+                "tensor<?x?xf64, #CSR64>",
+                "!llvm.ptr<f64>",
+                "index",
+                "f64",
+                "index",
+                "tensor<?xf64, #CV64>",
+            ],
+            return_types=["tensor<?x?xf64>"],
+            aliases=_build_common_aliases(),
+        )
+        (W, taus, num_taus, lmax, chebyshev_order, t) = irb.inputs
+
+        # TODO Sweep this to find optimizations
+
+        c0 = irb.arith.constant(0, "index")
+        c1 = irb.arith.constant(1, "index")
+        c2 = irb.arith.constant(2, "index")
+        c1_i64 = irb.arith.constant(1, "i64")
+        c0_f64 = irb.arith.constant(0, "f64")
+        c1_f64 = irb.arith.constant(1, "f64")
+        c2_f64 = irb.arith.constant(2, "f64")
+        c_pi_f64 = irb.arith.constant(np.pi, "f64")
+        c_e_f64 = irb.arith.constant(np.e, "f64")
+        c_0_5_f64 = irb.arith.constant(0.5, "f64")
+        c_negative_0_5_f64 = irb.arith.constant(-0.5, "f64")
+        c_negative_1_f64 = irb.arith.constant(-1, "f64")
+
+        num_nodes = irb.graphblas.num_rows(W)
+        num_nodes_i64 = irb.arith.index_cast(num_nodes, "i64")
+        num_nodes_f64 = irb.arith.sitofp(num_nodes_i64, "f64")
+        num_nodes_plus_one = irb.arith.addi(num_nodes, c1)
+
+        dw = irb.graphblas.reduce_to_vector(W, "plus", 1)
+        d = irb.graphblas.apply(dw, "pow", right=c_negative_0_5_f64)
+        D = irb.graphblas.diag(d, "tensor<?x?xf64, #CSR64>")
+        minus_D = irb.graphblas.apply(D, "times", right=c_negative_1_f64)
+        L = irb.graphblas.matrix_multiply(minus_D, W, "plus_times")
+        L = irb.graphblas.matrix_multiply(L, D, "plus_times")
+
+        eye = irb.util.new_sparse_tensor(
+            "tensor<?x?xf64, #CSR64>", num_nodes, num_nodes
+        )
+        eye_ptr8 = irb.util.tensor_to_ptr8(eye)
+        irb.util.resize_sparse_pointers(eye_ptr8, c1, num_nodes_plus_one)
+        irb.util.resize_sparse_index(eye_ptr8, c1, num_nodes)
+        irb.util.resize_sparse_values(eye_ptr8, num_nodes)
+        eye_pointers = irb.sparse_tensor.pointers(eye, c1)
+        eye_indices = irb.sparse_tensor.indices(eye, c1)
+        eye_values = irb.sparse_tensor.values(eye)
+        with irb.for_loop(0, num_nodes) as eye_arange_for_vars:
+            eye_values_position = eye_arange_for_vars.iter_var_index
+            eye_values_position_i64 = irb.arith.index_cast(eye_values_position, "i64")
+            irb.memref.store(eye_values_position_i64, eye_pointers, eye_values_position)
+            irb.memref.store(eye_values_position_i64, eye_indices, eye_values_position)
+            irb.memref.store(c1_f64, eye_values, eye_values_position)
+        irb.memref.store(num_nodes_i64, eye_pointers, num_nodes)
+
+        irb.graphblas.update(eye, L, accumulate="plus")
+
+        # different signal choices exist
+        # TODO update this according to the notebook
+        signal = eye  # TODO is this used?
+        n_signals = num_nodes  # irb.graphblas.num_cols(signal)
+        n_features_out = num_taus
+
+        num_taus_i64 = num_nodes_i64  # irb.arith.index_cast(num_taus, "i64")
+        c_tensors = irb.llvm.alloca(num_taus_i64, "!llvm.ptr<i8>")
+
+        N = irb.arith.addi(chebyshev_order, c1)
+        N_i64 = irb.arith.index_cast(N, "i64")
+        range_N = irb.util.new_sparse_tensor("tensor<?xf64, #CV64>", N)
+        range_N_ptr8 = irb.util.tensor_to_ptr8(range_N)
+        irb.util.resize_sparse_index(range_N_ptr8, c0, N)
+        irb.util.resize_sparse_values(range_N_ptr8, N)
+        range_N_pointers = irb.sparse_tensor.pointers(range_N, c0)
+        range_N_indices = irb.sparse_tensor.indices(range_N, c0)
+        range_N_values = irb.sparse_tensor.values(range_N)
+        # TODO make this parallel
+        with irb.for_loop(0, N) as range_N_arange_for_vars:
+            range_N_values_position = range_N_arange_for_vars.iter_var_index
+            range_N_values_position_i64 = irb.arith.index_cast(
+                range_N_values_position, "i64"
+            )
+            irb.memref.store(
+                range_N_values_position_i64, range_N_indices, range_N_values_position
+            )
+            range_N_values_position_f64 = irb.arith.sitofp(
+                range_N_values_position_i64, "f64"
+            )
+            irb.memref.store(
+                range_N_values_position_f64, range_N_values, range_N_values_position
+            )
+        irb.memref.store(N_i64, range_N_pointers, c1)
+
+        tmp_N = irb.graphblas.apply(range_N, "plus", right=c_0_5_f64)
+        N_f64 = irb.arith.sitofp(N_i64, "f64")
+        pi_over_N = irb.arith.divf(c_pi_f64, N_f64)
+        tmp_N = irb.graphblas.apply(tmp_N, "times", right=pi_over_N)
+        num = irb.graphblas.apply(tmp_N, "cos")
+
+        a = irb.arith.mulf(lmax, c_0_5_f64)
+
+        # TODO we need a graphblas.outer_product op so that we can have easy loop-fusion
+        # TODO graphblas.outer_product is parallelizable
+        tmp_N_values = irb.sparse_tensor.values(tmp_N)
+        z_vectors = irb.llvm.alloca(num_taus_i64, "!llvm.ptr<i8>")
+        with irb.for_loop(0, N) as z_for_vars:
+            row_index = z_for_vars.iter_var_index
+            row_index_i64 = irb.arith.index_cast(row_index, "i64")
+            tmp_N_value = irb.memref.load(tmp_N_values, row_index)
+            row = irb.graphblas.apply(range_N, "times", right=tmp_N_value)
+            row_ptr8 = irb.util.tensor_to_ptr8(row)
+            destination_ptr = irb.llvm.getelementptr(z_vectors, row_index_i64)
+            irb.llvm.store(row_ptr8, destination_ptr)
+        z = irb.util.new_sparse_tensor("tensor<?x?xf64, #CSR64>", N, N)
+        z_ptr8 = irb.util.tensor_to_ptr8(z)
+        N_squared = irb.arith.muli(N, N)
+        N_squared_i64 = irb.arith.index_cast(N_squared, "i64")
+        N_plus_one = irb.arith.addi(N, c1)
+        irb.util.resize_sparse_pointers(z_ptr8, c1, N_plus_one)
+        irb.util.resize_sparse_index(z_ptr8, c1, N_squared)
+        irb.util.resize_sparse_values(z_ptr8, N_squared)
+        z_pointers = irb.sparse_tensor.pointers(z, c1)
+        z_indices = irb.sparse_tensor.indices(z, c1)
+        z_values = irb.sparse_tensor.values(z)
+        with irb.for_loop(0, N) as z_concat_loop_row_for_vars:
+            row_index = z_concat_loop_row_for_vars.iter_var_index
+            row_index_i64 = irb.arith.index_cast(row_index, "i64")
+            n_times_row_index = irb.arith.muli(N, row_index)
+            n_times_row_index_i64 = irb.arith.index_cast(n_times_row_index, "i64")
+            irb.memref.store(n_times_row_index_i64, z_pointers, row_index)
+            row_vector_ptr = irb.llvm.getelementptr(z_vectors, row_index_i64)
+            row_vector_ptr8 = irb.llvm.load(row_vector_ptr, "!llvm.ptr<i8>")
+            row_vector = irb.util.ptr8_to_tensor(
+                row_vector_ptr8, "tensor<?xf64, #CV64>"
+            )
+            row_vector_values = irb.sparse_tensor.values(row_vector)
+            with irb.for_loop(0, N) as z_concat_loop_col_for_vars:
+                col_index = z_concat_loop_col_for_vars.iter_var_index
+                col_index_i64 = irb.arith.index_cast(col_index, "i64")
+                values_position = irb.arith.addi(n_times_row_index, col_index)
+                irb.memref.store(col_index_i64, z_indices, values_position)
+                value = irb.memref.load(row_vector_values, col_index)
+                irb.memref.store(value, z_values, values_position)
+        irb.memref.store(N_squared_i64, z_pointers, N)
+        # TODO ideally done with loop fusion with the above loops
+        z = irb.graphblas.apply(z, "cos")
+
+        c_vectors = irb.llvm.alloca(num_taus_i64, "!llvm.ptr<i8>")
+        two_over_N = irb.arith.divf(c2_f64, N_f64)
+        negative_a_over_lmax = irb.arith.divf(a, lmax)
+        negative_a_over_lmax = irb.arith.mulf(negative_a_over_lmax, c_negative_1_f64)
+        # TODO make this parallel if num_taus is big enough
+        # in practice; if users do not usually make num_taus
+        # big enough, add a comment saying this is why we intentionally
+        # made this loop sequential.
+        with irb.for_loop(0, num_taus) as tau_for_vars:
+            idx = tau_for_vars.iter_var_index
+            idx_i64 = irb.arith.index_cast(idx, "i64")
+            tau_ptr = irb.llvm.getelementptr(taus, idx_i64)
+            tau = irb.llvm.load(tau_ptr, "f64")
+            scalar_factor = irb.arith.mulf(tau, negative_a_over_lmax)
+            y = irb.graphblas.apply(num, "plus", right=c1_f64)
+            y = irb.graphblas.apply(y, "times", right=scalar_factor)
+            # TODO make "exp" an apply and update operator.
+            y = irb.graphblas.apply(y, "pow", left=c_e_f64)
+            y = irb.graphblas.apply(y, "times", right=two_over_N)
+            c_vector = irb.graphblas.matrix_multiply(y, z, "plus_times")
+            c_vector_ptr8 = irb.util.tensor_to_ptr8(c_vector)
+            destination_ptr = irb.llvm.getelementptr(c_vectors, idx_i64)
+            irb.llvm.store(c_vector_ptr8, destination_ptr)
+
+        n_features_out = num_taus
+        n_features_out_i64 = num_taus_i64
+        heat_print_matrices = irb.llvm.alloca(n_features_out_i64, "!llvm.ptr<i8>")
+
+        twf_old = signal
+        twf_cur = irb.graphblas.matrix_multiply(L, signal, "plus_times")
+        twf_cur = irb.graphblas.apply(twf_cur, "div", right=a)
+        negative_signal = irb.graphblas.apply(signal, "ainv")
+        irb.graphblas.update(negative_signal, twf_cur, "plus")
+
+        # TODO make this parallel if n_features_out is big enough
+        # in practice; if users do not usually make n_features_out
+        # big enough, add a comment saying this is why we intentionally
+        # made this loop sequential.
+        with irb.for_loop(0, n_features_out) as heat_print_for_vars:
+            idx = heat_print_for_vars.iter_var_index
+            idx_i64 = irb.arith.index_cast(idx, "i64")
+            c_vector_ptr = irb.llvm.getelementptr(c_vectors, idx_i64)
+            c_vector_ptr8 = irb.llvm.load(c_vector_ptr, "!llvm.ptr<i8>")
+            c_vector = irb.util.ptr8_to_tensor(c_vector_ptr8, "tensor<?xf64, #CV64>")
+            # assumes c_vector is dense
+            c_vector_values = irb.sparse_tensor.values(c_vector)
+            c_vector_0 = irb.memref.load(c_vector_values, c0)
+            c_vector_1 = irb.memref.load(c_vector_values, c1)
+            c_vector_0_over_2 = irb.arith.mulf(c_vector_0, c_0_5_f64)
+            heat_print_matrix = irb.graphblas.apply(
+                twf_old, "times", right=c_vector_0_over_2
+            )
+            right_summand = irb.graphblas.apply(twf_cur, "times", right=c_vector_1)
+            irb.graphblas.update(right_summand, heat_print_matrix, accumulate="plus")
+            heat_print_matrix_ptr8 = irb.util.tensor_to_ptr8(heat_print_matrix)
+            destination_ptr = irb.llvm.getelementptr(heat_print_matrices, idx_i64)
+            irb.llvm.store(heat_print_matrix_ptr8, destination_ptr)
+
+        negative_a = irb.arith.mulf(a, c_negative_1_f64)
+        factor = irb.graphblas.apply(eye, "second", right=negative_a)
+        irb.graphblas.update(L, factor, "plus")
+        two_over_a = irb.arith.divf(c2_f64, a)
+        # TODO this apply should be done in place
+        factor = irb.graphblas.apply(factor, "times", right=two_over_a)
+
+        twf_cur_ptr8_init = irb.util.tensor_to_ptr8(twf_cur)
+        twf_old_ptr8_init = irb.util.tensor_to_ptr8(twf_old)
+        twf_cur_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        twf_old_ptr8 = irb.new_var("!llvm.ptr<i8>")
+        with irb.for_loop(
+            2,
+            N,
+            iter_vars=[
+                (twf_cur_ptr8, twf_cur_ptr8_init),
+                (twf_old_ptr8, twf_old_ptr8_init),
+            ],
+        ) as k_for_vars:
+            k = k_for_vars.iter_var_index
+            twf_cur = irb.util.ptr8_to_tensor(twf_cur_ptr8, "tensor<?x?xf64, #CSR64>")
+            twf_old = irb.util.ptr8_to_tensor(twf_old_ptr8, "tensor<?x?xf64, #CSR64>")
+
+            twf_new = irb.graphblas.matrix_multiply(factor, twf_cur, "plus_times")
+            # TODO this should be handled by irb.graphblas.update
+            negative_twf_old = irb.graphblas.apply(twf_old, "ainv")
+            irb.graphblas.update(negative_twf_old, twf_new, "plus")
+            with irb.for_loop(0, n_features_out) as i_for_vars:
+                i = i_for_vars.iter_var_index
+                i_i64 = irb.arith.index_cast(i, "i64")
+                heat_print_matrix_ptr = irb.llvm.getelementptr(
+                    heat_print_matrices, i_i64
+                )
+                heat_print_matrix_ptr8 = irb.llvm.load(
+                    heat_print_matrix_ptr, "!llvm.ptr<i8>"
+                )
+                heat_print_matrix = irb.util.ptr8_to_tensor(
+                    heat_print_matrix_ptr8, "tensor<?x?xf64, #CSR64>"
+                )
+                c_vector_ptr = irb.llvm.getelementptr(c_vectors, i_i64)
+                c_vector_ptr8 = irb.llvm.load(c_vector_ptr, "!llvm.ptr<i8>")
+                c_vector = irb.util.ptr8_to_tensor(
+                    c_vector_ptr8, "tensor<?xf64, #CV64>"
+                )
+                # assumes c_vector is dense
+                # TODO should we track the c_vector value arrays in a separate array since we use them often?
+                c_vector_values = irb.sparse_tensor.values(c_vector)
+                c_vector_k = irb.memref.load(c_vector_values, k)
+                updater = irb.graphblas.apply(twf_new, "times", right=c_vector_k)
+                irb.graphblas.update(updater, heat_print_matrix, accumulate="plus")
+            twf_new_ptr8 = irb.util.tensor_to_ptr8(twf_new)
+            k_for_vars.yield_vars(twf_new_ptr8, twf_cur_ptr8)
+
+        t_size = irb.graphblas.size(t)
+        t_size_i64 = irb.arith.index_cast(t_size, "i64")
+        t_size_plus_one = irb.arith.addi(t_size, c1)
+        t_indices = irb.sparse_tensor.indices(t, c0)
+        t_values = irb.sparse_tensor.values(t)
+
+        output_nrows = num_nodes
+        output_ncols = irb.arith.muli(t_size, num_taus)
+        output_ncols = irb.arith.muli(output_ncols, c2)
+        output_memref = irb.memref.alloca("memref<?x?xf64>", output_nrows, output_ncols)
+        output_tensor = irb.memref.tensor_load(output_memref, "tensor<?x?xf64>")
+
+        # TODO is this parallelizable? Looks like it might be.
+        # If this outer-loop has too few iterations in practice
+        # (since n_features_out depends on usesr-given input),
+        # consider making one of the inner-loops parallel.
+        with irb.for_loop(0, n_features_out) as heat_print_for_vars:
+            i = heat_print_for_vars.iter_var_index
+            i_i64 = irb.arith.index_cast(i, "i64")
+            heat_print_matrix_ptr = irb.llvm.getelementptr(heat_print_matrices, i_i64)
+            heat_print_matrix_ptr8 = irb.llvm.load(
+                heat_print_matrix_ptr, "!llvm.ptr<i8>"
+            )
+            heat_print_matrix = irb.util.ptr8_to_tensor(
+                heat_print_matrix_ptr8, "tensor<?x?xf64, #CSR64>"
+            )
+
+            # TODO we really need graphblas.extract
+            row_selector = irb.util.new_sparse_tensor("tensor<?xf64, #CV64>", num_nodes)
+            row_selector_ptr8 = irb.util.tensor_to_ptr8(row_selector)
+            irb.util.resize_sparse_index(row_selector_ptr8, c0, c1)
+            irb.util.resize_sparse_values(row_selector_ptr8, c1)
+            row_selector_pointers = irb.sparse_tensor.pointers(row_selector, c0)
+            irb.memref.store(c1_i64, row_selector_pointers, c1)
+            row_selector_indices = irb.sparse_tensor.indices(row_selector, c0)
+            row_selector_values = irb.sparse_tensor.values(row_selector)
+            with irb.for_loop(0, num_nodes) as node_for_vars:
+                node_idx = node_for_vars.iter_var_index
+                node_idx_i64 = irb.arith.index_cast(node_idx, "i64")
+                irb.memref.store(node_idx_i64, row_selector_indices, c0)
+                node_sig = irb.graphblas.matrix_multiply(
+                    row_selector, heat_print_matrix, "any_second"
+                )
+                A = irb.graphblas.apply(node_sig, "cos")
+                B = irb.graphblas.apply(node_sig, "sin")
+                theta = irb.graphblas.intersect(B, A, "atan2")
+                theta_values = irb.sparse_tensor.values(theta)
+
+                # TODO we REALLY need a graphblas.outer_product op so that we can have easy loop-fusion
+                t_position = irb.new_var("index")
+                with irb.for_loop(
+                    0, t_size, iter_vars=[(t_position, c0)]
+                ) as row_for_vars:
+                    t_index = row_for_vars.iter_var_index
+                    t_index_i64 = irb.arith.index_cast(t_index, "i64")
+
+                    t_value = irb.memref.load(t_values, t_position)
+                    t_indices_value_i64 = irb.memref.load(t_indices, t_position)
+
+                    # TODO maybe it's better to make the position variables for-loop vars
+                    # since addition is faster than multiplication
+                    output_base_tau_position = irb.arith.muli(c2, t_size)
+                    output_base_tau_position = irb.arith.muli(
+                        output_base_tau_position, i
+                    )
+
+                    cos_position = irb.arith.muli(c2, t_index)
+                    cos_position = irb.arith.addi(
+                        cos_position, output_base_tau_position
+                    )
+                    sin_position = irb.arith.addi(cos_position, c1)
+
+                    row_present = irb.arith.cmpi(t_indices_value_i64, t_index_i64, "eq")
+                    updated_t_position = irb.new_var("index")
+                    irb.add_statement(
+                        f"{updated_t_position.assign} = scf.if {row_present} -> (index) {{"
+                    )
+                    row = irb.graphblas.apply(theta, "times", right=t_value)
+
+                    row_cos = irb.graphblas.apply(row, "cos")
+                    row_cos_sum = irb.graphblas.reduce_to_scalar(row_cos, "plus")
+                    row_cos_sum_normalized = irb.arith.divf(row_cos_sum, num_nodes_f64)
+                    irb.memref.store(
+                        row_cos_sum_normalized, output_memref, [node_idx, cos_position]
+                    )
+
+                    row_sin = irb.graphblas.apply(row, "sin")
+                    row_sin_sum = irb.graphblas.reduce_to_scalar(row_sin, "plus")
+                    row_sin_sum_normalized = irb.arith.divf(row_sin_sum, num_nodes_f64)
+                    irb.memref.store(
+                        row_sin_sum_normalized, output_memref, [node_idx, sin_position]
+                    )
+
+                    incremented_t_position = irb.arith.addi(t_position, c1)
+                    irb.add_statement(f"scf.yield {incremented_t_position}: index")
+                    irb.add_statement("} else {")
+                    irb.memref.store(c1_f64, output_memref, [node_idx, cos_position])
+                    irb.memref.store(c0_f64, output_memref, [node_idx, sin_position])
+                    irb.add_statement(f"scf.yield {t_position} : index")
+                    irb.add_statement("}")
+
+                    row_for_vars.yield_vars(updated_t_position)
+
+        irb.return_vars(output_tensor)
+
+        return irb
+
+    def __call__(
+        self,
+        W: MLIRSparseTensor,
+        taus: List[float],
+        lmax: float,  # max eigenvalue
+        chebyshev_order: int,
+        t: MLIRSparseTensor,
+        **kwargs,
+    ) -> int:
+        num_taus = len(taus)
+        assert chebyshev_order >= 2
+        return super().__call__(W, taus, num_taus, lmax, chebyshev_order, t, **kwargs)
+
+
+graph_wave = GraphWave()
