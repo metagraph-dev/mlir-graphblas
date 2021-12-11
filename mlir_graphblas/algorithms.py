@@ -628,7 +628,7 @@ graph_search = GraphSearch()
 class RandomWalk(Algorithm):
     def _build(self):
         irb = MLIRFunctionBuilder(
-            "graph_search",
+            "random_walk",
             input_types=[
                 "tensor<?x?xf64, #CSR64>",
                 "index",
@@ -1245,16 +1245,17 @@ class GraphSAGE(Algorithm):
         A: MLIRSparseTensor,
         features: MLIRSparseTensor,
         weight_matrices: List[MLIRSparseTensor],
-        num_weight_matrices: int,
         sample_count_per_layer: List[int],
-        rng_context: ChooseUniformContext,
+        rng_context: ChooseUniformContext = None,
         **kwargs,
     ) -> MLIRSparseTensor:
+        if rng_context is None:
+            rng_context = ChooseUniformContext()
         return super().__call__(
             A,
             features,
             weight_matrices,
-            num_weight_matrices,
+            len(weight_matrices),
             sample_count_per_layer,
             rng_context,
             **kwargs,
@@ -1621,7 +1622,7 @@ class GeoLocation(Algorithm):
         eps: float = 0.001,
         max_mad: float = 1500.0,
         **kwargs,
-    ) -> MLIRSparseTensor:
+    ) -> Tuple[MLIRSparseTensor, MLIRSparseTensor]:
         return super().__call__(graph, lat, lon, max_iter, eps, max_mad, **kwargs)
 
 
@@ -1751,9 +1752,7 @@ class ConnectedComponents(Algorithm):
 
         return irb
 
-    def __call__(
-        self, A: MLIRSparseTensor, **kwargs
-    ) -> Tuple[MLIRSparseTensor, MLIRSparseTensor]:
+    def __call__(self, A: MLIRSparseTensor, **kwargs) -> MLIRSparseTensor:
         return super().__call__(A, **kwargs)
 
 
@@ -1983,11 +1982,11 @@ class ApplicationClassification(Algorithm):
 
     def __call__(
         self,
-        data_vertex: np.ndarray,
-        data_edge_table: np.ndarray,
+        data_vertex: MLIRSparseTensor,
+        data_edge_table: MLIRSparseTensor,
         pattern_vertex: np.ndarray,
-        pattern_edge_table: np.ndarray,
-        data_edges: np.ndarray,
+        pattern_edge_table: MLIRSparseTensor,
+        data_edges: MLIRSparseTensor,
         pattern_edges: np.ndarray,
         **kwargs,
     ) -> MLIRSparseTensor:
@@ -2008,7 +2007,7 @@ application_classification = ApplicationClassification()
 class GraphWave(Algorithm):
     def _build(self):
         irb = MLIRFunctionBuilder(
-            "triangle_count",
+            "graph_wave",
             input_types=[
                 "tensor<?x?xf64, #CSR64>",
                 "!llvm.ptr<f64>",
@@ -2384,7 +2383,7 @@ class GraphWave(Algorithm):
         chebyshev_order: int,
         t: MLIRSparseTensor,
         **kwargs,
-    ) -> int:
+    ) -> MLIRSparseTensor:
         num_taus = len(taus)
         assert chebyshev_order >= 2
         return super().__call__(W, taus, num_taus, lmax, chebyshev_order, t, **kwargs)

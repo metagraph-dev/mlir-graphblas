@@ -514,8 +514,6 @@ def test_graph_sage():
     ], dtype=np.float64)
     # fmt: on
 
-    num_weight_matrices = len(weight_matrices)
-
     sample_count_per_layer = [999, 999]
     print("pre-RNG")
     rng_context = ChooseUniformContext(seed=1234)
@@ -524,7 +522,6 @@ def test_graph_sage():
         A,
         features,
         weight_matrices,
-        num_weight_matrices,
         sample_count_per_layer,
         rng_context,
     ).toarray()
