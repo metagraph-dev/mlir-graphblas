@@ -5,12 +5,12 @@ from typing import Sequence
 
 
 def sparsify_array(
-    input_array: np.ndarray, sparsity_values: Sequence[bool]
+    input_array: np.ndarray, sparsity_values: Sequence[bool], missing=0
 ) -> MLIRSparseTensor:
     """Converts a numpy array into a MLIRSparseTensor."""
 
     indices = np.array(
-        list(zip(*input_array.nonzero())),
+        list(zip(*(input_array != missing).nonzero())),
         dtype=np.uint64,
     )
     values = np.array(

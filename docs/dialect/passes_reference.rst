@@ -34,24 +34,41 @@ It's best practice to always use ``--graphblas-structuralize`` prior to uses of
 ``--graphblas-structuralize`` Pass
 ----------------------------------
 
-The structuralization pass performs three transformations:
+The structuralization pass performs eight generic transformations:
 
 * Transform ``graphblas.matrix_multiply`` ops into equivalent
   ``graphblas.matrix_multiply_generic`` ops.
 * Transform ``graphblas.apply`` ops into equivalent
   ``graphblas.apply_generic`` ops.
+* Transform ``graphblas.select`` ops into equivalent
+  ``graphblas.select_generic`` ops.
+* Transform ``graphblas.union`` ops into equivalent
+  ``graphblas.union_generic`` ops.
+* Transform ``graphblas.intersect`` ops into equivalent
+  ``graphblas.intersect_generic`` ops.
+* Transform ``graphblas.update`` ops into equivalent
+  ``graphblas.update_generic`` ops.
+* Transform ``graphblas.reduce_to_vector`` ops into equivalent
+  ``graphblas.reduce_to_vector_generic`` ops.
 * Transform ``graphblas.reduce_to_scalar`` ops into equivalent
   ``graphblas.reduce_to_scalar_generic`` ops.
+
+The structuralization pass also performs Do-What-I-Mean (DWIM) transformations,
+automatically converting the layout of input matrices to conform to the requirements
+of each pass. DWIM transformations are included for:
+
+* ``graphblas.transpose``
+* ``graphblas.reduce_to_vector``
+* ``graphblas.matrix_multiply``
+* ``graphblas.matrix_multiply_reduce_to_scalar``
 
 .. _graphblas-optimize: 
 
 ``--graphblas-optimize`` Pass
 -----------------------------
 
-The optimization pass performs three transformations:
+The optimization pass performs two transformations:
 
-* Combine ``graphblas.matrix_select`` ops on the same input sparse tensor
-  into a single loop with multiple output tensors.
 * Combine ``graphblas.matrix_multiply`` followed by ``graphblas.apply``
   into a single ``graphblas.matrix_multiply`` with an additional scalar 
   transformation of the output elements as they are written to memory.
@@ -77,7 +94,4 @@ allocation, resizing, and deallocation of the sparse tensor data structure.
 In general, this pass uses ``scf`` ops to handle traversing the sparse data
 structure, with `scf.parallel` used when possible to indicate loops where the
 loop body iterations are independent of each other, or are performing a
-well-defined reduction.  Note that ``scf.parallel`` does not automatically
-enable parallel, multithreaded execution without the use of additional passes.
-Unfortunately, the ``--convert-scf-to-openmp`` pass cannot handle the code
-``--graphblas-lower`` generates as OpenMP reductions are not yet supported.
+well-defined reduction.
