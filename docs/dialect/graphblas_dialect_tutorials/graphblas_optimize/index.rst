@@ -14,6 +14,5 @@ Rather than using the JIT engine to lower the MLIR code examples down to somethi
 .. toctree::
    :maxdepth: 1
 
-   fuse_select
    fuse_multiply_reduce
    fuse_multiply_apply
