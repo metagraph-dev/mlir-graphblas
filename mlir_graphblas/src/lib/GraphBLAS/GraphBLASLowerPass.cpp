@@ -6,6 +6,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/IR/Region.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -3664,13 +3665,13 @@ private:
       scf::WhileOp findDiagonalWhileLoop = rewriter.create<scf::WhileOp>(
           loc, TypeRange{indexType, int1Type}, ValueRange{firstPtr, c1_i1});
       Block *findDiagonalWhileLoopBefore = rewriter.createBlock(
-          &findDiagonalWhileLoop.before(), {}, TypeRange{indexType, int1Type});
+          &findDiagonalWhileLoop.getBefore(), {}, TypeRange{indexType, int1Type});
       Block *findDiagonalWhileLoopAfter = rewriter.createBlock(
-          &findDiagonalWhileLoop.after(), {}, TypeRange{indexType, int1Type});
+          &findDiagonalWhileLoop.getAfter(), {}, TypeRange{indexType, int1Type});
       Value diagonalNotFound = findDiagonalWhileLoop.getResult(1);
       {
         rewriter.setInsertionPointToStart(
-            &findDiagonalWhileLoop.before().front());
+            &findDiagonalWhileLoop.getBefore().front());
         Value ptr = findDiagonalWhileLoopBefore->getArgument(0);
         Value diagonalPositionNotFound =
             findDiagonalWhileLoopBefore->getArgument(1);
@@ -3683,7 +3684,7 @@ private:
       }
       {
         rewriter.setInsertionPointToStart(
-            &findDiagonalWhileLoop.after().front());
+            &findDiagonalWhileLoop.getAfter().front());
         Value currentPtr = findDiagonalWhileLoopAfter->getArgument(0);
         Value elementColumnIndex_i64 =
             rewriter.create<memref::LoadOp>(loc, matrixIndices, currentPtr);
@@ -3771,10 +3772,10 @@ private:
           loc, TypeRange{indexType, int1Type, valueType},
           ValueRange{firstPtr, c1_i1, c0_valueType});
       Block *findDiagonalWhileLoopBefore =
-          rewriter.createBlock(&findDiagonalWhileLoop.before(), {},
+          rewriter.createBlock(&findDiagonalWhileLoop.getBefore(), {},
                                TypeRange{indexType, int1Type, valueType});
       Block *findDiagonalWhileLoopAfter =
-          rewriter.createBlock(&findDiagonalWhileLoop.after(), {},
+          rewriter.createBlock(&findDiagonalWhileLoop.getAfter(), {},
                                TypeRange{indexType, int1Type, valueType});
       Value diagonalNotFound = findDiagonalWhileLoop.getResult(1);
       Value diagonalValue = findDiagonalWhileLoop.getResult(2);
@@ -3785,7 +3786,7 @@ private:
         Value currentDiagonalValue =
             findDiagonalWhileLoopBefore->getArgument(2);
         rewriter.setInsertionPointToStart(
-            &findDiagonalWhileLoop.before().front());
+            &findDiagonalWhileLoop.getBefore().front());
         Value morePtrs = rewriter.create<arith::CmpIOp>(
             op.getLoc(), arith::CmpIPredicate::ult, ptr, secondPtr);
         Value continueCondition = rewriter.create<arith::AndIOp>(
@@ -3796,7 +3797,7 @@ private:
       }
       {
         rewriter.setInsertionPointToStart(
-            &findDiagonalWhileLoop.after().front());
+            &findDiagonalWhileLoop.getAfter().front());
         Value currentPtr = findDiagonalWhileLoopAfter->getArgument(0);
         Value previousDiagonalValue =
             findDiagonalWhileLoopAfter->getArgument(2);
@@ -4295,9 +4296,8 @@ public:
     }
 
     // Convert memrefs to tensors
-    // Note: these will be moved to `bufferization::ToTensorOp` in the future
-    Value indicesTensor = rewriter.create<memref::TensorLoadOp>(loc, indices);
-    Value valuesTensor = rewriter.create<memref::TensorLoadOp>(loc, values);
+    Value indicesTensor = rewriter.create<bufferization::ToTensorOp>(loc, indices);
+    Value valuesTensor = rewriter.create<bufferization::ToTensorOp>(loc, values);
 
     rewriter.replaceOp(op, ValueRange{indicesTensor, valuesTensor});
 
