@@ -177,7 +177,7 @@ def tensor_fill(irb, size, value, dtype):
 def tensor_to_col(irb, tensor):
     ret = irb.new_var(f"tensor<?x1x{tensor.type.value_type}>")
     irb.add_statement(
-        f"{ret.assign} = linalg.tensor_expand_shape {tensor} [[0, 1]] : {tensor.type} into {ret.type}"
+        f"{ret.assign} = tensor.expand_shape {tensor} [[0, 1]] : {tensor.type} into {ret.type}"
     )
     return ret
 
@@ -185,7 +185,7 @@ def tensor_to_col(irb, tensor):
 def tensor_to_row(irb, tensor):
     ret = irb.new_var(f"tensor<1x?x{tensor.type.value_type}>")
     irb.add_statement(
-        f"{ret.assign} = linalg.tensor_expand_shape {tensor} [[0, 1]] : {tensor.type} into {ret.type}"
+        f"{ret.assign} = tensor.expand_shape {tensor} [[0, 1]] : {tensor.type} into {ret.type}"
     )
     return ret
 
@@ -194,6 +194,6 @@ def tensor_to_1d(irb, tensor):
     # Works if tensor is either a single row or single column 2D tensor
     ret = irb.new_var(f"tensor<?x{tensor.type.value_type}>")
     irb.add_statement(
-        f"{ret.assign} = linalg.tensor_collapse_shape {tensor} [[0, 1]] : {tensor.type} into {ret.type}"
+        f"{ret.assign} = tensor.collapse_shape {tensor} [[0, 1]] : {tensor.type} into {ret.type}"
     )
     return ret
