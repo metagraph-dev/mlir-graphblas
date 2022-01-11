@@ -3,10 +3,10 @@
 // TODO add documentation
 //
 //===--------------------------------------------------------------------===//
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/SparseTensor/IR/SparseTensor.h"
-#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/IR/Region.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
@@ -3664,10 +3664,12 @@ private:
 
       scf::WhileOp findDiagonalWhileLoop = rewriter.create<scf::WhileOp>(
           loc, TypeRange{indexType, int1Type}, ValueRange{firstPtr, c1_i1});
-      Block *findDiagonalWhileLoopBefore = rewriter.createBlock(
-          &findDiagonalWhileLoop.getBefore(), {}, TypeRange{indexType, int1Type});
-      Block *findDiagonalWhileLoopAfter = rewriter.createBlock(
-          &findDiagonalWhileLoop.getAfter(), {}, TypeRange{indexType, int1Type});
+      Block *findDiagonalWhileLoopBefore =
+          rewriter.createBlock(&findDiagonalWhileLoop.getBefore(), {},
+                               TypeRange{indexType, int1Type});
+      Block *findDiagonalWhileLoopAfter =
+          rewriter.createBlock(&findDiagonalWhileLoop.getAfter(), {},
+                               TypeRange{indexType, int1Type});
       Value diagonalNotFound = findDiagonalWhileLoop.getResult(1);
       {
         rewriter.setInsertionPointToStart(
@@ -4296,8 +4298,10 @@ public:
     }
 
     // Convert memrefs to tensors
-    Value indicesTensor = rewriter.create<bufferization::ToTensorOp>(loc, indices);
-    Value valuesTensor = rewriter.create<bufferization::ToTensorOp>(loc, values);
+    Value indicesTensor =
+        rewriter.create<bufferization::ToTensorOp>(loc, indices);
+    Value valuesTensor =
+        rewriter.create<bufferization::ToTensorOp>(loc, values);
 
     rewriter.replaceOp(op, ValueRange{indicesTensor, valuesTensor});
 
