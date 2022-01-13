@@ -955,15 +955,18 @@ public:
     Value sparsePointers = sdpRet[0];
     Value nnz = sdpRet[1];
     if (mask) {
-      Value Mi = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefIndexType, mask, c0);
+      Value Mi = rewriter.create<sparse_tensor::ToIndicesOp>(
+          loc, memrefIndexType, mask, c0);
       Value mNnz = rewriter.create<graphblas::NumValsOp>(loc, mask);
       if (maskComplement) {
-        ValueRange bmcRet = buildMaskComplement(rewriter, loc, size, Mi, c0, mNnz);
+        ValueRange bmcRet =
+            buildMaskComplement(rewriter, loc, size, Mi, c0, mNnz);
         Mi = bmcRet[0];
         mNnz = bmcRet[1];
       }
       Value prevSparsePointers = sparsePointers;
-      ValueRange bioRet = buildIndexOverlap(rewriter, loc, nnz, prevSparsePointers, mNnz, Mi);
+      ValueRange bioRet =
+          buildIndexOverlap(rewriter, loc, nnz, prevSparsePointers, mNnz, Mi);
       sparsePointers = bioRet[0];
       nnz = bioRet[1];
       if (maskComplement)
@@ -990,13 +993,14 @@ public:
     rewriter.create<memref::StoreOp>(loc, nnz64, Op, c1);
 
     // Loop over sparse array of valid output indices
-    scf::ForOp reduceLoop =
-        rewriter.create<scf::ForOp>(loc, c0, nnz, c1);
+    scf::ForOp reduceLoop = rewriter.create<scf::ForOp>(loc, c0, nnz, c1);
     {
       rewriter.setInsertionPointToStart(reduceLoop.getBody());
       Value outputPos = reduceLoop.getInductionVar();
-      Value rowIndex64 = rewriter.create<memref::LoadOp>(loc, sparsePointers, outputPos);
-      Value rowIndex = rewriter.create<arith::IndexCastOp>(loc, rowIndex64, indexType);
+      Value rowIndex64 =
+          rewriter.create<memref::LoadOp>(loc, sparsePointers, outputPos);
+      Value rowIndex =
+          rewriter.create<arith::IndexCastOp>(loc, rowIndex64, indexType);
       Value nextRowIndex =
           rewriter.create<arith::AddIOp>(loc, rowIndex, c1).getResult();
       Value ptr64 = rewriter.create<memref::LoadOp>(loc, Ip, rowIndex);
@@ -2798,8 +2802,10 @@ public:
       NamedAttrList attributes = {};
       attributes.append(StringRef("mask_complement"),
                         rewriter.getBoolAttr(op.mask_complement()));
-      a = rewriter.create<graphblas::SelectMaskOp>(loc, a.getType(), ValueRange{a, mask}, attributes.getAttrs());
-      b = rewriter.create<graphblas::SelectMaskOp>(loc, b.getType(), ValueRange{b, mask}, attributes.getAttrs());
+      a = rewriter.create<graphblas::SelectMaskOp>(
+          loc, a.getType(), ValueRange{a, mask}, attributes.getAttrs());
+      b = rewriter.create<graphblas::SelectMaskOp>(
+          loc, b.getType(), ValueRange{b, mask}, attributes.getAttrs());
     }
 
     // New op
@@ -2886,28 +2892,33 @@ public:
       NamedAttrList attributes = {};
       attributes.append(StringRef("mask_complement"),
                         rewriter.getBoolAttr(op.mask_complement()));
-      a = rewriter.create<graphblas::SelectMaskOp>(loc, a.getType(), ValueRange{a, mask}, attributes.getAttrs());
-      b = rewriter.create<graphblas::SelectMaskOp>(loc, b.getType(), ValueRange{b, mask}, attributes.getAttrs());
+      a = rewriter.create<graphblas::SelectMaskOp>(
+          loc, a.getType(), ValueRange{a, mask}, attributes.getAttrs());
+      b = rewriter.create<graphblas::SelectMaskOp>(
+          loc, b.getType(), ValueRange{b, mask}, attributes.getAttrs());
     }
 
     // Special handling for "first" and "second"
     if (opstr == "first") {
       graphblas::SelectMaskOp newIntersectOp =
-          rewriter.create<graphblas::SelectMaskOp>(loc, op->getResultTypes(), ValueRange{a, b});
+          rewriter.create<graphblas::SelectMaskOp>(loc, op->getResultTypes(),
+                                                   ValueRange{a, b});
       rewriter.replaceOp(op, newIntersectOp.getResult());
     } else if (opstr == "second") {
       graphblas::SelectMaskOp newIntersectOp =
-          rewriter.create<graphblas::SelectMaskOp>(loc, op->getResultTypes(), ValueRange{b, a});
+          rewriter.create<graphblas::SelectMaskOp>(loc, op->getResultTypes(),
+                                                   ValueRange{b, a});
       rewriter.replaceOp(op, newIntersectOp.getResult());
     } else {
       // New op
       NamedAttrList attributes = {};
       graphblas::IntersectGenericOp newIntersectOp =
           rewriter.create<graphblas::IntersectGenericOp>(
-              loc, op->getResultTypes(), ValueRange{a, b}, attributes.getAttrs(),
-              1);
+              loc, op->getResultTypes(), ValueRange{a, b},
+              attributes.getAttrs(), 1);
 
-      if (failed(populateBinary(rewriter, loc, op.intersect_operator(), valueType,
+      if (failed(populateBinary(rewriter, loc, op.intersect_operator(),
+                                valueType,
                                 newIntersectOp.getRegions().slice(0, 1),
                                 graphblas::YieldKind::MULT)))
         return failure();
@@ -3287,7 +3298,8 @@ public:
   };
 };
 
-class LowerSelectMaskRewrite : public OpRewritePattern<graphblas::SelectMaskOp> {
+class LowerSelectMaskRewrite
+    : public OpRewritePattern<graphblas::SelectMaskOp> {
 public:
   using OpRewritePattern<graphblas::SelectMaskOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::SelectMaskOp op,
@@ -3295,11 +3307,12 @@ public:
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
-    //Inputs
+    // Inputs
     Value input = op.input();
     Value mask = op.mask();
     bool maskComplement = op.mask_complement();
-    RankedTensorType inputTensorType = input.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType inputTensorType =
+        input.getType().dyn_cast<RankedTensorType>();
 
     Value output = callEmptyLike(rewriter, module, loc, input);
     EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
@@ -4339,23 +4352,23 @@ public:
 };
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
-  patterns.add<LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
-               LowerSelectGenericRewrite, LowerReduceToVectorRewrite,
-               LowerReduceToVectorGenericRewrite, LowerReduceToScalarRewrite,
-               LowerReduceToScalarGenericRewrite, LowerConvertLayoutRewrite,
-               LowerCastRewrite, LowerTransposeRewrite, LowerApplyRewrite,
-               LowerApplyGenericRewrite, LowerUniformComplementRewrite,
-               LowerMatrixMultiplyReduceToScalarGenericRewrite,
-               LowerMatrixMultiplyRewrite, LowerMatrixMultiplyGenericRewrite,
-               LowerUnionRewrite, LowerUnionGenericRewrite,
-               LowerIntersectRewrite, LowerIntersectGenericRewrite,
-               LowerUpdateRewrite, LowerUpdateGenericRewrite, LowerEqualRewrite,
-               LowerDiagOpRewrite, LowerSelectMaskRewrite,
-               LowerCommentRewrite, LowerPrintRewrite,
-               LowerPrintTensorRewrite, LowerSizeRewrite, LowerNumRowsRewrite,
-               LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite,
-               LowerFromCoordinatesRewrite, LowerToCoordinatesRewrite>(
-      patterns.getContext());
+  patterns
+      .add<LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
+           LowerSelectGenericRewrite, LowerReduceToVectorRewrite,
+           LowerReduceToVectorGenericRewrite, LowerReduceToScalarRewrite,
+           LowerReduceToScalarGenericRewrite, LowerConvertLayoutRewrite,
+           LowerCastRewrite, LowerTransposeRewrite, LowerApplyRewrite,
+           LowerApplyGenericRewrite, LowerUniformComplementRewrite,
+           LowerMatrixMultiplyReduceToScalarGenericRewrite,
+           LowerMatrixMultiplyRewrite, LowerMatrixMultiplyGenericRewrite,
+           LowerUnionRewrite, LowerUnionGenericRewrite, LowerIntersectRewrite,
+           LowerIntersectGenericRewrite, LowerUpdateRewrite,
+           LowerUpdateGenericRewrite, LowerEqualRewrite, LowerDiagOpRewrite,
+           LowerSelectMaskRewrite, LowerCommentRewrite, LowerPrintRewrite,
+           LowerPrintTensorRewrite, LowerSizeRewrite, LowerNumRowsRewrite,
+           LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite,
+           LowerFromCoordinatesRewrite, LowerToCoordinatesRewrite>(
+          patterns.getContext());
 }
 
 struct GraphBLASLoweringPass

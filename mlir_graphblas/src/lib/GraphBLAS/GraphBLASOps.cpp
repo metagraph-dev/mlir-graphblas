@@ -674,11 +674,12 @@ static LogicalResult verify(UpdateGenericOp op) {
 }
 
 static LogicalResult verify(SelectMaskOp op) {
-  if (failed(verifyEwise<SelectMaskOp>(op, op.input(), op.getResult(),
-                                       "input", "output", /* verifyType */ true)))
+  if (failed(verifyEwise<SelectMaskOp>(op, op.input(), op.getResult(), "input",
+                                       "output", /* verifyType */ true)))
     return failure();
 
-  if (failed(verifyEwise<SelectMaskOp>(op, op.output(), op.mask(), "output", "mask",
+  if (failed(verifyEwise<SelectMaskOp>(op, op.output(), op.mask(), "output",
+                                       "mask",
                                        /* verifyType */ false)))
     return failure();
 
@@ -718,7 +719,7 @@ static LogicalResult verify(UnionOp op) {
   if (mask) {
     if (failed(verifyEwise<UnionOp>(op, op.getResult(), mask, "output", "mask",
                                     /* verifyType */ false)))
-    return failure();
+      return failure();
   }
 
   return success();
@@ -758,9 +759,10 @@ static LogicalResult verify(IntersectOp op) {
 
   Value mask = op.mask();
   if (mask) {
-    if (failed(verifyEwise<IntersectOp>(op, op.getResult(), mask, "output", "mask",
-                                      /* verifyType */ false)))
-    return failure();
+    if (failed(verifyEwise<IntersectOp>(op, op.getResult(), mask, "output",
+                                        "mask",
+                                        /* verifyType */ false)))
+      return failure();
   }
 
   return success();
