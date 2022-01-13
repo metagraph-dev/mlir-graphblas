@@ -238,15 +238,15 @@ ValueRange buildIndexOverlap(PatternRewriter &rewriter, Location loc,
       TypeRange{indexType, indexType, indexType, int64Type, int64Type, boolType, boolType},
       ValueRange{c0, c0, c0, ci0, ci0, ctrue, ctrue});
   Block *before =
-      rewriter.createBlock(&whileLoop.before(), {},
+      rewriter.createBlock(&whileLoop.getBefore(), {},
                            TypeRange{indexType, indexType, indexType, int64Type,
                                      int64Type, boolType, boolType});
   Block *after =
-      rewriter.createBlock(&whileLoop.after(), {},
+      rewriter.createBlock(&whileLoop.getAfter(), {},
                            TypeRange{indexType, indexType, indexType, int64Type,
                                      int64Type, boolType, boolType});
   // "while" portion of the loop
-  rewriter.setInsertionPointToStart(&whileLoop.before().front());
+  rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
   Value posA = before->getArgument(0);
   Value posB = before->getArgument(1);
   Value validPosA = rewriter.create<arith::CmpIOp>(
@@ -258,7 +258,7 @@ ValueRange buildIndexOverlap(PatternRewriter &rewriter, Location loc,
   rewriter.create<scf::ConditionOp>(loc, continueLoop, before->getArguments());
 
   // "do" portion of while loop
-  rewriter.setInsertionPointToStart(&whileLoop.after().front());
+  rewriter.setInsertionPointToStart(&whileLoop.getAfter().front());
   posA = after->getArgument(0);
   posB = after->getArgument(1);
   Value posO = after->getArgument(2);
