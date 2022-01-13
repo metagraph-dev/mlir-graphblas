@@ -2278,7 +2278,7 @@ class GraphWave(Algorithm):
         output_ncols = irb.arith.muli(t_size, num_taus)
         output_ncols = irb.arith.muli(output_ncols, c2)
         output_memref = irb.memref.alloca("memref<?x?xf64>", output_nrows, output_ncols)
-        output_tensor = irb.memref.tensor_load(output_memref, "tensor<?x?xf64>")
+        output_tensor = irb.bufferization.to_tensor(output_memref, "tensor<?x?xf64>")
 
         # TODO is this parallelizable? Looks like it might be.
         # If this outer-loop has too few iterations in practice

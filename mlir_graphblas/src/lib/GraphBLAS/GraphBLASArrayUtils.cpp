@@ -412,10 +412,10 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
   // Walk thru the indices; on a match yield 1, else yield 0
   scf::WhileOp whileLoop =
       rewriter.create<scf::WhileOp>(loc, int64Type, rowStart64);
-  Block *before = rewriter.createBlock(&whileLoop.before(), {}, int64Type);
-  Block *after = rewriter.createBlock(&whileLoop.after(), {}, int64Type);
+  Block *before = rewriter.createBlock(&whileLoop.getBefore(), {}, int64Type);
+  Block *after = rewriter.createBlock(&whileLoop.getAfter(), {}, int64Type);
   Value ii64 = before->getArgument(0);
-  rewriter.setInsertionPointToStart(&whileLoop.before().front());
+  rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
   // Check if ii >= rowEnd
   Value cmpEndReached = rewriter.create<arith::CmpIOp>(
       loc, arith::CmpIPredicate::uge, ii64, rowEnd64);
@@ -440,7 +440,7 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
   Value valToSend = ifBlock_continueSearch.getResult(1);
   rewriter.create<scf::ConditionOp>(loc, continueSearch, valToSend);
   // "do" portion of while loop
-  rewriter.setInsertionPointToStart(&whileLoop.after().front());
+  rewriter.setInsertionPointToStart(&whileLoop.getAfter().front());
   Value iiPrev = after->getArgument(0);
   Value iiNext = rewriter.create<arith::AddIOp>(loc, iiPrev, ci1);
   rewriter.create<scf::YieldOp>(loc, iiNext);
@@ -662,15 +662,15 @@ Value computeIndexOverlapSize(PatternRewriter &rewriter, Location loc,
                 indexType},
       ValueRange{aPosStart, bPosStart, c0, c0, ctrue, ctrue, c0});
   Block *before =
-      rewriter.createBlock(&whileLoop.before(), {},
+      rewriter.createBlock(&whileLoop.getBefore(), {},
                            TypeRange{indexType, indexType, indexType, indexType,
                                      boolType, boolType, indexType});
   Block *after =
-      rewriter.createBlock(&whileLoop.after(), {},
+      rewriter.createBlock(&whileLoop.getAfter(), {},
                            TypeRange{indexType, indexType, indexType, indexType,
                                      boolType, boolType, indexType});
   // "while" portion of the loop
-  rewriter.setInsertionPointToStart(&whileLoop.before().front());
+  rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
   Value posA = before->getArgument(0);
   Value posB = before->getArgument(1);
   Value validPosA = rewriter.create<arith::CmpIOp>(
@@ -682,7 +682,7 @@ Value computeIndexOverlapSize(PatternRewriter &rewriter, Location loc,
   rewriter.create<scf::ConditionOp>(loc, continueLoop, before->getArguments());
 
   // "do" portion of while loop
-  rewriter.setInsertionPointToStart(&whileLoop.after().front());
+  rewriter.setInsertionPointToStart(&whileLoop.getAfter().front());
   posA = after->getArgument(0);
   posB = after->getArgument(1);
   Value idxA = after->getArgument(2);
@@ -852,15 +852,15 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
       ValueRange{aPosStart, bPosStart, oPosStart, ci0, ci0, typedPlaceholder,
                  typedPlaceholder, ctrue, ctrue});
   Block *before = rewriter.createBlock(
-      &whileLoop.before(), {},
+      &whileLoop.getBefore(), {},
       TypeRange{indexType, indexType, indexType, int64Type, int64Type,
                 valueType, valueType, boolType, boolType});
-  Block *after = rewriter.createBlock(&whileLoop.after(), {},
+  Block *after = rewriter.createBlock(&whileLoop.getAfter(), {},
                                       TypeRange{indexType, indexType, indexType,
                                                 int64Type, int64Type, valueType,
                                                 valueType, boolType, boolType});
   // "while" portion of the loop
-  rewriter.setInsertionPointToStart(&whileLoop.before().front());
+  rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
   Value posA = before->getArgument(0);
   Value posB = before->getArgument(1);
   Value validPosA = rewriter.create<arith::CmpIOp>(
@@ -872,7 +872,7 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
   rewriter.create<scf::ConditionOp>(loc, continueLoop, before->getArguments());
 
   // "do" portion of while loop
-  rewriter.setInsertionPointToStart(&whileLoop.after().front());
+  rewriter.setInsertionPointToStart(&whileLoop.getAfter().front());
   posA = after->getArgument(0);
   posB = after->getArgument(1);
   Value posO = after->getArgument(2);
@@ -1088,15 +1088,15 @@ Value applyMask(PatternRewriter &rewriter, Location loc, Type valueType,
                 valueType, boolType, boolType},
       ValueRange{aPosStart, mPosStart, oPosStart, ci0, ci0, cf0, ctrue, ctrue});
   Block *before =
-      rewriter.createBlock(&whileLoop.before(), {},
+      rewriter.createBlock(&whileLoop.getBefore(), {},
                            TypeRange{indexType, indexType, indexType, int64Type,
                                      int64Type, valueType, boolType, boolType});
   Block *after =
-      rewriter.createBlock(&whileLoop.after(), {},
+      rewriter.createBlock(&whileLoop.getAfter(), {},
                            TypeRange{indexType, indexType, indexType, int64Type,
                                      int64Type, valueType, boolType, boolType});
   // "while" portion of the loop
-  rewriter.setInsertionPointToStart(&whileLoop.before().front());
+  rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
   Value posA = before->getArgument(0);
   Value posM = before->getArgument(1);
   Value validPosA = rewriter.create<arith::CmpIOp>(
@@ -1108,7 +1108,7 @@ Value applyMask(PatternRewriter &rewriter, Location loc, Type valueType,
   rewriter.create<scf::ConditionOp>(loc, continueLoop, before->getArguments());
 
   // "do" portion of while loop
-  rewriter.setInsertionPointToStart(&whileLoop.after().front());
+  rewriter.setInsertionPointToStart(&whileLoop.getAfter().front());
   posA = after->getArgument(0);
   posM = after->getArgument(1);
   Value posO = after->getArgument(2);

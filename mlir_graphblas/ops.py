@@ -472,9 +472,14 @@ class MemrefLoadOp(BaseOp):
         )
 
 
-class MemrefTensorLoadOp(BaseOp):
-    dialect = "memref"
-    name = "tensor_load"
+###########################################
+# bufferization ops
+###########################################
+
+
+class BufferizationToTensorOp(BaseOp):
+    dialect = "bufferization"
+    name = "to_tensor"
 
     @classmethod
     def call(cls, irbuilder, input_memref: MLIRVar, return_type: str):
@@ -482,7 +487,7 @@ class MemrefTensorLoadOp(BaseOp):
         # TODO infer return_type from input_memref
         ret_val = irbuilder.new_var(return_type)
         return ret_val, (
-            f"{ret_val.assign} = memref.tensor_load {input_memref} : {input_memref.type}"
+            f"{ret_val.assign} = bufferization.to_tensor {input_memref} : {input_memref.type}"
         )
 
 

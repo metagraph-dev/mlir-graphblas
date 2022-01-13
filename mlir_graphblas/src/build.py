@@ -69,7 +69,7 @@ def build_graphblas_opt(build_clean: bool) -> None:
 
     command, stdout_string, stderr_string = run_shell_commands(
         _BUILD_DIR,
-        "cmake -G Ninja .. -DMLIR_DIR=$PREFIX/lib/cmake/mlir -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit",  # creates the directory ./build/graphblas-opt/
+        f"cmake -G Ninja .. -DMLIR_DIR=$PREFIX/lib/cmake/mlir -DCMAKE_BUILD_TYPE=Debug -DLLVM_EXTERNAL_LIT=$BUILD_DIR/bin/llvm-lit -DCMAKE_PREFIX_PATH={sys.exec_prefix}",  # creates the directory ./build/graphblas-opt/
         "cmake --build . --target check-graphblas --verbose",  # creates the executable ./build/bin/graphblas-opt and runs tests
         PREFIX=sys.exec_prefix,
         BUILD_DIR=sys.exec_prefix,
