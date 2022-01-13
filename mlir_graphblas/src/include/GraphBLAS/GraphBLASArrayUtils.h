@@ -22,6 +22,12 @@ ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
                                Value fullSize, Value maskIndices,
                                Value maskStart, Value maskEnd);
 
+ValueRange sparsifyDensePointers(PatternRewriter &rewriter, Location loc,
+                                 Value size, Value pointers);
+
+ValueRange buildIndexOverlap(PatternRewriter &rewriter, Location loc,
+                             Value aSize, Value a, Value bSize, Value b);
+
 Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
                          Value fixedIndices, Value fixedIndexStart,
                          Value fixedIndexEnd, Value iterPointers,

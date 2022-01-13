@@ -673,6 +673,18 @@ static LogicalResult verify(UpdateGenericOp op) {
   return success();
 }
 
+static LogicalResult verify(SelectMaskOp op) {
+  if (failed(verifyEwise<SelectMaskOp>(op, op.input(), op.getResult(),
+                                       "input", "output", /* verifyType */ true)))
+    return failure();
+
+  if (failed(verifyEwise<SelectMaskOp>(op, op.output(), op.mask(), "output", "mask",
+                                       /* verifyType */ false)))
+    return failure();
+
+  return success();
+}
+
 static LogicalResult verify(UniformComplementOp op) {
   if (failed(verifyEwise<UniformComplementOp>(op, op.input(), op.getResult(),
                                               "input", "output",
@@ -701,6 +713,13 @@ static LogicalResult verify(UnionOp op) {
   if (failed(verifyEwise<UnionOp>(op, op.a(), op.getResult(), "input", "output",
                                   /* verifyType */ true)))
     return failure();
+
+  Value mask = op.mask();
+  if (mask) {
+    if (failed(verifyEwise<UnionOp>(op, op.getResult(), mask, "output", "mask",
+                                    /* verifyType */ false)))
+    return failure();
+  }
 
   return success();
 }
@@ -737,6 +756,13 @@ static LogicalResult verify(IntersectOp op) {
                                       /* verifyType */ false)))
     return failure();
 
+  Value mask = op.mask();
+  if (mask) {
+    if (failed(verifyEwise<IntersectOp>(op, op.getResult(), mask, "output", "mask",
+                                      /* verifyType */ false)))
+    return failure();
+  }
+
   return success();
 }
 
@@ -771,6 +797,15 @@ static LogicalResult verifyReduceToVectorArgs(T op) {
   if (errMsg)
     return op.emitError("operand " + errMsg.getValue());
 
+  Value mask = op.mask();
+  RankedTensorType maskTensorType;
+  if (mask) {
+    maskTensorType = mask.getType().cast<RankedTensorType>();
+    errMsg = checkVectorEncoding(maskTensorType);
+    if (errMsg)
+      return op.emitError("mask " + errMsg.getValue());
+  }
+
   Type resultType = op.getResult().getType();
   RankedTensorType resultTensorType = resultType.cast<RankedTensorType>();
 
@@ -793,6 +828,11 @@ static LogicalResult verifyReduceToVectorArgs(T op) {
   ArrayRef<int64_t> resultShape = resultTensorType.getShape();
   if (resultShape[0] != expectedResultLength) {
     return op.emitError("Operand and output shapes are incompatible.");
+  }
+  if (mask) {
+    ArrayRef<int64_t> maskShape = maskTensorType.getShape();
+    if (maskShape[0] != resultShape[0])
+      return op.emitError("Mask and output shapes must match.");
   }
 
   return success();
