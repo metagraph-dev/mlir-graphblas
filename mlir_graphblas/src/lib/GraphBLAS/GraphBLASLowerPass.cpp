@@ -887,6 +887,8 @@ public:
       NamedAttrList attributes = {};
       attributes.append(StringRef("axis"),
                         rewriter.getIntegerAttr(i64Type, op.axis()));
+      attributes.append(StringRef("mask_complement"),
+                        rewriter.getBoolAttr(op.mask_complement()));
       graphblas::ReduceToVectorGenericOp newReduceOp =
           rewriter.create<graphblas::ReduceToVectorGenericOp>(
               loc, op->getResultTypes(), input, attributes.getAttrs(), 2);
@@ -916,7 +918,9 @@ public:
 
     // Inputs
     Value input = op.input();
+    Value mask = op.mask();
     int axis = op.axis();
+    bool maskComplement = op.mask_complement();
 
     // Types
     Type indexType = rewriter.getIndexType();
@@ -931,13 +935,44 @@ public:
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
 
+    // Sparse pointers
+    Value Ip = rewriter.create<sparse_tensor::ToPointersOp>(
+        loc, memrefPointerType, input, c1);
+    Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefIndexType,
+                                                           input, c1);
+    Value Ix = rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefIValueType,
+                                                          input);
+
     // Compute output sizes
     Value size;
     if (axis == 1)
       size = rewriter.create<graphblas::NumRowsOp>(loc, input);
     else
       size = rewriter.create<graphblas::NumColsOp>(loc, input);
-    Value nnz = computeNNZ(rewriter, loc, input, size);
+
+    // Compute sparse array of valid output indices
+    ValueRange sdpRet = sparsifyDensePointers(rewriter, loc, size, Ip);
+    Value sparsePointers = sdpRet[0];
+    Value nnz = sdpRet[1];
+    if (mask) {
+      Value Mi = rewriter.create<sparse_tensor::ToIndicesOp>(
+          loc, memrefIndexType, mask, c0);
+      Value mNnz = rewriter.create<graphblas::NumValsOp>(loc, mask);
+      if (maskComplement) {
+        ValueRange bmcRet =
+            buildMaskComplement(rewriter, loc, size, Mi, c0, mNnz);
+        Mi = bmcRet[0];
+        mNnz = bmcRet[1];
+      }
+      Value prevSparsePointers = sparsePointers;
+      ValueRange bioRet =
+          buildIndexOverlap(rewriter, loc, nnz, prevSparsePointers, mNnz, Mi);
+      sparsePointers = bioRet[0];
+      nnz = bioRet[1];
+      if (maskComplement)
+        rewriter.create<memref::DeallocOp>(loc, Mi);
+      rewriter.create<memref::DeallocOp>(loc, prevSparsePointers);
+    }
     Value nnz64 = rewriter.create<arith::IndexCastOp>(loc, nnz, i64Type);
 
     // Build output vector
@@ -946,14 +981,6 @@ public:
 
     callResizeIndex(rewriter, module, loc, output, c0, nnz);
     callResizeValues(rewriter, module, loc, output, nnz);
-
-    // Sparse pointers
-    Value Ip = rewriter.create<sparse_tensor::ToPointersOp>(
-        loc, memrefPointerType, input, c1);
-    Value Ii = rewriter.create<sparse_tensor::ToIndicesOp>(loc, memrefIndexType,
-                                                           input, c1);
-    Value Ix = rewriter.create<sparse_tensor::ToValuesOp>(loc, memrefIValueType,
-                                                          input);
 
     Value Op = rewriter.create<sparse_tensor::ToPointersOp>(
         loc, memrefPointerType, output, c0);
@@ -965,97 +992,44 @@ public:
     // Populate output
     rewriter.create<memref::StoreOp>(loc, nnz64, Op, c1);
 
-    scf::ForOp reduceLoop =
-        rewriter.create<scf::ForOp>(loc, c0, size, c1, ValueRange{c0});
+    // Loop over sparse array of valid output indices
+    scf::ForOp reduceLoop = rewriter.create<scf::ForOp>(loc, c0, nnz, c1);
     {
       rewriter.setInsertionPointToStart(reduceLoop.getBody());
-      Value outputPos = reduceLoop.getLoopBody().getArgument(1);
-      Value rowIndex = reduceLoop.getInductionVar();
+      Value outputPos = reduceLoop.getInductionVar();
+      Value rowIndex64 =
+          rewriter.create<memref::LoadOp>(loc, sparsePointers, outputPos);
+      Value rowIndex =
+          rewriter.create<arith::IndexCastOp>(loc, rowIndex64, indexType);
       Value nextRowIndex =
           rewriter.create<arith::AddIOp>(loc, rowIndex, c1).getResult();
       Value ptr64 = rewriter.create<memref::LoadOp>(loc, Ip, rowIndex);
       Value nextPtr64 = rewriter.create<memref::LoadOp>(loc, Ip, nextRowIndex);
 
-      Value rowIsNonEmpty = rewriter.create<arith::CmpIOp>(
-          loc, arith::CmpIPredicate::ne, ptr64, nextPtr64);
-      scf::IfOp ifRowIsNonEmptyBlock = rewriter.create<scf::IfOp>(
-          loc, TypeRange{indexType}, rowIsNonEmpty, true);
-      rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.thenBlock());
-      {
-        Value ptr = rewriter.create<arith::IndexCastOp>(loc, ptr64, indexType);
-        Value nextPtr =
-            rewriter.create<arith::IndexCastOp>(loc, nextPtr64, indexType);
+      // At this point, we know the row is not empty, so nextPtr64 > ptr64
+      Value ptr = rewriter.create<arith::IndexCastOp>(loc, ptr64, indexType);
+      Value nextPtr =
+          rewriter.create<arith::IndexCastOp>(loc, nextPtr64, indexType);
 
-        // Inject code from func
-        Value aggVal = nullptr;
-        LogicalResult funcResult =
-            func(op, rewriter, loc, aggVal, ptr, nextPtr, Ii, Ix);
-        if (funcResult.failed()) {
-          return funcResult;
-        }
-
-        rewriter.create<memref::StoreOp>(loc, aggVal, Ox, outputPos);
-        Value rowIndex64 =
-            rewriter.create<arith::IndexCastOp>(loc, rowIndex, i64Type);
-        rewriter.create<memref::StoreOp>(loc, rowIndex64, Oi, outputPos);
-        Value updatedOutputPos =
-            rewriter.create<arith::AddIOp>(loc, outputPos, c1);
-        rewriter.create<scf::YieldOp>(loc, ValueRange{updatedOutputPos});
+      // Inject code from func
+      Value aggVal = nullptr;
+      LogicalResult funcResult =
+          func(op, rewriter, loc, aggVal, ptr, nextPtr, Ii, Ix);
+      if (funcResult.failed()) {
+        return funcResult;
       }
-      rewriter.setInsertionPointToStart(ifRowIsNonEmptyBlock.elseBlock());
-      { rewriter.create<scf::YieldOp>(loc, ValueRange{outputPos}); }
-      rewriter.setInsertionPointAfter(ifRowIsNonEmptyBlock);
 
-      Value nextOutputPos = ifRowIsNonEmptyBlock.getResult(0);
-      rewriter.create<scf::YieldOp>(loc, ValueRange{nextOutputPos});
-
-      rewriter.setInsertionPointAfter(reduceLoop);
+      rewriter.create<memref::StoreOp>(loc, aggVal, Ox, outputPos);
+      rewriter.create<memref::StoreOp>(loc, rowIndex64, Oi, outputPos);
     }
-
+    rewriter.setInsertionPointAfter(reduceLoop);
+    rewriter.create<memref::DeallocOp>(loc, sparsePointers);
     rewriter.replaceOp(op, output);
 
     cleanupIntermediateTensor(rewriter, module, loc, output);
 
     return success();
   };
-
-  static Value computeNNZ(PatternRewriter &rewriter, Location loc, Value input,
-                          Value size) {
-    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
-    Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    Type indexType = rewriter.getIndexType();
-    RankedTensorType inputType = input.getType().cast<RankedTensorType>();
-    MemRefType memref1DPointerType = getMemrefPointerType(inputType);
-    Value pointers = rewriter.create<sparse_tensor::ToPointersOp>(
-        loc, memref1DPointerType, input, c1);
-    // Compute number of nonzero elements in result
-    scf::ForOp nnzLoop =
-        rewriter.create<scf::ForOp>(loc, c0, size, c1, ValueRange{c0});
-    {
-      rewriter.setInsertionPointToStart(nnzLoop.getBody());
-      Value count = nnzLoop.getLoopBody().getArgument(1);
-      Value rowIndex = nnzLoop.getInductionVar();
-      Value nextRowIndex = rewriter.create<arith::AddIOp>(loc, rowIndex, c1);
-      Value firstPtr64 =
-          rewriter.create<memref::LoadOp>(loc, pointers, rowIndex);
-      Value secondPtr64 =
-          rewriter.create<memref::LoadOp>(loc, pointers, nextRowIndex);
-      Value rowIsEmpty = rewriter.create<arith::CmpIOp>(
-          loc, arith::CmpIPredicate::eq, firstPtr64, secondPtr64);
-      scf::IfOp ifRowIsEmptyBlock = rewriter.create<scf::IfOp>(
-          loc, TypeRange{indexType}, rowIsEmpty, true);
-      rewriter.setInsertionPointToStart(ifRowIsEmptyBlock.thenBlock());
-      rewriter.create<scf::YieldOp>(loc, ValueRange{count});
-      rewriter.setInsertionPointToStart(ifRowIsEmptyBlock.elseBlock());
-      Value count_plus1 = rewriter.create<arith::AddIOp>(loc, count, c1);
-      rewriter.create<scf::YieldOp>(loc, ValueRange{count_plus1});
-      rewriter.setInsertionPointAfter(ifRowIsEmptyBlock);
-      Value newCount = ifRowIsEmptyBlock.getResult(0);
-      rewriter.create<scf::YieldOp>(loc, ValueRange{newCount});
-      rewriter.setInsertionPointAfter(nnzLoop);
-    }
-    return nnzLoop.getResult(0);
-  }
 
 private:
   static LogicalResult countBlock(graphblas::ReduceToVectorOp op,
@@ -2819,13 +2793,26 @@ public:
                                 PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
 
-    Type valueType = op.a().getType().cast<RankedTensorType>().getElementType();
+    Value a = op.a();
+    Value b = op.b();
+    Value mask = op.mask();
+    Type valueType = a.getType().cast<RankedTensorType>().getElementType();
+
+    if (mask) {
+      NamedAttrList attributes = {};
+      attributes.append(StringRef("mask_complement"),
+                        rewriter.getBoolAttr(op.mask_complement()));
+      a = rewriter.create<graphblas::SelectMaskOp>(
+          loc, a.getType(), ValueRange{a, mask}, attributes.getAttrs());
+      b = rewriter.create<graphblas::SelectMaskOp>(
+          loc, b.getType(), ValueRange{b, mask}, attributes.getAttrs());
+    }
 
     // New op
     NamedAttrList attributes = {};
     graphblas::UnionGenericOp newUnionOp =
         rewriter.create<graphblas::UnionGenericOp>(loc, op->getResultTypes(),
-                                                   op.getOperands(),
+                                                   ValueRange{a, b},
                                                    attributes.getAttrs(), 1);
 
     if (failed(populateBinary(rewriter, loc, op.union_operator(), valueType,
@@ -2895,24 +2882,50 @@ public:
   LogicalResult matchAndRewrite(graphblas::IntersectOp op,
                                 PatternRewriter &rewriter) const override {
     Location loc = op->getLoc();
+    Value a = op.a();
+    Value b = op.b();
+    Value mask = op.mask();
+    Type valueType = a.getType().cast<RankedTensorType>().getElementType();
+    StringRef opstr = op.intersect_operator();
 
-    Type valueType = op.a().getType().cast<RankedTensorType>().getElementType();
+    if (mask) {
+      NamedAttrList attributes = {};
+      attributes.append(StringRef("mask_complement"),
+                        rewriter.getBoolAttr(op.mask_complement()));
+      a = rewriter.create<graphblas::SelectMaskOp>(
+          loc, a.getType(), ValueRange{a, mask}, attributes.getAttrs());
+      b = rewriter.create<graphblas::SelectMaskOp>(
+          loc, b.getType(), ValueRange{b, mask}, attributes.getAttrs());
+    }
 
-    // New op
-    NamedAttrList attributes = {};
-    graphblas::IntersectGenericOp newIntersectOp =
-        rewriter.create<graphblas::IntersectGenericOp>(
-            loc, op->getResultTypes(), op.getOperands(), attributes.getAttrs(),
-            1);
+    // Special handling for "first" and "second"
+    if (opstr == "first") {
+      graphblas::SelectMaskOp newIntersectOp =
+          rewriter.create<graphblas::SelectMaskOp>(loc, op->getResultTypes(),
+                                                   ValueRange{a, b});
+      rewriter.replaceOp(op, newIntersectOp.getResult());
+    } else if (opstr == "second") {
+      graphblas::SelectMaskOp newIntersectOp =
+          rewriter.create<graphblas::SelectMaskOp>(loc, op->getResultTypes(),
+                                                   ValueRange{b, a});
+      rewriter.replaceOp(op, newIntersectOp.getResult());
+    } else {
+      // New op
+      NamedAttrList attributes = {};
+      graphblas::IntersectGenericOp newIntersectOp =
+          rewriter.create<graphblas::IntersectGenericOp>(
+              loc, op->getResultTypes(), ValueRange{a, b},
+              attributes.getAttrs(), 1);
 
-    if (failed(populateBinary(rewriter, loc, op.intersect_operator(), valueType,
-                              newIntersectOp.getRegions().slice(0, 1),
-                              graphblas::YieldKind::MULT)))
-      return failure();
+      if (failed(populateBinary(rewriter, loc, op.intersect_operator(),
+                                valueType,
+                                newIntersectOp.getRegions().slice(0, 1),
+                                graphblas::YieldKind::MULT)))
+        return failure();
 
-    rewriter.setInsertionPointAfter(newIntersectOp);
-
-    rewriter.replaceOp(op, newIntersectOp.getResult());
+      rewriter.setInsertionPointAfter(newIntersectOp);
+      rewriter.replaceOp(op, newIntersectOp.getResult());
+    }
 
     return success();
   };
@@ -3022,15 +3035,8 @@ public:
       if (replace) {
         // input -> output(mask) { replace }
 
-        // Step 1: apply the mask to the input
-        Value maskedInput = callEmptyLike(rewriter, module, loc, input);
-        computeEwise(rewriter, loc, module, input, mask, maskedInput, nullptr,
+        computeEwise(rewriter, loc, module, input, mask, output, nullptr,
                      maskBehavior);
-        // Step 2: swap masked input with output
-        callSwapPointers(rewriter, module, loc, maskedInput, output);
-        callSwapIndices(rewriter, module, loc, maskedInput, output);
-        callSwapValues(rewriter, module, loc, maskedInput, output);
-        rewriter.create<sparse_tensor::ReleaseOp>(loc, maskedInput);
       } else {
         // input -> output(mask)
 
@@ -3287,6 +3293,42 @@ public:
     Value isEqual = ifOuter.getResult(0);
 
     rewriter.replaceOp(op, isEqual);
+
+    return success();
+  };
+};
+
+class LowerSelectMaskRewrite
+    : public OpRewritePattern<graphblas::SelectMaskOp> {
+public:
+  using OpRewritePattern<graphblas::SelectMaskOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::SelectMaskOp op,
+                                PatternRewriter &rewriter) const override {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    // Inputs
+    Value input = op.input();
+    Value mask = op.mask();
+    bool maskComplement = op.mask_complement();
+    RankedTensorType inputTensorType =
+        input.getType().dyn_cast<RankedTensorType>();
+
+    Value output = callEmptyLike(rewriter, module, loc, input);
+    EwiseBehavior maskBehavior = (maskComplement ? MASK_COMPLEMENT : MASK);
+
+    unsigned rank = inputTensorType.getRank();
+    if (rank == 2) {
+      computeMatrixElementWise(rewriter, loc, module, input, mask, output,
+                               nullptr, maskBehavior);
+    } else {
+      computeVectorElementWise(rewriter, loc, module, input, mask, output,
+                               nullptr, maskBehavior);
+    }
+
+    rewriter.replaceOp(op, output);
+
+    cleanupIntermediateTensor(rewriter, module, loc, output);
 
     return success();
   };
@@ -4310,22 +4352,23 @@ public:
 };
 
 void populateGraphBLASLoweringPatterns(RewritePatternSet &patterns) {
-  patterns.add<LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
-               LowerSelectGenericRewrite, LowerReduceToVectorRewrite,
-               LowerReduceToVectorGenericRewrite, LowerReduceToScalarRewrite,
-               LowerReduceToScalarGenericRewrite, LowerConvertLayoutRewrite,
-               LowerCastRewrite, LowerTransposeRewrite, LowerApplyRewrite,
-               LowerApplyGenericRewrite, LowerUniformComplementRewrite,
-               LowerMatrixMultiplyReduceToScalarGenericRewrite,
-               LowerMatrixMultiplyRewrite, LowerMatrixMultiplyGenericRewrite,
-               LowerUnionRewrite, LowerUnionGenericRewrite,
-               LowerIntersectRewrite, LowerIntersectGenericRewrite,
-               LowerUpdateRewrite, LowerUpdateGenericRewrite, LowerEqualRewrite,
-               LowerDiagOpRewrite, LowerCommentRewrite, LowerPrintRewrite,
-               LowerPrintTensorRewrite, LowerSizeRewrite, LowerNumRowsRewrite,
-               LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite,
-               LowerFromCoordinatesRewrite, LowerToCoordinatesRewrite>(
-      patterns.getContext());
+  patterns
+      .add<LowerMatrixSelectRandomRewrite, LowerSelectRewrite,
+           LowerSelectGenericRewrite, LowerReduceToVectorRewrite,
+           LowerReduceToVectorGenericRewrite, LowerReduceToScalarRewrite,
+           LowerReduceToScalarGenericRewrite, LowerConvertLayoutRewrite,
+           LowerCastRewrite, LowerTransposeRewrite, LowerApplyRewrite,
+           LowerApplyGenericRewrite, LowerUniformComplementRewrite,
+           LowerMatrixMultiplyReduceToScalarGenericRewrite,
+           LowerMatrixMultiplyRewrite, LowerMatrixMultiplyGenericRewrite,
+           LowerUnionRewrite, LowerUnionGenericRewrite, LowerIntersectRewrite,
+           LowerIntersectGenericRewrite, LowerUpdateRewrite,
+           LowerUpdateGenericRewrite, LowerEqualRewrite, LowerDiagOpRewrite,
+           LowerSelectMaskRewrite, LowerCommentRewrite, LowerPrintRewrite,
+           LowerPrintTensorRewrite, LowerSizeRewrite, LowerNumRowsRewrite,
+           LowerNumColsRewrite, LowerNumValsRewrite, LowerDupRewrite,
+           LowerFromCoordinatesRewrite, LowerToCoordinatesRewrite>(
+          patterns.getContext());
 }
 
 struct GraphBLASLoweringPass

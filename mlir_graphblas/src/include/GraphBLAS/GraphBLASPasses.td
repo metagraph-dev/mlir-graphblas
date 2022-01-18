@@ -47,6 +47,7 @@ def GraphBLASStructuralize : Pass<"graphblas-structuralize", "ModuleOp"> {
   let summary = "TODO add documentation";
   let constructor = "mlir::createGraphBLASStructuralizePass()";
   let dependentDialects = [
+    "memref::MemRefDialect",
     "math::MathDialect",
     "arith::ArithmeticDialect",
     "scf::SCFDialect"

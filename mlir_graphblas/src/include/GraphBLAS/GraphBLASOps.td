@@ -116,7 +116,7 @@ def GraphBLAS_NumValsOp : GraphBLAS_Op<"num_vals", [NoSideEffect]> {
 def GraphBLAS_DupOp : GraphBLAS_Op<"dup", [NoSideEffect, AllTypesMatch<["input", "output"]>]> {
     let summary = "Returns a duplicate of the input sparse tensor.";
     let description = [{
-        Returns a duplicate copy of the input CSC matrix, CSR matrix, or sparse tensor.
+        Returns a duplicate copy of the input sparse tensor.
 
         Example:
         ```mlir
@@ -193,9 +193,6 @@ def GraphBLAS_TransposeOp : GraphBLAS_Op<"transpose", [NoSideEffect]> {
         The given tensor must have a CSR sparsity or a CSC sparsity.
         The output type must be CSR or CSC.
 
-        Note that the behavior of this op differs depending on the sparse
-        encoding of the specified output tensor type.
-
         Example:
         ```mlir
         %a = graphblas.transpose %sparse_tensor : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSC64>
@@ -218,11 +215,11 @@ def GraphBLAS_SelectOp : GraphBLAS_Op<"select", [NoSideEffect]> {
     let description = [{
         Returns a new sparse tensor with a subset of elements from the given tensor.
 
-        The elements included in the resulting sparse tensor vary depending on the selectors given
-        (one of "triu", "tril", "ge", "gt", or "probability").
+        An element is only included in the resulting sparse tensor if the selector returns true.
+        Selectors may be unary or binary, but must return boolean type.
 
-        Some selectors, e.g. "gt", require a thunk.
-        Some selectors, e.g. "probability" require a thunk and random number generator context.
+        Boolean selectors, e.g. "gt", require a thunk.
+        Some custom selectors, e.g. "probability" require a thunk and random number generator context.
 
         The given tensor must be a sparse vector or a matrix with CSR or CSC sparsity.
         The resulting sparse tensors will have the same encoding as the input tensor.
@@ -303,10 +300,10 @@ def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]
         Reduces a CSR or CSC matrix to a vector according to the given aggregator and axis.
 
         The resulting sparse vector's element type varies according to the given aggregator.
-        The supported aggregators are "plus", "count", "argmin", and "argmax". Aggregating via
-        "plus" and "count" will cause the output's element type to match that of the input
-        tensor. Aggregating via "argmin" and "argmax" will cause the output's element to be a
-        64-bit integer.
+        All monoids are allowed as aggregators. Additional custom aggregators are "count",
+        "argmin", "argmax", "first", and "last". The output's element type is normally the
+        same as the input, but "count", "argmin", and "argmax" will cause the output's element
+        to be a 64-bit integer.
 
         If the axis attribute is 0, the input tensor will be reduced column-wise, so the
         resulting vector's size must be the number of columns in the input tensor.
@@ -314,19 +311,26 @@ def GraphBLAS_ReduceToVectorOp : GraphBLAS_Op<"reduce_to_vector", [NoSideEffect]
         If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
         vector's size must be the number of rows in the input tensor.
 
+        A vector mask is allowed to limit the output.
+
         Example:
         ```mlir
         %vec1 = graphblas.reduce_to_vector %matrix_1 { aggregator = "plus", axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #CV64>
         %vec2 = graphblas.reduce_to_vector %matrix_2 { aggregator = "count", axis = 1 } : tensor<7x9xf16, #CSR64> to tensor<7xf16, #CV64>
-        %vec3 = graphblas.reduce_to_vector %matrix_3 { aggregator = "argmin", axis = 1 } : tensor<7x9xf32, #CSR64> to tensor<7xi64, #CV64>
+        %vec3 = graphblas.reduce_to_vector %matrix_3, %mask { aggregator = "plus", axis = 1, mask_complement = false } : tensor<7x9xf32, #CSR64>, tensor<7xi64, #CV64> to tensor<7xi64, #CV64>
         ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOperand:$input, StrAttr:$aggregator, I64Attr:$axis);
+    let arguments = (ins
+      GraphBlasMatrixOperand:$input,
+      Optional<GraphBlasVectorOperand>:$mask,
+      StrAttr:$aggregator,
+      I64Attr:$axis,
+      DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
     let results = (outs GraphBlasVectorOperand:$output);
 
     let assemblyFormat = [{
-           $input attr-dict `:` type($input) `to` type($output)
+           $input (`,` $mask^)? attr-dict `:` type($input) (`,` type($mask)^)? `to` type($output)
     }];
 
     let verifier = [{ return ::verify(*this); }];
@@ -344,6 +348,8 @@ def GraphBLAS_ReduceToVectorGenericOp : GraphBLAS_Op<"reduce_to_vector_generic",
         If the axis attribute is 1, the input tensor will be reduced row-wise, so the resulting
         vector's size must be the number of rows in the input tensor.
 
+        A vector mask is allowed to limit the output.
+
         Example:
         ```mlir
         %vec1 = graphblas.reduce_to_vector %matrix_1 { axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #CV64> {
@@ -353,7 +359,7 @@ def GraphBLAS_ReduceToVectorGenericOp : GraphBLAS_Op<"reduce_to_vector_generic",
               %result = arith.addf %a, %b : f16
               graphblas.yield agg %result : f16
           }
-        %vec2 = graphblas.reduce_to_vector %matrix_2 { axis = 1 } : tensor<7x9xi64, #CSR64> to tensor<7xi64, #CV64> {
+        %vec2 = graphblas.reduce_to_vector %matrix_2, %mask { axis = 1, mask_complement = true } : tensor<7x9xi64, #CSR64>, tensor<7xi64, #CV64> to tensor<7xi64, #CV64> {
               graphblas.yield agg_identity %ci0 : i64
           },  {
             ^bb0(%a : i64, %b : i64):
@@ -364,12 +370,16 @@ def GraphBLAS_ReduceToVectorGenericOp : GraphBLAS_Op<"reduce_to_vector_generic",
         ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOperand:$input, I64Attr:$axis);
+    let arguments = (ins
+      GraphBlasMatrixOperand:$input,
+      Optional<GraphBlasVectorOperand>:$mask,
+      I64Attr:$axis,
+      DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
     let results = (outs GraphBlasVectorOperand:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
 
     let assemblyFormat = [{
-           $input attr-dict `:` type($input) `to` type($output) $extensions
+           $input (`,` $mask^)? attr-dict `:` type($input) (`,` type($mask)^)? `to` type($output) $extensions
     }];
 
     let verifier = [{ return ::verify(*this); }];
@@ -382,12 +392,9 @@ def GraphBLAS_ReduceToScalarOp : GraphBLAS_Op<"reduce_to_scalar", [NoSideEffect]
         according to the given aggregator. Matrices must have a CSR sparsity or a CSC
         sparsity.
 
-        The resulting scalar's type will depend on the type of the input tensor.
-
-        The supported aggregators are "plus", "count", "argmin", and "argmax".
-
-        When using the aggregators "argmin" and "argmax", the output must be a 64-bit integer,
-        and the input type must be a vector.
+        The resulting scalar's type will depend on the type of the input tensor, except
+        for the cast of custom aggregators "count", "argmin", and "argmax". For these cases,
+        the output type is a 64-bit integer.
 
         Example:
         ```mlir
@@ -412,7 +419,6 @@ def GraphBLAS_ReduceToScalarGenericOp : GraphBLAS_Op<"reduce_to_scalar_generic",
         Reduces a sparse tensor to a scalar according to the given aggregator
         block.  If the tensor is a matrix, it must have a CSR sparsity or a CSC sparsity.
         The resulting scalar's type will depend on the type of the input tensor.
-        Only one aggregator block is allowed.
 
         Example:
         ```mlir
@@ -443,10 +449,7 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
     let description = [{
         Applies in an element-wise fashion the function indicated by the ``apply_operator``
         attribute to each element of the given sparse tensor. The operator can be unary or
-        binary. Binary operators require a thunk. The supported binary operators are "min",
-        "div", "first", and "second". Unary operators cannot take a thunk. The supported
-        unary operators are "abs", "minv" (i.e. multiplicative inverse or *1/x*),
-        "ainv" (i.e. additive inverse or *-x*), and "identity".
+        binary or the custom operator "identity". Binary operators require a thunk.
 
         The given sparse tensor must either be a CSR matrix, CSC matrix, or a sparse vector.
 
@@ -465,7 +468,6 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
         As another example, to divide 10 by each element of a sparse vector, use the
         following:
 
-
         ```mlir
         %thunk = constant 10 : i64
         %vector_answer = graphblas.apply %thunk, %sparse_vector { apply_operator = "div" } : (i64, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
@@ -478,7 +480,6 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
         Note that using the "identity" operator does not create a copy of the input tensor.
 
         The shape of the output tensor will match that of the input tensor.
-
 
         Example:
         ```mlir
@@ -542,18 +543,15 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
         mask. The structural mask specifies which values in the output are to be computed
         and thus must have the same shape as the expected output.
 
-        The semiring must be a string of the form "<ADD_NAME>_<MUL_NAME>", e.g. "plus_times".
-        The options for "<ADD_NAME>" are "plus", "any", and "min". The options for "<MUL_NAME>"
-        are "pair", "times", "plus", "firsti", "secondi", "overlapi", "first", and "second".
+        The semiring must be a string of the form "<ADD_NAME>_<MUL_NAME>", e.g. "plus_times" or "min_plus".
 
-        If the first input is a matrix, it must be CSR format. If the second input is a matrix,
-        it must be CSC format. Matrix times vector will return a vector. Vector times matrix
+        Matrix times vector will return a vector. Vector times matrix
         will return a vector. Matrix times matrix will return a CSR matrix. Vector times
         vector will return a scalar.
 
         The mask (if provided) must be the same format as the returned object. There's an
         optional boolean `mask_complement` attribute (which has a default value of `false`)
-        that will make the op use the complement of the mask.
+        that will use the structural complement of the mask.
 
         It should be noted that masks are not allowed for vector times vector multiplication.
 
@@ -568,7 +566,7 @@ def GraphBLAS_MatrixMultiplyOp : GraphBLAS_Op<"matrix_multiply", [NoSideEffect]>
         %answer = graphblas.matrix_multiply %mat, %vec, %mask { semiring = "any_first", mask_complement = true } : (tensor<?x?xf64, #CSR64>, tensor<?xf64, #CV64>, tensor<?xf64, #CV64>) to tensor<?xf64, #CV64>
         ```
         ```mlir
-        %answer = graphblas.matrix_multiply %vec, %mat { semiring = "min_second", mask_complement = true } : (tensor<?xf64, #CV64>, tensor<?x?xf64, #CSC64>) to tensor<?xf64, #CV64>
+        %answer = graphblas.matrix_multiply %vec, %mat { semiring = "min_second" } : (tensor<?xf64, #CV64>, tensor<?x?xf64, #CSC64>) to tensor<?xf64, #CV64>
         ```
         ```mlir
         %answer = graphblas.matrix_multiply %vecA, %vecB { semiring = "any_pair" } : (tensor<?xf64, #CV64>, tensor<?xf64, #CV64>) to tensor<?xf64, #CV64>
@@ -626,9 +624,8 @@ def GraphBLAS_MatrixMultiplyGenericOp : GraphBLAS_Op<"matrix_multiply_generic", 
         takes one argument and returns one value via the ``graphblas.yield`` terminator op (with
         the "kind" attribute set to "transform_out").
 
-        The mask (if provided) must be the same format as the returned object. There's an optional
-        boolean `mask_complement` attribute (which has a default value of `false`) that will make
-        the op use the complement of the mask.
+        The mask (if provided) must be the same format as the returned object. A required boolean
+        `mask_complement` attribute indicates whether to use the structural complement of the mask.
 
 
         Example:
@@ -720,22 +717,33 @@ def GraphBLAS_UnionOp : GraphBLAS_Op<"union", [NoSideEffect]> {
         The resulting sparse structure will be the union of the two input structures.
         When either object has a non-overlapping element, it is copied to the output.
         When both objects have an overlapping element in a cell, an operation combines the result.
-        The supported values for this operation are "plus", "times", "min", "max", "first",
-        and "second".
+
+        The allowable operators are monoids and the custom operators "first" and "second".
+
+        The mask (if provided) must be the same format as the returned object. There's an
+        optional boolean `mask_complement` attribute (which has a default value of `false`)
+        that will use the structural complement of the mask.
 
         Example:
         ```mlir
         %combined = graphblas.union %A, %B { union_operator = "plus" } : (
             tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+
+        %combined = graphblas.union %A, %B, %mask { union_operator = "plus", mask_complement = true } : (
+            tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>, tensor<?x?xi32, #CSR64>) to tensor<?x?xf64, #CSR64>
         ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a,
-                         GraphBlasMatrixOrVectorOperand:$b, StrAttr:$union_operator);
+    let arguments = (ins
+      GraphBlasMatrixOrVectorOperand:$a,
+      GraphBlasMatrixOrVectorOperand:$b,
+      Optional<GraphBlasMatrixOrVectorOperand>:$mask,
+      StrAttr:$union_operator,
+      DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
     let results = (outs GraphBlasMatrixOrVectorOperand:$output);
 
     let assemblyFormat = [{
-           $a `,` $b attr-dict `:` `(` type($a) `,` type($b)  `)` `to` type($output)
+           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b) (`,` type($mask)^)? `)` `to` type($output)
     }];
 
     let verifier = [{ return ::verify(*this); }];
@@ -779,24 +787,34 @@ def GraphBLAS_IntersectOp : GraphBLAS_Op<"intersect", [NoSideEffect]> {
         Performs an element-wise intersection between two matrices or two vectors.
         The resulting sparse tensor will be the intersection of the two input structures.
         When both objects have an overlapping element in a cell, an operation
-        combines the result according to the given operator. The supported
-        values for the intersect operator are "plus", "minus", "times", "div",
-        "min", "max", "first", and "second".
+        combines the result according to the given operator. All binary operators
+        are supported.
+
+        The mask (if provided) must be the same format as the returned object. There's an
+        optional boolean `mask_complement` attribute (which has a default value of `false`)
+        that will use the structural complement of the mask.
 
         Example:
         ```mlir
         %combined = graphblas.intersect %A, %B { intersect_operator = "mult" } : (
             tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>) to tensor<?x?xf64, #CSR64>
+
+        %combined = graphblas.intersect %A, %B, %mask { intersect_operator = "mult", mask_complement = true } : (
+            tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64>, tensor<?x?xi32, #CSR64>) to tensor<?x?xf64, #CSR64>
         ```
 
     }];
 
-    let arguments = (ins GraphBlasMatrixOrVectorOperand:$a,
-                         GraphBlasMatrixOrVectorOperand:$b, StrAttr:$intersect_operator);
+    let arguments = (ins
+      GraphBlasMatrixOrVectorOperand:$a,
+      GraphBlasMatrixOrVectorOperand:$b,
+      Optional<GraphBlasMatrixOrVectorOperand>:$mask,
+      StrAttr:$intersect_operator,
+      DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
     let results = (outs GraphBlasMatrixOrVectorOperand:$output);
 
     let assemblyFormat = [{
-           $a `,` $b attr-dict `:` `(` type($a) `,` type($b)  `)` `to` type($output)
+           $a `,` $b (`,` $mask^)? attr-dict `:` `(` type($a) `,` type($b) (`,` type($mask)^)? `)` `to` type($output)
     }];
 
     let verifier = [{ return ::verify(*this); }];
@@ -838,11 +856,11 @@ def GraphBLAS_UpdateOp : GraphBLAS_Op<"update", []> {
     let description = [{
         Updates the output tensor based on the input and desired accumulation,
         mask, and replacement.  This returns zero values and modifies the output in
-        place.  The supported accumulate operators are "plus", "times", "min", and "max".
-        The given tensors must be sparse.
+        place.  The supported accumulate operators are "plus", "times", "min", "max",
+        "first", and "second". The given tensors must be sparse.
 
         There's an optional boolean *mask_complement* attribute (which has a default
-        value of *false*) that will make the op use the complement of the mask.
+        value of *false*) that will make the op use the structural complement of the mask.
 
         Example:
         ```mlir
@@ -912,6 +930,37 @@ def GraphBLAS_UpdateGenericOp : GraphBLAS_Op<"update_generic", []> {
 
     let assemblyFormat = [{
            $input `->` $output (`(` $mask^ `)`)? attr-dict `:` type($input) `->` type($output) (`(` type($mask)^ `)`)? $extensions
+    }];
+
+    let verifier = [{ return ::verify(*this); }];
+}
+
+def GraphBLAS_SelectMaskOp : GraphBLAS_Op<"select_mask", [NoSideEffect]> {
+    let summary = "Select part of a sparse tensor using a mask.";
+    let description = [{
+        Given a sparse tensor and a mask of the same dimensions, returns a
+        new sparse tensor with elements from the original tensor that have
+        an entry present in the mask (i.e. return the intersection of the
+        sparse structures).
+
+        There's an optional boolean *mask_complement* attribute (which has a default
+        value of *false*) that will make the op use the complement of the mask.
+
+        Example:
+        ```mlir
+        %vector_answer = graphblas.select_mask %vec, %msk : tensor<?xf64, #CV64>, tensor<?xi64, #CV64> to tensor<?xf64, #CV64>
+        %matrix_answer = grpahblas.select_mask %mat, %msk {mask_complement = true} : tensor<?x?xf64, #CSR64>, tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64>
+        ```
+    }];
+
+    let arguments = (ins
+     GraphBlasMatrixOrVectorOperand:$input,
+     GraphBlasMatrixOrVectorOperand:$mask,
+     DefaultValuedAttr<BoolAttr, "false">:$mask_complement);
+    let results = (outs GraphBlasMatrixOrVectorOperand:$output);
+
+    let assemblyFormat = [{
+            $input `,` $mask attr-dict `:` type($input) `,` type($mask) `to` type($output)
     }];
 
     let verifier = [{ return ::verify(*this); }];

@@ -96,8 +96,8 @@ ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
         Value newMaskIndex =
             rewriter.create<arith::IndexCastOp>(loc, newMaskIndex64, indexType);
         rewriter.create<scf::YieldOp>(loc, newMaskIndex);
-        rewriter.setInsertionPointAfter(if_atEnd);
       }
+      rewriter.setInsertionPointAfter(if_atEnd);
       rewriter.create<scf::YieldOp>(
           loc, ValueRange{compPos, nextMaskPos, if_atEnd.getResult(0)});
     }
@@ -110,13 +110,245 @@ ValueRange buildMaskComplement(PatternRewriter &rewriter, Location loc,
       Value nextCompPos = rewriter.create<arith::AddIOp>(loc, compPos, c1);
       rewriter.create<scf::YieldOp>(
           loc, ValueRange{nextCompPos, maskPos, maskIndex});
-      rewriter.setInsertionPointAfter(if_match);
     }
+    rewriter.setInsertionPointAfter(if_match);
     rewriter.create<scf::YieldOp>(loc, if_match.getResults());
     rewriter.setInsertionPointAfter(loop);
   }
 
   return ValueRange{compIndices, compSize};
+}
+
+ValueRange sparsifyDensePointers(PatternRewriter &rewriter, Location loc,
+                                 Value size, Value pointers) {
+  // From a memref of dense pointers (length size+1),
+  // Returns:
+  // 1. a memref containing the indices of the non-empty rows (or columns)
+  // 2. the size of the memref
+
+  // Types used in this function
+  Type indexType = rewriter.getIndexType();
+  Type int64Type = rewriter.getIntegerType(64);
+  MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+
+  // Initial constants
+  Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+
+  // Step 1: compute the number of non-empty rows
+  scf::ForOp nnzCountLoop =
+      rewriter.create<scf::ForOp>(loc, c0, size, c1, ValueRange{c0});
+  {
+    rewriter.setInsertionPointToStart(nnzCountLoop.getBody());
+    Value count = nnzCountLoop.getLoopBody().getArgument(1);
+    Value rowIndex = nnzCountLoop.getInductionVar();
+    Value nextRowIndex = rewriter.create<arith::AddIOp>(loc, rowIndex, c1);
+    Value firstPtr64 = rewriter.create<memref::LoadOp>(loc, pointers, rowIndex);
+    Value secondPtr64 =
+        rewriter.create<memref::LoadOp>(loc, pointers, nextRowIndex);
+    Value rowIsEmpty = rewriter.create<arith::CmpIOp>(
+        loc, arith::CmpIPredicate::eq, firstPtr64, secondPtr64);
+    scf::IfOp ifRowIsEmptyBlock =
+        rewriter.create<scf::IfOp>(loc, TypeRange{indexType}, rowIsEmpty, true);
+    {
+      rewriter.setInsertionPointToStart(ifRowIsEmptyBlock.thenBlock());
+      rewriter.create<scf::YieldOp>(loc, ValueRange{count});
+    }
+    {
+      rewriter.setInsertionPointToStart(ifRowIsEmptyBlock.elseBlock());
+      Value count_plus1 = rewriter.create<arith::AddIOp>(loc, count, c1);
+      rewriter.create<scf::YieldOp>(loc, ValueRange{count_plus1});
+    }
+    rewriter.setInsertionPointAfter(ifRowIsEmptyBlock);
+    Value newCount = ifRowIsEmptyBlock.getResult(0);
+    rewriter.create<scf::YieldOp>(loc, ValueRange{newCount});
+    rewriter.setInsertionPointAfter(nnzCountLoop);
+  }
+  Value nnz = nnzCountLoop.getResult(0);
+
+  // Step 2: build the indices of the non-empty rows
+  Value indices = rewriter.create<memref::AllocOp>(loc, memref1DI64Type, nnz);
+  scf::ForOp nnzIdxLoop =
+      rewriter.create<scf::ForOp>(loc, c0, size, c1, ValueRange{c0});
+  {
+    rewriter.setInsertionPointToStart(nnzIdxLoop.getBody());
+    Value pos = nnzIdxLoop.getLoopBody().getArgument(1);
+    Value rowIndex = nnzIdxLoop.getInductionVar();
+    Value nextRowIndex = rewriter.create<arith::AddIOp>(loc, rowIndex, c1);
+    Value firstPtr64 = rewriter.create<memref::LoadOp>(loc, pointers, rowIndex);
+    Value secondPtr64 =
+        rewriter.create<memref::LoadOp>(loc, pointers, nextRowIndex);
+    Value rowIsEmpty = rewriter.create<arith::CmpIOp>(
+        loc, arith::CmpIPredicate::eq, firstPtr64, secondPtr64);
+    scf::IfOp ifRowIsEmptyBlock =
+        rewriter.create<scf::IfOp>(loc, TypeRange{indexType}, rowIsEmpty, true);
+    {
+      rewriter.setInsertionPointToStart(ifRowIsEmptyBlock.thenBlock());
+      rewriter.create<scf::YieldOp>(loc, ValueRange{pos});
+    }
+    {
+      rewriter.setInsertionPointToStart(ifRowIsEmptyBlock.elseBlock());
+      Value rowIndex64 =
+          rewriter.create<arith::IndexCastOp>(loc, rowIndex, int64Type);
+      rewriter.create<memref::StoreOp>(loc, rowIndex64, indices, pos);
+      Value pos_plus1 = rewriter.create<arith::AddIOp>(loc, pos, c1);
+      rewriter.create<scf::YieldOp>(loc, ValueRange{pos_plus1});
+    }
+    rewriter.setInsertionPointAfter(ifRowIsEmptyBlock);
+    Value newPos = ifRowIsEmptyBlock.getResult(0);
+    rewriter.create<scf::YieldOp>(loc, ValueRange{newPos});
+    rewriter.setInsertionPointAfter(nnzIdxLoop);
+  }
+
+  return ValueRange{indices, nnz};
+}
+
+ValueRange buildIndexOverlap(PatternRewriter &rewriter, Location loc,
+                             Value aSize, Value a, Value bSize, Value b) {
+  // Takes two memrefs containing a list of indices and performs an intersection
+  // Returns:
+  // 1. a memref containing the overlapping indices
+  // 2. the size of the memref
+
+  // Types used in this function
+  Type boolType = rewriter.getIntegerType(1);
+  Type indexType = rewriter.getIndexType();
+  Type int64Type = rewriter.getIntegerType(64);
+  MemRefType memref1DI64Type = MemRefType::get({-1}, int64Type);
+
+  // Initial constants
+  Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+  Value ci0 = rewriter.create<arith::ConstantIntOp>(loc, 0, int64Type);
+  Value cfalse = rewriter.create<arith::ConstantIntOp>(loc, 0, boolType);
+  Value ctrue = rewriter.create<arith::ConstantIntOp>(loc, 1, boolType);
+
+  // Allocate a memref matching the smaller size
+  // This will sacrifice memory for less computation
+  Value aIsSmaller = rewriter.create<arith::CmpIOp>(
+      loc, arith::CmpIPredicate::ult, aSize, bSize);
+  Value smallerSize = rewriter.create<SelectOp>(loc, aIsSmaller, aSize, bSize);
+  Value output =
+      rewriter.create<memref::AllocOp>(loc, memref1DI64Type, smallerSize);
+
+  // Find matching indices
+  // While Loop (exit when either array is exhausted)
+  scf::WhileOp whileLoop = rewriter.create<scf::WhileOp>(
+      loc,
+      TypeRange{indexType, indexType, indexType, int64Type, int64Type, boolType,
+                boolType},
+      ValueRange{c0, c0, c0, ci0, ci0, ctrue, ctrue});
+  Block *before =
+      rewriter.createBlock(&whileLoop.getBefore(), {},
+                           TypeRange{indexType, indexType, indexType, int64Type,
+                                     int64Type, boolType, boolType});
+  Block *after =
+      rewriter.createBlock(&whileLoop.getAfter(), {},
+                           TypeRange{indexType, indexType, indexType, int64Type,
+                                     int64Type, boolType, boolType});
+  // "while" portion of the loop
+  rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
+  Value posA = before->getArgument(0);
+  Value posB = before->getArgument(1);
+  Value validPosA = rewriter.create<arith::CmpIOp>(
+      loc, arith::CmpIPredicate::ult, posA, aSize);
+  Value validPosB = rewriter.create<arith::CmpIOp>(
+      loc, arith::CmpIPredicate::ult, posB, bSize);
+  Value continueLoop =
+      rewriter.create<arith::AndIOp>(loc, validPosA, validPosB);
+  rewriter.create<scf::ConditionOp>(loc, continueLoop, before->getArguments());
+
+  // "do" portion of while loop
+  rewriter.setInsertionPointToStart(&whileLoop.getAfter().front());
+  posA = after->getArgument(0);
+  posB = after->getArgument(1);
+  Value posO = after->getArgument(2);
+  Value idxA = after->getArgument(3);
+  Value idxB = after->getArgument(4);
+  Value needsUpdateA = after->getArgument(5);
+  Value needsUpdateB = after->getArgument(6);
+
+  // Update A's index based on flag
+  scf::IfOp if_updateA =
+      rewriter.create<scf::IfOp>(loc, int64Type, needsUpdateA, true);
+  {
+    rewriter.setInsertionPointToStart(if_updateA.thenBlock());
+    Value updatedIdxA = rewriter.create<memref::LoadOp>(loc, a, posA);
+    rewriter.create<scf::YieldOp>(loc, updatedIdxA);
+  }
+  {
+    rewriter.setInsertionPointToStart(if_updateA.elseBlock());
+    rewriter.create<scf::YieldOp>(loc, idxA);
+  }
+  rewriter.setInsertionPointAfter(if_updateA);
+
+  // Update B's index based on flag
+  scf::IfOp if_updateB =
+      rewriter.create<scf::IfOp>(loc, int64Type, needsUpdateB, true);
+  {
+    rewriter.setInsertionPointToStart(if_updateB.thenBlock());
+    Value updatedIdxB = rewriter.create<memref::LoadOp>(loc, b, posB);
+    rewriter.create<scf::YieldOp>(loc, updatedIdxB);
+  }
+  {
+    rewriter.setInsertionPointToStart(if_updateB.elseBlock());
+    rewriter.create<scf::YieldOp>(loc, idxB);
+  }
+  rewriter.setInsertionPointAfter(if_updateB);
+
+  Value newIdxA = if_updateA.getResult(0);
+  Value newIdxB = if_updateB.getResult(0);
+  Value idxA_lt_idxB = rewriter.create<arith::CmpIOp>(
+      loc, arith::CmpIPredicate::ult, newIdxA, newIdxB);
+  Value idxA_gt_idxB = rewriter.create<arith::CmpIOp>(
+      loc, arith::CmpIPredicate::ugt, newIdxA, newIdxB);
+  Value posAplus1 = rewriter.create<arith::AddIOp>(loc, posA, c1);
+  Value posBplus1 = rewriter.create<arith::AddIOp>(loc, posB, c1);
+
+  Value posOplus1 = rewriter.create<arith::AddIOp>(loc, posO, c1);
+
+  scf::IfOp if_onlyA = rewriter.create<scf::IfOp>(
+      loc, TypeRange{indexType, indexType, indexType, boolType, boolType},
+      idxA_lt_idxB, true);
+  {
+    rewriter.setInsertionPointToStart(if_onlyA.thenBlock());
+    rewriter.create<scf::YieldOp>(
+        loc, ValueRange{posAplus1, posB, posO, ctrue, cfalse});
+  }
+  {
+    rewriter.setInsertionPointToStart(if_onlyA.elseBlock());
+    scf::IfOp if_onlyB = rewriter.create<scf::IfOp>(
+        loc, TypeRange{indexType, indexType, indexType, boolType, boolType},
+        idxA_gt_idxB, true);
+    {
+      rewriter.setInsertionPointToStart(if_onlyB.thenBlock());
+      rewriter.create<scf::YieldOp>(
+          loc, ValueRange{posA, posBplus1, posO, cfalse, ctrue});
+    }
+    {
+      rewriter.setInsertionPointToStart(if_onlyB.elseBlock());
+      // At this point, we know newIdxA == newIdxB
+      rewriter.create<memref::StoreOp>(loc, newIdxA, output, posO);
+      rewriter.create<scf::YieldOp>(
+          loc, ValueRange{posAplus1, posBplus1, posOplus1, ctrue, ctrue});
+    }
+    rewriter.setInsertionPointAfter(if_onlyB);
+    rewriter.create<scf::YieldOp>(loc, if_onlyB.getResults());
+  }
+  rewriter.setInsertionPointAfter(if_onlyA);
+  Value newPosA = if_onlyA.getResult(0);
+  Value newPosB = if_onlyA.getResult(1);
+  Value newPosO = if_onlyA.getResult(2);
+  needsUpdateA = if_onlyA.getResult(3);
+  needsUpdateB = if_onlyA.getResult(4);
+
+  rewriter.create<scf::YieldOp>(loc, ValueRange{newPosA, newPosB, newPosO,
+                                                newIdxA, newIdxB, needsUpdateA,
+                                                needsUpdateB});
+  rewriter.setInsertionPointAfter(whileLoop);
+
+  Value finalPosO = whileLoop.getResult(2);
+  return ValueRange{output, finalPosO};
 }
 
 Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
