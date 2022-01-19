@@ -19,6 +19,7 @@ jobs:
           - macos-latest
         pyver:
           - 3.8
+      fail-fast: false
     runs-on: ${{ matrix.os }}
     env:
       ARTIFACT_NAME: built_package_py${{matrix.pyver}}_${{matrix.os}}.tar.bz2
