@@ -38,7 +38,7 @@ _DIALECT_TYPES = {
 }
 
 EXTERNAL_LIBS = []
-for extlib_pattern in ["SparseUtils*.so", "RandomUtils*.so"]:
+for extlib_pattern in ["SparseTensorUtils*.so", "RandomUtils*.so"]:
     _CURRENT_MODULE_DIR = os.path.dirname(__file__)
     SO_FILE_PATTERN = os.path.join(_CURRENT_MODULE_DIR, extlib_pattern)
     SO_FILES = glob.glob(SO_FILE_PATTERN)

@@ -515,9 +515,7 @@ def test_graph_sage():
     # fmt: on
 
     sample_count_per_layer = [999, 999]
-    print("pre-RNG")
     rng_context = ChooseUniformContext(seed=1234)
-    print("pre-call graph_sage")
     ans = mlalgo.graph_sage(
         A,
         features,
@@ -526,7 +524,6 @@ def test_graph_sage():
         rng_context,
     ).toarray()
 
-    print("pre-final comparison")
     assert np.isclose(expected, ans).all()
 
 

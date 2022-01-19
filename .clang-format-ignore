@@ -1,6 +1,6 @@
 # ignore generated code
 mlir_graphblas/src/build/*
 # ignore file vendored from MLIR
-mlir_graphblas/SparseUtils.cpp
+mlir_graphblas/SparseTensorUtils.cpp
 # ignore Cython
 mlir_graphblas/sparse_utils.cpp

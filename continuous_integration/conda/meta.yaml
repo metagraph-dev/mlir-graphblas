@@ -22,14 +22,14 @@ requirements:
     - lit
     - donfig
     - pymlir >=0.3.1
-    - llvmlite
+    - llvmlite <0.37
     - jinja2
 
   run:
     - python
     - mlir ==14.0=gd51e347_10
     - pymlir >=0.3.1
-    - llvmlite
+    - llvmlite <0.37
     - pygments
     - donfig
     - panel

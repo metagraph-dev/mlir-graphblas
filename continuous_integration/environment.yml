@@ -21,7 +21,7 @@ dependencies:
   - scipy
   - numpy
   - pymlir
-  - llvmlite
+  - llvmlite <0.37
   - donfig
   - pygments
   - cython
