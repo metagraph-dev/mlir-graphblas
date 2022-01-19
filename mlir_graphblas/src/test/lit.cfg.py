@@ -56,7 +56,7 @@ config.substitutions.append(("graphblas-exec", _build_graphblas_exec()))
 _SCRIPT_DIR = os.path.dirname(__file__)
 _BUILD_DIR = os.path.join(_SCRIPT_DIR, "..", "..")
 _BUILD_DIR = os.path.abspath(_BUILD_DIR)
-_SPARSE_UTILS_SO_PATTERN = os.path.join(_BUILD_DIR, "SparseUtils*.so")
+_SPARSE_UTILS_SO_PATTERN = os.path.join(_BUILD_DIR, "SparseTensorUtils*.so")
 [_SPARSE_UTILS_SO] = glob.glob(_SPARSE_UTILS_SO_PATTERN)
 config.substitutions.append(
     (
