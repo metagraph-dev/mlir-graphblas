@@ -1,4 +1,4 @@
-""" This wraps https://github.com/llvm/llvm-project/blob/main/mlir/lib/ExecutionEngine/SparseUtils.cpp """
+""" This wraps https://github.com/llvm/llvm-project/blob/main/mlir/lib/ExecutionEngine/SparseTensorUtils.cpp """
 
 cimport cython
 import numpy as np
@@ -66,8 +66,13 @@ cdef ndarray _wrap_buffer(uintptr_t ptr, shape, strides, dtype, int init_flags, 
 cdef extern from *:
     ctypedef int one "1"
 
+cdef extern from "mlir/ExecutionEngine/SparseTensorUtils.h" nogil:
+    ctypedef enum DimLevelType:
+        kDense "DimLevelType::kDense"
+        kCompressed "DimLevelType::kCompressed"
+        kSingleton "DimLevelType::kSingleton"
 
-cdef extern from "SparseUtils.cpp" nogil:
+cdef extern from "SparseTensorUtils.cpp" nogil:
     cdef cppclass SparseTensorCOO[V]:
         SparseTensorCOO(vector[uint64_t], uint64_t) except +
         void add(const vector[uint64_t], V)
@@ -80,7 +85,7 @@ cdef extern from "SparseUtils.cpp" nogil:
         # SparseTensorStorage(SparseTensorStorage[P, I, V]&) except +  # HACKED IN
         # SparseTensorStorage(vector[uint64_t]&, vector[P]&, vector[I]&, vector[V]&) except +  # HACKED IN
 
-        SparseTensorStorage(const vector[uint64_t], const uint64_t *, const uint8_t *, SparseTensorCOO[V] *) except +
+        SparseTensorStorage(const vector[uint64_t], const uint64_t *, const DimLevelType *, SparseTensorCOO[V] *) except +
         uint64_t getRank() const
         uint64_t getDimSize(uint64_t d)
         void getPointers(vector[P] **, uint64_t)
@@ -349,9 +354,9 @@ cpdef empty_mlir_sparse_tensor_safe(uint64_t[:] sizes, uint8_t[:] sparsity, uint
     else:
         raise TypeError(f"Invalid type for values: {value_dtype}")
 
-    cdef uint8_t *sparsity_array = <uint8_t*>malloc(sizeof(uint8_t) * D)
+    cdef DimLevelType *sparsity_array = <DimLevelType*>malloc(sizeof(uint8_t) * D)
     for i in range(D):
-        sparsity_array[i] = sparsity[i]
+        sparsity_array[i] = DimLevelType.kCompressed if sparsity[i] else DimLevelType.kDense
 
     cdef void *data
     if perm is None:
@@ -781,9 +786,9 @@ def _build_sparse_tensor(
             ind[j] = indices[i, j]
         tensor.add(ind, values[i])
 
-    cdef uint8_t *sparsity_array = <uint8_t*>malloc(sizeof(uint8_t) * D)
+    cdef DimLevelType *sparsity_array = <DimLevelType*>malloc(sizeof(uint8_t) * D)
     for i in range(D):
-        sparsity_array[i] = sparsity[i]
+        sparsity_array[i] = DimLevelType.kCompressed if sparsity[i] else DimLevelType.kDense
 
     if perm is None:
         perm = np.arange(D, dtype=np.uint64)

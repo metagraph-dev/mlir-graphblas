@@ -17,7 +17,7 @@ if sys.platform == "darwin":
     vars["LDSHARED"] = vars["LDSHARED"].replace("-bundle", "-dynamiclib")
 
 ##################################
-# SparseUtils.cpp Cython Wrapper #
+# SparseTensorUtils.cpp Cython Wrapper #
 ##################################
 
 directive_defaults = get_directive_defaults()
@@ -57,8 +57,8 @@ ext_modules = cythonize(
 
 ext_modules.append(
     Extension(
-        "mlir_graphblas.SparseUtils",
-        sources=["mlir_graphblas/SparseUtils.cpp"],
+        "mlir_graphblas.SparseTensorUtils",
+        sources=["mlir_graphblas/SparseTensorUtils.cpp"],
         include_dirs=[environment_include_dir],
         extra_compile_args=["-std=c++11"],
     )
