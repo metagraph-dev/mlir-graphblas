@@ -14,7 +14,7 @@ build:
 requirements:
   host:
     - python
-    - numpy >=1.19.2
+    - numpy >=1.19.2,<1.21
     - cython >=0.29.23
     - mlir ==14.0=gd51e347_10
     - cmake >=3.13.4
@@ -33,7 +33,7 @@ requirements:
     - pygments
     - donfig
     - panel
-    - numpy
+    - numpy,<1.21
     - jinja2
     - bokeh<2.3  # temp restriction until panel/bokeh bugs are worked out
 
