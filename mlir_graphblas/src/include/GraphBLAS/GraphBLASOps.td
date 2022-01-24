@@ -449,7 +449,13 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
     let description = [{
         Applies in an element-wise fashion the function indicated by the ``apply_operator``
         attribute to each element of the given sparse tensor. The operator can be unary or
-        binary or the custom operator "identity". Binary operators require a thunk.
+        binary. Binary operators require a thunk. The supported binary operators are "min",
+        "div", "first", and "second". Unary operators cannot take a thunk. The supported
+        unary operators are "abs", "minv" (i.e. multiplicative inverse or *1/x*),
+        "ainv" (i.e. additive inverse or *-x*), and "identity". If the boolean ``in_place``
+        attribute is set to `true`, then the changes will happen in place and the input and
+        output tensors will be the same identical tensor. The ``in_place`` attribute has a
+        default value of `false`.
 
         The given sparse tensor must either be a CSR matrix, CSC matrix, or a sparse vector.
 
@@ -489,7 +495,7 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins AnyType:$left, Optional<AnyType>:$right, StrAttr:$apply_operator);
+    let arguments = (ins AnyType:$left, Optional<AnyType>:$right, StrAttr:$apply_operator, DefaultValuedAttr<BoolAttr, "false">:$in_place);
     let results = (outs GraphBlasMatrixOrVectorOperand:$output);
 
     let assemblyFormat = [{
@@ -503,7 +509,10 @@ def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
     let summary = "Generic tensor apply operation.";
     let description = [{
         Applies an arbitrary transformation to every element of a CSR or CSC matrix or sparse vector
-        according to the given transformation block. Only one transformation block is allowed.
+        according to the given transformation block. Only one transformation block is allowed. If
+        the boolean ``in_place`` attribute is set to `true`, then the changes will happen in place
+        and the input and output tensors will be the same identical tensor. The ``in_place``
+        attribute has a default value of `false`.
 
         Example:
         ```mlir
@@ -525,7 +534,7 @@ def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
         ```
     }];
 
-    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input);
+    let arguments = (ins GraphBlasMatrixOrVectorOperand:$input, DefaultValuedAttr<BoolAttr, "false">:$in_place);
     let results = (outs GraphBlasMatrixOrVectorOperand:$output);
     let regions = (region VariadicRegion<SizedRegion<1>>:$extensions);
 

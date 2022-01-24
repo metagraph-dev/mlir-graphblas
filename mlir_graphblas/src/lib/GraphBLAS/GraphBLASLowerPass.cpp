@@ -1438,7 +1438,7 @@ public:
     // New op
     graphblas::ApplyGenericOp newApplyOp =
         rewriter.create<graphblas::ApplyGenericOp>(loc, op->getResultTypes(),
-                                                   input, 1);
+                                                   input, op.in_place(), 1);
 
     // Populate based on operator kind
     LogicalResult popResult = failure();
@@ -1484,6 +1484,8 @@ public:
         op.getResult().getType().cast<RankedTensorType>();
     unsigned rank = inputTensorType.getRank();
 
+    bool inPlace = op.in_place();
+
     Type indexType = rewriter.getIndexType();
     Type memrefPointerType = getMemrefPointerType(inputTensorType);
     Type memrefIndexType = getMemrefIndexType(inputTensorType);
@@ -1507,10 +1509,15 @@ public:
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
 
     // Build output with same shape as input, but possibly different output type
-    Value output = rewriter.create<graphblas::DupOp>(loc, inputTensor);
-    if (inputTensorType != outputTensorType)
-      output =
-          rewriter.create<graphblas::CastOp>(loc, outputTensorType, output);
+    Value output;
+    if (inPlace) {
+      output = inputTensor;
+    } else {
+      output = rewriter.create<graphblas::DupOp>(loc, inputTensor);
+      if (inputTensorType != outputTensorType)
+        output =
+            rewriter.create<graphblas::CastOp>(loc, outputTensorType, output);
+    }
     // Get sparse tensor info
     Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(
         loc, memrefIValueType, inputTensor);
