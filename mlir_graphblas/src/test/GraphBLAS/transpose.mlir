@@ -31,21 +31,21 @@ module {
       %different_compression_answer = graphblas.transpose %mat : tensor<?x?xi64, #CSR64> to tensor<?x?xi64, #CSC64>
       
       // CHECK: different_compression_answer [
-      // CHECK:   [_, _],
-      // CHECK:   [1, _],
-      // CHECK:   [2, _],
-      // CHECK:   [_, 3],
-      // CHECK: ]
+      // CHECK-NEXT:   [_, _],
+      // CHECK-NEXT:   [1, _],
+      // CHECK-NEXT:   [2, _],
+      // CHECK-NEXT:   [_, 3]
+      // CHECK-NEXT: ]
       graphblas.print %different_compression_answer { strings = ["different_compression_answer "] } : tensor<?x?xi64, #CSC64>
 
       %same_compression_answer = graphblas.transpose %mat : tensor<?x?xi64, #CSR64> to tensor<?x?xi64, #CSR64>
 
-      // CHECK: same_compression_answer [
-      // CHECK:   [_, _],
-      // CHECK:   [1, _],
-      // CHECK:   [2, _],
-      // CHECK:   [_, 3],
-      // CHECK: ]
+      // CHECK-NEXT: same_compression_answer [
+      // CHECK-NEXT:   [_, _],
+      // CHECK-NEXT:   [1, _],
+      // CHECK-NEXT:   [2, _],
+      // CHECK-NEXT:   [_, 3]
+      // CHECK-NEXT: ]
       graphblas.print %same_compression_answer { strings = ["same_compression_answer "] } : tensor<?x?xi64, #CSR64>
       
       return

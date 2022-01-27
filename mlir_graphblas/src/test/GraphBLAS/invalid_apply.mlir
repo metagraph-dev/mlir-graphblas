@@ -231,3 +231,19 @@ module {
         return %answer : tensor<2x3xbf16, #CSR64>
     }
 }
+
+// -----
+
+#CSR64 = #sparse_tensor.encoding<{
+  dimLevelType = [ "dense", "compressed" ],
+  dimOrdering = affine_map<(i,j) -> (i,j)>,
+  pointerBitWidth = 64,
+  indexBitWidth = 64
+}>
+
+module {
+    func @apply_wrapper(%sparse_tensor: tensor<2x3xbf16, #CSR64>, %thunk: bf16) -> tensor<2x3xi32, #CSR64> {
+        %answer = graphblas.apply %sparse_tensor, %thunk { apply_operator = "div", in_place = true } : (tensor<2x3xbf16, #CSR64>, bf16) to tensor<2x3xi32, #CSR64> // expected-error {{operand and result types must match when changes are in-place.}}
+        return %answer : tensor<2x3xi32, #CSR64>
+    }
+}
