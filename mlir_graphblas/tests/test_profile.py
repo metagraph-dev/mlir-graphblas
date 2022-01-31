@@ -41,12 +41,12 @@ def test_profile_single_return(
     function_name = f"single_value_slow_mul_{int(uuid.uuid4())}"
     mlir_text = f"""
 func @{function_name}(%input_val: i64) -> i64 {{
-  %ci0 = constant 0 : i64
-  %c0 = constant 0 : index
-  %c1 = constant 1 : index
-  %num_iterations = constant {num_iterations} : index
+  %ci0 = arith.constant 0 : i64
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %num_iterations = arith.constant {num_iterations} : index
   %answer = scf.for %i = %c0 to %num_iterations step %c1 iter_args(%current_sum=%ci0) -> (i64) {{
-    %new_sum = addi %current_sum, %input_val : i64
+    %new_sum = arith.addi %current_sum, %input_val : i64
     scf.yield %new_sum : i64
   }}
   return %answer : i64
@@ -89,12 +89,12 @@ def test_profile_multiple_returns(
     function_name = f"multivalue_slow_mul_{int(uuid.uuid4())}"
     mlir_text = f"""
 func @{function_name}(%input_val: i64) -> (i64, i64) {{
-  %ci0 = constant 0 : i64
-  %c0 = constant 0 : index
-  %c1 = constant 1 : index
-  %num_iterations = constant {num_iterations} : index
+  %ci0 = arith.constant 0 : i64
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %num_iterations = arith.constant {num_iterations} : index
   %answer = scf.for %i = %c0 to %num_iterations step %c1 iter_args(%current_sum=%ci0) -> (i64) {{
-    %new_sum = addi %current_sum, %input_val : i64
+    %new_sum = arith.addi %current_sum, %input_val : i64
     scf.yield %new_sum : i64
   }}
   return %input_val, %answer : i64, i64
