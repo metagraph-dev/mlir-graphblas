@@ -295,6 +295,15 @@ static LogicalResult verify(ApplyOp op) {
   if (argResult.failed())
     return argResult;
 
+  bool inPlace = op.in_place();
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
+  RankedTensorType resultTensorType =
+      op.getResult().getType().cast<RankedTensorType>();
+  if (inPlace && inputTensorType != resultTensorType) {
+    return op.emitError(
+        "operand and result types must match when changes are in-place.");
+  }
+
   std::string applyOperator = op.apply_operator().str();
   if (!supportedForApply.contains(applyOperator))
     return op.emitError("\"" + applyOperator +
@@ -331,10 +340,20 @@ static LogicalResult verify(ApplyOp op) {
 }
 
 static LogicalResult verify(ApplyGenericOp op) {
-  LogicalResult argResult = verifyApplyArgs(op, op.input().getType());
+  Type inputType = op.input().getType();
+  LogicalResult argResult = verifyApplyArgs(op, inputType);
 
   if (argResult.failed())
     return argResult;
+
+  bool inPlace = op.in_place();
+  RankedTensorType inputTensorType = inputType.cast<RankedTensorType>();
+  RankedTensorType resultTensorType =
+      op.getResult().getType().cast<RankedTensorType>();
+  if (inPlace && inputTensorType != resultTensorType) {
+    return op.emitError(
+        "operand and result types must match when changes are in-place.");
+  }
 
   RegionRange extensions = op.extensions();
   if (extensions.size() < 1) {

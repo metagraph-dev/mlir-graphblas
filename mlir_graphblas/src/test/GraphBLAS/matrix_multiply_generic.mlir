@@ -55,9 +55,9 @@ func @main() -> () {
       graphblas.yield mult %28 : i64
     }
     // CHECK: answer_1 [
-    // CHECK:   [14, _],
-    // CHECK:   [18, 24],
-    // CHECK: ]
+    // CHECK-NEXT:   [14, _],
+    // CHECK-NEXT:   [18, 24]
+    // CHECK-NEXT: ]
     graphblas.print %answer_1 { strings = ["answer_1 "] } : tensor<?x?xi64, #CSR64>
 
     %answer_2 = graphblas.matrix_multiply_generic %a_csr, %b_csc { mask_complement = false } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to tensor<?x?xi64, #CSR64>  {
@@ -72,10 +72,10 @@ func @main() -> () {
       %28 = arith.addi %arg0, %arg1 : i64
       graphblas.yield mult %28 : i64
     }
-    // CHECK: answer_2 [
-    // CHECK:   [5, _],
-    // CHECK:   [9, 11],
-    // CHECK: ]
+    // CHECK-NEXT: answer_2 [
+    // CHECK-NEXT:   [5, _],
+    // CHECK-NEXT:   [9, 11]
+    // CHECK-NEXT: ]
     graphblas.print %answer_2 { strings = ["answer_2 "] } : tensor<?x?xi64, #CSR64>
 
     %answer_3 = graphblas.matrix_multiply_generic %a_csc, %b_csr { mask_complement = false } : (tensor<?x?xi64, #CSC64>, tensor<?x?xi64, #CSR64>) to tensor<?x?xi64, #CSR64>  {
@@ -88,10 +88,10 @@ func @main() -> () {
       %28 = arith.index_cast %arg4 : index to i64
       graphblas.yield mult %28 : i64
     }
-    // CHECK: answer_3 [
-    // CHECK:   [2, _],
-    // CHECK:   [3, 3],
-    // CHECK: ]
+    // CHECK-NEXT: answer_3 [
+    // CHECK-NEXT:   [2, _],
+    // CHECK-NEXT:   [3, 3]
+    // CHECK-NEXT: ]
     graphblas.print %answer_3 { strings = ["answer_3 "] } : tensor<?x?xi64, #CSR64>
 
     %answer_4 = graphblas.matrix_multiply_generic %a_csc, %b_csc { mask_complement = false } : (tensor<?x?xi64, #CSC64>, tensor<?x?xi64, #CSC64>) to tensor<?x?xi64, #CSR64>  {
@@ -103,10 +103,10 @@ func @main() -> () {
     ^bb0(%arg0: i64, %arg1: i64):
       graphblas.yield mult %c1_i64 : i64
     }
-    // CHECK: answer_4 [
-    // CHECK:   [1, _],
-    // CHECK:   [1, 1],
-    // CHECK: ]
+    // CHECK-NEXT: answer_4 [
+    // CHECK-NEXT:   [1, _],
+    // CHECK-NEXT:   [1, 1]
+    // CHECK-NEXT: ]
     graphblas.print %answer_4 { strings = ["answer_4 "] } : tensor<?x?xi64, #CSR64>
     
     %answer_5 = graphblas.matrix_multiply_generic %a_csr, %b_csr, %mask_csr { mask_complement = false } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSR64>) to tensor<?x?xi64, #CSR64>  {
@@ -120,10 +120,10 @@ func @main() -> () {
       %34 = arith.muli %arg0, %arg1 : i64
       graphblas.yield mult %34 : i64
     }
-    // CHECK: answer_5 [
-    // CHECK:   [14, _],
-    // CHECK:   [_, 24],
-    // CHECK: ]
+    // CHECK-NEXT: answer_5 [
+    // CHECK-NEXT:   [14, _],
+    // CHECK-NEXT:   [_, 24]
+    // CHECK-NEXT: ]
     graphblas.print %answer_5 { strings = ["answer_5 "] } : tensor<?x?xi64, #CSR64>
 
     %answer_6 = graphblas.matrix_multiply_generic %a_csr, %b_csc, %mask_csr { mask_complement = false } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>, tensor<?x?xi64, #CSR64>) to tensor<?x?xi64, #CSR64>  {
@@ -138,10 +138,10 @@ func @main() -> () {
       %34 = arith.addi %arg0, %arg1 : i64
       graphblas.yield mult %34 : i64
     }
-    // CHECK: answer_6 [
-    // CHECK:   [5, _],
-    // CHECK:   [_, 11],
-    // CHECK: ]
+    // CHECK-NEXT: answer_6 [
+    // CHECK-NEXT:   [5, _],
+    // CHECK-NEXT:   [_, 11]
+    // CHECK-NEXT: ]
     graphblas.print %answer_6 { strings = ["answer_6 "] } : tensor<?x?xi64, #CSR64>
 
     %answer_7 = graphblas.matrix_multiply_generic %a_csc, %b_csr, %mask_csr { mask_complement = false } : (tensor<?x?xi64, #CSC64>, tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSR64>) to tensor<?x?xi64, #CSR64>  {
@@ -154,10 +154,10 @@ func @main() -> () {
       %34 = arith.index_cast %arg4 : index to i64
       graphblas.yield mult %34 : i64
     }
-    // CHECK: answer_7 [
-    // CHECK:   [2, _],
-    // CHECK:   [_, 3],
-    // CHECK: ]
+    // CHECK-NEXT: answer_7 [
+    // CHECK-NEXT:   [2, _],
+    // CHECK-NEXT:   [_, 3]
+    // CHECK-NEXT: ]
     graphblas.print %answer_7 { strings = ["answer_7 "] } : tensor<?x?xi64, #CSR64>
 
     %answer_8 = graphblas.matrix_multiply_generic %a_csc, %b_csc, %mask_csr { mask_complement = false } : (tensor<?x?xi64, #CSC64>, tensor<?x?xi64, #CSC64>, tensor<?x?xi64, #CSR64>) to tensor<?x?xi64, #CSR64>  {
@@ -169,10 +169,10 @@ func @main() -> () {
     ^bb0(%arg0: i64, %arg1: i64):
       graphblas.yield mult %c1_i64 : i64
     }
-    // CHECK: answer_8 [
-    // CHECK:   [1, _],
-    // CHECK:   [_, 1],
-    // CHECK: ]
+    // CHECK-NEXT: answer_8 [
+    // CHECK-NEXT:   [1, _],
+    // CHECK-NEXT:   [_, 1]
+    // CHECK-NEXT: ]
     graphblas.print %answer_8 { strings = ["answer_8 "] } : tensor<?x?xi64, #CSR64>
     
     %answer_9 = graphblas.matrix_multiply_generic %a_csr, %b_csr, %mask_csc { mask_complement = false } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to tensor<?x?xi64, #CSR64>  {
@@ -186,10 +186,10 @@ func @main() -> () {
       %34 = arith.muli %arg0, %arg1 : i64
       graphblas.yield mult %34 : i64
     }
-    // CHECK: answer_9 [
-    // CHECK:   [14, _],
-    // CHECK:   [_, 24],
-    // CHECK: ]
+    // CHECK-NEXT: answer_9 [
+    // CHECK-NEXT:   [14, _],
+    // CHECK-NEXT:   [_, 24]
+    // CHECK-NEXT: ]
     graphblas.print %answer_9 { strings = ["answer_9 "] } : tensor<?x?xi64, #CSR64>
 
     %answer_10 = graphblas.matrix_multiply_generic %a_csr, %b_csc, %mask_csc { mask_complement = false } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>, tensor<?x?xi64, #CSC64>) to tensor<?x?xi64, #CSR64>  {
@@ -204,10 +204,10 @@ func @main() -> () {
       %34 = arith.addi %arg0, %arg1 : i64
       graphblas.yield mult %34 : i64
     }
-    // CHECK: answer_10 [
-    // CHECK:   [5, _],
-    // CHECK:   [_, 11],
-    // CHECK: ]
+    // CHECK-NEXT: answer_10 [
+    // CHECK-NEXT:   [5, _],
+    // CHECK-NEXT:   [_, 11]
+    // CHECK-NEXT: ]
     graphblas.print %answer_10 { strings = ["answer_10 "] } : tensor<?x?xi64, #CSR64>
 
     %answer_11 = graphblas.matrix_multiply_generic %a_csc, %b_csr, %mask_csc { mask_complement = false } : (tensor<?x?xi64, #CSC64>, tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to tensor<?x?xi64, #CSR64>  {
@@ -220,10 +220,10 @@ func @main() -> () {
       %34 = arith.index_cast %arg4 : index to i64
       graphblas.yield mult %34 : i64
     }
-    // CHECK: answer_11 [
-    // CHECK:   [2, _],
-    // CHECK:   [_, 3],
-    // CHECK: ]
+    // CHECK-NEXT: answer_11 [
+    // CHECK-NEXT:   [2, _],
+    // CHECK-NEXT:   [_, 3]
+    // CHECK-NEXT: ]
     graphblas.print %answer_11 { strings = ["answer_11 "] } : tensor<?x?xi64, #CSR64>
 
     %answer_12 = graphblas.matrix_multiply_generic %a_csc, %b_csc, %mask_csc { mask_complement = true } : (tensor<?x?xi64, #CSC64>, tensor<?x?xi64, #CSC64>, tensor<?x?xi64, #CSC64>) to tensor<?x?xi64, #CSR64>  {
@@ -235,10 +235,10 @@ func @main() -> () {
     ^bb0(%arg0: i64, %arg1: i64):
       graphblas.yield mult %c1_i64 : i64
     }
-    // CHECK: answer_12 [
-    // CHECK:   [_, _],
-    // CHECK:   [1, _],
-    // CHECK: ]
+    // CHECK-NEXT: answer_12 [
+    // CHECK-NEXT:   [_, _],
+    // CHECK-NEXT:   [1, _]
+    // CHECK-NEXT: ]
     graphblas.print %answer_12 { strings = ["answer_12 "] } : tensor<?x?xi64, #CSR64>
 
     return

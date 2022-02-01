@@ -1010,8 +1010,53 @@ public:
   }
 
   void print_dense() override {
-    std::cout << "print_dense is not implemented";
-    std::cout << '\n';
+    uint64_t rank = sizes.size();
+    if (rank == 1) {
+      uint64_t length = sizes[0];
+      std::cout << "[";
+      std::vector<I> idx = indices[0];
+      uint64_t idx_position = 0;
+      uint64_t nnz = pointers[0][1];
+      for (uint64_t i=0; i<length; i++) {
+        if (i != 0)
+          std::cout << ", ";
+	if (idx_position < nnz && idx[idx_position] == i) {
+          std::cout << values[idx_position];
+	  idx_position++;
+	} else {
+          std::cout << "_";
+	}
+      }
+      std::cout << "]";
+    } else if (rank == 2) {
+      uint64_t numRows = sizes[0];
+      uint64_t numCols = sizes[1];
+      std::vector<I> idx = indices[1];
+      std::cout << "[";
+      for (uint64_t r=0; r<numRows; r++) {
+        if (r != 0)
+          std::cout << ",";
+	uint64_t first_ptr = pointers[1][r];
+	uint64_t second_ptr = pointers[1][r+1];
+	uint64_t ptr_delta = 0;
+	std::cout << "\n" << "  [";
+	for (uint64_t c=0; c<numCols; c++) {
+	  if (c != 0)
+	    std::cout << ", ";
+	  uint64_t idx_position = first_ptr + ptr_delta;
+	  if (idx_position < second_ptr && idx[idx_position] == c) {
+	    std::cout << values[idx_position];
+	    ptr_delta++;
+	  } else {
+	    std::cout << "_";
+	  }
+	}
+	std::cout << "]";
+      }
+      std::cout << "\n" << "]";
+    } else {
+      std::cout << "Printing tensors of rank " << rank << " not yet supported.";
+    }
   }
   //// <- MODIFIED
 };
@@ -1798,6 +1843,10 @@ memrefCopy(int64_t elemSize, UnrankedMemRefType<char> *srcArg,
       writeIndex -= dst.sizes[axis] * dstStrides[axis];
     }
   }
+}
+
+void print_tensor_dense(void *tensor) {
+  static_cast<SparseTensorStorageBase *>(tensor)->print_dense();
 }
 
 void print_tensor(void *tensor, int64_t level) {
