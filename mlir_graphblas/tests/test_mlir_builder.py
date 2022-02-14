@@ -304,7 +304,7 @@ def test_ir_builder_dnn(
     clamp_threshold: float,
 ):
     sparsify_matrix = lambda matrix: sparsify_array(matrix, [False, True])
-    np.random.seed(hash(datetime.date.today()) % 2**32)
+    np.random.seed(hash(datetime.date.today()) % 2 ** 32)
 
     for num_layers in range(1, max_num_layers + 1):
 

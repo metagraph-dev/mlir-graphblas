@@ -33,7 +33,7 @@ namespace {
 // Passes implementation.
 //===----------------------------------------------------------------------===//
 
-void populateGraphBLASLinalgLoweringPatterns(RewritePatternSet &patterns) { }
+void populateGraphBLASLinalgLoweringPatterns(RewritePatternSet &patterns) {}
 
 struct GraphBLASLinalgLoweringPass
     : public GraphBLASLinalgLoweringBase<GraphBLASLinalgLoweringPass> {
@@ -48,6 +48,7 @@ struct GraphBLASLinalgLoweringPass
 
 } // end anonymous namespace
 
-std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASLinalgLoweringPass() {
+std::unique_ptr<OperationPass<ModuleOp>>
+mlir::createGraphBLASLinalgLoweringPass() {
   return std::make_unique<GraphBLASLinalgLoweringPass>();
 }

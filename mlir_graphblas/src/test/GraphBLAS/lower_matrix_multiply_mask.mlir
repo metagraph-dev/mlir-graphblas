@@ -92,8 +92,8 @@
 // CHECK:                       %[[VAL_62:.*]] = memref.load %[[VAL_28]]{{\[}}%[[VAL_61]]] : memref<?xi64>
 // CHECK:                       %[[VAL_63:.*]] = arith.index_cast %[[VAL_62]] : i64 to index
 // CHECK:                       %[[VAL_64:.*]] = memref.load %[[VAL_44]]{{\[}}%[[VAL_63]]] : memref<?xi1>
-// CHECK:                       %[[VAL_65:.*]] = select %[[VAL_64]], %[[VAL_8]], %[[VAL_7]] : i1
-// CHECK:                       %[[VAL_66:.*]] = select %[[VAL_64]], %[[VAL_6]], %[[VAL_58]] : i64
+// CHECK:                       %[[VAL_65:.*]] = arith.select %[[VAL_64]], %[[VAL_8]], %[[VAL_7]] : i1
+// CHECK:                       %[[VAL_66:.*]] = arith.select %[[VAL_64]], %[[VAL_6]], %[[VAL_58]] : i64
 // CHECK:                       scf.yield %[[VAL_65]], %[[VAL_66]] : i1, i64
 // CHECK:                     }
 // CHECK:                     scf.condition(%[[VAL_67:.*]]#0) %[[VAL_67]]#1 : i64

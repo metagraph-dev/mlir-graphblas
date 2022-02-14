@@ -227,7 +227,8 @@ ValueRange buildIndexOverlap(PatternRewriter &rewriter, Location loc,
   // This will sacrifice memory for less computation
   Value aIsSmaller = rewriter.create<arith::CmpIOp>(
       loc, arith::CmpIPredicate::ult, aSize, bSize);
-  Value smallerSize = rewriter.create<arith::SelectOp>(loc, aIsSmaller, aSize, bSize);
+  Value smallerSize =
+      rewriter.create<arith::SelectOp>(loc, aIsSmaller, aSize, bSize);
   Value output =
       rewriter.create<memref::AllocOp>(loc, memref1DI64Type, smallerSize);
 
@@ -238,14 +239,16 @@ ValueRange buildIndexOverlap(PatternRewriter &rewriter, Location loc,
       TypeRange{indexType, indexType, indexType, int64Type, int64Type, boolType,
                 boolType},
       ValueRange{c0, c0, c0, ci0, ci0, ctrue, ctrue});
-  Block *before =
-      rewriter.createBlock(&whileLoop.getBefore(), {},
-                           TypeRange{indexType, indexType, indexType, int64Type,
-                                     int64Type, boolType, boolType});
-  Block *after =
-      rewriter.createBlock(&whileLoop.getAfter(), {},
-                           TypeRange{indexType, indexType, indexType, int64Type,
-                                     int64Type, boolType, boolType});
+  Block *before = rewriter.createBlock(
+      &whileLoop.getBefore(), {},
+      TypeRange{indexType, indexType, indexType, int64Type, int64Type, boolType,
+                boolType},
+      ArrayRef<Location>{loc, loc, loc, loc, loc, loc, loc});
+  Block *after = rewriter.createBlock(
+      &whileLoop.getAfter(), {},
+      TypeRange{indexType, indexType, indexType, int64Type, int64Type, boolType,
+                boolType},
+      ArrayRef<Location>{loc, loc, loc, loc, loc, loc, loc});
   // "while" portion of the loop
   rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
   Value posA = before->getArgument(0);
@@ -413,8 +416,10 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
   // Walk thru the indices; on a match yield 1, else yield 0
   scf::WhileOp whileLoop =
       rewriter.create<scf::WhileOp>(loc, int64Type, rowStart64);
-  Block *before = rewriter.createBlock(&whileLoop.getBefore(), {}, int64Type);
-  Block *after = rewriter.createBlock(&whileLoop.getAfter(), {}, int64Type);
+  Block *before = rewriter.createBlock(&whileLoop.getBefore(), {}, int64Type,
+                                       ArrayRef<Location>{loc});
+  Block *after = rewriter.createBlock(&whileLoop.getAfter(), {}, int64Type,
+                                      ArrayRef<Location>{loc});
   Value ii64 = before->getArgument(0);
   rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
   // Check if ii >= rowEnd
@@ -432,7 +437,8 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
   Value kk64 = rewriter.create<memref::LoadOp>(loc, iterIndices, ii);
   Value kk = rewriter.create<arith::IndexCastOp>(loc, kk64, indexType);
   Value cmpPair = rewriter.create<memref::LoadOp>(loc, kvec_i1, kk);
-  Value cmpResult0 = rewriter.create<arith::SelectOp>(loc, cmpPair, cfalse, ctrue);
+  Value cmpResult0 =
+      rewriter.create<arith::SelectOp>(loc, cmpPair, cfalse, ctrue);
   Value cmpResult1 = rewriter.create<arith::SelectOp>(loc, cmpPair, ci1, ii64);
   rewriter.create<scf::YieldOp>(loc, ValueRange{cmpResult0, cmpResult1});
   // end if cmpEndReached
@@ -662,14 +668,16 @@ Value computeIndexOverlapSize(PatternRewriter &rewriter, Location loc,
       TypeRange{indexType, indexType, indexType, indexType, boolType, boolType,
                 indexType},
       ValueRange{aPosStart, bPosStart, c0, c0, ctrue, ctrue, c0});
-  Block *before =
-      rewriter.createBlock(&whileLoop.getBefore(), {},
-                           TypeRange{indexType, indexType, indexType, indexType,
-                                     boolType, boolType, indexType});
-  Block *after =
-      rewriter.createBlock(&whileLoop.getAfter(), {},
-                           TypeRange{indexType, indexType, indexType, indexType,
-                                     boolType, boolType, indexType});
+  Block *before = rewriter.createBlock(
+      &whileLoop.getBefore(), {},
+      TypeRange{indexType, indexType, indexType, indexType, boolType, boolType,
+                indexType},
+      ArrayRef<Location>{loc, loc, loc, loc, loc, loc, loc});
+  Block *after = rewriter.createBlock(
+      &whileLoop.getAfter(), {},
+      TypeRange{indexType, indexType, indexType, indexType, boolType, boolType,
+                indexType},
+      ArrayRef<Location>{loc, loc, loc, loc, loc, loc, loc});
   // "while" portion of the loop
   rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
   Value posA = before->getArgument(0);
@@ -855,11 +863,13 @@ Value computeUnionAggregation(PatternRewriter &rewriter, Location loc,
   Block *before = rewriter.createBlock(
       &whileLoop.getBefore(), {},
       TypeRange{indexType, indexType, indexType, int64Type, int64Type,
-                valueType, valueType, boolType, boolType});
-  Block *after = rewriter.createBlock(&whileLoop.getAfter(), {},
-                                      TypeRange{indexType, indexType, indexType,
-                                                int64Type, int64Type, valueType,
-                                                valueType, boolType, boolType});
+                valueType, valueType, boolType, boolType},
+      ArrayRef<Location>{loc, loc, loc, loc, loc, loc, loc, loc, loc});
+  Block *after = rewriter.createBlock(
+      &whileLoop.getAfter(), {},
+      TypeRange{indexType, indexType, indexType, int64Type, int64Type,
+                valueType, valueType, boolType, boolType},
+      ArrayRef<Location>{loc, loc, loc, loc, loc, loc, loc, loc, loc});
   // "while" portion of the loop
   rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
   Value posA = before->getArgument(0);
@@ -1088,14 +1098,16 @@ Value applyMask(PatternRewriter &rewriter, Location loc, Type valueType,
       TypeRange{indexType, indexType, indexType, int64Type, int64Type,
                 valueType, boolType, boolType},
       ValueRange{aPosStart, mPosStart, oPosStart, ci0, ci0, cf0, ctrue, ctrue});
-  Block *before =
-      rewriter.createBlock(&whileLoop.getBefore(), {},
-                           TypeRange{indexType, indexType, indexType, int64Type,
-                                     int64Type, valueType, boolType, boolType});
-  Block *after =
-      rewriter.createBlock(&whileLoop.getAfter(), {},
-                           TypeRange{indexType, indexType, indexType, int64Type,
-                                     int64Type, valueType, boolType, boolType});
+  Block *before = rewriter.createBlock(
+      &whileLoop.getBefore(), {},
+      TypeRange{indexType, indexType, indexType, int64Type, int64Type,
+                valueType, boolType, boolType},
+      ArrayRef<Location>{loc, loc, loc, loc, loc, loc, loc, loc});
+  Block *after = rewriter.createBlock(
+      &whileLoop.getAfter(), {},
+      TypeRange{indexType, indexType, indexType, int64Type, int64Type,
+                valueType, boolType, boolType},
+      ArrayRef<Location>{loc, loc, loc, loc, loc, loc, loc, loc});
   // "while" portion of the loop
   rewriter.setInsertionPointToStart(&whileLoop.getBefore().front());
   Value posA = before->getArgument(0);

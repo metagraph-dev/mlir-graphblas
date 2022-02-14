@@ -634,12 +634,16 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
   // Insert unary operation
   Region *unaryRegion = regions[0];
   TypeRange inputTypes;
-  if (unary1.contains(unaryOp))
+  ArrayRef<Location> locs;
+  if (unary1.contains(unaryOp)) {
     inputTypes = TypeRange{valueType};
-  else if (unary3.contains(unaryOp))
+    locs = ArrayRef<Location>{loc};
+  } else if (unary3.contains(unaryOp)) {
     inputTypes = TypeRange{valueType, indexType, indexType};
+    locs = ArrayRef<Location>{loc, loc, loc};
+  }
 
-  Block *unaryBlock = builder.createBlock(unaryRegion, {}, inputTypes);
+  Block *unaryBlock = builder.createBlock(unaryRegion, {}, inputTypes, locs);
   int numArgs = unaryBlock->getArguments().size();
 
   Value val = unaryBlock->getArgument(0);
@@ -825,18 +829,22 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
   // Insert binary operation
   Region *binaryRegion = regions[0];
   TypeRange inputTypes;
-  if (binary2.contains(binaryOp))
+  ArrayRef<Location> locs;
+  if (binary2.contains(binaryOp)) {
     inputTypes = TypeRange{valueType, valueType};
-  else if (binary4.contains(binaryOp))
+    locs = ArrayRef<Location>{loc, loc};
+  } else if (binary4.contains(binaryOp)) {
     inputTypes = TypeRange{valueType, valueType, indexType, indexType};
-  else if (binary5.contains(binaryOp))
+    locs = ArrayRef<Location>{loc, loc, loc, loc};
+  } else if (binary5.contains(binaryOp)) {
     inputTypes =
         TypeRange{valueType, valueType, indexType, indexType, indexType};
-  else
+    locs = ArrayRef<Location>{loc, loc, loc, loc, loc};
+  } else
     return binaryRegion->getParentOp()->emitError(
         "\"" + binaryOp + "\" is not a supported binary operation.");
 
-  Block *binaryBlock = builder.createBlock(binaryRegion, {}, inputTypes);
+  Block *binaryBlock = builder.createBlock(binaryRegion, {}, inputTypes, locs);
   int numArgs = binaryBlock->getArguments().size();
 
   Value aVal = binaryBlock->getArgument(0);
@@ -1093,6 +1101,7 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
   Region *opRegion = regions[1];
 
   TypeRange inputTypes;
+  ArrayRef<Location> locs = ArrayRef<Location>{loc, loc};
   if (monoid2.contains(monoidOp))
     inputTypes = TypeRange{valueType, valueType};
   else
@@ -1100,7 +1109,7 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
         "\"" + monoidOp + "\" is not a supported monoid.");
 
   // Insert monoid identity
-  /*Block *identityBlock = */ builder.createBlock(identityRegion, {}, {});
+  /*Block *identityBlock = */ builder.createBlock(identityRegion, {}, {}, {});
   Value identity;
   if (monoidOp == "any" || monoidOp == "lor" || monoidOp == "plus") {
     identity = llvm::TypeSwitch<Type, Value>(valueType)
@@ -1157,7 +1166,7 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
   builder.create<graphblas::YieldOp>(loc, yieldIdentity, identity);
 
   // Insert operation
-  Block *opBlock = builder.createBlock(opRegion, {}, inputTypes);
+  Block *opBlock = builder.createBlock(opRegion, {}, inputTypes, locs);
   Value aVal = opBlock->getArgument(0);
   Value bVal = opBlock->getArgument(1);
   Value opResult;

@@ -35,7 +35,7 @@ func private @choose_uniform(!llvm.ptr<i8>, i64, i64, memref<?xi64, #map>, memre
 // CHECK:             %[[VAL_19:.*]] = memref.load %[[VAL_7]]{{\[}}%[[VAL_17]]] : memref<?xi64>
 // CHECK:             %[[VAL_20:.*]] = arith.subi %[[VAL_19]], %[[VAL_18]] : i64
 // CHECK:             %[[VAL_21:.*]] = arith.cmpi ule, %[[VAL_20]], %[[VAL_1]] : i64
-// CHECK:             %[[VAL_22:.*]] = select %[[VAL_21]], %[[VAL_20]], %[[VAL_1]] : i64
+// CHECK:             %[[VAL_22:.*]] = arith.select %[[VAL_21]], %[[VAL_20]], %[[VAL_1]] : i64
 // CHECK:             %[[VAL_23:.*]] = memref.load %[[VAL_13]]{{\[}}%[[VAL_16]]] : memref<?xi64>
 // CHECK:             %[[VAL_24:.*]] = arith.addi %[[VAL_23]], %[[VAL_22]] : i64
 // CHECK:             memref.store %[[VAL_24]], %[[VAL_13]]{{\[}}%[[VAL_17]]] : memref<?xi64>

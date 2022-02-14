@@ -33,7 +33,7 @@
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_13:.*]]: f64):
 // CHECK:             %[[VAL_14:.*]] = arith.cmpf olt, %[[VAL_13]], %[[VAL_2]] : f64
-// CHECK:             %[[VAL_15:.*]] = select %[[VAL_14]], %[[VAL_13]], %[[VAL_2]] : f64
+// CHECK:             %[[VAL_15:.*]] = arith.select %[[VAL_14]], %[[VAL_13]], %[[VAL_2]] : f64
 // CHECK:             graphblas.yield transform_out %[[VAL_15]] : f64
 // CHECK:           }
 // CHECK:           return %[[VAL_16:.*]] : tensor<?x?xf64, #sparse_tensor.encoding<{ dimLevelType = [ "dense", "compressed" ], dimOrdering = affine_map<(d0, d1) -> (d0, d1)>, pointerBitWidth = 64, indexBitWidth = 64 }>>

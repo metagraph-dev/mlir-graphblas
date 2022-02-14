@@ -36,6 +36,7 @@ GRAPHBLAS_TO_SCF_PASSES = (
     "--sparsification",
     "--sparse-tensor-conversion",
     "--linalg-bufferize",
+    "--arith-bufferize",
     "--func-bufferize",
     "--tensor-bufferize",
     "--finalizing-bufferize",
