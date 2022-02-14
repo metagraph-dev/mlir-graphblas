@@ -3496,9 +3496,9 @@ private:
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
     Value c0_i64 =
-        rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(int64Type, 0));
+        rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(int64Type, 0));
     Value c1_i64 =
-        rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(int64Type, 1));
+        rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(int64Type, 1));
 
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
@@ -3643,14 +3643,14 @@ private:
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
     Value c1_i1 =
-        rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(int1Type, 1));
+        rewriter.create<arith::ConstantOp>(loc, rewriter.getIntegerAttr(int1Type, 1));
     Value c0_valueType = llvm::TypeSwitch<Type, Value>(valueType)
                              .Case<IntegerType>([&](IntegerType type) {
-                               return rewriter.create<ConstantOp>(
+                               return rewriter.create<arith::ConstantOp>(
                                    loc, rewriter.getIntegerAttr(valueType, 1));
                              })
                              .Case<FloatType>([&](FloatType type) {
-                               return rewriter.create<ConstantOp>(
+                               return rewriter.create<arith::ConstantOp>(
                                    loc, rewriter.getFloatAttr(valueType, 1.0));
                              });
 
@@ -4042,7 +4042,7 @@ public:
     Value isRowSmall = rewriter.create<arith::CmpIOp>(
         loc, arith::CmpIPredicate::ule, Aj_size_64, n);
     Value Bj_size_64 =
-        rewriter.create<SelectOp>(loc, isRowSmall, Aj_size_64, n);
+        rewriter.create<arith::SelectOp>(loc, isRowSmall, Aj_size_64, n);
 
     Value Bj_start_64 = rewriter.create<memref::LoadOp>(loc, Bp, row);
     Value Bj_end_64 =

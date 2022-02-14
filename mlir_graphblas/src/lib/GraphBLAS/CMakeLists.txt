@@ -2,6 +2,7 @@ add_mlir_dialect_library(MLIRGraphBLAS
         GraphBLASDialect.cpp
         GraphBLASOps.cpp
         GraphBLASLowerPass.cpp
+        GraphBLASLinalgLowerPass.cpp
         GraphBLASOptimizePass.cpp
         GraphBLASUtils.cpp
         GraphBLASArrayUtils.cpp

@@ -227,7 +227,7 @@ ValueRange buildIndexOverlap(PatternRewriter &rewriter, Location loc,
   // This will sacrifice memory for less computation
   Value aIsSmaller = rewriter.create<arith::CmpIOp>(
       loc, arith::CmpIPredicate::ult, aSize, bSize);
-  Value smallerSize = rewriter.create<SelectOp>(loc, aIsSmaller, aSize, bSize);
+  Value smallerSize = rewriter.create<arith::SelectOp>(loc, aIsSmaller, aSize, bSize);
   Value output =
       rewriter.create<memref::AllocOp>(loc, memref1DI64Type, smallerSize);
 
@@ -432,8 +432,8 @@ Value computeNumOverlaps(PatternRewriter &rewriter, Location loc, Value nk,
   Value kk64 = rewriter.create<memref::LoadOp>(loc, iterIndices, ii);
   Value kk = rewriter.create<arith::IndexCastOp>(loc, kk64, indexType);
   Value cmpPair = rewriter.create<memref::LoadOp>(loc, kvec_i1, kk);
-  Value cmpResult0 = rewriter.create<SelectOp>(loc, cmpPair, cfalse, ctrue);
-  Value cmpResult1 = rewriter.create<SelectOp>(loc, cmpPair, ci1, ii64);
+  Value cmpResult0 = rewriter.create<arith::SelectOp>(loc, cmpPair, cfalse, ctrue);
+  Value cmpResult1 = rewriter.create<arith::SelectOp>(loc, cmpPair, ci1, ii64);
   rewriter.create<scf::YieldOp>(loc, ValueRange{cmpResult0, cmpResult1});
   // end if cmpEndReached
   rewriter.setInsertionPointAfter(ifBlock_continueSearch);
