@@ -37,7 +37,7 @@ func @matrix_multiply_plus_X(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #C
 // CHECK:           },  {
 // CHECK:           ^bb0(%[[VAL_5:.*]]: f64, %[[VAL_6:.*]]: f64):
 // CHECK:             %[[VAL_7:.*]] = arith.cmpf olt, %[[VAL_5]], %[[VAL_6]] : f64
-// CHECK:             %[[VAL_8:.*]] = select %[[VAL_7]], %[[VAL_5]], %[[VAL_6]] : f64
+// CHECK:             %[[VAL_8:.*]] = arith.select %[[VAL_7]], %[[VAL_5]], %[[VAL_6]] : f64
 // CHECK:             graphblas.yield add %[[VAL_8]] : f64
 // CHECK:           },  {
 func @matrix_multiply_min_X(%a: tensor<?x?xf64, #CSR64>, %b: tensor<?x?xf64, #CSC64>) -> tensor<?x?xf64, #CSR64> {

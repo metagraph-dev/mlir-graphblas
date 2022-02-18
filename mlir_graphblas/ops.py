@@ -46,27 +46,6 @@ class BaseOp:
 
 
 ###########################################
-# std ops
-###########################################
-
-
-class SelectOp(BaseOp):
-    name = "select"
-
-    @classmethod
-    def call(cls, irbuilder, cond, lhs, rhs):
-        cls.ensure_mlirvar(cond, IntType)
-        cls.ensure_mlirvar(lhs)
-        cls.ensure_mlirvar(rhs)
-        if cond.type.num != 1:
-            raise TypeError(f"Type of cond must be i1, not {cond.type}")
-        if lhs.type != rhs.type:
-            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
-        ret_val = irbuilder.new_var(lhs.type)
-        return ret_val, (f"{ret_val.assign} = select {cond}, {lhs}, {rhs}: {lhs.type}")
-
-
-###########################################
 # arith ops
 ###########################################
 
@@ -104,6 +83,25 @@ class ConstantOp(BaseOp):
                 value = float(value)
         ret_val = irbuilder.new_var(type)
         return ret_val, (f"{ret_val.assign} = arith.constant {value} : {type}")
+
+
+class SelectOp(BaseOp):
+    dialect = "arith"
+    name = "select"
+
+    @classmethod
+    def call(cls, irbuilder, cond, lhs, rhs):
+        cls.ensure_mlirvar(cond, IntType)
+        cls.ensure_mlirvar(lhs)
+        cls.ensure_mlirvar(rhs)
+        if cond.type.num != 1:
+            raise TypeError(f"Type of cond must be i1, not {cond.type}")
+        if lhs.type != rhs.type:
+            raise TypeError(f"Type mismatch: {lhs.type} != {rhs.type}")
+        ret_val = irbuilder.new_var(lhs.type)
+        return ret_val, (
+            f"{ret_val.assign} = arith.select {cond}, {lhs}, {rhs}: {lhs.type}"
+        )
 
 
 class IndexCastOp(BaseOp):

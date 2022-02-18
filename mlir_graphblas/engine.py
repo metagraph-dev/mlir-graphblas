@@ -349,7 +349,7 @@ def input_tensor_to_ctypes(
             ):
                 raise TypeError(
                     f"{repr(arg)} is expected to have a {tensor_type.encoding.pointer_bit_width}-bit "
-                    f"unsigned integer index type (got a {arg.index_dtype.nbytes*8}-bit type instead)"
+                    f"unsigned integer index type (got a {arg.index_dtype.type().nbytes*8}-bit type instead)"
                 )
 
             if (
@@ -358,7 +358,7 @@ def input_tensor_to_ctypes(
             ):
                 raise TypeError(
                     f"{repr(arg)} is expected to have a {tensor_type.encoding.pointer_bit_width}-bit "
-                    f"unsigned integer pointer type (got a {arg.pointer_dtype.nbytes*8}-bit type instead)"
+                    f"unsigned integer pointer type (got a {arg.pointer_dtype.type().nbytes*8}-bit type instead)"
                 )
 
             # we can't check tensor_type.encoding.dim_ordering since MLIR's sparse tensor
@@ -875,7 +875,7 @@ class MlirJitEngine:
         ).encode()
         lowered_text = self._cli.apply_passes(dummy_declarations_string, passes)
         lowered_lines = list(filter(len, lowered_text.splitlines()))
-        assert lowered_lines[0] == 'module attributes {llvm.data_layout = ""}  {'
+        assert lowered_lines[0] == 'module attributes {llvm.data_layout = ""} {'
         assert lowered_lines[-1] == "}"
         lowered_lines = lowered_lines[1:-1]
         assert all(

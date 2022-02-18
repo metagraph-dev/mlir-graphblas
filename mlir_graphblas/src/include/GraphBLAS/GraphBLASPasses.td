@@ -28,6 +28,17 @@ def GraphBLASLowering : Pass<"graphblas-lower", "ModuleOp"> {
   ];
 }
 
+def GraphBLASLinalgLowering : Pass<"graphblas-linalg-lower", "ModuleOp"> {
+  let summary = "TODO add documentation";
+  let constructor = "mlir::createGraphBLASLinalgLoweringPass()";
+  let dependentDialects = [
+    "LLVM::LLVMDialect",
+    "linalg::LinalgDialect",
+    "math::MathDialect",
+    "arith::ArithmeticDialect"
+  ];
+}
+
 //===----------------------------------------------------------------------===//
 // GraphBLASOptimize
 //===----------------------------------------------------------------------===//

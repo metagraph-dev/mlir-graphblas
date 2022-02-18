@@ -3495,10 +3495,10 @@ private:
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
-    Value c0_i64 =
-        rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(int64Type, 0));
-    Value c1_i64 =
-        rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(int64Type, 1));
+    Value c0_i64 = rewriter.create<arith::ConstantOp>(
+        loc, rewriter.getIntegerAttr(int64Type, 0));
+    Value c1_i64 = rewriter.create<arith::ConstantOp>(
+        loc, rewriter.getIntegerAttr(int64Type, 1));
 
     Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
@@ -3642,15 +3642,15 @@ private:
     Type memref1DI64Type = MemRefType::get({-1}, int64Type);
     Type memref1DValueType = MemRefType::get({-1}, valueType);
 
-    Value c1_i1 =
-        rewriter.create<ConstantOp>(loc, rewriter.getIntegerAttr(int1Type, 1));
+    Value c1_i1 = rewriter.create<arith::ConstantOp>(
+        loc, rewriter.getIntegerAttr(int1Type, 1));
     Value c0_valueType = llvm::TypeSwitch<Type, Value>(valueType)
                              .Case<IntegerType>([&](IntegerType type) {
-                               return rewriter.create<ConstantOp>(
+                               return rewriter.create<arith::ConstantOp>(
                                    loc, rewriter.getIntegerAttr(valueType, 1));
                              })
                              .Case<FloatType>([&](FloatType type) {
-                               return rewriter.create<ConstantOp>(
+                               return rewriter.create<arith::ConstantOp>(
                                    loc, rewriter.getFloatAttr(valueType, 1.0));
                              });
 
@@ -3713,12 +3713,12 @@ private:
 
       scf::WhileOp findDiagonalWhileLoop = rewriter.create<scf::WhileOp>(
           loc, TypeRange{indexType, int1Type}, ValueRange{firstPtr, c1_i1});
-      Block *findDiagonalWhileLoopBefore =
-          rewriter.createBlock(&findDiagonalWhileLoop.getBefore(), {},
-                               TypeRange{indexType, int1Type});
-      Block *findDiagonalWhileLoopAfter =
-          rewriter.createBlock(&findDiagonalWhileLoop.getAfter(), {},
-                               TypeRange{indexType, int1Type});
+      Block *findDiagonalWhileLoopBefore = rewriter.createBlock(
+          &findDiagonalWhileLoop.getBefore(), {},
+          TypeRange{indexType, int1Type}, ArrayRef<Location>{loc, loc});
+      Block *findDiagonalWhileLoopAfter = rewriter.createBlock(
+          &findDiagonalWhileLoop.getAfter(), {}, TypeRange{indexType, int1Type},
+          ArrayRef<Location>{loc, loc});
       Value diagonalNotFound = findDiagonalWhileLoop.getResult(1);
       {
         rewriter.setInsertionPointToStart(
@@ -3824,10 +3824,12 @@ private:
           ValueRange{firstPtr, c1_i1, c0_valueType});
       Block *findDiagonalWhileLoopBefore =
           rewriter.createBlock(&findDiagonalWhileLoop.getBefore(), {},
-                               TypeRange{indexType, int1Type, valueType});
+                               TypeRange{indexType, int1Type, valueType},
+                               ArrayRef<Location>{loc, loc, loc});
       Block *findDiagonalWhileLoopAfter =
           rewriter.createBlock(&findDiagonalWhileLoop.getAfter(), {},
-                               TypeRange{indexType, int1Type, valueType});
+                               TypeRange{indexType, int1Type, valueType},
+                               ArrayRef<Location>{loc, loc, loc});
       Value diagonalNotFound = findDiagonalWhileLoop.getResult(1);
       Value diagonalValue = findDiagonalWhileLoop.getResult(2);
       {
@@ -4042,7 +4044,7 @@ public:
     Value isRowSmall = rewriter.create<arith::CmpIOp>(
         loc, arith::CmpIPredicate::ule, Aj_size_64, n);
     Value Bj_size_64 =
-        rewriter.create<SelectOp>(loc, isRowSmall, Aj_size_64, n);
+        rewriter.create<arith::SelectOp>(loc, isRowSmall, Aj_size_64, n);
 
     Value Bj_start_64 = rewriter.create<memref::LoadOp>(loc, Bp, row);
     Value Bj_end_64 =

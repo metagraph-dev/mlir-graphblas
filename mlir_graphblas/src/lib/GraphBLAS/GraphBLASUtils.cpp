@@ -634,12 +634,17 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
   // Insert unary operation
   Region *unaryRegion = regions[0];
   TypeRange inputTypes;
-  if (unary1.contains(unaryOp))
+  SmallVector<Location, 3> locs;
+  locs.push_back(loc);
+  if (unary1.contains(unaryOp)) {
     inputTypes = TypeRange{valueType};
-  else if (unary3.contains(unaryOp))
+  } else if (unary3.contains(unaryOp)) {
     inputTypes = TypeRange{valueType, indexType, indexType};
+    locs.push_back(loc);
+    locs.push_back(loc);
+  }
 
-  Block *unaryBlock = builder.createBlock(unaryRegion, {}, inputTypes);
+  Block *unaryBlock = builder.createBlock(unaryRegion, {}, inputTypes, locs);
   int numArgs = unaryBlock->getArguments().size();
 
   Value val = unaryBlock->getArgument(0);
@@ -660,7 +665,7 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
             .Case<IntegerType>([&](IntegerType type) {
               // http://graphics.stanford.edu/~seander/bithacks.html#IntegerAbs
               unsigned bitWidth = type.getWidth();
-              Value shiftAmount = builder.create<ConstantOp>(
+              Value shiftAmount = builder.create<arith::ConstantOp>(
                   loc, builder.getIntegerAttr(type, bitWidth - 1));
               Value mask =
                   builder.create<arith::ShRSIOp>(loc, val, shiftAmount);
@@ -673,7 +678,7 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
   } else if (unaryOp == "ainv") {
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
-                     Value c0_type = builder.create<ConstantOp>(
+                     Value c0_type = builder.create<arith::ConstantOp>(
                          loc, builder.getIntegerAttr(type, 0));
                      return builder.create<arith::SubIOp>(loc, c0_type, val);
                    })
@@ -743,7 +748,7 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
               // TODO we're missing python tests for all ops when given
               // integer-typed tensors
               unsigned bitWidth = type.getWidth();
-              Value shiftAmount = builder.create<ConstantOp>(
+              Value shiftAmount = builder.create<arith::ConstantOp>(
                   loc, builder.getIntegerAttr(type, bitWidth - 1));
               Value mask =
                   builder.create<arith::ShRSIOp>(loc, val, shiftAmount);
@@ -802,7 +807,7 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
 
   // Cannot store i1 in sparse tensor, so convert to i8 if needed
   if (boolAsI8 && opResult.getType() == i1Type)
-    opResult = builder.create<SelectOp>(loc, opResult, true8, false8);
+    opResult = builder.create<arith::SelectOp>(loc, opResult, true8, false8);
 
   builder.create<graphblas::YieldOp>(loc, yieldKind, opResult);
 
@@ -825,18 +830,26 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
   // Insert binary operation
   Region *binaryRegion = regions[0];
   TypeRange inputTypes;
-  if (binary2.contains(binaryOp))
+  SmallVector<Location, 5> locs;
+  locs.push_back(loc);
+  locs.push_back(loc);
+  if (binary2.contains(binaryOp)) {
     inputTypes = TypeRange{valueType, valueType};
-  else if (binary4.contains(binaryOp))
+  } else if (binary4.contains(binaryOp)) {
     inputTypes = TypeRange{valueType, valueType, indexType, indexType};
-  else if (binary5.contains(binaryOp))
+    locs.push_back(loc);
+    locs.push_back(loc);
+  } else if (binary5.contains(binaryOp)) {
     inputTypes =
         TypeRange{valueType, valueType, indexType, indexType, indexType};
-  else
+    locs.push_back(loc);
+    locs.push_back(loc);
+    locs.push_back(loc);
+  } else
     return binaryRegion->getParentOp()->emitError(
         "\"" + binaryOp + "\" is not a supported binary operation.");
 
-  Block *binaryBlock = builder.createBlock(binaryRegion, {}, inputTypes);
+  Block *binaryBlock = builder.createBlock(binaryRegion, {}, inputTypes, locs);
   int numArgs = binaryBlock->getArguments().size();
 
   Value aVal = binaryBlock->getArgument(0);
@@ -958,7 +971,7 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
                       return builder.create<arith::CmpFOp>(
                           loc, arith::CmpFPredicate::OGT, aVal, bVal);
                     });
-    opResult = builder.create<SelectOp>(loc, cmp, aVal, bVal);
+    opResult = builder.create<arith::SelectOp>(loc, cmp, aVal, bVal);
   } else if (binaryOp == "min") {
     Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
                     .Case<IntegerType>([&](IntegerType type) {
@@ -969,7 +982,7 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
                       return builder.create<arith::CmpFOp>(
                           loc, arith::CmpFPredicate::OLT, aVal, bVal);
                     });
-    opResult = builder.create<SelectOp>(loc, cmp, aVal, bVal);
+    opResult = builder.create<arith::SelectOp>(loc, cmp, aVal, bVal);
   } else if (binaryOp == "minus") {
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {
@@ -1074,7 +1087,7 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
 
   // Cannot store i1 in sparse tensor, so convert to i8 if needed
   if (boolAsI8 && opResult.getType() == i1Type)
-    opResult = builder.create<SelectOp>(loc, opResult, true8, false8);
+    opResult = builder.create<arith::SelectOp>(loc, opResult, true8, false8);
 
   builder.create<graphblas::YieldOp>(loc, yieldKind, opResult);
 
@@ -1093,6 +1106,9 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
   Region *opRegion = regions[1];
 
   TypeRange inputTypes;
+  SmallVector<Location, 2> locs;
+  locs.push_back(loc);
+  locs.push_back(loc);
   if (monoid2.contains(monoidOp))
     inputTypes = TypeRange{valueType, valueType};
   else
@@ -1100,7 +1116,7 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
         "\"" + monoidOp + "\" is not a supported monoid.");
 
   // Insert monoid identity
-  /*Block *identityBlock = */ builder.createBlock(identityRegion, {}, {});
+  /*Block *identityBlock = */ builder.createBlock(identityRegion, {}, {}, {});
   Value identity;
   if (monoidOp == "any" || monoidOp == "lor" || monoidOp == "plus") {
     identity = llvm::TypeSwitch<Type, Value>(valueType)
@@ -1126,13 +1142,13 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
     identity =
         llvm::TypeSwitch<Type, Value>(valueType)
             .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<ConstantOp>(
+              return builder.create<arith::ConstantOp>(
                   loc,
                   builder.getIntegerAttr(
                       valueType, APInt::getSignedMinValue(type.getWidth())));
             })
             .Case<FloatType>([&](FloatType type) {
-              return builder.create<ConstantOp>(
+              return builder.create<arith::ConstantOp>(
                   loc, builder.getFloatAttr(
                            valueType, APFloat::getLargest(
                                           type.getFloatSemantics(), true)));
@@ -1141,13 +1157,13 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
     identity =
         llvm::TypeSwitch<Type, Value>(valueType)
             .Case<IntegerType>([&](IntegerType type) {
-              return builder.create<ConstantOp>(
+              return builder.create<arith::ConstantOp>(
                   loc,
                   builder.getIntegerAttr(
                       valueType, APInt::getSignedMaxValue(type.getWidth())));
             })
             .Case<FloatType>([&](FloatType type) {
-              return builder.create<ConstantOp>(
+              return builder.create<arith::ConstantOp>(
                   loc, builder.getFloatAttr(
                            valueType, APFloat::getLargest(
                                           type.getFloatSemantics(), false)));
@@ -1157,7 +1173,7 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
   builder.create<graphblas::YieldOp>(loc, yieldIdentity, identity);
 
   // Insert operation
-  Block *opBlock = builder.createBlock(opRegion, {}, inputTypes);
+  Block *opBlock = builder.createBlock(opRegion, {}, inputTypes, locs);
   Value aVal = opBlock->getArgument(0);
   Value bVal = opBlock->getArgument(1);
   Value opResult;
@@ -1185,7 +1201,7 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
                       return builder.create<arith::CmpFOp>(
                           loc, arith::CmpFPredicate::OGT, aVal, bVal);
                     });
-    opResult = builder.create<SelectOp>(loc, cmp, aVal, bVal);
+    opResult = builder.create<arith::SelectOp>(loc, cmp, aVal, bVal);
   } else if (monoidOp == "min") {
     Value cmp = llvm::TypeSwitch<Type, Value>(valueType)
                     .Case<IntegerType>([&](IntegerType type) {
@@ -1196,7 +1212,7 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
                       return builder.create<arith::CmpFOp>(
                           loc, arith::CmpFPredicate::OLT, aVal, bVal);
                     });
-    opResult = builder.create<SelectOp>(loc, cmp, aVal, bVal);
+    opResult = builder.create<arith::SelectOp>(loc, cmp, aVal, bVal);
   } else if (monoidOp == "plus") {
     opResult = llvm::TypeSwitch<Type, Value>(valueType)
                    .Case<IntegerType>([&](IntegerType type) {

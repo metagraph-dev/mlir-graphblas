@@ -30,7 +30,7 @@
 // CHECK:           scf.parallel (%[[VAL_13:.*]]) = (%[[VAL_3]]) to (%[[VAL_12]]) step (%[[VAL_2]]) {
 // CHECK:             %[[VAL_14:.*]] = memref.load %[[VAL_7]]{{\[}}%[[VAL_13]]] : memref<?xf64>
 // CHECK:             %[[VAL_15:.*]] = arith.cmpf olt, %[[VAL_14]], %[[VAL_1]] : f64
-// CHECK:             %[[VAL_16:.*]] = select %[[VAL_15]], %[[VAL_14]], %[[VAL_1]] : f64
+// CHECK:             %[[VAL_16:.*]] = arith.select %[[VAL_15]], %[[VAL_14]], %[[VAL_1]] : f64
 // CHECK:             memref.store %[[VAL_16]], %[[VAL_8]]{{\[}}%[[VAL_13]]] : memref<?xf64>
 // CHECK:             scf.yield
 // CHECK:           }
@@ -41,7 +41,7 @@ func @apply_min_matrix(%sparse_tensor: tensor<?x?xf64, #CSR64>, %thunk: f64) -> 
     %answer = graphblas.apply_generic %sparse_tensor : tensor<?x?xf64, #CSR64> to tensor<?x?xf64, #CSR64> {
       ^bb0(%val: f64):
         %pick = arith.cmpf olt, %val, %thunk : f64
-        %result = select %pick, %val, %thunk : f64
+        %result = arith.select %pick, %val, %thunk : f64
         graphblas.yield transform_out %result : f64
     }
     return %answer : tensor<?x?xf64, #CSR64>
@@ -63,7 +63,7 @@ func @apply_min_matrix(%sparse_tensor: tensor<?x?xf64, #CSR64>, %thunk: f64) -> 
 // CHECK:           scf.parallel (%[[VAL_12:.*]]) = (%[[VAL_2]]) to (%[[VAL_11]]) step (%[[VAL_3]]) {
 // CHECK:             %[[VAL_13:.*]] = memref.load %[[VAL_7]]{{\[}}%[[VAL_12]]] : memref<?xf64>
 // CHECK:             %[[VAL_14:.*]] = arith.cmpf olt, %[[VAL_13]], %[[VAL_1]] : f64
-// CHECK:             %[[VAL_15:.*]] = select %[[VAL_14]], %[[VAL_13]], %[[VAL_1]] : f64
+// CHECK:             %[[VAL_15:.*]] = arith.select %[[VAL_14]], %[[VAL_13]], %[[VAL_1]] : f64
 // CHECK:             memref.store %[[VAL_15]], %[[VAL_8]]{{\[}}%[[VAL_12]]] : memref<?xf64>
 // CHECK:             scf.yield
 // CHECK:           }
@@ -74,7 +74,7 @@ func @apply_min_vector(%sparse_tensor: tensor<7xf64, #CV64>, %thunk: f64) -> ten
     %answer = graphblas.apply_generic %sparse_tensor : tensor<7xf64, #CV64> to tensor<7xf64, #CV64> {
       ^bb0(%val: f64):
         %pick = arith.cmpf olt, %val, %thunk : f64
-        %result = select %pick, %val, %thunk : f64
+        %result = arith.select %pick, %val, %thunk : f64
         graphblas.yield transform_out %result : f64
     }
     return %answer : tensor<7xf64, #CV64>

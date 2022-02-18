@@ -11,7 +11,7 @@ include "GraphBLASDialect.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 
-class GraphBLAS_Op<string mnemonic, list<OpTrait> traits = []> : Op<GraphBLAS_Dialect, mnemonic, traits> {}
+class GraphBLAS_Op<string mnemonic, list<Trait> traits = []> : Op<GraphBLAS_Dialect, mnemonic, traits> {}
 
 def GraphBlasMatrixOrVectorOperand : TensorRankOf<[AnyType], [1,2]>;
 def GraphBlasVectorOperand : 1DTensorOf<[AnyType]>;

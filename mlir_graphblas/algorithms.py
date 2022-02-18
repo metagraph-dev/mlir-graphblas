@@ -206,7 +206,7 @@ class SSSP(Algorithm):
         tmp = irb.graphblas.matrix_multiply(w, m2, "min_plus")
         irb.graphblas.update(tmp, w, "min")
         no_change = irb.graphblas.equal(w, w_old)
-        cont = irb.select(no_change, cfalse, ctrue)
+        cont = irb.arith.select(no_change, cfalse, ctrue)
         # irb.add_statement(f"call @delSparseVector({w_old}): ({w_old.type}) -> ()")
         irb.add_statement(f"scf.yield {cont}: {cont.type}")
         irb.add_statement("}")
@@ -246,7 +246,7 @@ class MSSP(Algorithm):
         tmp = irb.graphblas.matrix_multiply(w, m2, "min_plus")
         irb.graphblas.update(tmp, w, "min")
         no_change = irb.graphblas.equal(w, w_old)
-        cont = irb.select(no_change, cfalse, ctrue)
+        cont = irb.arith.select(no_change, cfalse, ctrue)
         # wx_old = irb.util.cast_csr_to_csx(w_old)
         # irb.add_statement(f"call @delSparseMatrix({wx_old}): ({wx_old.type}) -> ()")
         irb.add_statement(f"scf.yield {cont}: {cont.type}")
@@ -1711,7 +1711,9 @@ class ConnectedComponents(Algorithm):
                     # TODO would an scf.if be faster? Or do they compile down to the same code?
                     f_value_is_min = irb.arith.cmpf(f_value, mngp_value, "olt")
 
-                    value_to_store = irb.select(f_value_is_min, f_value, mngp_value)
+                    value_to_store = irb.arith.select(
+                        f_value_is_min, f_value, mngp_value
+                    )
                     irb.memref.store(value_to_store, f_values, I_value_as_index)
 
                     mngp_pointer_plus_one = irb.arith.addi(mngp_pointer, c1)

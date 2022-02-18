@@ -65,7 +65,7 @@ func @main() -> () {
     }, {
     ^bb0(%arg0: i64, %arg1: i64):
       %28 = arith.cmpi slt, %arg0, %arg1 : i64
-      %29 = select %28, %arg0, %arg1 : i64
+      %29 = arith.select %28, %arg0, %arg1 : i64
       graphblas.yield add %29 : i64
     }, {
     ^bb0(%arg0: i64, %arg1: i64):
@@ -131,7 +131,7 @@ func @main() -> () {
     }, {
     ^bb0(%arg0: i64, %arg1: i64):
       %34 = arith.cmpi slt, %arg0, %arg1 : i64
-      %35 = select %34, %arg0, %arg1 : i64
+      %35 = arith.select %34, %arg0, %arg1 : i64
       graphblas.yield add %35 : i64
     }, {
     ^bb0(%arg0: i64, %arg1: i64):
@@ -197,7 +197,7 @@ func @main() -> () {
     }, {
     ^bb0(%arg0: i64, %arg1: i64):
       %34 = arith.cmpi slt, %arg0, %arg1 : i64
-      %35 = select %34, %arg0, %arg1 : i64
+      %35 = arith.select %34, %arg0, %arg1 : i64
       graphblas.yield add %35 : i64
     }, {
     ^bb0(%arg0: i64, %arg1: i64):

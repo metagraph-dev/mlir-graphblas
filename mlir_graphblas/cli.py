@@ -76,6 +76,10 @@ class MlirOptCli:
             input=input,
         )
 
+        if result.stderr:
+            for line in result.stderr.decode().splitlines():
+                print(f"[stderr] {line}")
+
         if result.returncode == 0:
             return result.stdout.decode()
 
