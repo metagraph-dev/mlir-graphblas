@@ -634,13 +634,14 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
   // Insert unary operation
   Region *unaryRegion = regions[0];
   TypeRange inputTypes;
-  ArrayRef<Location> locs;
+  SmallVector<Location, 3> locs;
+  locs.push_back(loc);
   if (unary1.contains(unaryOp)) {
     inputTypes = TypeRange{valueType};
-    locs = ArrayRef<Location>{loc};
   } else if (unary3.contains(unaryOp)) {
     inputTypes = TypeRange{valueType, indexType, indexType};
-    locs = ArrayRef<Location>{loc, loc, loc};
+    locs.push_back(loc);
+    locs.push_back(loc);
   }
 
   Block *unaryBlock = builder.createBlock(unaryRegion, {}, inputTypes, locs);
@@ -829,17 +830,21 @@ LogicalResult populateBinary(OpBuilder &builder, Location loc,
   // Insert binary operation
   Region *binaryRegion = regions[0];
   TypeRange inputTypes;
-  ArrayRef<Location> locs;
+  SmallVector<Location, 5> locs;
+  locs.push_back(loc);
+  locs.push_back(loc);
   if (binary2.contains(binaryOp)) {
     inputTypes = TypeRange{valueType, valueType};
-    locs = ArrayRef<Location>{loc, loc};
   } else if (binary4.contains(binaryOp)) {
     inputTypes = TypeRange{valueType, valueType, indexType, indexType};
-    locs = ArrayRef<Location>{loc, loc, loc, loc};
+    locs.push_back(loc);
+    locs.push_back(loc);
   } else if (binary5.contains(binaryOp)) {
     inputTypes =
         TypeRange{valueType, valueType, indexType, indexType, indexType};
-    locs = ArrayRef<Location>{loc, loc, loc, loc, loc};
+    locs.push_back(loc);
+    locs.push_back(loc);
+    locs.push_back(loc);
   } else
     return binaryRegion->getParentOp()->emitError(
         "\"" + binaryOp + "\" is not a supported binary operation.");
@@ -1101,7 +1106,9 @@ LogicalResult populateMonoid(OpBuilder &builder, Location loc,
   Region *opRegion = regions[1];
 
   TypeRange inputTypes;
-  ArrayRef<Location> locs = ArrayRef<Location>{loc, loc};
+  SmallVector<Location, 2> locs;
+  locs.push_back(loc);
+  locs.push_back(loc);
   if (monoid2.contains(monoidOp))
     inputTypes = TypeRange{valueType, valueType};
   else
