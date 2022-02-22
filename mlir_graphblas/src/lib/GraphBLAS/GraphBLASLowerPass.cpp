@@ -1512,8 +1512,8 @@ public:
     } else {
       if (inputTensorType != outputTensorType) {
         // This will create a copy to avoid modifying inputTensor
-        output =
-            rewriter.create<graphblas::CastOp>(loc, outputTensorType, inputTensor);
+        output = rewriter.create<graphblas::CastOp>(loc, outputTensorType,
+                                                    inputTensor);
       } else {
         output = rewriter.create<graphblas::DupOp>(loc, inputTensor);
       }

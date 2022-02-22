@@ -315,7 +315,8 @@ static LogicalResult verify(ApplyOp op) {
       return op.emitError("\"" + applyOperator +
                           "\""
                           " is a unary operator, but was given a thunk.");
-  } else if (binary2.contains(applyOperator) || binary4.contains(applyOperator)) {
+  } else if (binary2.contains(applyOperator) ||
+             binary4.contains(applyOperator)) {
 
     if (!thunk)
       return op.emitError("\"" + applyOperator +
@@ -333,7 +334,6 @@ static LogicalResult verify(ApplyOp op) {
         binary2.contains(applyOperator))
       return op.emitError(
           "Element type of input tensor does not match type of thunk.");
-
   }
 
   return success();
