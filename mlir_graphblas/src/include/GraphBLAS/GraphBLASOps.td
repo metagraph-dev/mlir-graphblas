@@ -444,23 +444,20 @@ def GraphBLAS_ReduceToScalarGenericOp : GraphBLAS_Op<"reduce_to_scalar_generic",
     let verifier = [{ return ::verify(*this); }];
 }
 
-def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
+def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", []> {
     let summary = "Tensor element-wise apply operation.";
     let description = [{
         Applies in an element-wise fashion the function indicated by the ``apply_operator``
         attribute to each element of the given sparse tensor. The operator can be unary or
-        binary. Binary operators require a thunk. The supported binary operators are "min",
-        "div", "first", and "second". Unary operators cannot take a thunk. The supported
-        unary operators are "abs", "minv" (i.e. multiplicative inverse or *1/x*),
-        "ainv" (i.e. additive inverse or *-x*), and "identity". If the boolean ``in_place``
-        attribute is set to `true`, then the changes will happen in place and the input and
-        output tensors will be the same identical tensor. The ``in_place`` attribute has a
-        default value of `false`.
+        binary. Binary operators require a thunk. Most unary and binary operators are supported,
+        along with the custom "identity" apply operator.
+
+        If the boolean ``in_place`` attribute is `true`, then the changes will update the input
+        tensor in place. The ``in_place`` attribute has a default value of `false`.
+
+        Note that using the "identity" operator does not create a copy of the input tensor.
 
         The given sparse tensor must either be a CSR matrix, CSC matrix, or a sparse vector.
-
-        Using "minv" with integer types uses signed integer division and rounds towards
-        zero. For example, *minv(-2) == 1 / -2 == 0*.
 
         Some binary operators, e.g. "div", are not symmetric. The sparse tensor and thunk
         should be given in the order they should be given to the binary operator. For
@@ -483,8 +480,6 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
         matrix. Thus, the operation will not apply when the values are missing in the
         tensor. For example, *1.0 / [ _ , 2.0,  _ ] == [ _ , 0.5,  _ ]*.
 
-        Note that using the "identity" operator does not create a copy of the input tensor.
-
         The shape of the output tensor will match that of the input tensor.
 
         Example:
@@ -505,7 +500,7 @@ def GraphBLAS_ApplyOp : GraphBLAS_Op<"apply", [NoSideEffect]> {
     let verifier = [{ return ::verify(*this); }];
 }
 
-def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", [NoSideEffect]> {
+def GraphBLAS_ApplyGenericOp : GraphBLAS_Op<"apply_generic", []> {
     let summary = "Generic tensor apply operation.";
     let description = [{
         Applies an arbitrary transformation to every element of a CSR or CSC matrix or sparse vector

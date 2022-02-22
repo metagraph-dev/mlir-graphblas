@@ -309,7 +309,13 @@ static LogicalResult verify(ApplyOp op) {
     return op.emitError("\"" + applyOperator +
                         "\" is not a supported operator.");
 
-  if (binary2.contains(applyOperator) || binary4.contains(applyOperator)) {
+  if (unary1.contains(applyOperator) || unary3.contains(applyOperator)) {
+
+    if (thunk)
+      return op.emitError("\"" + applyOperator +
+                          "\""
+                          " is a unary operator, but was given a thunk.");
+  } else if (binary2.contains(applyOperator) || binary4.contains(applyOperator)) {
 
     if (!thunk)
       return op.emitError("\"" + applyOperator +
@@ -328,12 +334,6 @@ static LogicalResult verify(ApplyOp op) {
       return op.emitError(
           "Element type of input tensor does not match type of thunk.");
 
-  } else if (unary1.contains(applyOperator) || unary3.contains(applyOperator)) {
-
-    if (thunk)
-      return op.emitError("\"" + applyOperator +
-                          "\""
-                          " is a unary operator, but was given a thunk.");
   }
 
   return success();

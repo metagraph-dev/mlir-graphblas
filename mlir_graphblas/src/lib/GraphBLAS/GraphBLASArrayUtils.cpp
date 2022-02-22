@@ -560,14 +560,17 @@ void computeInnerProduct(PatternRewriter &rewriter, Location loc, Value nk,
   Value bVal = rewriter.create<memref::LoadOp>(loc, iterValues, ii);
 
   // insert multiply operation block
-  ValueRange injectVals;
-  if (swapMultOps)
-    injectVals = ValueRange{bVal, aVal, col, fixedRowIndex, kk};
-  else
-    injectVals = ValueRange{aVal, bVal, fixedRowIndex, col, kk};
-  rewriter.mergeBlocks(
+  if (swapMultOps) {
+    ValueRange injectVals = ValueRange{bVal, aVal, col, fixedRowIndex, kk};
+    rewriter.mergeBlocks(
       extBlocks.mult, rewriter.getBlock(),
       injectVals.slice(0, extBlocks.mult->getArguments().size()));
+  } else {
+    ValueRange injectVals = ValueRange{aVal, bVal, fixedRowIndex, col, kk};
+    rewriter.mergeBlocks(
+      extBlocks.mult, rewriter.getBlock(),
+      injectVals.slice(0, extBlocks.mult->getArguments().size()));
+  }
   // NOTE: Need to do this after merge, in case the yield is one of the block
   // arguments, as is the case with "first" and "second" binops
   graphblas::YieldOp multYield = llvm::dyn_cast_or_null<graphblas::YieldOp>(
