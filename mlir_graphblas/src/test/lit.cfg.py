@@ -32,6 +32,21 @@ def _build_graphblas_exec():
     return " ".join(ex)
 
 
+def _build_graphblas_linalg_exec():
+    from mlir_graphblas.engine import EXTERNAL_LIBS
+    from mlir_graphblas.mlir_builder import GRAPHBLAS_LINALG_PASSES
+
+    ex = ["graphblas-opt"] + list(GRAPHBLAS_LINALG_PASSES) + ["|", "mlir-cpu-runner"]
+    for ext_lib in EXTERNAL_LIBS:
+        ex.append(f"-shared-libs={ext_lib}")
+    bin_dir = os.path.dirname(sys.executable)
+    lib_dir = os.path.join(os.path.dirname(bin_dir), "lib")
+    ex.append(f"-shared-libs={lib_dir}/libmlir_c_runner_utils{config.llvm_shlib_ext}")
+    ex.append("-entry-point-result=void")
+    ex.append("-e")
+    return " ".join(ex)
+
+
 # Configuration file for the 'lit' test runner.
 
 # name: The name of this test suite.
@@ -51,6 +66,7 @@ config.test_exec_root = os.path.join(config.graphblas_obj_root, "test")
 config.substitutions.append(("%PATH%", config.environment["PATH"]))
 config.substitutions.append(("%shlibext", config.llvm_shlib_ext))
 config.substitutions.append(("graphblas-exec", _build_graphblas_exec()))
+config.substitutions.append(("graphblas-linalg-exec", _build_graphblas_linalg_exec()))
 
 
 _SCRIPT_DIR = os.path.dirname(__file__)

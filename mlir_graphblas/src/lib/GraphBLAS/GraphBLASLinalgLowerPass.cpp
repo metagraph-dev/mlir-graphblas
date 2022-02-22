@@ -15,6 +15,8 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include "GraphBLAS/GraphBLASCommonPasses.h"
+#include "GraphBLAS/GraphBLASDialect.h"
 #include "GraphBLAS/GraphBLASPasses.h"
 #include "GraphBLAS/GraphBLASUtils.h"
 
@@ -73,7 +75,6 @@ public:
         llvm::dyn_cast_or_null<graphblas::YieldOp>(
             extBlocks.transformOut->getTerminator());
 
-    // TODO grab these from somewhere else
     AffineMap map =
         AffineMap::getPermutationMap(ArrayRef<unsigned>{1, 0}, context);
     SmallVector<AffineMap, 2> affineMaps = {map, map};
@@ -104,7 +105,8 @@ public:
 };
 
 void populateGraphBLASLinalgLoweringPatterns(RewritePatternSet &patterns) {
-  patterns.add<LinalgLowerApplyGenericRewrite>(patterns.getContext());
+  patterns.add<LinalgLowerApplyGenericRewrite, LowerPrintRewrite,
+               LowerPrintTensorRewrite>(patterns.getContext());
 }
 
 struct GraphBLASLinalgLoweringPass
@@ -115,6 +117,8 @@ struct GraphBLASLinalgLoweringPass
     ConversionTarget target(*ctx);
     populateGraphBLASLinalgLoweringPatterns(patterns);
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+    // TODO test that this actually gives us a useful error messages
+    target.addIllegalDialect<graphblas::GraphBLASDialect>();
   }
 };
 
