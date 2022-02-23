@@ -1003,7 +1003,10 @@ public:
       for (uint64_t i=0; i<values.size(); i++) {
         if (i != 0)
           std::cout << ", ";
-        std::cout << values[i];
+        if (std::is_same<V, int8_t>::value)
+          std::cout << (int16_t)values[i];
+        else
+          std::cout << values[i];
       }
       std::cout << ")\n";
     }
@@ -1020,12 +1023,15 @@ public:
       for (uint64_t i=0; i<length; i++) {
         if (i != 0)
           std::cout << ", ";
-	if (idx_position < nnz && idx[idx_position] == i) {
-          std::cout << values[idx_position];
-	  idx_position++;
-	} else {
+        if (idx_position < nnz && idx[idx_position] == i) {
+          if (std::is_same<V, int8_t>::value)
+            std::cout << (int16_t)values[idx_position];
+          else
+            std::cout << values[idx_position];
+          idx_position++;
+        } else {
           std::cout << "_";
-	}
+        }
       }
       std::cout << "]";
     } else if (rank == 2) {
@@ -1036,22 +1042,25 @@ public:
       for (uint64_t r=0; r<numRows; r++) {
         if (r != 0)
           std::cout << ",";
-	uint64_t first_ptr = pointers[1][r];
-	uint64_t second_ptr = pointers[1][r+1];
-	uint64_t ptr_delta = 0;
-	std::cout << "\n" << "  [";
-	for (uint64_t c=0; c<numCols; c++) {
-	  if (c != 0)
-	    std::cout << ", ";
-	  uint64_t idx_position = first_ptr + ptr_delta;
-	  if (idx_position < second_ptr && idx[idx_position] == c) {
-	    std::cout << values[idx_position];
-	    ptr_delta++;
-	  } else {
-	    std::cout << "_";
-	  }
-	}
-	std::cout << "]";
+        uint64_t first_ptr = pointers[1][r];
+        uint64_t second_ptr = pointers[1][r+1];
+        uint64_t ptr_delta = 0;
+        std::cout << "\n" << "  [";
+        for (uint64_t c=0; c<numCols; c++) {
+          if (c != 0)
+            std::cout << ", ";
+          uint64_t idx_position = first_ptr + ptr_delta;
+          if (idx_position < second_ptr && idx[idx_position] == c) {
+            if (std::is_same<V, int8_t>::value)
+              std::cout << (int16_t)values[idx_position];
+            else
+              std::cout << values[idx_position];
+            ptr_delta++;
+          } else {
+            std::cout << "_";
+          }
+        }
+        std::cout << "]";
       }
       std::cout << "\n" << "]";
     } else {
@@ -1850,9 +1859,12 @@ void print_tensor_dense(void *tensor) {
 }
 
 void print_tensor(void *tensor, int64_t level) {
-  if (level <= 0)
+  if (level <= 0) {
     static_cast<SparseTensorStorageBase *>(tensor)->print_dense();
-  else
+    // print_dense is typically used inline, so no newline at end
+    // add one here to be consistent with level>0 behavior
+    std::cout << "\n";
+  } else
     static_cast<SparseTensorStorageBase *>(tensor)->print_components(level);
 }
 //// <- MODIFIED

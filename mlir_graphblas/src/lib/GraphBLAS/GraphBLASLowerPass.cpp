@@ -382,8 +382,6 @@ public:
 
     rewriter.replaceOp(op, output);
 
-    cleanupIntermediateTensor(rewriter, module, loc, output);
-
     return success();
   };
 };
@@ -430,14 +428,15 @@ public:
     Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
 
     // Get the shape as a ValueRange
-    ValueRange shape;
+    SmallVector<Value, 2> shape;
     if (rank == 1) {
       Value size = rewriter.create<graphblas::SizeOp>(loc, input);
-      shape = ValueRange{size};
+      shape.push_back(size);
     } else {
       Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, input);
       Value ncols = rewriter.create<graphblas::NumColsOp>(loc, input);
-      shape = ValueRange{nrows, ncols};
+      shape.push_back(nrows);
+      shape.push_back(ncols);
     }
 
     // Create a new tensor with the correct output value type
@@ -514,8 +513,6 @@ public:
     }
 
     rewriter.replaceOp(op, output);
-
-    cleanupIntermediateTensor(rewriter, module, loc, output);
 
     return success();
   };
@@ -698,12 +695,17 @@ public:
     // Get sparse tensor info
     unsigned rank = inputType.getRank();
     Value nrow;
-    if (rank == 2)
-      nrow = rewriter.create<graphblas::NumRowsOp>(loc, input);
-    else
+    if (rank == 2) {
+      bool inputTypeIsCSR = hasRowOrdering(inputType);
+      if (inputTypeIsCSR)
+        nrow = rewriter.create<graphblas::NumRowsOp>(loc, input);
+      else
+        nrow = rewriter.create<graphblas::NumColsOp>(loc, input);
+    } else {
       // Vectors are stored as a 1xn matrix
       // so the code works correctly if we assume a single row
       nrow = c1;
+    }
 
     Value indexPos = (rank == 2 ? c1 : c0);
     Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(
@@ -1492,19 +1494,19 @@ public:
 
     // Populate based on operator kind
     LogicalResult popResult = failure();
-    if (unary1.contains(apply_operator) || unary3.contains(apply_operator))
+    if (unary1.contains(apply_operator) || unary3.contains(apply_operator)) {
       popResult = populateUnary(rewriter, loc, apply_operator, valueType,
                                 newApplyOp.getRegions().slice(0, 1),
                                 graphblas::YieldKind::TRANSFORM_OUT);
-    else
+      if (failed(popResult))
+        return failure();
+    } else {
       popResult = populateBinary(rewriter, loc, apply_operator, valueType,
                                  newApplyOp.getRegions().slice(0, 1),
                                  graphblas::YieldKind::TRANSFORM_OUT);
-    if (failed(popResult))
-      return failure();
-
-    // Remove thunk from populated block
-    if (binary2.contains(apply_operator) || binary4.contains(apply_operator)) {
+      if (failed(popResult))
+        return failure();
+      // Remove thunk from populated block
       Block &block = newApplyOp.getRegion(0).front();
       int thunkPos = thunk == op.left() ? 0 : 1;
       Value thunkArg = block.getArgument(thunkPos);
@@ -1563,10 +1565,13 @@ public:
     if (inPlace) {
       output = inputTensor;
     } else {
-      output = rewriter.create<graphblas::DupOp>(loc, inputTensor);
-      if (inputTensorType != outputTensorType)
-        output =
-            rewriter.create<graphblas::CastOp>(loc, outputTensorType, output);
+      if (inputTensorType != outputTensorType) {
+        // This will create a copy to avoid modifying inputTensor
+        output = rewriter.create<graphblas::CastOp>(loc, outputTensorType,
+                                                    inputTensor);
+      } else {
+        output = rewriter.create<graphblas::DupOp>(loc, inputTensor);
+      }
     }
     // Get sparse tensor info
     Value inputValues = rewriter.create<sparse_tensor::ToValuesOp>(
@@ -1583,9 +1588,9 @@ public:
       // - vector -> passes in (val, index, index)
       // - CSR or CSC -> passes in (val, row, col)
       Value inputPointers = rewriter.create<sparse_tensor::ToPointersOp>(
-          loc, memrefPointerType, inputTensor);
+          loc, memrefPointerType, inputTensor, c1);
       Value inputIndices = rewriter.create<sparse_tensor::ToIndicesOp>(
-          loc, memrefIndexType, inputTensor);
+          loc, memrefIndexType, inputTensor, c1);
       bool byCols = false;
       Value npointers;
       if (rank == 1) {
@@ -1622,21 +1627,29 @@ public:
         Value col = rewriter.create<arith::IndexCastOp>(loc, col_64, indexType);
         Value val = rewriter.create<memref::LoadOp>(loc, inputValues, jj);
 
+        // scf::ForOp automatically gets an empty scf.yield at the end which
+        // we need to insert before
+        Operation *scfYield = innerLoop.getBody()->getTerminator();
+
         // insert transformOut block
         graphblas::YieldOp transformOutYield =
             llvm::dyn_cast_or_null<graphblas::YieldOp>(
                 extBlocks.transformOut->getTerminator());
 
-        ValueRange subVals;
-        if (rank == 1)
-          subVals = ValueRange{val, col, col};
-        else if (byCols)
-          subVals = ValueRange{val, col, pointerIdx};
-        else
-          subVals = ValueRange{val, pointerIdx, col};
+        SmallVector<Value, 3> subVals;
+        subVals.push_back(val);
+        if (rank == 1) {
+          subVals.push_back(col);
+          subVals.push_back(col);
+        } else if (byCols) {
+          subVals.push_back(col);
+          subVals.push_back(pointerIdx);
+        } else {
+          subVals.push_back(pointerIdx);
+          subVals.push_back(col);
+        }
 
-        rewriter.mergeBlocks(extBlocks.transformOut, rewriter.getBlock(),
-                             subVals);
+        rewriter.mergeBlockBefore(extBlocks.transformOut, scfYield, subVals);
         Value result = transformOutYield.values().front();
         rewriter.eraseOp(transformOutYield);
 
@@ -1679,7 +1692,8 @@ public:
     // Add return op
     rewriter.replaceOp(op, output);
 
-    cleanupIntermediateTensor(rewriter, module, loc, output);
+    if (!inPlace)
+      cleanupIntermediateTensor(rewriter, module, loc, output);
 
     return success();
   };

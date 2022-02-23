@@ -370,15 +370,16 @@ Value callEmptyLike(OpBuilder &builder, ModuleOp &mod, Location loc,
 
   unsigned rank = inputTensorType.getRank();
 
-  // Get the shape as a ValueRange
-  ValueRange shape;
+  // Get the shape
+  SmallVector<Value, 2> shape;
   if (rank == 1) {
     Value size = builder.create<graphblas::SizeOp>(loc, tensor);
-    shape = ValueRange{size};
+    shape.push_back(size);
   } else {
     Value nrows = builder.create<graphblas::NumRowsOp>(loc, tensor);
     Value ncols = builder.create<graphblas::NumColsOp>(loc, tensor);
-    shape = ValueRange{nrows, ncols};
+    shape.push_back(nrows);
+    shape.push_back(ncols);
   }
 
   return callNewTensor(builder, mod, loc, shape, rtt);
@@ -628,18 +629,19 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
   Type indexType = builder.getIndexType();
   Type i1Type = builder.getI1Type();
   Type i8Type = builder.getI8Type();
+  Type i64Type = builder.getI64Type();
   Value false8 = builder.create<arith::ConstantIntOp>(loc, 0, i8Type);
   Value true8 = builder.create<arith::ConstantIntOp>(loc, 1, i8Type);
 
   // Insert unary operation
   Region *unaryRegion = regions[0];
-  TypeRange inputTypes;
+  SmallVector<Type, 3> inputTypes;
   SmallVector<Location, 3> locs;
+  inputTypes.push_back(valueType);
   locs.push_back(loc);
-  if (unary1.contains(unaryOp)) {
-    inputTypes = TypeRange{valueType};
-  } else if (unary3.contains(unaryOp)) {
-    inputTypes = TypeRange{valueType, indexType, indexType};
+  if (unary3.contains(unaryOp)) {
+    inputTypes.push_back(indexType);
+    inputTypes.push_back(indexType);
     locs.push_back(loc);
     locs.push_back(loc);
   }
@@ -791,12 +793,12 @@ LogicalResult populateUnary(OpBuilder &builder, Location loc, StringRef unaryOp,
   // Unary with three arguments
   ////////////////////////////////////
   else if (unaryOp == "column") {
-    opResult = col;
+    opResult = builder.create<arith::IndexCastOp>(loc, col, i64Type);
   } else if (unaryOp == "index") {
     // For Vectors, (row, col) is set as (index, index), so choose either
-    opResult = row;
+    opResult = builder.create<arith::IndexCastOp>(loc, row, i64Type);
   } else if (unaryOp == "row") {
-    opResult = row;
+    opResult = builder.create<arith::IndexCastOp>(loc, row, i64Type);
   } else if (unaryOp == "triu") {
     opResult =
         builder.create<arith::CmpIOp>(loc, arith::CmpIPredicate::ugt, col, row);
