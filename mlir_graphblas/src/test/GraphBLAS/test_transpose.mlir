@@ -14,12 +14,6 @@
   indexBitWidth = 64
 }>
 
-#CV64 = #sparse_tensor.encoding<{
-  dimLevelType = [ "compressed" ],
-  pointerBitWidth = 64,
-  indexBitWidth = 64
-}>
-
 module {
   func @functional_transpose() -> () {
       %dense_mat = arith.constant dense<[
@@ -27,27 +21,44 @@ module {
           [0, 0, 0, 3]
         ]> : tensor<2x4xi64>
       %mat = sparse_tensor.convert %dense_mat : tensor<2x4xi64> to tensor<?x?xi64, #CSR64>
+      %mat_csc = sparse_tensor.convert %dense_mat : tensor<2x4xi64> to tensor<?x?xi64, #CSC64>
 
-      %different_compression_answer = graphblas.transpose %mat : tensor<?x?xi64, #CSR64> to tensor<?x?xi64, #CSC64>
-      
-      // CHECK: different_compression_answer [
+      // CHECK: csr_to_csc_transpose [
       // CHECK-NEXT:   [_, _],
       // CHECK-NEXT:   [1, _],
       // CHECK-NEXT:   [2, _],
       // CHECK-NEXT:   [_, 3]
       // CHECK-NEXT: ]
-      graphblas.print %different_compression_answer { strings = ["different_compression_answer "] } : tensor<?x?xi64, #CSC64>
+      %csr_to_csc_transpose = graphblas.transpose %mat : tensor<?x?xi64, #CSR64> to tensor<?x?xi64, #CSC64>
+      graphblas.print %csr_to_csc_transpose { strings = ["csr_to_csc_transpose "] } : tensor<?x?xi64, #CSC64>
 
-      %same_compression_answer = graphblas.transpose %mat : tensor<?x?xi64, #CSR64> to tensor<?x?xi64, #CSR64>
-
-      // CHECK-NEXT: same_compression_answer [
+      // CHECK: csc_to_csr_transpose [
       // CHECK-NEXT:   [_, _],
       // CHECK-NEXT:   [1, _],
       // CHECK-NEXT:   [2, _],
       // CHECK-NEXT:   [_, 3]
       // CHECK-NEXT: ]
-      graphblas.print %same_compression_answer { strings = ["same_compression_answer "] } : tensor<?x?xi64, #CSR64>
-      
+      %csc_to_csr_transpose = graphblas.transpose %mat_csc : tensor<?x?xi64, #CSC64> to tensor<?x?xi64, #CSR64>
+      graphblas.print %csc_to_csr_transpose { strings = ["csc_to_csr_transpose "] } : tensor<?x?xi64, #CSR64>
+
+      // CHECK: csr_to_csr_transpose [
+      // CHECK-NEXT:   [_, _],
+      // CHECK-NEXT:   [1, _],
+      // CHECK-NEXT:   [2, _],
+      // CHECK-NEXT:   [_, 3]
+      // CHECK-NEXT: ]
+      %csr_to_csr_transpose = graphblas.transpose %mat : tensor<?x?xi64, #CSR64> to tensor<?x?xi64, #CSR64>
+      graphblas.print %csr_to_csr_transpose { strings = ["csr_to_csr_transpose "] } : tensor<?x?xi64, #CSR64>
+
+      // CHECK: csc_to_csc_transpose [
+      // CHECK-NEXT:   [_, _],
+      // CHECK-NEXT:   [1, _],
+      // CHECK-NEXT:   [2, _],
+      // CHECK-NEXT:   [_, 3]
+      // CHECK-NEXT: ]
+      %csc_to_csc_transpose = graphblas.transpose %mat_csc : tensor<?x?xi64, #CSC64> to tensor<?x?xi64, #CSC64>
+      graphblas.print %csc_to_csc_transpose { strings = ["csc_to_csc_transpose "] } : tensor<?x?xi64, #CSC64>
+
       return
   }
 }

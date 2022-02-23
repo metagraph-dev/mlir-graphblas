@@ -645,12 +645,17 @@ public:
     // Get sparse tensor info
     unsigned rank = inputType.getRank();
     Value nrow;
-    if (rank == 2)
-      nrow = rewriter.create<graphblas::NumRowsOp>(loc, input);
-    else
+    if (rank == 2) {
+      bool inputTypeIsCSR = hasRowOrdering(inputType);
+      if (inputTypeIsCSR)
+        nrow = rewriter.create<graphblas::NumRowsOp>(loc, input);
+      else
+        nrow = rewriter.create<graphblas::NumColsOp>(loc, input);
+    } else {
       // Vectors are stored as a 1xn matrix
       // so the code works correctly if we assume a single row
       nrow = c1;
+    }
 
     Value indexPos = (rank == 2 ? c1 : c0);
     Value Ap = rewriter.create<sparse_tensor::ToPointersOp>(

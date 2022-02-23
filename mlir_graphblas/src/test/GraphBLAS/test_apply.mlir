@@ -71,7 +71,7 @@ module {
     %20 = graphblas.apply %m_csr { apply_operator="column" } : (tensor<?x?xf64, #CSR>) to tensor<?x?xi64, #CSR>
     graphblas.print_tensor %20 { level=3 } : tensor<?x?xi64, #CSR>
 
-    // CSR apply div left
+    // CSR apply div right
     //
     // CHECK:      pointers=(0, 2, 5, 5, 6)
     // CHECK-NEXT: indices=(1, 2, 0, 3, 4, 2)
