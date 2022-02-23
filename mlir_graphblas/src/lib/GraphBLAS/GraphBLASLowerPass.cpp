@@ -16,12 +16,62 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "GraphBLAS/GraphBLASArrayUtils.h"
+#include "GraphBLAS/GraphBLASCommonPasses.h"
 #include "GraphBLAS/GraphBLASDialect.h"
 #include "GraphBLAS/GraphBLASPasses.h"
 #include "GraphBLAS/GraphBLASUtils.h"
 
 using namespace ::mlir;
 using namespace std::placeholders;
+
+LogicalResult
+LowerPrintRewrite::matchAndRewrite(graphblas::PrintOp op,
+                                   PatternRewriter &rewriter) const {
+
+  ModuleOp module = op->getParentOfType<ModuleOp>();
+  Location loc = op->getLoc();
+
+  for (auto enumerated_pair :
+       llvm::enumerate(llvm::zip_longest(op.strings(), op.values()))) {
+    auto pair = enumerated_pair.value();
+    Optional<Attribute> stringAttribute = std::get<0>(pair);
+    Optional<Value> val = std::get<1>(pair);
+
+    if (stringAttribute) {
+      StringRef currentString =
+          stringAttribute.getValue().dyn_cast<StringAttr>().getValue();
+      callPrintString(rewriter, module, loc, currentString);
+    } else if (enumerated_pair.index() != 0)
+      callPrintString(rewriter, module, loc, " ");
+
+    if (!val)
+      callPrintString(rewriter, module, loc, " ");
+    else if (val.getValue().getType().dyn_cast_or_null<RankedTensorType>())
+      callPrintTensor(rewriter, module, loc, val.getValue());
+    else
+      callPrintValue(rewriter, module, loc, val.getValue());
+  }
+  callPrintString(rewriter, module, loc, "\n");
+
+  rewriter.eraseOp(op);
+
+  return success();
+};
+
+LogicalResult
+LowerPrintTensorRewrite::matchAndRewrite(graphblas::PrintTensorOp op,
+                                         PatternRewriter &rewriter) const {
+  ModuleOp module = op->getParentOfType<ModuleOp>();
+  Location loc = op->getLoc();
+  Value input = op.input();
+  int64_t level = op.level();
+
+  callPrintTensorComponents(rewriter, module, loc, input, level);
+
+  rewriter.eraseOp(op);
+
+  return success();
+};
 
 namespace {
 
@@ -3938,62 +3988,6 @@ public:
   LogicalResult matchAndRewrite(graphblas::CommentOp op,
                                 PatternRewriter &rewriter) const override {
     rewriter.eraseOp(op);
-    return success();
-  };
-};
-
-class LowerPrintRewrite : public OpRewritePattern<graphblas::PrintOp> {
-public:
-  using OpRewritePattern<graphblas::PrintOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::PrintOp op,
-                                PatternRewriter &rewriter) const override {
-
-    ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = op->getLoc();
-
-    for (auto enumerated_pair :
-         llvm::enumerate(llvm::zip_longest(op.strings(), op.values()))) {
-      auto pair = enumerated_pair.value();
-      Optional<Attribute> stringAttribute = std::get<0>(pair);
-      Optional<Value> val = std::get<1>(pair);
-
-      if (stringAttribute) {
-        StringRef currentString =
-            stringAttribute.getValue().dyn_cast<StringAttr>().getValue();
-        callPrintString(rewriter, module, loc, currentString);
-      } else if (enumerated_pair.index() != 0)
-        callPrintString(rewriter, module, loc, " ");
-
-      if (!val)
-        callPrintString(rewriter, module, loc, " ");
-      else if (val.getValue().getType().dyn_cast_or_null<RankedTensorType>())
-        callPrintTensor(rewriter, module, loc, val.getValue());
-      else
-        callPrintValue(rewriter, module, loc, val.getValue());
-    }
-    callPrintString(rewriter, module, loc, "\n");
-
-    rewriter.eraseOp(op);
-
-    return success();
-  };
-};
-
-class LowerPrintTensorRewrite
-    : public OpRewritePattern<graphblas::PrintTensorOp> {
-public:
-  using OpRewritePattern<graphblas::PrintTensorOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::PrintTensorOp op,
-                                PatternRewriter &rewriter) const override {
-    ModuleOp module = op->getParentOfType<ModuleOp>();
-    Location loc = op->getLoc();
-    Value input = op.input();
-    int64_t level = op.level();
-
-    callPrintTensorComponents(rewriter, module, loc, input, level);
-
-    rewriter.eraseOp(op);
-
     return success();
   };
 };
