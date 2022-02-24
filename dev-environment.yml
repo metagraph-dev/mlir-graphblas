@@ -26,7 +26,7 @@ dependencies:
       - rst2pdf
 
 # dependencies (so setup.py develop doesn't pip install them)
-  - metagraph/label/dev::mlir # temp restriction to use metagraph dev label
+  - metagraph/label/dev::mlir-ac=14.0=*_0 # temp restriction to use metagraph dev label
   - metagraph::pymlir
   - scipy
   - conda-forge::grblas
