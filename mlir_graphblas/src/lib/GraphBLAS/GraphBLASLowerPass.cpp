@@ -25,9 +25,15 @@ using namespace ::mlir;
 using namespace std::placeholders;
 
 LogicalResult
+LowerCommentRewrite::matchAndRewrite(graphblas::CommentOp op,
+                                     PatternRewriter &rewriter) const {
+  rewriter.eraseOp(op);
+  return success();
+};
+
+LogicalResult
 LowerPrintRewrite::matchAndRewrite(graphblas::PrintOp op,
                                    PatternRewriter &rewriter) const {
-
   ModuleOp module = op->getParentOfType<ModuleOp>();
   Location loc = op->getLoc();
 
@@ -73,6 +79,88 @@ LowerPrintTensorRewrite::matchAndRewrite(graphblas::PrintTensorOp op,
   return success();
 };
 
+LogicalResult
+LowerSizeRewrite::matchAndRewrite(graphblas::SizeOp op,
+                                  PatternRewriter &rewriter) const {
+  Location loc = op->getLoc();
+
+  Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  Value inputTensor = op.input();
+  Value size = rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
+
+  rewriter.replaceOp(op, size);
+  return success();
+};
+
+LogicalResult
+LowerNumRowsRewrite::matchAndRewrite(graphblas::NumRowsOp op,
+                                     PatternRewriter &rewriter) const {
+  Location loc = op->getLoc();
+
+  Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  Value inputTensor = op.input();
+  Value nrows = rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
+
+  rewriter.replaceOp(op, nrows);
+  return success();
+};
+
+LogicalResult
+LowerNumColsRewrite::matchAndRewrite(graphblas::NumColsOp op,
+                                     PatternRewriter &rewriter) const {
+  Location loc = op->getLoc();
+
+  Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+  Value inputTensor = op.input();
+  Value ncols = rewriter.create<tensor::DimOp>(loc, inputTensor, c1);
+
+  rewriter.replaceOp(op, ncols);
+  return success();
+};
+
+LogicalResult
+LowerNumValsRewrite::matchAndRewrite(graphblas::NumValsOp op,
+                                     PatternRewriter &rewriter) const {
+  Location loc = op->getLoc();
+  Value inputTensor = op.input();
+  Type inputType = inputTensor.getType();
+
+  sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
+      sparse_tensor::getSparseTensorEncoding(inputType);
+  unsigned pointerBitWidth = sparseEncoding.getPointerBitWidth();
+  Type pointerType = rewriter.getIntegerType(pointerBitWidth);
+  Type indexType = rewriter.getIndexType();
+
+  // Access the pointers
+  Type memref1DPointerType = MemRefType::get({-1}, pointerType);
+  unsigned rank = inputType.dyn_cast<RankedTensorType>().getRank();
+  Value c_rank_minus_1 = rewriter.create<arith::ConstantIndexOp>(loc, rank - 1);
+  Value ptrs = rewriter.create<sparse_tensor::ToPointersOp>(
+      loc, memref1DPointerType, inputTensor, c_rank_minus_1);
+
+  // Find length of pointer array
+  Value npointers;
+  if (rank == 1) {
+    npointers = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+  } else {
+    Value dimForPointers;
+    if (hasRowOrdering(inputType)) {
+      dimForPointers = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    } else {
+      dimForPointers = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+    }
+    npointers =
+        rewriter.create<tensor::DimOp>(loc, inputTensor, dimForPointers);
+  }
+
+  // The last value from the pointers is the number of nonzero values
+  Value nnz_ptype = rewriter.create<memref::LoadOp>(loc, ptrs, npointers);
+  Value nnz = rewriter.create<arith::IndexCastOp>(loc, nnz_ptype, indexType);
+
+  rewriter.replaceOp(op, nnz);
+  return success();
+};
+
 namespace {
 
 //===----------------------------------------------------------------------===//
@@ -85,101 +173,6 @@ namespace {
 //===----------------------------------------------------------------------===//
 // Passes implementation.
 //===----------------------------------------------------------------------===//
-
-class LowerSizeRewrite : public OpRewritePattern<graphblas::SizeOp> {
-public:
-  using OpRewritePattern<graphblas::SizeOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::SizeOp op,
-                                PatternRewriter &rewriter) const override {
-    Location loc = op->getLoc();
-
-    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
-    Value inputTensor = op.input();
-    Value size = rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
-
-    rewriter.replaceOp(op, size);
-    return success();
-  };
-};
-
-class LowerNumRowsRewrite : public OpRewritePattern<graphblas::NumRowsOp> {
-public:
-  using OpRewritePattern<graphblas::NumRowsOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::NumRowsOp op,
-                                PatternRewriter &rewriter) const override {
-    Location loc = op->getLoc();
-
-    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
-    Value inputTensor = op.input();
-    Value nrows = rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
-
-    rewriter.replaceOp(op, nrows);
-    return success();
-  };
-};
-
-class LowerNumColsRewrite : public OpRewritePattern<graphblas::NumColsOp> {
-public:
-  using OpRewritePattern<graphblas::NumColsOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::NumColsOp op,
-                                PatternRewriter &rewriter) const override {
-    Location loc = op->getLoc();
-
-    Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    Value inputTensor = op.input();
-    Value ncols = rewriter.create<tensor::DimOp>(loc, inputTensor, c1);
-
-    rewriter.replaceOp(op, ncols);
-    return success();
-  };
-};
-
-class LowerNumValsRewrite : public OpRewritePattern<graphblas::NumValsOp> {
-public:
-  using OpRewritePattern<graphblas::NumValsOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::NumValsOp op,
-                                PatternRewriter &rewriter) const override {
-    Location loc = op->getLoc();
-    Value inputTensor = op.input();
-    Type inputType = inputTensor.getType();
-
-    sparse_tensor::SparseTensorEncodingAttr sparseEncoding =
-        sparse_tensor::getSparseTensorEncoding(inputType);
-    unsigned pointerBitWidth = sparseEncoding.getPointerBitWidth();
-    Type pointerType = rewriter.getIntegerType(pointerBitWidth);
-    Type indexType = rewriter.getIndexType();
-
-    // Access the pointers
-    Type memref1DPointerType = MemRefType::get({-1}, pointerType);
-    unsigned rank = inputType.dyn_cast<RankedTensorType>().getRank();
-    Value c_rank_minus_1 =
-        rewriter.create<arith::ConstantIndexOp>(loc, rank - 1);
-    Value ptrs = rewriter.create<sparse_tensor::ToPointersOp>(
-        loc, memref1DPointerType, inputTensor, c_rank_minus_1);
-
-    // Find length of pointer array
-    Value npointers;
-    if (rank == 1) {
-      npointers = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    } else {
-      Value dimForPointers;
-      if (hasRowOrdering(inputType)) {
-        dimForPointers = rewriter.create<arith::ConstantIndexOp>(loc, 0);
-      } else {
-        dimForPointers = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-      }
-      npointers =
-          rewriter.create<tensor::DimOp>(loc, inputTensor, dimForPointers);
-    }
-
-    // The last value from the pointers is the number of nonzero values
-    Value nnz_ptype = rewriter.create<memref::LoadOp>(loc, ptrs, npointers);
-    Value nnz = rewriter.create<arith::IndexCastOp>(loc, nnz_ptype, indexType);
-
-    rewriter.replaceOp(op, nnz);
-    return success();
-  };
-};
 
 class LowerDupRewrite : public OpRewritePattern<graphblas::DupOp> {
 public:
@@ -3980,16 +3973,6 @@ private:
 
     return success();
   }
-};
-
-class LowerCommentRewrite : public OpRewritePattern<graphblas::CommentOp> {
-public:
-  using OpRewritePattern<graphblas::CommentOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(graphblas::CommentOp op,
-                                PatternRewriter &rewriter) const override {
-    rewriter.eraseOp(op);
-    return success();
-  };
 };
 
 class LowerMatrixSelectRandomRewrite
