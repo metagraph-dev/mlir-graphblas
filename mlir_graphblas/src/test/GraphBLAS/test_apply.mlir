@@ -1,4 +1,5 @@
 // RUN: graphblas-opt %s | graphblas-exec entry | FileCheck %s
+// RUN: graphblas-opt %s | graphblas-linalg-exec entry | FileCheck %s
 
 #CSR = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],
@@ -53,14 +54,16 @@ module {
     //
     // CHECK:      pointers=(0, 1, 2, 4, 5, 6)
     // CHECK-NEXT: indices=(1, 0, 0, 3, 1, 1)
-    // CHECK-NEXT: values=(-3, -1, -2, -6, -4, -5)
+    // CHECK-NEXT: values=(-6, -2, -4, -12, -8, -10)
     //
-    %10 = graphblas.apply_generic %m_csc : tensor<?x?xf64, #CSC> to tensor<?x?xf64, #CSC> {
+    %10 = arith.constant 2.0 : f64
+    %11 = graphblas.apply_generic %m_csc : tensor<?x?xf64, #CSC> to tensor<?x?xf64, #CSC> {
       ^bb0(%val: f64):
-        %result = arith.negf %val : f64
+        %negative_val = arith.negf %val: f64
+        %result = arith.mulf %negative_val, %10 : f64
         graphblas.yield transform_out %result : f64
     }
-    graphblas.print_tensor %10 { level=3 } : tensor<?x?xf64, #CSC>
+    graphblas.print_tensor %11 { level=3 } : tensor<?x?xf64, #CSC>
 
     // CSR apply column
     //
@@ -117,17 +120,6 @@ module {
     %two_i32 = arith.constant 2 : i32
     %120 = graphblas.apply %v_cv, %two_i32 { apply_operator="gt" } : (tensor<?xi32, #CV>, i32) to tensor<?xi8, #CV>
     graphblas.print_tensor %120 { level=0 } : tensor<?xi8, #CV>
-
-    // CV apply in place
-    //
-    // CHECK: [_, 0.479426, 0.863209, _, 0.916166, -0.57844, _, _]
-    //
-    %130 = arith.constant sparse<[
-      [1], [2], [4], [5]
-    ], [0.5, 2.1, -4.3, -6.9]> : tensor<8xf32>
-    %131 = sparse_tensor.convert %130 : tensor<8xf32> to tensor<?xf32, #CV>
-    graphblas.apply %131 { apply_operator="sin", in_place=true } : (tensor<?xf32, #CV>) to tensor<?xf32, #CV>
-    graphblas.print_tensor %131 { level=0 } : tensor<?xf32, #CV>
 
     return
   }

@@ -43,21 +43,47 @@ public:
                                 PatternRewriter &rewriter) const override {
 
     MLIRContext *context = op.getContext();
-    ModuleOp module = op->getParentOfType<ModuleOp>();
+    // ModuleOp mod = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
+    // sparse tensor rewriting of linalg.generic does not handle overwriting
+    // tensors
+    if (op.in_place())
+      return rewriter.notifyMatchFailure(op, "in_place=true");
+
     Value inputTensor = op.input();
+    RankedTensorType inputTensorType =
+        inputTensor.getType().cast<RankedTensorType>();
     RankedTensorType outputTensorType =
         op.getResult().getType().cast<RankedTensorType>();
-    // bool inPlace = op.in_place();
+    sparse_tensor::SparseTensorEncodingAttr inEncoding =
+        sparse_tensor::getSparseTensorEncoding(inputTensorType);
+    sparse_tensor::SparseTensorEncodingAttr outEncoding =
+        sparse_tensor::getSparseTensorEncoding(outputTensorType);
 
-    Value c0 = rewriter.create<arith::ConstantIndexOp>(loc, 0);
-    Value c1 = rewriter.create<arith::ConstantIndexOp>(loc, 1);
-    Value nrows = rewriter.create<tensor::DimOp>(loc, inputTensor, c0);
-    Value ncols = rewriter.create<tensor::DimOp>(loc, inputTensor, c1);
+    Value accumulatorTensor;
+    SmallVector<AffineMap, 2> affineMaps;
+    SmallVector<StringRef, 2> iteratorTypes;
 
-    Value accumulatorTensor = rewriter.create<sparse_tensor::InitOp>(
-        loc, outputTensorType, ValueRange{nrows, ncols});
+    unsigned rank = inputTensorType.getRank();
+    if (rank == 1) {
+      Value size = rewriter.create<graphblas::SizeOp>(loc, inputTensor);
+      accumulatorTensor = rewriter.create<sparse_tensor::InitOp>(
+          loc, outputTensorType, ValueRange{size});
+      AffineMap map = AffineMap::getMultiDimIdentityMap(1, context);
+      affineMaps.push_back(map);
+      affineMaps.push_back(map);
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+    } else {
+      Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
+      Value ncols = rewriter.create<graphblas::NumColsOp>(loc, inputTensor);
+      accumulatorTensor = rewriter.create<sparse_tensor::InitOp>(
+          loc, outputTensorType, ValueRange{nrows, ncols});
+      affineMaps.push_back(inEncoding.getDimOrdering());
+      affineMaps.push_back(outEncoding.getDimOrdering());
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+    }
 
     // Required blocks
     RegionRange extensions = op.extensions();
@@ -71,42 +97,45 @@ public:
       return extractResult;
     }
 
-    graphblas::YieldOp transformOutYield =
-        llvm::dyn_cast_or_null<graphblas::YieldOp>(
-            extBlocks.transformOut->getTerminator());
-
-    AffineMap map =
-        AffineMap::getPermutationMap(ArrayRef<unsigned>{1, 0}, context);
-    SmallVector<AffineMap, 2> affineMaps = {map, map};
-    SmallVector<StringRef> iteratorTypes = {getParallelIteratorTypeName(),
-                                            getParallelIteratorTypeName()};
-
     linalg::GenericOp linalgGenericOp = rewriter.create<linalg::GenericOp>(
         loc, outputTensorType, inputTensor, accumulatorTensor, affineMaps,
         iteratorTypes,
         [&](OpBuilder &nestedBuilder, Location nestedLoc,
             ValueRange blockArgs) {
-          ValueRange arguments = nestedBuilder.getBlock()->getArguments();
-          ValueRange subVals = ValueRange{arguments.front()};
-          rewriter.mergeBlocks(extBlocks.transformOut, nestedBuilder.getBlock(),
-                               subVals);
-          Value result = transformOutYield.values().front();
-          nestedBuilder.create<linalg::YieldOp>(loc, result);
+          ValueRange arguments =
+              nestedBuilder.getBlock()->getArguments().front();
+          sparse_tensor::LinalgApplyOp linalg_apply =
+              nestedBuilder.create<sparse_tensor::LinalgApplyOp>(
+                  nestedLoc, outputTensorType.getElementType(), arguments);
+          // Move tranform out block into linalg_apply
+          Region *origRegion = extBlocks.transformOut->getParent();
+          linalg_apply.getRegion().takeBody(*origRegion);
+          // Replace graphblas.yield with sparse_tensor.linalg_yield
+          graphblas::YieldOp graphblasYield =
+              llvm::dyn_cast_or_null<graphblas::YieldOp>(
+                  linalg_apply.getRegion().front().getTerminator());
+          nestedBuilder.setInsertionPointAfter(graphblasYield);
+          rewriter.replaceOpWithNewOp<sparse_tensor::LinalgYieldOp>(
+              graphblasYield, graphblasYield.values().front());
+          // Add linalg.yield
+          nestedBuilder.setInsertionPointAfter(linalg_apply);
+          Value result = linalg_apply.getResult();
+          nestedBuilder.create<linalg::YieldOp>(nestedLoc, result);
         });
-    rewriter.eraseOp(transformOutYield);
     Value output = linalgGenericOp.getResult(0);
 
     rewriter.replaceOp(op, output);
-
-    cleanupIntermediateTensor(rewriter, module, loc, output);
 
     return success();
   };
 };
 
 void populateGraphBLASLinalgLoweringPatterns(RewritePatternSet &patterns) {
-  patterns.add<LinalgLowerApplyGenericRewrite, LowerPrintRewrite,
-               LowerPrintTensorRewrite>(patterns.getContext());
+  patterns.add<LinalgLowerApplyGenericRewrite,
+               // Common items
+               LowerCommentRewrite, LowerPrintRewrite, LowerPrintTensorRewrite,
+               LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
+               LowerNumValsRewrite>(patterns.getContext());
 }
 
 struct GraphBLASLinalgLoweringPass
@@ -114,11 +143,19 @@ struct GraphBLASLinalgLoweringPass
   void runOnOperation() override {
     MLIRContext *ctx = &getContext();
     RewritePatternSet patterns(ctx);
-    ConversionTarget target(*ctx);
     populateGraphBLASLinalgLoweringPatterns(patterns);
     (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
-    // TODO test that this actually gives us a useful error messages
-    target.addIllegalDialect<graphblas::GraphBLASDialect>();
+
+    // Verify that expected operations were actually handled
+    ConversionTarget target(*ctx);
+    target.addIllegalOp<graphblas::ApplyGenericOp>();
+    // ApplyGeneric with inplace=true is not handled
+    target.addDynamicallyLegalOp<graphblas::ApplyGenericOp>(
+        [](graphblas::ApplyGenericOp op) { return op.in_place(); });
+    RewritePatternSet noPatterns(ctx);
+    if (failed(applyPartialConversion(getOperation(), target,
+                                      std::move(noPatterns))))
+      signalPassFailure();
   }
 };
 
