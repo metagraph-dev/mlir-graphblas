@@ -67,6 +67,17 @@ module {
     %20 = graphblas.convert_layout %m_csc : tensor<?x?xf64, #CSC> to tensor<?x?xf64, #CSC>
     graphblas.print_tensor %20 { level=5 } : tensor<?x?xf64, #CSC>
 
+    // CSR -> CSR (should be unchanged)
+    //
+    // CHECK:      rev=(0, 1)
+    // CHECK-NEXT: shape=(4, 5)
+    // CHECK-NEXT: pointers=(0, 2, 5, 5, 6)
+    // CHECK-NEXT: indices=(1, 2, 0, 3, 4, 2)
+    // CHECK-NEXT: values=(1, 2, 3, 4, 5, 6)
+    //
+    %30 = graphblas.convert_layout %10 : tensor<?x?xf64, #CSR> to tensor<?x?xf64, #CSR>
+    graphblas.print_tensor %30 { level=5 } : tensor<?x?xf64, #CSR>
+
     return
   }
 }
