@@ -20,7 +20,7 @@
   indexBitWidth = 64
 }>
 
-func @main() -> () {    
+func @main() -> () {
     %mat_dense = arith.constant dense<[
         [0, 1, 2, 0],
         [0, 0, 0, 3]
@@ -42,7 +42,7 @@ func @main() -> () {
     %answer_3 = graphblas.reduce_to_scalar %vec { aggregator = "argmax" } : tensor<?xi64, #CV64> to i64
     // CHECK: answer_3 4
     graphblas.print %answer_3 { strings = ["answer_3 "] } : i64
-    
+
     return
 }
 
