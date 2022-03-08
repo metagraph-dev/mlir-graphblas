@@ -130,8 +130,103 @@ public:
   };
 };
 
+class LinalgLowerIntersectGenericRewrite
+    : public OpRewritePattern<graphblas::IntersectGenericOp> {
+public:
+  using OpRewritePattern<graphblas::IntersectGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::IntersectGenericOp op,
+                                PatternRewriter &rewriter) const override {
+
+    MLIRContext *context = op.getContext();
+    ModuleOp mod = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Value a = op.a();
+    Value b = op.b();
+    RankedTensorType inputTensorType = a.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType outputTensorType =
+        op.getResult().getType().dyn_cast<RankedTensorType>();
+    sparse_tensor::SparseTensorEncodingAttr inEncoding =
+        sparse_tensor::getSparseTensorEncoding(inputTensorType);
+    sparse_tensor::SparseTensorEncodingAttr outEncoding =
+        sparse_tensor::getSparseTensorEncoding(outputTensorType);
+
+    Value outputTensor;
+    SmallVector<AffineMap, 2> affineMaps;
+    SmallVector<StringRef, 2> iteratorTypes;
+
+    unsigned rank = inputTensorType.getRank(); // ranks guaranteed to be equal
+    if (rank == 1) {
+      Value size = rewriter.create<graphblas::SizeOp>(loc, a);
+      outputTensor = rewriter.create<sparse_tensor::InitOp>(
+          loc, outputTensorType, ValueRange{size});
+      AffineMap map = AffineMap::getMultiDimIdentityMap(1, context);
+      affineMaps.push_back(map);
+      affineMaps.push_back(map);
+      affineMaps.push_back(map);
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+    } else {
+      Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, a);
+      Value ncols = rewriter.create<graphblas::NumColsOp>(loc, a);
+      outputTensor = rewriter.create<sparse_tensor::InitOp>(
+          loc, outputTensorType, ValueRange{nrows, ncols});
+      affineMaps.push_back(inEncoding.getDimOrdering());
+      affineMaps.push_back(inEncoding.getDimOrdering());
+      affineMaps.push_back(outEncoding.getDimOrdering());
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+    }
+
+    // Required blocks
+    RegionRange extensions = op.extensions();
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {
+        graphblas::YieldKind::MULT};
+    LogicalResult extractResult =
+        extBlocks.extractBlocks(op, extensions, required, {});
+
+    if (extractResult.failed()) {
+      return extractResult;
+    }
+
+    linalg::GenericOp linalgGenericOp = rewriter.create<linalg::GenericOp>(
+        loc, outputTensorType, ValueRange{a, b}, outputTensor, affineMaps,
+        iteratorTypes,
+        [&](OpBuilder &nestedBuilder, Location nestedLoc,
+            ValueRange blockArgs) {
+          ValueRange arguments =
+              nestedBuilder.getBlock()->getArguments().take_front(2);
+          sparse_tensor::LinalgIntersectOp linalg_intersect =
+              nestedBuilder.create<sparse_tensor::LinalgIntersectOp>(
+                  nestedLoc, outputTensorType.getElementType(), arguments);
+          // Move mult block into linalg_intersect
+          Region *origRegion = extBlocks.mult->getParent();
+          linalg_intersect.getRegion().takeBody(*origRegion);
+          // Replace graphblas.yield with sparse_tensor.linalg_yield
+          graphblas::YieldOp graphblasYield =
+              llvm::dyn_cast_or_null<graphblas::YieldOp>(
+                  linalg_intersect.getRegion().front().getTerminator());
+          nestedBuilder.setInsertionPointAfter(graphblasYield);
+          rewriter.replaceOpWithNewOp<sparse_tensor::LinalgYieldOp>(
+              graphblasYield, graphblasYield.values().front());
+          // Add linalg.yield
+          nestedBuilder.setInsertionPointAfter(linalg_intersect);
+          Value result = linalg_intersect.getResult();
+          nestedBuilder.create<linalg::YieldOp>(nestedLoc, result);
+        });
+    Value output = linalgGenericOp.getResult(0);
+
+    rewriter.replaceOp(op, output);
+
+    //mod->dump();
+
+    return success();
+  };
+};
+
 void populateGraphBLASLinalgLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<LinalgLowerApplyGenericRewrite,
+               LinalgLowerIntersectGenericRewrite,
                // Common items
                LowerCommentRewrite, LowerPrintRewrite, LowerPrintTensorRewrite,
                LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
