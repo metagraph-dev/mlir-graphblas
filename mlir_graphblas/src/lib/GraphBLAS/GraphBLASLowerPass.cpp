@@ -2548,8 +2548,6 @@ public:
     ModuleOp module = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
-    Type valueType =
-        op.input().getType().cast<RankedTensorType>().getElementType();
     bool maskComplement = op.mask_complement();
     bool replace = op.replace();
     llvm::Optional<llvm::StringRef> accumulateOperator =
