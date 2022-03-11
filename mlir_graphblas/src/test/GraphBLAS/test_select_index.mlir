@@ -1,4 +1,5 @@
 // RUN: graphblas-opt %s | graphblas-exec entry | FileCheck %s
+// RUN: graphblas-opt %s | graphblas-linalg-exec entry | FileCheck %s
 
 #CSR = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],
@@ -43,38 +44,6 @@ module {
     //
     %0 = graphblas.select %m_csr { selector="triu" } : tensor<?x?xf64, #CSR> to tensor<?x?xf64, #CSR>
     graphblas.print_tensor %0 { level=4 } : tensor<?x?xf64, #CSR>
-
-    // CSC select lt thunk
-    //
-    // CHECK:      shape=(4, 5)
-    // CHECK-NEXT: pointers=(0, 1, 2, 3, 3, 3)
-    // CHECK-NEXT: indices=(1, 0, 0)
-    // CHECK-NEXT: values=(3, 1, 2)
-    //
-    %10 = arith.constant 3.5 : f64
-    %11 = graphblas.select %m_csc, %10 { selector="lt" } : tensor<?x?xf64, #CSC>, f64 to tensor<?x?xf64, #CSC>
-    graphblas.print_tensor %11 { level=4 } : tensor<?x?xf64, #CSC>
-
-
-    ///////////////
-    // Test Vector
-    ///////////////
-
-    %v = arith.constant sparse<[
-      [1], [2], [4], [7]
-    ], [1, 2, 3, 4]> : tensor<9xi32>
-    %v_cv = sparse_tensor.convert %v : tensor<9xi32> to tensor<?xi32, #CV>
-
-    // CV select eq thunk with empty result
-    //
-    // CHECK:      shape=(9)
-    // CHECK-NEXT: pointers=(0, 0)
-    // CHECK-NEXT: indices=()
-    // CHECK-NEXT: values=()
-    //
-    %20 = arith.constant 6 : i32
-    %21 = graphblas.select %v_cv, %20 { selector="eq" } : tensor<?xi32, #CV>, i32 to tensor<?xi32, #CV>
-    graphblas.print_tensor %21 { level=4 } : tensor<?xi32, #CV>
 
     return
   }

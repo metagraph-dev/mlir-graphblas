@@ -1,4 +1,5 @@
 // RUN: graphblas-opt %s | graphblas-exec main | FileCheck %s
+// RUN: graphblas-opt %s | graphblas-linalg-exec main | FileCheck %s
 
 #CSR64 = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],
@@ -42,14 +43,10 @@ func @main() -> () {
     // CHECK-NEXT: answer_2 [8, 11]
     graphblas.print %answer_2 { strings = ["answer_2 "] } : tensor<?xi64, #CV64>
 
-    %answer_3 = graphblas.matrix_multiply %a_csc, %b { semiring = "any_overlapi" } : (tensor<?x?xi64, #CSC64>, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
-    // CHECK-NEXT: answer_3 [1, 3]
-    graphblas.print %answer_3 { strings = ["answer_3 "] } : tensor<?xi64, #CV64>
-
     %answer_4 = graphblas.matrix_multiply %a_csc, %b { semiring = "any_pair" } : (tensor<?x?xi64, #CSC64>, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
     // CHECK-NEXT: answer_4 [1, 1]
     graphblas.print %answer_4 { strings = ["answer_4 "] } : tensor<?xi64, #CV64>
-    
+
     %answer_5 = graphblas.matrix_multiply %a_csr, %b, %mask { semiring = "plus_times" } : (tensor<?x?xi64, #CSR64>, tensor<?xi64, #CV64>, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
     // CHECK-NEXT: answer_5 [7, _]
     graphblas.print %answer_5 { strings = ["answer_5 "] } : tensor<?xi64, #CV64>
@@ -57,10 +54,6 @@ func @main() -> () {
     %answer_6 = graphblas.matrix_multiply %a_csr, %b, %mask { semiring = "min_plus" } : (tensor<?x?xi64, #CSR64>, tensor<?xi64, #CV64>, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
     // CHECK-NEXT: answer_6 [8, _]
     graphblas.print %answer_6 { strings = ["answer_6 "] } : tensor<?xi64, #CV64>
-
-    %answer_7 = graphblas.matrix_multiply %a_csc, %b, %mask { semiring = "any_overlapi" } : (tensor<?x?xi64, #CSC64>, tensor<?xi64, #CV64>, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
-    // CHECK-NEXT: answer_7 [1, _]
-    graphblas.print %answer_7 { strings = ["answer_7 "] } : tensor<?xi64, #CV64>
 
     %answer_8 = graphblas.matrix_multiply %a_csc, %b, %mask { semiring = "any_pair" } : (tensor<?x?xi64, #CSC64>, tensor<?xi64, #CV64>, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
     // CHECK-NEXT: answer_8 [1, _]
@@ -73,14 +66,6 @@ func @main() -> () {
     %answer_10 = graphblas.matrix_multiply %a_csr, %b, %mask { semiring = "min_plus" } : (tensor<?x?xi64, #CSR64>, tensor<?xi64, #CV64>, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
     // CHECK-NEXT: answer_10 [8, _]
     graphblas.print %answer_10 { strings = ["answer_10 "] } : tensor<?xi64, #CV64>
-
-    %answer_11 = graphblas.matrix_multiply %a_csc, %b, %mask { semiring = "any_overlapi" } : (tensor<?x?xi64, #CSC64>, tensor<?xi64, #CV64>, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
-    // CHECK-NEXT: answer_11 [1, _]
-    graphblas.print %answer_11 { strings = ["answer_11 "] } : tensor<?xi64, #CV64>
-
-    %answer_12 = graphblas.matrix_multiply %a_csc, %b, %mask { semiring = "any_pair", mask_complement = true } : (tensor<?x?xi64, #CSC64>, tensor<?xi64, #CV64>, tensor<?xi64, #CV64>) to tensor<?xi64, #CV64>
-    // CHECK-NEXT: answer_12 [_, 1]
-    graphblas.print %answer_12 { strings = ["answer_12 "] } : tensor<?xi64, #CV64>
 
     return
 }

@@ -1,4 +1,4 @@
-// RUN: graphblas-opt %s | graphblas-opt --graphblas-structuralize | FileCheck %s
+// RUN: graphblas-opt %s | graphblas-opt --graphblas-dwim --graphblas-structuralize | FileCheck %s
 
 #CSR64 = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],

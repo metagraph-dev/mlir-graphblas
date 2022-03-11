@@ -679,16 +679,30 @@ public:
   };
 };
 
+void populateGraphBLASDWIMPatterns(RewritePatternSet &patterns) {
+  patterns.add<TransposeDWIMRewrite, ReduceToVectorDWIMRewrite,
+               MatrixMultiplyGenericDWIMFirstArgRewrite,
+               MatrixMultiplyGenericDWIMSecondArgRewrite,
+               MatrixMultiplyGenericDWIMMaskRewrite,
+               MatrixMultiplyReduceToScalarGenericDWIMFirstArgRewrite,
+               MatrixMultiplyReduceToScalarGenericDWIMSecondArgRewrite,
+               MatrixMultiplyReduceToScalarGenericDWIMMaskRewrite>(
+      patterns.getContext());
+}
+
+struct GraphBLASDWIMPass : public GraphBLASDWIMBase<GraphBLASDWIMPass> {
+  void runOnOperation() override {
+    MLIRContext *ctx = &getContext();
+    RewritePatternSet patterns(ctx);
+    ConversionTarget target(*ctx);
+    populateGraphBLASDWIMPatterns(patterns);
+    (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+  }
+};
+
 void populateGraphBLASStructuralizePatterns(RewritePatternSet &patterns) {
   patterns
-      .add<TransposeDWIMRewrite, ReduceToVectorDWIMRewrite,
-           MatrixMultiplyGenericDWIMFirstArgRewrite,
-           MatrixMultiplyGenericDWIMSecondArgRewrite,
-           MatrixMultiplyGenericDWIMMaskRewrite,
-           MatrixMultiplyReduceToScalarGenericDWIMFirstArgRewrite,
-           MatrixMultiplyReduceToScalarGenericDWIMSecondArgRewrite,
-           MatrixMultiplyReduceToScalarGenericDWIMMaskRewrite,
-           LowerMatrixMultiplyRewrite, LowerApplyRewrite, LowerSelectRewrite,
+      .add<LowerMatrixMultiplyRewrite, LowerApplyRewrite, LowerSelectRewrite,
            LowerUnionRewrite, LowerIntersectRewrite, LowerUpdateRewrite,
            LowerReduceToVectorRewrite, LowerReduceToScalarRewrite>(
           patterns.getContext());
@@ -705,6 +719,10 @@ struct GraphBLASStructuralizePass
   }
 };
 } // end anonymous namespace
+
+std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASDWIMPass() {
+  return std::make_unique<GraphBLASDWIMPass>();
+}
 
 std::unique_ptr<OperationPass<ModuleOp>>
 mlir::createGraphBLASStructuralizePass() {

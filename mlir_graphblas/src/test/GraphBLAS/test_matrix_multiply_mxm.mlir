@@ -65,7 +65,7 @@ func @main() -> () {
     // CHECK-NEXT:   [1, 1]
     // CHECK-NEXT: ]
     graphblas.print %answer_4 { strings = ["answer_4 "] } : tensor<?x?xi64, #CSR64>
-    
+
     %answer_5 = graphblas.matrix_multiply %a_csr, %b_csr, %mask_csr { semiring = "plus_times" } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSR64>) to tensor<?x?xi64, #CSR64>
     // CHECK-NEXT: answer_5 [
     // CHECK-NEXT:   [14, _],
@@ -93,7 +93,7 @@ func @main() -> () {
     // CHECK-NEXT:   [_, 1]
     // CHECK-NEXT: ]
     graphblas.print %answer_8 { strings = ["answer_8 "] } : tensor<?x?xi64, #CSR64>
-    
+
     %answer_9 = graphblas.matrix_multiply %a_csr, %b_csr, %mask_csc { semiring = "plus_times" } : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to tensor<?x?xi64, #CSR64>
     // CHECK-NEXT: answer_9 [
     // CHECK-NEXT:   [14, _],

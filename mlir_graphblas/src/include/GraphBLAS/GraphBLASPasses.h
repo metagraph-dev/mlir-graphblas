@@ -16,6 +16,7 @@ std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASLoweringPass();
 std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASLinalgLoweringPass();
 std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASOptimizePass();
 std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASStructuralizePass();
+std::unique_ptr<OperationPass<ModuleOp>> createGraphBLASDWIMPass();
 } // namespace mlir
 
 //===----------------------------------------------------------------------===//
