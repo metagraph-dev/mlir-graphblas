@@ -352,19 +352,19 @@ def GraphBLAS_ReduceToVectorGenericOp : GraphBLAS_Op<"reduce_to_vector_generic",
 
         Example:
         ```mlir
-        %vec1 = graphblas.reduce_to_vector %matrix_1 { axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #CV64> {
+        %vec1 = graphblas.reduce_to_vector_generic %matrix_1 { axis = 0 } : tensor<7x9xf16, #CSR64> to tensor<9xf16, #CV64> {
               graphblas.yield agg_identity %cf0 : f16
           },  {
             ^bb0(%a : f16, %b : f16):
               %result = arith.addf %a, %b : f16
               graphblas.yield agg %result : f16
           }
-        %vec2 = graphblas.reduce_to_vector %matrix_2, %mask { axis = 1, mask_complement = true } : tensor<7x9xi64, #CSR64>, tensor<7xi64, #CV64> to tensor<7xi64, #CV64> {
+        %vec2 = graphblas.reduce_to_vector_generic %matrix_2, %mask { axis = 1, mask_complement = true } : tensor<7x9xi64, #CSR64>, tensor<7xi64, #CV64> to tensor<7xi64, #CV64> {
               graphblas.yield agg_identity %ci0 : i64
           },  {
             ^bb0(%a : i64, %b : i64):
               %cmp = arith.cmpi "slt", %a, %b : i64
-              %result = select %cmp, %a, %b : i64
+              %result = arith.select %cmp, %a, %b : i64
               graphblas.yield agg %result : i64
           }
         ```
@@ -907,7 +907,7 @@ def GraphBLAS_UpdateGenericOp : GraphBLAS_Op<"update_generic", []> {
 
         Example:
         ```mlir
-        graphblas.update %other_mat -> %mat(%mask) { replace = true, mask_complement = true } :
+        graphblas.update_generic %other_mat -> %mat(%mask) { replace = true, mask_complement = true } :
             tensor<?x?xi64, #CSR64> -> tensor<?x?xf64, #CSR64>(tensor<?x?xf64, #CSR64>) {
             ^bb0(%a : f64, %b : f64):
               %result = arith.addf %a, %b : f64
@@ -915,7 +915,7 @@ def GraphBLAS_UpdateGenericOp : GraphBLAS_Op<"update_generic", []> {
         }
         ```
         ```mlir
-        graphblas.update %other_vec -> %vec : tensor<?xi64, #CV64> -> tensor<?xi64, #CV64> {
+        graphblas.update_generic %other_vec -> %vec : tensor<?xi64, #CV64> -> tensor<?xi64, #CV64> {
             ^bb0(%a : i64, %b : i64):
               %result = arith.muli %a, %b : i64
               graphblas.yield accumulate %result : i64
@@ -1298,7 +1298,7 @@ def GraphBLAS_FromCoordinatesOp : GraphBLAS_Op<"from_coo", [NoSideEffect]> {
         The indices must be *sorted* or things break badly.
 
         ```mlir
-        %v = graphblas.from_coo %indices, %vals : tensor<?xindex>, tensor<?xf64> to tensor<?xf64, #CSR64>
+        %v = graphblas.from_coo %indices, %vals : tensor<?xindex>, tensor<?xf64> to tensor<?x?xf64, #CSR64>
         ```
     }];
 
@@ -1324,7 +1324,7 @@ def GraphBLAS_ToCoordinatesOp : GraphBLAS_Op<"to_coo", [NoSideEffect]> {
         as `tensor<?xVALUE_TYPE>`
 
         ```mlir
-        %indices, %vals = graphblas.to_coo %v : tensor<?xf64, #CSR64> to tensor<?x?xindex>, tensor<?xf64>
+        %indices, %vals = graphblas.to_coo %v : tensor<?x?xf64, #CSR64> to tensor<?x?xindex>, tensor<?xf64>
         ```
     }];
 
