@@ -20,6 +20,9 @@
   indexBitWidth = 64
 }>
 
+// COM: linalg-lower doesn't has a bug which affects reduceToVector with lex_insert order
+// COM: It should work like CSR@CSC, but it doesn't
+
 func @main() -> () {
     %ci0 = arith.constant 0 : i64
 
@@ -49,7 +52,7 @@ func @main() -> () {
     }
     // CHECK: answer_1 [3, _]
     graphblas.print %answer_1 { strings = ["answer_1 "] } : tensor<?xi64, #CV64>
-    
+
     %answer_2 = graphblas.reduce_to_vector_generic %mat_csc, %mask_4_cv { axis = 0 } : tensor<?x?xi64, #CSC64>, tensor<?xi64, #CV64> to tensor<?xi64, #CV64> {
         graphblas.yield agg_identity %ci0 : i64
     },  {
@@ -59,7 +62,11 @@ func @main() -> () {
     }
     // CHECK-NEXT: answer_2 [_, _, 5, _]
     graphblas.print %answer_2 { strings = ["answer_2 "] } : tensor<?xi64, #CV64>
-    
+
+    %answer_20 = graphblas.reduce_to_vector %mat_csc { aggregator = "max", axis = 0 } : tensor<?x?xi64, #CSC64> to tensor<?xi64, #CV64>
+    // CHECK-NEXT: answer_20 [_, 1, 3, 4]
+    graphblas.print %answer_20 { strings = ["answer_20 "] } : tensor<?xi64, #CV64>
+
     return
 }
 

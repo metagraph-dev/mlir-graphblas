@@ -184,6 +184,58 @@ public:
   };
 };
 
+class LinalgLowerUnionGenericRewrite
+    : public OpRewritePattern<graphblas::UnionGenericOp> {
+public:
+  using OpRewritePattern<graphblas::UnionGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::UnionGenericOp op,
+                                PatternRewriter &rewriter) const override {
+    // ModuleOp mod = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    // Required blocks
+    RegionRange extensions = op.extensions();
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {graphblas::YieldKind::MULT};
+    LogicalResult extractResult =
+        extBlocks.extractBlocks(op, extensions, required, {});
+
+    if (extractResult.failed()) {
+      return extractResult;
+    }
+
+    Value a = op.a();
+    Value b = op.b();
+    RankedTensorType outputTensorType =
+        op.getResult().getType().dyn_cast<RankedTensorType>();
+
+    SmallVector<AffineMap, 3> affineMaps;
+    SmallVector<StringRef, 2> iteratorTypes;
+    Value outputTensor = buildSameShapeOutput(op, rewriter, a, outputTensorType,
+                                              affineMaps, iteratorTypes, true);
+
+    linalg::GenericOp linalgGenericOp = rewriter.create<linalg::GenericOp>(
+        loc, outputTensorType, ValueRange{a, b}, outputTensor, affineMaps,
+        iteratorTypes,
+        [&](OpBuilder &nestedBuilder, Location nestedLoc,
+            ValueRange blockArgs) {
+          ValueRange arguments =
+              nestedBuilder.getBlock()->getArguments().take_front(2);
+          sparse_tensor::LinalgUnionOp unionOp =
+              nestedBuilder.create<sparse_tensor::LinalgUnionOp>(
+                  nestedLoc, outputTensorType.getElementType(), arguments);
+          moveBlock(rewriter, extBlocks.mult, unionOp.getRegion());
+          nestedBuilder.setInsertionPointAfter(unionOp);
+          nestedBuilder.create<linalg::YieldOp>(nestedLoc, unionOp.getResult());
+        });
+    Value output = linalgGenericOp.getResult(0);
+
+    rewriter.replaceOp(op, output);
+
+    return success();
+  };
+};
+
 class LinalgLowerMatrixMultiplyGenericRewrite
     : public OpRewritePattern<graphblas::MatrixMultiplyGenericOp> {
 public:
@@ -623,12 +675,66 @@ public:
   };
 };
 
+class LinalgLowerSelectMaskRewrite
+    : public OpRewritePattern<graphblas::SelectMaskOp> {
+public:
+  using OpRewritePattern<graphblas::SelectMaskOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::SelectMaskOp op,
+                                PatternRewriter &rewriter) const override {
+    ModuleOp module = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    // Inputs
+    Value input = op.input();
+    Value mask = op.mask();
+    // TODO: handle mask complement
+    // bool maskComplement = op.mask_complement();
+    RankedTensorType inputTensorType =
+        input.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType maskTensorType =
+        mask.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType outputTensorType =
+        op.getResult().getType().dyn_cast<RankedTensorType>();
+
+    SmallVector<AffineMap, 3> affineMaps;
+    SmallVector<StringRef, 2> iteratorTypes;
+    Value outputTensor = buildSameShapeOutput(
+        op, rewriter, input, outputTensorType, affineMaps, iteratorTypes, true);
+
+    linalg::GenericOp linalgGenericOp = rewriter.create<linalg::GenericOp>(
+        loc, outputTensorType, ValueRange{input, mask}, outputTensor,
+        affineMaps, iteratorTypes,
+        [&](OpBuilder &nestedBuilder, Location nestedLoc,
+            ValueRange blockArgs) {
+          ValueRange arguments =
+              nestedBuilder.getBlock()->getArguments().take_front(2);
+          sparse_tensor::LinalgIntersectOp maskOp =
+              nestedBuilder.create<sparse_tensor::LinalgIntersectOp>(
+                  nestedLoc, outputTensorType.getElementType(), arguments);
+          Block &maskBlock = maskOp.getRegion().emplaceBlock();
+          Value leftVal = maskBlock.addArgument(
+              inputTensorType.getElementType(), nestedLoc);
+          maskBlock.addArgument(maskTensorType.getElementType(), nestedLoc);
+          nestedBuilder.setInsertionPointToStart(&maskBlock);
+          nestedBuilder.create<sparse_tensor::LinalgYieldOp>(nestedLoc,
+                                                             leftVal);
+          nestedBuilder.setInsertionPointAfter(maskOp);
+          nestedBuilder.create<linalg::YieldOp>(nestedLoc, maskOp.getResult());
+        });
+    Value output = linalgGenericOp.getResult(0);
+
+    rewriter.replaceOp(op, output);
+
+    return success();
+  };
+};
+
 void populateGraphBLASLinalgLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
       LinalgLowerApplyGenericRewrite, LinalgLowerIntersectGenericRewrite,
-      LinalgLowerMatrixMultiplyGenericRewrite, LinalgLowerSelectGenericRewrite,
-      LinalgLowerReduceToVectorGenericRewrite,
-      LinalgLowerReduceToScalarGenericRewrite,
+      LinalgLowerUnionGenericRewrite, LinalgLowerMatrixMultiplyGenericRewrite,
+      LinalgLowerSelectGenericRewrite, LinalgLowerReduceToVectorGenericRewrite,
+      LinalgLowerReduceToScalarGenericRewrite, LinalgLowerSelectMaskRewrite,
       // Common items
       LowerCommentRewrite, LowerPrintRewrite, LowerPrintTensorRewrite,
       LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,

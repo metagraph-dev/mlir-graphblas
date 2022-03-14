@@ -1,4 +1,5 @@
 // RUN: graphblas-opt %s | graphblas-exec entry | FileCheck %s
+// RUN: graphblas-opt %s | graphblas-linalg-exec entry | FileCheck %s
 
 #CSR64 = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],
