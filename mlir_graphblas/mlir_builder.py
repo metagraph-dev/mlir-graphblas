@@ -30,7 +30,6 @@ class MLIRCompileError(Exception):
 DEFAULT_ENGINE = MlirJitEngine()
 
 GRAPHBLAS_TO_SPARSE_PASSES = (
-    "--graphblas-dwim",
     "--graphblas-structuralize",
     "--graphblas-dwim",
     "--graphblas-optimize",

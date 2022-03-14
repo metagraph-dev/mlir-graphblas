@@ -444,10 +444,191 @@ public:
   };
 };
 
+class LinalgLowerReduceToVectorGenericRewrite
+    : public OpRewritePattern<graphblas::ReduceToVectorGenericOp> {
+public:
+  using OpRewritePattern<graphblas::ReduceToVectorGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ReduceToVectorGenericOp op,
+                                PatternRewriter &rewriter) const override {
+    MLIRContext *context = op.getContext();
+    // ModuleOp mod = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    // Required blocks
+    RegionRange extensions = op.extensions();
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {
+        graphblas::YieldKind::AGG_IDENTITY, graphblas::YieldKind::AGG};
+    LogicalResult extractResult =
+        extBlocks.extractBlocks(op, extensions, required, {});
+
+    if (extractResult.failed()) {
+      return extractResult;
+    }
+
+    Value inputTensor = op.input();
+    Value mask = op.mask();
+    int axis = op.axis();
+    // TODO: handle mask complement
+    // bool maskComplement = op.mask_complement();
+    RankedTensorType inputTensorType =
+        inputTensor.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType outputTensorType =
+        op.getResult().getType().dyn_cast<RankedTensorType>();
+    RankedTensorType maskTensorType;
+
+    if (mask)
+      maskTensorType = mask.getType().dyn_cast<RankedTensorType>();
+
+    Value outputTensor;
+    SmallVector<AffineMap, 2> affineMaps;
+    SmallVector<StringRef, 2> iteratorTypes;
+
+    // Compute output size (depends on axis)
+    Value size;
+    if (axis == 1) {
+      size = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+      iteratorTypes.push_back(getReductionIteratorTypeName());
+    } else {
+      size = rewriter.create<graphblas::NumColsOp>(loc, inputTensor);
+      iteratorTypes.push_back(getReductionIteratorTypeName());
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+    }
+    outputTensor = rewriter.create<sparse_tensor::InitOp>(loc, outputTensorType,
+                                                          ValueRange{size});
+    affineMaps.push_back(AffineMap::getMultiDimIdentityMap(2, context));
+    if (mask)
+      affineMaps.push_back(
+          AffineMap::get(2, 0, {getAffineDimExpr(1 - axis, context)}, context));
+    affineMaps.push_back(
+        AffineMap::get(2, 0, {getAffineDimExpr(1 - axis, context)}, context));
+
+    SmallVector<Value, 2> inputs = ValueRange{inputTensor};
+    if (mask)
+      inputs.push_back(mask);
+
+    linalg::GenericOp linalgGenericOp = rewriter.create<linalg::GenericOp>(
+        loc, outputTensorType, inputs, outputTensor, affineMaps, iteratorTypes,
+        [&](OpBuilder &nestedBuilder, Location nestedLoc,
+            ValueRange blockArgs) {
+          ValueRange arguments = nestedBuilder.getBlock()->getArguments();
+          Value reduceArg = arguments[0];
+          if (mask) {
+            // Apply the mask by intersecting it with the input
+            sparse_tensor::LinalgIntersectOp maskOp =
+                nestedBuilder.create<sparse_tensor::LinalgIntersectOp>(
+                    nestedLoc, inputTensorType.getElementType(),
+                    ValueRange{arguments[0], arguments[1]});
+            Block &maskBlock = maskOp.getRegion().emplaceBlock();
+            Value leftVal = maskBlock.addArgument(
+                inputTensorType.getElementType(), nestedLoc);
+            maskBlock.addArgument(maskTensorType.getElementType(), nestedLoc);
+            nestedBuilder.setInsertionPointToStart(&maskBlock);
+            nestedBuilder.create<sparse_tensor::LinalgYieldOp>(nestedLoc,
+                                                               leftVal);
+            nestedBuilder.setInsertionPointAfter(maskOp);
+            reduceArg = maskOp.getResult();
+          }
+          // Create reduce operation
+          sparse_tensor::LinalgReduceOp reduceOp =
+              nestedBuilder.create<sparse_tensor::LinalgReduceOp>(
+                  nestedLoc, outputTensorType.getElementType(),
+                  ValueRange{arguments.back(), reduceArg});
+          moveBlock(rewriter, extBlocks.agg, reduceOp.formula());
+          moveBlock(rewriter, extBlocks.aggIdentity, reduceOp.init());
+          // Add linalg.yield
+          nestedBuilder.setInsertionPointAfter(reduceOp);
+          nestedBuilder.create<linalg::YieldOp>(nestedLoc,
+                                                reduceOp.getResult());
+        });
+    Value output = linalgGenericOp.getResult(0);
+
+    rewriter.replaceOp(op, output);
+
+    return success();
+  };
+};
+
+class LinalgLowerReduceToScalarGenericRewrite
+    : public OpRewritePattern<graphblas::ReduceToScalarGenericOp> {
+public:
+  using OpRewritePattern<graphblas::ReduceToScalarGenericOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::ReduceToScalarGenericOp op,
+                                PatternRewriter &rewriter) const override {
+    MLIRContext *context = op.getContext();
+    // ModuleOp mod = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Value inputTensor = op.input();
+    RankedTensorType inputTensorType =
+        inputTensor.getType().dyn_cast<RankedTensorType>();
+    Type outputType = op.getResult().getType();
+
+    // Required blocks
+    RegionRange extensions = op.extensions();
+    ExtensionBlocks extBlocks;
+    std::set<graphblas::YieldKind> required = {
+        graphblas::YieldKind::AGG_IDENTITY, graphblas::YieldKind::AGG};
+    LogicalResult extractResult =
+        extBlocks.extractBlocks(op, extensions, required, {});
+
+    if (extractResult.failed()) {
+      return extractResult;
+    }
+
+    // Compute output and iteration objects
+    Value outputTensor =
+        rewriter.create<linalg::InitTensorOp>(loc, ValueRange{}, outputType);
+    RankedTensorType outputTensorType =
+        outputTensor.getType().cast<RankedTensorType>();
+    SmallVector<AffineMap, 2> affineMaps;
+    SmallVector<StringRef, 2> iteratorTypes;
+    unsigned rank = inputTensorType.getRank();
+    if (rank == 1) {
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+      affineMaps.push_back(AffineMap::getMultiDimIdentityMap(1, context));
+      affineMaps.push_back(AffineMap::get(1, 0, {}, context));
+    } else {
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+      iteratorTypes.push_back(getParallelIteratorTypeName());
+      affineMaps.push_back(AffineMap::getMultiDimIdentityMap(2, context));
+      affineMaps.push_back(AffineMap::get(2, 0, {}, context));
+    }
+
+    linalg::GenericOp linalgGenericOp = rewriter.create<linalg::GenericOp>(
+        loc, outputTensorType, inputTensor, outputTensor, affineMaps,
+        iteratorTypes,
+        [&](OpBuilder &nestedBuilder, Location nestedLoc,
+            ValueRange blockArgs) {
+          ValueRange arguments = nestedBuilder.getBlock()->getArguments();
+          // Create reduce operation
+          sparse_tensor::LinalgReduceOp reduceOp =
+              nestedBuilder.create<sparse_tensor::LinalgReduceOp>(
+                  nestedLoc, outputType, arguments);
+          moveBlock(rewriter, extBlocks.agg, reduceOp.formula());
+          moveBlock(rewriter, extBlocks.aggIdentity, reduceOp.init());
+          // Add linalg.yield
+          nestedBuilder.setInsertionPointAfter(reduceOp);
+          nestedBuilder.create<linalg::YieldOp>(nestedLoc,
+                                                reduceOp.getResult());
+        });
+    Value output = linalgGenericOp.getResult(0);
+    rewriter.setInsertionPointAfter(linalgGenericOp);
+    output = rewriter.create<tensor::ExtractOp>(loc, output, ValueRange{});
+
+    rewriter.replaceOp(op, output);
+
+    return success();
+  };
+};
+
 void populateGraphBLASLinalgLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
       LinalgLowerApplyGenericRewrite, LinalgLowerIntersectGenericRewrite,
       LinalgLowerMatrixMultiplyGenericRewrite, LinalgLowerSelectGenericRewrite,
+      LinalgLowerReduceToVectorGenericRewrite,
+      LinalgLowerReduceToScalarGenericRewrite,
       // Common items
       LowerCommentRewrite, LowerPrintRewrite, LowerPrintTensorRewrite,
       LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,
