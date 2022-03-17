@@ -64,7 +64,7 @@ func @main() -> () {
     // CHECK: answer_1 56
     graphblas.print %answer_1 { strings = ["answer_1 "] } : i64
 
-    %answer_2 = graphblas.matrix_multiply_reduce_to_scalar_generic %a_csr, %b_csc : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to i64  
+    %answer_2 = graphblas.matrix_multiply_reduce_to_scalar_generic %a_csr, %b_csc : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to i64
     {
       graphblas.yield add_identity %c0_i64 : i64
     }, {
@@ -124,7 +124,7 @@ func @main() -> () {
     }
     // CHECK: answer_4 3
     graphblas.print %answer_4 { strings = ["answer_4 "] } : i64
-    
+
     %answer_5 = graphblas.matrix_multiply_reduce_to_scalar_generic %a_csr, %b_csr, %mask_csr : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSR64>) to i64 {
       graphblas.yield add_identity %c0_i64 : i64
     }, {
@@ -206,7 +206,7 @@ func @main() -> () {
     }
     // CHECK: answer_8 2
     graphblas.print %answer_8 { strings = ["answer_8 "] } : i64
-    
+
     %answer_9 = graphblas.matrix_multiply_reduce_to_scalar_generic %a_csr, %b_csr, %mask_csc : (tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSR64>, tensor<?x?xi64, #CSC64>) to i64 {
       graphblas.yield add_identity %c0_i64 : i64
     }, {

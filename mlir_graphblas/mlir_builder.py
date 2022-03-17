@@ -31,6 +31,7 @@ DEFAULT_ENGINE = MlirJitEngine()
 
 GRAPHBLAS_TO_SPARSE_PASSES = (
     "--graphblas-structuralize",
+    "--graphblas-dwim",
     "--graphblas-optimize",
     "--graphblas-lower",
 )

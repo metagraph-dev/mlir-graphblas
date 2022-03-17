@@ -217,8 +217,7 @@ void callPrintTensor(OpBuilder &builder, ModuleOp &mod, Location loc,
     bool isCSC = (dimOrdering0 == 1 && dimOrdering1 == 0);
     if (isCSC) {
       tensorType = getFlippedLayoutType(context, tensorType);
-      input =
-          builder.create<graphblas::ConvertLayoutOp>(loc, tensorType, input);
+      input = builder.create<sparse_tensor::ConvertOp>(loc, tensorType, input);
     }
   }
 

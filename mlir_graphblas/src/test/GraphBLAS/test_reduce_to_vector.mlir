@@ -1,4 +1,5 @@
 // RUN: graphblas-opt %s | graphblas-exec main | FileCheck %s
+// RUN: graphblas-opt %s | graphblas-linalg-exec main | FileCheck %s
 
 #CSR64 = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],
@@ -44,16 +45,12 @@ func @main() -> () {
     // CHECK: answer_1 [_, 1, 5, 4]
     graphblas.print %answer_1 { strings = ["answer_1 "] } : tensor<?xi64, #CV64>
     
-    %answer_2 = graphblas.reduce_to_vector %mat_csc { aggregator = "max", axis = 0 } : tensor<?x?xi64, #CSC64> to tensor<?xi64, #CV64>
-    // CHECK-NEXT: answer_2 [_, 1, 3, 4]
-    graphblas.print %answer_2 { strings = ["answer_2 "] } : tensor<?xi64, #CV64>
-    
     %answer_3 = graphblas.reduce_to_vector %mat_csr { aggregator = "plus", axis = 1 } : tensor<?x?xi64, #CSR64> to tensor<?xi64, #CV64>
-    // CHECK-NEXT: answer_3 [3, 7]
+    // CHECK: answer_3 [3, 7]
     graphblas.print %answer_3 { strings = ["answer_3 "] } : tensor<?xi64, #CV64>
     
     %answer_4 = graphblas.reduce_to_vector %mat_csc { aggregator = "max", axis = 1 } : tensor<?x?xi64, #CSC64> to tensor<?xi64, #CV64>
-    // CHECK-NEXT: answer_4 [2, 4]
+    // CHECK: answer_4 [2, 4]
     graphblas.print %answer_4 { strings = ["answer_4 "] } : tensor<?xi64, #CV64>
 
     return

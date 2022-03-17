@@ -901,14 +901,6 @@ static LogicalResult verify(ReduceToVectorGenericOp op) {
     return op.emitError("Must have at least 2 regions: agg_identity, agg.");
   }
 
-  // Enforce reasonable iteration direction for axis
-  bool isCSR = hasRowOrdering(op.input().getType());
-  int axis = op.axis();
-  if (axis == 0 && isCSR)
-    return op.emitError("Reducing with axis=0 requires CSC matrix.");
-  if (axis == 1 && !isCSR)
-    return op.emitError("Reducing with axis=1 requires CSR matrix.");
-
   return success();
 }
 

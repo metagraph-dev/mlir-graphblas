@@ -65,4 +65,11 @@ def GraphBLASStructuralize : Pass<"graphblas-structuralize", "ModuleOp"> {
   ];
 }
 
+def GraphBLASDWIM : Pass<"graphblas-dwim", "ModuleOp"> {
+  let summary = "TODO add documentation";
+  let constructor = "mlir::createGraphBLASDWIMPass()";
+  let dependentDialects = [
+  ];
+}
+
 #endif // MLIR_CONVERSION_PASSES

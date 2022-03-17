@@ -114,6 +114,38 @@ public:
   };
 };
 
+class ReduceToVectorGenericDWIMRewrite
+    : public OpRewritePattern<graphblas::ReduceToVectorGenericOp> {
+public:
+  using OpRewritePattern<graphblas::ReduceToVectorGenericOp>::OpRewritePattern;
+
+  static bool needsDWIM(graphblas::ReduceToVectorGenericOp op) {
+    int axis = op.axis();
+    bool isCSR = hasRowOrdering(op.input().getType());
+    return ((axis == 0 && isCSR) || (axis == 1 && !isCSR));
+  };
+
+  LogicalResult matchAndRewrite(graphblas::ReduceToVectorGenericOp op,
+                                PatternRewriter &rewriter) const override {
+    if (!needsDWIM(op))
+      return failure();
+
+    MLIRContext *context = op.getContext();
+    Location loc = op->getLoc();
+
+    Value input = op.input();
+    RankedTensorType flippedInputType =
+        getFlippedLayoutType(context, input.getType());
+
+    rewriter.setInsertionPoint(op);
+    Value flippedInput = rewriter.create<graphblas::ConvertLayoutOp>(
+        loc, flippedInputType, input);
+    op.inputMutable().assign(flippedInput);
+
+    return success();
+  };
+};
+
 class MatrixMultiplyGenericDWIMFirstArgRewrite
     : public OpRewritePattern<graphblas::MatrixMultiplyGenericOp> {
 public:
@@ -595,9 +627,6 @@ public:
   using OpRewritePattern<graphblas::ReduceToVectorOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::ReduceToVectorOp op,
                                 PatternRewriter &rewriter) const override {
-    if (ReduceToVectorDWIMRewrite::needsDWIM(op))
-      return failure();
-
     StringRef aggregator = op.aggregator();
 
     // Don't handle custom aggregators
@@ -679,16 +708,31 @@ public:
   };
 };
 
+void populateGraphBLASDWIMPatterns(RewritePatternSet &patterns) {
+  patterns.add<TransposeDWIMRewrite, ReduceToVectorDWIMRewrite,
+               ReduceToVectorGenericDWIMRewrite,
+               MatrixMultiplyGenericDWIMFirstArgRewrite,
+               MatrixMultiplyGenericDWIMSecondArgRewrite,
+               MatrixMultiplyGenericDWIMMaskRewrite,
+               MatrixMultiplyReduceToScalarGenericDWIMFirstArgRewrite,
+               MatrixMultiplyReduceToScalarGenericDWIMSecondArgRewrite,
+               MatrixMultiplyReduceToScalarGenericDWIMMaskRewrite>(
+      patterns.getContext());
+}
+
+struct GraphBLASDWIMPass : public GraphBLASDWIMBase<GraphBLASDWIMPass> {
+  void runOnOperation() override {
+    MLIRContext *ctx = &getContext();
+    RewritePatternSet patterns(ctx);
+    ConversionTarget target(*ctx);
+    populateGraphBLASDWIMPatterns(patterns);
+    (void)applyPatternsAndFoldGreedily(getOperation(), std::move(patterns));
+  }
+};
+
 void populateGraphBLASStructuralizePatterns(RewritePatternSet &patterns) {
   patterns
-      .add<TransposeDWIMRewrite, ReduceToVectorDWIMRewrite,
-           MatrixMultiplyGenericDWIMFirstArgRewrite,
-           MatrixMultiplyGenericDWIMSecondArgRewrite,
-           MatrixMultiplyGenericDWIMMaskRewrite,
-           MatrixMultiplyReduceToScalarGenericDWIMFirstArgRewrite,
-           MatrixMultiplyReduceToScalarGenericDWIMSecondArgRewrite,
-           MatrixMultiplyReduceToScalarGenericDWIMMaskRewrite,
-           LowerMatrixMultiplyRewrite, LowerApplyRewrite, LowerSelectRewrite,
+      .add<LowerMatrixMultiplyRewrite, LowerApplyRewrite, LowerSelectRewrite,
            LowerUnionRewrite, LowerIntersectRewrite, LowerUpdateRewrite,
            LowerReduceToVectorRewrite, LowerReduceToScalarRewrite>(
           patterns.getContext());
@@ -705,6 +749,10 @@ struct GraphBLASStructuralizePass
   }
 };
 } // end anonymous namespace
+
+std::unique_ptr<OperationPass<ModuleOp>> mlir::createGraphBLASDWIMPass() {
+  return std::make_unique<GraphBLASDWIMPass>();
+}
 
 std::unique_ptr<OperationPass<ModuleOp>>
 mlir::createGraphBLASStructuralizePass() {
