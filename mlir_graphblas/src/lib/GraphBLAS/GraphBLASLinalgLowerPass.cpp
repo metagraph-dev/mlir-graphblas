@@ -681,7 +681,7 @@ public:
   using OpRewritePattern<graphblas::SelectMaskOp>::OpRewritePattern;
   LogicalResult matchAndRewrite(graphblas::SelectMaskOp op,
                                 PatternRewriter &rewriter) const override {
-    ModuleOp module = op->getParentOfType<ModuleOp>();
+    // ModuleOp mod = op->getParentOfType<ModuleOp>();
     Location loc = op->getLoc();
 
     // Inputs
@@ -729,12 +729,139 @@ public:
   };
 };
 
+class LinalgLowerTransposeRewrite
+    : public OpRewritePattern<graphblas::TransposeOp> {
+public:
+  using OpRewritePattern<graphblas::TransposeOp>::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(graphblas::TransposeOp op,
+                                PatternRewriter &rewriter) const override {
+    MLIRContext *context = op.getContext();
+    // ModuleOp mod = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Value inputTensor = op.input();
+    RankedTensorType inputTensorType =
+        inputTensor.getType().dyn_cast<RankedTensorType>();
+    RankedTensorType outputTensorType =
+        op.getResult().getType().dyn_cast<RankedTensorType>();
+    bool inputByRow = hasRowOrdering(inputTensorType);
+    bool outputByRow = hasRowOrdering(outputTensorType);
+
+    // Linalg logic only works for byrow->bycol or vice versa
+    if (inputByRow == outputByRow) {
+      RankedTensorType flippedInputType =
+          getFlippedLayoutType(context, inputTensorType);
+      inputTensor = rewriter.create<sparse_tensor::ConvertOp>(
+          loc, flippedInputType, inputTensor);
+      inputTensorType = flippedInputType;
+      inputByRow = !inputByRow;
+    }
+
+    SmallVector<AffineMap, 2> affineMaps;
+    SmallVector<StringRef, 2> iteratorTypes;
+    Value nrows = rewriter.create<graphblas::NumRowsOp>(loc, inputTensor);
+    Value ncols = rewriter.create<graphblas::NumColsOp>(loc, inputTensor);
+    Value outputTensor = rewriter.create<sparse_tensor::InitOp>(
+        loc, outputTensorType, ValueRange{ncols, nrows});
+    iteratorTypes.push_back(getParallelIteratorTypeName());
+    iteratorTypes.push_back(getParallelIteratorTypeName());
+    unsigned idx = inputByRow ? 0 : 1;
+    affineMaps.push_back(AffineMap::get(
+        2, 0,
+        {getAffineDimExpr(idx, context), getAffineDimExpr(1 - idx, context)},
+        context));
+    affineMaps.push_back(AffineMap::get(
+        2, 0,
+        {getAffineDimExpr(1 - idx, context), getAffineDimExpr(idx, context)},
+        context));
+
+    linalg::GenericOp linalgGenericOp = rewriter.create<linalg::GenericOp>(
+        loc, outputTensorType, inputTensor, outputTensor, affineMaps,
+        iteratorTypes,
+        [&](OpBuilder &nestedBuilder, Location nestedLoc,
+            ValueRange blockArgs) {
+          Value val = nestedBuilder.getBlock()->getArguments().front();
+          nestedBuilder.create<linalg::YieldOp>(nestedLoc, val);
+        });
+    Value output = linalgGenericOp.getResult(0);
+
+    rewriter.replaceOp(op, output);
+
+    return success();
+  };
+};
+
+class LinalgLowerDiagVectorToMatrixOpRewrite
+    : public OpRewritePattern<graphblas::DiagOp> {
+public:
+  using OpRewritePattern<graphblas::DiagOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(graphblas::DiagOp op,
+                                PatternRewriter &rewriter) const override {
+    MLIRContext *context = op.getContext();
+    // ModuleOp mod = op->getParentOfType<ModuleOp>();
+    Location loc = op->getLoc();
+
+    Value input = op.input();
+    RankedTensorType outputTensorType =
+        op.getResult().getType().dyn_cast<RankedTensorType>();
+
+    if (outputTensorType.getRank() != 2)
+      return failure();
+
+    SmallVector<AffineMap, 2> affineMaps;
+    SmallVector<StringRef, 2> iteratorTypes;
+
+    Value size = rewriter.create<graphblas::SizeOp>(loc, input);
+    Value outputTensor = rewriter.create<sparse_tensor::InitOp>(
+        loc, outputTensorType, ValueRange{size, size});
+    affineMaps.push_back(
+        AffineMap::get(2, 0, {getAffineDimExpr(0, context)}, context));
+    int idx = hasRowOrdering(outputTensorType) ? 0 : 1;
+    affineMaps.push_back(AffineMap::get(
+        2, 0,
+        {getAffineDimExpr(idx, context), getAffineDimExpr(1 - idx, context)},
+        context));
+    iteratorTypes.push_back(getParallelIteratorTypeName());
+    iteratorTypes.push_back(getParallelIteratorTypeName());
+
+    linalg::GenericOp linalgGenericOp = rewriter.create<linalg::GenericOp>(
+        loc, outputTensorType, input, outputTensor, affineMaps, iteratorTypes,
+        [&](OpBuilder &nestedBuilder, Location nestedLoc,
+            ValueRange blockArgs) {
+          // Only insert the value if row == col
+          sparse_tensor::LinalgMaskOp maskOp =
+              nestedBuilder.create<sparse_tensor::LinalgMaskOp>(nestedLoc);
+          Block &maskBlock = maskOp.getRegion().emplaceBlock();
+          Value row =
+              maskBlock.addArgument(nestedBuilder.getIndexType(), nestedLoc);
+          Value col =
+              maskBlock.addArgument(nestedBuilder.getIndexType(), nestedLoc);
+          nestedBuilder.setInsertionPointToStart(&maskBlock);
+          Value cmp = nestedBuilder.create<arith::CmpIOp>(
+              nestedLoc, arith::CmpIPredicate::eq, row, col);
+          nestedBuilder.create<sparse_tensor::LinalgYieldOp>(nestedLoc, cmp);
+          nestedBuilder.setInsertionPointAfter(maskOp);
+          // Add linalg.yield, returning the input unchanged
+          nestedBuilder.setInsertionPointAfter(maskOp);
+          nestedBuilder.create<linalg::YieldOp>(
+              nestedLoc, nestedBuilder.getBlock()->getArguments().front());
+        });
+    Value output = linalgGenericOp.getResult(0);
+
+    rewriter.replaceOp(op, output);
+
+    return success();
+  };
+};
+
 void populateGraphBLASLinalgLoweringPatterns(RewritePatternSet &patterns) {
   patterns.add<
       LinalgLowerApplyGenericRewrite, LinalgLowerIntersectGenericRewrite,
       LinalgLowerUnionGenericRewrite, LinalgLowerMatrixMultiplyGenericRewrite,
       LinalgLowerSelectGenericRewrite, LinalgLowerReduceToVectorGenericRewrite,
       LinalgLowerReduceToScalarGenericRewrite, LinalgLowerSelectMaskRewrite,
+      LinalgLowerTransposeRewrite, LinalgLowerDiagVectorToMatrixOpRewrite,
       // Common items
       LowerCommentRewrite, LowerPrintRewrite, LowerPrintTensorRewrite,
       LowerSizeRewrite, LowerNumRowsRewrite, LowerNumColsRewrite,

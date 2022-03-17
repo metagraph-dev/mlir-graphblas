@@ -1,4 +1,5 @@
 // RUN: graphblas-opt %s | graphblas-exec functional_transpose | FileCheck %s
+// RUN: graphblas-opt %s | graphblas-linalg-exec functional_transpose | FileCheck %s
 
 #CSR64 = #sparse_tensor.encoding<{
   dimLevelType = [ "dense", "compressed" ],
