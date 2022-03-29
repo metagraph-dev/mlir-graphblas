@@ -9,27 +9,30 @@ This document is not intended to be a complete tutorial on ``graphblas-opt`` and
 as a reference manual for the passes exclusively available for ``graphblas-opt``. For tutorials
 on these passes specific to ``graphblas-opt``, see our :ref:`graphblas_dialect_tutorials`.
 
-The three passes specific to ``graphblas-opt`` are:
+There are five passes specific to ``graphblas-opt`` with two intended usages:
+
+Standard Lowering
 
 * ``--graphblas-structuralize``: Lowers higher-level ``graphblas`` ops
-  into lower-level generic ``graphblas`` ops to enable the
-  ``--graphblas-optimize`` pass to perform optimizations such as op fusion.
+  into lower-level generic ``graphblas`` ops
+* ``--graphblas-dwim``: Adds ``convert-layout`` calls to inputs to match the expected
+  shape and type of generic ``graphblas`` ops
 * ``--graphblas-optimize``: Fuses lower-level generic ``graphblas`` ops together
   to eliminate temporary tensors and redundant loops.
 * ``--graphblas-lower``: Convert ``graphblas`` ops to the ``scf``, ``std``,
   and ``memref`` dialects.
 
-The ``--graphblas-structuralize`` and ``--graphblas-optimize`` passes are optional
-and unoptimized code can be generated and executed with ``--graphblas-lower``.
+Linalg Lowering
 
-Also, ``--graphblas-optimize`` can be used without uses of ``--graphblas-structuralize``,
-but in these sorts of situations, ``--graphblas-optimize`` may not be able to find all
-the available optimizations as it only transforms lower-level generic ``graphblas`` ops
-(all of which may not yet be present without uses of ``--graphblas-structuralize``).
-It's best practice to always use ``--graphblas-structuralize`` prior to uses of
-``--graphblas-optimize``.
+* ``--graphblas-structuralize``: Lowers higher-level ``graphblas`` ops
+  into lower-level generic ``graphblas`` ops
+* ``--graphblas-optimize``: Fuses lower-level generic ``graphblas`` ops together
+  to eliminate temporary tensors and redundant loops.
+* ``--graphblas-linalg-lower``: Convert ``graphblas`` ops to the ``linalg`` dialects,
+  specifically to ``linalg.generic`` calls. These will be further lowered by the
+  ``sparse_tensor`` dialect.
 
-.. _graphblas-structuralize: 
+.. _graphblas-structuralize:
 
 ``--graphblas-structuralize`` Pass
 ----------------------------------
@@ -53,9 +56,13 @@ The structuralization pass performs eight generic transformations:
 * Transform ``graphblas.reduce_to_scalar`` ops into equivalent
   ``graphblas.reduce_to_scalar_generic`` ops.
 
-The structuralization pass also performs Do-What-I-Mean (DWIM) transformations,
-automatically converting the layout of input matrices to conform to the requirements
-of each pass. DWIM transformations are included for:
+.. _graphblas-dwim:
+
+``--graphblas-dwim`` Pass
+-------------------------
+
+The DWIM (Do-What-I-Mean) pass automatically converts the layout of input matrices
+to conform to the requirements each pass. DWIM transformations are included for:
 
 * ``graphblas.transpose``
 * ``graphblas.reduce_to_vector``
@@ -95,3 +102,15 @@ In general, this pass uses ``scf`` ops to handle traversing the sparse data
 structure, with `scf.parallel` used when possible to indicate loops where the
 loop body iterations are independent of each other, or are performing a
 well-defined reduction.
+
+.. _graphblas-linalg-lower
+
+``--graphblas-linalg-lower`` Pass
+---------------------------------
+
+The linalg lowering will eventually be a full replacement for the standard lowering pass,
+once improvements are made to the ``sparse_tensor`` handling of ``linalg.generic``.
+
+One benefit of linalg lowering is a much smaller and simpler lowering output to maintain.
+Another is the ability to handle more types of inputs, eliminating the need for the DWIM
+pass.
