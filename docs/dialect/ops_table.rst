@@ -15,7 +15,7 @@ Supported GraphBLAS Spec Operations
     apply_Binop2nd  , Y , Y , Y , N , N , apply,
     select (no val) , Y , Y , Y , N , N , select,
     select (w/ val) , Y , Y , Y , N , N , select,
-    select mask     , Y , Y , Y , Y , Y , select_mask
+    select mask     , Y , Y , Y , Y , Y , select_mask,
     reduce_to_scalar, Y , Y , N ,   ,   , reduce_to_scalar,
     reduce_to_vector, Y ,   , Y , Y , Y , reduce_to_vector,
     transpose       , Y ,   , Y , N , N , transpose,
