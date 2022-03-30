@@ -69,7 +69,7 @@ to conform to the requirements each pass. DWIM transformations are included for:
 * ``graphblas.matrix_multiply``
 * ``graphblas.matrix_multiply_reduce_to_scalar``
 
-.. _graphblas-optimize: 
+.. _graphblas-optimize:
 
 ``--graphblas-optimize`` Pass
 -----------------------------
@@ -84,7 +84,7 @@ The optimization pass performs two transformations:
   sparse multiply and accumulate in a single pass (rather than two passes for
   ``graphblas.matrix_multiply``).
 
-.. _graphblas-lower: 
+.. _graphblas-lower:
 
 ``--graphblas-lower`` Pass
 --------------------------
@@ -103,7 +103,7 @@ structure, with `scf.parallel` used when possible to indicate loops where the
 loop body iterations are independent of each other, or are performing a
 well-defined reduction.
 
-.. _graphblas-linalg-lower
+.. _graphblas-linalg-lower:
 
 ``--graphblas-linalg-lower`` Pass
 ---------------------------------
