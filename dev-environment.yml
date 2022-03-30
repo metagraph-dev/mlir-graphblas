@@ -18,7 +18,7 @@ dependencies:
   - jinja2<3.1
   - nbsphinx
   - notebook
-  - conda-forge::pydata-sphinx-theme
+  - conda-forge::pydata-sphinx-theme=0.5.2
   - pypandoc
   - pip
   - pip:
